@@ -8,7 +8,6 @@ export interface ReviewSpec {
   mode: ReviewMode;
   baseRef?: string;
   compareRef?: string;
-  includeUntracked: boolean;
 }
 
 /** Headline agent state derived from Claude hook telemetry; drives the status-bar glyph. */

@@ -5,7 +5,7 @@
 import * as vscode from "vscode";
 
 import type { PlanGateResult } from "../bridge/types.js";
-import { Commands, Schemes } from "../config.js";
+import { Commands, ContextKeys, Schemes } from "../config.js";
 import type { PlanReviewRequest } from "../protocol/types.js";
 import type { Severity } from "../types.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
@@ -48,10 +48,15 @@ export class PlanReviewController implements vscode.Disposable {
   ) {
     this.controller = vscode.comments.createCommentController("tui.plan", "Plan Review");
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) =>
-        doc.uri.scheme === Schemes.plan
-          ? [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)]
-          : [],
+      provideCommentingRanges: (doc) => {
+        if (doc.uri.scheme !== Schemes.plan) {
+          return undefined;
+        }
+        return {
+          enableFileComments: false,
+          ranges: [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)],
+        };
+      },
     };
     this.disposables.push(
       this.controller,
@@ -91,6 +96,7 @@ export class PlanReviewController implements vscode.Disposable {
       markdown: req.plan,
       threads: [],
     });
+    this.updatePendingContext();
 
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.languages.setTextDocumentLanguage(doc, "markdown");
@@ -203,6 +209,15 @@ export class PlanReviewController implements vscode.Disposable {
       this.reviews.delete(uri.toString());
     }
     this.provider.clear(uri);
+    this.updatePendingContext();
+  }
+
+  private updatePendingContext(): void {
+    void vscode.commands.executeCommand(
+      "setContext",
+      ContextKeys.planPending,
+      this.reviews.size > 0
+    );
   }
 
   dispose(): void {

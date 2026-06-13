@@ -61,9 +61,15 @@ suite("parseNameStatus", () => {
     const z = "M\0src/a.ts\0R100\0old.ts\0new.ts\0A\0c.ts\0";
     const files = parseNameStatus(z);
     assert.strictEqual(files.length, 3);
-    assert.deepStrictEqual(files[0], { path: "src/a.ts", status: "M" });
-    assert.deepStrictEqual(files[1], { path: "new.ts", oldPath: "old.ts", status: "R" });
-    assert.deepStrictEqual(files[2], { path: "c.ts", status: "A" });
+    assert.deepStrictEqual(files[0], { path: "src/a.ts", status: "M", additions: 0, deletions: 0 });
+    assert.deepStrictEqual(files[1], {
+      path: "new.ts",
+      oldPath: "old.ts",
+      status: "R",
+      additions: 0,
+      deletions: 0,
+    });
+    assert.deepStrictEqual(files[2], { path: "c.ts", status: "A", additions: 0, deletions: 0 });
   });
 });
 

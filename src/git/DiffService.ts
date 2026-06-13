@@ -2,6 +2,9 @@
 // the git CLI for exact behavior. Returns "content refs" that the ReviewContentProvider resolves
 // to actual text (HEAD/branch/commit blob, the index, the working file, or empty).
 
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { git, gitSafe, splitNul } from "./gitCli.js";
 import type { ReviewMode, ReviewSpec } from "../types.js";
 
@@ -11,6 +14,8 @@ export interface ChangedFile {
   path: string; // repo-relative (the "new" path for renames)
   oldPath?: string;
   status: FileStatus;
+  additions: number;
+  deletions: number;
 }
 
 /** A reference the content provider knows how to read. */
@@ -26,13 +31,23 @@ export interface FileSides {
 }
 
 export class DiffService {
-  /** List changed files for a review spec (plus untracked, if requested). */
+  /** List changed files for a review spec (untracked auto-included for working-tree modes). */
   async listChanges(repoRoot: string, spec: ReviewSpec): Promise<ChangedFile[]> {
-    const args = nameStatusArgs(spec);
-    const out = await gitSafe(repoRoot, args);
+    const out = await gitSafe(repoRoot, nameStatusArgs(spec));
     const files = parseNameStatus(out);
 
-    if (spec.includeUntracked) {
+    // Merge in +/- line counts from --numstat.
+    const counts = await this.numstat(repoRoot, spec);
+    for (const f of files) {
+      const c = counts.get(f.path);
+      if (c) {
+        f.additions = c.additions;
+        f.deletions = c.deletions;
+      }
+    }
+
+    // Untracked files only belong in working-tree reviews, not ref comparisons.
+    if (spec.mode === "unstaged" || spec.mode === "uncommitted") {
       const untrackedOut = await gitSafe(repoRoot, [
         "ls-files",
         "--others",
@@ -40,10 +55,40 @@ export class DiffService {
         "-z",
       ]);
       for (const p of splitNul(untrackedOut)) {
-        files.push({ path: p, status: "U" });
+        files.push({ path: p, status: "U", additions: await countLines(repoRoot, p), deletions: 0 });
       }
     }
     return files.sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  /** Per-file added/deleted line counts via `git diff --numstat -z`. */
+  private async numstat(
+    repoRoot: string,
+    spec: ReviewSpec
+  ): Promise<Map<string, { additions: number; deletions: number }>> {
+    const args = nameStatusArgs(spec).map((a) => (a === "--name-status" ? "--numstat" : a));
+    const out = await gitSafe(repoRoot, args);
+    const map = new Map<string, { additions: number; deletions: number }>();
+    // -z numstat: <add>\t<del>\t<path>\0  (renames emit add\tdel\t\0oldpath\0newpath\0)
+    const tokens = splitNul(out);
+    for (let i = 0; i < tokens.length; i++) {
+      const m = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(tokens[i]);
+      if (!m) {
+        continue;
+      }
+      let p = m[3];
+      if (p === "") {
+        // rename: next two tokens are old, new paths
+        i += 1;
+        p = tokens[i + 1] ?? tokens[i] ?? "";
+        i += 1;
+      }
+      map.set(p, {
+        additions: m[1] === "-" ? 0 : Number(m[1]),
+        deletions: m[2] === "-" ? 0 : Number(m[2]),
+      });
+    }
+    return map;
   }
 
   /** Resolve the base/modified content refs for a file under a given spec. */
@@ -134,16 +179,29 @@ export function parseNameStatus(output: string): ChangedFile[] {
       const oldPath = tokens[i++];
       const newPath = tokens[i++];
       if (newPath !== undefined) {
-        files.push({ path: newPath, oldPath, status: letter });
+        files.push({ path: newPath, oldPath, status: letter, additions: 0, deletions: 0 });
       }
     } else {
       const p = tokens[i++];
       if (p !== undefined) {
-        files.push({ path: p, status: normalizeStatus(letter) });
+        files.push({ path: p, status: normalizeStatus(letter), additions: 0, deletions: 0 });
       }
     }
   }
   return files;
+}
+
+/** Count lines in a working-tree file (used for untracked additions). Best-effort. */
+async function countLines(repoRoot: string, relPath: string): Promise<number> {
+  try {
+    const text = await readFile(join(repoRoot, relPath), "utf8");
+    if (text === "") {
+      return 0;
+    }
+    return text.split("\n").length - (text.endsWith("\n") ? 1 : 0);
+  } catch {
+    return 0;
+  }
 }
 
 function normalizeStatus(letter: string): FileStatus {

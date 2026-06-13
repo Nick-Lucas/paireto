@@ -10,7 +10,7 @@ import { StateKeys } from "../config.js";
 import type { ReviewSpec } from "../types.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 
-const DEFAULT_SPEC: ReviewSpec = { mode: "uncommitted", baseRef: "main", includeUntracked: true };
+const DEFAULT_SPEC: ReviewSpec = { mode: "uncommitted", baseRef: "main" };
 
 export class ReviewStore {
   constructor(private readonly memento: vscode.Memento) {}

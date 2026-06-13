@@ -8,6 +8,7 @@
       "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
       "presentation": {
         "reveal": "silent", // "silent" only opens the terminal if the command errors out
+        "revealProblems": "never",
         "focus": false, // Keeps your cursor in the editor window
         "panel": "shared", // Reuses the same terminal instead of creating a new one each time
         "clear": true // Wipes old logs before running
@@ -26,7 +27,7 @@
       "label": "npm: watch:esbuild",
       "presentation": {
         "group": "watch",
-
+        "revealProblems": "never",
         "reveal": "silent", // "silent" only opens the terminal if the command errors out
         "focus": false, // Keeps your cursor in the editor window
         "panel": "shared", // Reuses the same terminal instead of creating a new one each time
@@ -42,6 +43,7 @@
       "label": "npm: watch:tsc",
       "presentation": {
         "group": "watch",
+        "revealProblems": "never",
 
         "reveal": "silent", // "silent" only opens the terminal if the command errors out
         "focus": false, // Keeps your cursor in the editor window
@@ -56,6 +58,7 @@
       "isBackground": true,
       "presentation": {
         "group": "watch",
+        "revealProblems": "never",
 
         "reveal": "silent", // "silent" only opens the terminal if the command errors out
         "focus": false, // Keeps your cursor in the editor window
@@ -69,6 +72,7 @@
       "dependsOn": ["npm: watch", "npm: watch-tests"],
       "presentation": {
         "group": "watch",
+        "revealProblems": "never",
 
         "reveal": "silent", // "silent" only opens the terminal if the command errors out
         "focus": false, // Keeps your cursor in the editor window

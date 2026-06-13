@@ -14,10 +14,10 @@ export const Commands = {
   planSetSeverityNote: "tui-companion.plan.setSeverity.note",
   reviewPickMode: "tui-companion.review.pickMode",
   reviewPickBase: "tui-companion.review.pickBase",
-  reviewToggleUntracked: "tui-companion.review.toggleUntracked",
   reviewRefresh: "tui-companion.review.refresh",
   reviewOpenDiff: "tui-companion.review.openDiff",
   reviewSendFeedback: "tui-companion.review.sendFeedback",
+  reviewClearFeedback: "tui-companion.review.clearFeedback",
   reviewExport: "tui-companion.review.export",
   reviewAddComment: "tui-companion.review.addComment",
   reviewSetSeverityBlocking: "tui-companion.review.setSeverity.blocking",
@@ -28,10 +28,18 @@ export const Commands = {
 export const Schemes = {
   plan: "tui-plan",
   review: "tui-review",
+  /** Synthetic scheme for changed-file tree rows so our decorations don't touch real files. */
+  reviewFile: "tui-review-file",
 } as const;
 
 export const Views = {
-  reviewTree: "tui.reviewTree",
+  review: "tui.review",
+  reviewFeedback: "tui.reviewFeedback",
+} as const;
+
+export const ContextKeys = {
+  switcherVisible: "tui.switcherVisible",
+  planPending: "tui.planPending",
 } as const;
 
 export const StateKeys = {

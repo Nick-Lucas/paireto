@@ -63,10 +63,17 @@ export class ReviewController implements vscode.Disposable {
     this.spec = store.getSpec();
     this.controller = vscode.comments.createCommentController("tui.review", "Code Review");
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) =>
-        doc.uri.scheme === Schemes.review
-          ? [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)]
-          : [],
+      provideCommentingRanges: (doc) => {
+        if (doc.uri.scheme !== Schemes.review) {
+          return undefined;
+        }
+        // Return the CommentingRanges object shape (not a bare Range[]), which is what
+        // reliably surfaces the gutter "+" affordance.
+        return {
+          enableFileComments: false,
+          ranges: [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)],
+        };
+      },
     };
 
     this.disposables.push(
@@ -75,13 +82,13 @@ export class ReviewController implements vscode.Disposable {
       vscode.commands.registerCommand(Commands.reviewRefresh, () => this.refresh()),
       vscode.commands.registerCommand(Commands.reviewPickMode, () => this.changeMode()),
       vscode.commands.registerCommand(Commands.reviewPickBase, () => this.changeBase()),
-      vscode.commands.registerCommand(Commands.reviewToggleUntracked, () => this.toggleUntracked()),
       vscode.commands.registerCommand(Commands.reviewOpenDiff, (f: ChangedFile) =>
         this.openDiff(f),
       ),
       vscode.commands.registerCommand(Commands.reviewAddComment, (r: vscode.CommentReply) =>
         this.addComment(r),
       ),
+      vscode.commands.registerCommand(Commands.reviewClearFeedback, () => this.clearFeedback()),
       vscode.commands.registerCommand(Commands.reviewSetSeverityBlocking, (c: RComment) =>
         this.setSeverity(c, "blocking"),
       ),
@@ -133,12 +140,6 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  private async toggleUntracked(): Promise<void> {
-    this.spec = { ...this.spec, includeUntracked: !this.spec.includeUntracked };
-    await this.store.setSpec(this.spec);
-    await this.refresh();
-  }
-
   private async openDiff(file: ChangedFile): Promise<void> {
     if (!this.repoRoot) {
       return;
@@ -173,8 +174,6 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const side = uri.path.replace(/^\//, "").split("/")[0] as "base" | "modified";
-    const params = new URLSearchParams(uri.query);
-    const repoRoot = params.get("repo") ? decodeURIComponent(params.get("repo")!) : this.repoRoot;
     const relPath = uri.path.replace(/^\/(base|modified)\//, "");
     const line = reply.thread.range?.start.line ?? 0;
 
@@ -209,7 +208,28 @@ export class ReviewController implements vscode.Disposable {
     reply.thread.label = `${relPath}:${line + 1}`;
     this.comments.set(model.id, comment);
     this.threads.set(reply.thread, [...(this.threads.get(reply.thread) ?? []), comment]);
-    void repoRoot;
+    this.changeEmitter.fire();
+  }
+
+  /** Clear all gathered review comments (after confirmation). */
+  private async clearFeedback(): Promise<void> {
+    if (this.comments.size === 0) {
+      return;
+    }
+    const choice = await vscode.window.showWarningMessage(
+      `Clear all ${this.comments.size} review comment(s)? This cannot be undone.`,
+      { modal: true },
+      "Clear"
+    );
+    if (choice !== "Clear") {
+      return;
+    }
+    for (const thread of this.threads.keys()) {
+      thread.dispose();
+    }
+    this.threads.clear();
+    this.comments.clear();
+    this.changeEmitter.fire();
   }
 
   private setSeverity(comment: RComment, severity: Severity): void {
@@ -222,10 +242,16 @@ export class ReviewController implements vscode.Disposable {
         thread.comments = [...thread.comments];
       }
     }
+    this.changeEmitter.fire();
+  }
+
+  /** All review comments (for the Feedback panel). */
+  getComments(): ReviewComment[] {
+    return [...this.comments.values()].map((c) => c.model);
   }
 
   private allComments(): ReviewComment[] {
-    return [...this.comments.values()].map((c) => c.model);
+    return this.getComments();
   }
 
   private async sendFeedback(): Promise<void> {

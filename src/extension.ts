@@ -20,7 +20,12 @@ import { PlanReviewController } from "./plan/PlanReviewController.js";
 import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
 import { ReviewFeedbackQueue } from "./review/ReviewFeedbackQueue.js";
-import { ReviewTreeProvider } from "./review/ReviewTreeProvider.js";
+import { ReviewFileDecorationProvider } from "./review/ReviewFileDecorationProvider.js";
+import {
+  ReviewFeedbackProvider,
+  ReviewFilesProvider,
+  reviewSummary,
+} from "./review/reviewViews.js";
 import { RecentRepoStore } from "./storage/RecentRepoStore.js";
 import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
@@ -65,8 +70,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     agents,
     reviewFeedback,
   );
-  const reviewTree = new ReviewTreeProvider(reviewController);
+  const filesTree = new ReviewFilesProvider(reviewController);
+  const feedbackTree = new ReviewFeedbackProvider(reviewController);
+  const fileDecorations = new ReviewFileDecorationProvider();
   const switcher = new RepoSwitcher(repoService, worktrees, recents);
+
+  const reviewView = vscode.window.createTreeView(Views.review, { treeDataProvider: filesTree });
+  const syncReviewSummary = (): void => {
+    reviewView.description = reviewSummary(reviewController.getState().spec);
+  };
+  syncReviewSummary();
+
+  // Re-apply file decorations and the title summary whenever review state updates.
+  context.subscriptions.push(
+    reviewController.onDidChangeState(() => {
+      fileDecorations.refresh();
+      syncReviewSummary();
+    })
+  );
 
   context.subscriptions.push(
     agents,
@@ -76,14 +97,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     reviewContent,
     reviewController,
-    reviewTree,
+    filesTree,
+    feedbackTree,
+    fileDecorations,
     switcher,
+    reviewView,
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.review, reviewContent),
-    vscode.window.createTreeView(Views.reviewTree, {
-      treeDataProvider: reviewTree,
-      showCollapseAll: false,
-    }),
+    vscode.window.registerFileDecorationProvider(fileDecorations),
+    vscode.window.createTreeView(Views.reviewFeedback, { treeDataProvider: feedbackTree }),
   );
   void reviewController.refresh();
 

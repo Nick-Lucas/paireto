@@ -36,7 +36,8 @@
       },
       {
         "command": "tui-companion.plan.addComment",
-        "title": "Add Comment"
+        "title": "Add Comment",
+        "enablement": "!commentIsEmpty"
       },
       {
         "command": "tui-companion.plan.setSeverity.blocking",
@@ -58,7 +59,7 @@
       {
         "command": "tui-companion.review.pickMode",
         "title": "Change Review Mode",
-        "icon": "$(list-selection)"
+        "icon": "$(git-compare)"
       },
       {
         "command": "tui-companion.review.pickBase",
@@ -66,17 +67,18 @@
         "icon": "$(git-branch)"
       },
       {
-        "command": "tui-companion.review.toggleUntracked",
-        "title": "Toggle Untracked Files"
-      },
-      {
         "command": "tui-companion.review.openDiff",
         "title": "Open Diff"
       },
       {
         "command": "tui-companion.review.sendFeedback",
-        "title": "Send Review Feedback to Claude",
+        "title": "Send Feedback",
         "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "tui-companion.review.clearFeedback",
+        "title": "Clear Feedback",
+        "icon": "$(clear-all)"
       },
       {
         "command": "tui-companion.review.export",
@@ -85,7 +87,8 @@
       },
       {
         "command": "tui-companion.review.addComment",
-        "title": "Add Comment"
+        "title": "Add Comment",
+        "enablement": "!commentIsEmpty"
       },
       {
         "command": "tui-companion.review.setSeverity.blocking",
@@ -126,8 +129,13 @@
     "views": {
       "tui-companion": [
         {
-          "id": "tui.reviewTree",
-          "name": "Code Review",
+          "id": "tui.review",
+          "name": "Review",
+          "type": "tree"
+        },
+        {
+          "id": "tui.reviewFeedback",
+          "name": "Feedback",
           "type": "tree"
         }
       ]
@@ -155,12 +163,12 @@
         {
           "command": "tui-companion.plan.addComment",
           "when": "commentController == tui.plan",
-          "group": "inline"
+          "group": "inline@1"
         },
         {
           "command": "tui-companion.review.addComment",
           "when": "commentController == tui.review",
-          "group": "inline"
+          "group": "inline@1"
         }
       ],
       "comments/comment/title": [
@@ -197,29 +205,44 @@
       ],
       "view/title": [
         {
-          "command": "tui-companion.review.pickMode",
-          "when": "view == tui.reviewTree",
+          "command": "tui-companion.plan.approve",
+          "when": "view == tui.review && tui.planPending",
           "group": "navigation@1"
         },
         {
-          "command": "tui-companion.review.pickBase",
-          "when": "view == tui.reviewTree",
+          "command": "tui-companion.plan.sendFeedback",
+          "when": "view == tui.review && tui.planPending",
           "group": "navigation@2"
         },
         {
-          "command": "tui-companion.review.refresh",
-          "when": "view == tui.reviewTree",
+          "command": "tui-companion.review.pickMode",
+          "when": "view == tui.review",
           "group": "navigation@3"
         },
         {
+          "command": "tui-companion.review.pickBase",
+          "when": "view == tui.review",
+          "group": "navigation@4"
+        },
+        {
+          "command": "tui-companion.review.refresh",
+          "when": "view == tui.review",
+          "group": "navigation@5"
+        },
+        {
           "command": "tui-companion.review.sendFeedback",
-          "when": "view == tui.reviewTree",
-          "group": "1_actions@1"
+          "when": "view == tui.reviewFeedback",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tui-companion.review.clearFeedback",
+          "when": "view == tui.reviewFeedback",
+          "group": "navigation@2"
         },
         {
           "command": "tui-companion.review.export",
-          "when": "view == tui.reviewTree",
-          "group": "1_actions@2"
+          "when": "view == tui.reviewFeedback",
+          "group": "navigation@3"
         }
       ]
     },
