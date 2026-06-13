@@ -5,6 +5,7 @@ export const EXT_ID = "tui-companion";
 
 export const Commands = {
   openSwitcher: "tui-companion.openSwitcher",
+  switcherAcceptThisWindow: "tui-companion.switcher.acceptThisWindow",
   planApprove: "tui-companion.plan.approve",
   planSendFeedback: "tui-companion.plan.sendFeedback",
   planAddComment: "tui-companion.plan.addComment",

@@ -10,7 +10,7 @@ import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
 import { installPlugin } from "./bridge/PluginInstaller.js";
 import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
-import { Commands, Schemes, Views } from "./config.js";
+import { Schemes, Views } from "./config.js";
 import { DiffService } from "./git/DiffService.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
@@ -23,7 +23,7 @@ import { ReviewFeedbackQueue } from "./review/ReviewFeedbackQueue.js";
 import { ReviewTreeProvider } from "./review/ReviewTreeProvider.js";
 import { RecentRepoStore } from "./storage/RecentRepoStore.js";
 import { ReviewStore } from "./storage/ReviewStore.js";
-import { showRepoSwitcher } from "./status/repoSwitcher.js";
+import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -66,6 +66,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewFeedback,
   );
   const reviewTree = new ReviewTreeProvider(reviewController);
+  const switcher = new RepoSwitcher(repoService, worktrees, recents);
 
   context.subscriptions.push(
     agents,
@@ -76,6 +77,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewContent,
     reviewController,
     reviewTree,
+    switcher,
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.review, reviewContent),
     vscode.window.createTreeView(Views.reviewTree, {
@@ -120,12 +122,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     void recents.touch(current.root.fsPath);
   }
 
-  // 5. Commands.
-  context.subscriptions.push(
-    vscode.commands.registerCommand(Commands.openSwitcher, () =>
-      showRepoSwitcher(repoService, worktrees, recents),
-    ),
-  );
+  // (The repo switcher registers its own commands; see RepoSwitcher.)
 
   console.log("tui-companion active:", path.basename(context.extensionUri.fsPath));
 }

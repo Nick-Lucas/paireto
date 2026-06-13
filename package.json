@@ -21,6 +21,10 @@
         "icon": "$(repo)"
       },
       {
+        "command": "tui-companion.switcher.acceptThisWindow",
+        "title": "TUI Companion: Open Selected in This Window"
+      },
+      {
         "command": "tui-companion.plan.approve",
         "title": "Approve Plan",
         "icon": "$(check)"
@@ -100,11 +104,25 @@
       "activitybar": [
         {
           "id": "tui-companion",
-          "title": "Agent Review",
-          "icon": "$(comment-discussion)"
+          "title": "TUI Companion",
+          "icon": "media/tui-companion.svg"
         }
       ]
     },
+    "keybindings": [
+      {
+        "command": "tui-companion.openSwitcher",
+        "key": "cmd+shift+k",
+        "mac": "cmd+shift+k",
+        "win": "ctrl+shift+k",
+        "linux": "ctrl+shift+k"
+      },
+      {
+        "command": "tui-companion.switcher.acceptThisWindow",
+        "key": "shift+enter",
+        "when": "tui.switcherVisible"
+      }
+    ],
     "views": {
       "tui-companion": [
         {
@@ -115,6 +133,12 @@
       ]
     },
     "menus": {
+      "commandPalette": [
+        {
+          "command": "tui-companion.switcher.acceptThisWindow",
+          "when": "false"
+        }
+      ],
       "editor/title": [
         {
           "command": "tui-companion.plan.approve",
