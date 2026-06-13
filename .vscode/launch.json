@@ -10,11 +10,18 @@
 			"type": "extensionHost",
 			"request": "launch",
 			"args": [
-				"--extensionDevelopmentPath=${workspaceFolder}"
+				"--extensionDevelopmentPath=${workspaceFolder}",
+				// Open the current project folder in the dev host instead of an empty window
+				"${workspaceFolder}",
+				// Launch with a separate VS Code profile so a different theme is applied
+				// (create a profile named "Extension Dev" and set your alternative theme in it)
+				"--profile=Extension Dev"
 			],
 			"outFiles": [
 				"${workspaceFolder}/dist/**/*.js"
 			],
+			// Send extension output to the Debug Console (Output) rather than a terminal
+			"internalConsoleOptions": "openOnSessionStart",
 			"preLaunchTask": "${defaultBuildTask}"
 		}
 	]
