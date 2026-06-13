@@ -12,3 +12,6 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+
+# Ship the bundled Claude Code plugin (hook scripts + manifest) in the .vsix.
+!plugins/**

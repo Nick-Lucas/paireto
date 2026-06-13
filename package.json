@@ -9,15 +9,229 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "tui-companion.helloWorld",
-        "title": "Hello World"
+        "command": "tui-companion.openSwitcher",
+        "title": "TUI Companion: Switch Repository / Worktree",
+        "icon": "$(repo)"
+      },
+      {
+        "command": "tui-companion.plan.approve",
+        "title": "Approve Plan",
+        "icon": "$(check)"
+      },
+      {
+        "command": "tui-companion.plan.sendFeedback",
+        "title": "Send Plan Feedback to Claude",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "tui-companion.plan.addComment",
+        "title": "Add Comment"
+      },
+      {
+        "command": "tui-companion.plan.setSeverity.blocking",
+        "title": "Mark Blocking"
+      },
+      {
+        "command": "tui-companion.plan.setSeverity.suggestion",
+        "title": "Mark Suggestion"
+      },
+      {
+        "command": "tui-companion.plan.setSeverity.note",
+        "title": "Mark Note"
+      },
+      {
+        "command": "tui-companion.review.refresh",
+        "title": "Refresh Review",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "tui-companion.review.pickMode",
+        "title": "Change Review Mode",
+        "icon": "$(list-selection)"
+      },
+      {
+        "command": "tui-companion.review.pickBase",
+        "title": "Change Base Ref",
+        "icon": "$(git-branch)"
+      },
+      {
+        "command": "tui-companion.review.toggleUntracked",
+        "title": "Toggle Untracked Files"
+      },
+      {
+        "command": "tui-companion.review.openDiff",
+        "title": "Open Diff"
+      },
+      {
+        "command": "tui-companion.review.sendFeedback",
+        "title": "Send Review Feedback to Claude",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "tui-companion.review.export",
+        "title": "Export Review",
+        "icon": "$(save)"
+      },
+      {
+        "command": "tui-companion.review.addComment",
+        "title": "Add Comment"
+      },
+      {
+        "command": "tui-companion.review.setSeverity.blocking",
+        "title": "Mark Blocking"
+      },
+      {
+        "command": "tui-companion.review.setSeverity.suggestion",
+        "title": "Mark Suggestion"
+      },
+      {
+        "command": "tui-companion.review.setSeverity.note",
+        "title": "Mark Note"
       }
-    ]
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "tui-companion",
+          "title": "Agent Review",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "tui-companion": [
+        {
+          "id": "tui.reviewTree",
+          "name": "Code Review",
+          "type": "tree"
+        }
+      ]
+    },
+    "menus": {
+      "editor/title": [
+        {
+          "command": "tui-companion.plan.approve",
+          "when": "resourceScheme == tui-plan",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tui-companion.plan.sendFeedback",
+          "when": "resourceScheme == tui-plan",
+          "group": "navigation@2"
+        }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "tui-companion.plan.addComment",
+          "when": "commentController == tui.plan",
+          "group": "inline"
+        },
+        {
+          "command": "tui-companion.review.addComment",
+          "when": "commentController == tui.review",
+          "group": "inline"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "tui-companion.plan.setSeverity.blocking",
+          "when": "commentController == tui.plan",
+          "group": "1_severity@1"
+        },
+        {
+          "command": "tui-companion.plan.setSeverity.suggestion",
+          "when": "commentController == tui.plan",
+          "group": "1_severity@2"
+        },
+        {
+          "command": "tui-companion.plan.setSeverity.note",
+          "when": "commentController == tui.plan",
+          "group": "1_severity@3"
+        },
+        {
+          "command": "tui-companion.review.setSeverity.blocking",
+          "when": "commentController == tui.review",
+          "group": "1_severity@1"
+        },
+        {
+          "command": "tui-companion.review.setSeverity.suggestion",
+          "when": "commentController == tui.review",
+          "group": "1_severity@2"
+        },
+        {
+          "command": "tui-companion.review.setSeverity.note",
+          "when": "commentController == tui.review",
+          "group": "1_severity@3"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "tui-companion.review.pickMode",
+          "when": "view == tui.reviewTree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "tui-companion.review.pickBase",
+          "when": "view == tui.reviewTree",
+          "group": "navigation@2"
+        },
+        {
+          "command": "tui-companion.review.refresh",
+          "when": "view == tui.reviewTree",
+          "group": "navigation@3"
+        },
+        {
+          "command": "tui-companion.review.sendFeedback",
+          "when": "view == tui.reviewTree",
+          "group": "1_actions@1"
+        },
+        {
+          "command": "tui-companion.review.export",
+          "when": "view == tui.reviewTree",
+          "group": "1_actions@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "TUI Companion",
+      "properties": {
+        "tui-companion.plugin.autoInstall": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically register the bundled Claude Code plugin on activation."
+        },
+        "tui-companion.planGate.onUnavailable": {
+          "type": "string",
+          "enum": ["fail-open", "fail-visible", "deny"],
+          "default": "fail-open",
+          "description": "Plan-gate behavior when no VS Code window is listening for this repo."
+        },
+        "tui-companion.planGate.onTimeout": {
+          "type": "string",
+          "enum": ["fail-open", "fail-visible", "deny"],
+          "default": "fail-visible",
+          "description": "Plan-gate behavior when the review times out."
+        },
+        "tui-companion.planGate.onMalformed": {
+          "type": "string",
+          "enum": ["fail-open", "fail-visible", "deny"],
+          "default": "fail-visible",
+          "description": "Plan-gate behavior on a malformed response."
+        },
+        "tui-companion.planGate.timeoutSeconds": {
+          "type": "number",
+          "default": 345600,
+          "description": "Maximum seconds the plan gate blocks waiting for a review decision."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "pnpm run package",

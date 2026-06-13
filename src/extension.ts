@@ -1,25 +1,148 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
+// Activation entry point: constructs the services, wires the bridge handlers, registers commands
+// and providers, and serves a socket per open repo. Kept thin — each subsystem lives in its module.
+
+import * as path from "node:path";
+
 import * as vscode from "vscode";
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
-export function activate(context: vscode.ExtensionContext) {
-  // Use the console to output diagnostic information (console.log) and errors (console.error)
-  // This line of code will only be executed once when your extension is activated
-  console.log('Congratulations, your extension "tui-companion" is now active!');
+import { AgentSessionService } from "./agents/AgentSessionService.js";
+import { BridgeManager } from "./bridge/BridgeManager.js";
+import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
+import { installPlugin } from "./bridge/PluginInstaller.js";
+import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
+import { Commands, Schemes, Views } from "./config.js";
+import { DiffService } from "./git/DiffService.js";
+import { RepoService } from "./git/RepoService.js";
+import { WorktreeService } from "./git/WorktreeService.js";
+import { PlanContentProvider } from "./plan/PlanContentProvider.js";
+import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
+import { PlanReviewController } from "./plan/PlanReviewController.js";
+import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
+import { ReviewController } from "./review/ReviewController.js";
+import { ReviewFeedbackQueue } from "./review/ReviewFeedbackQueue.js";
+import { ReviewTreeProvider } from "./review/ReviewTreeProvider.js";
+import { RecentRepoStore } from "./storage/RecentRepoStore.js";
+import { ReviewStore } from "./storage/ReviewStore.js";
+import { showRepoSwitcher } from "./status/repoSwitcher.js";
+import { StatusBarController } from "./status/StatusBarController.js";
 
-  // The command has been defined in the package.json file
-  // Now provide the implementation of the command with registerCommand
-  // The commandId parameter must match the command field in package.json
-  const disposable = vscode.commands.registerCommand("tui-companion.helloWorld", () => {
-    // The code you place here will be executed every time your command is executed
-    // Display a message box to the user
-    vscode.window.showInformationMessage("Hello World from tui-companion!");
-  });
+export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  // 1. Mirror fail-mode config for the (settings-blind) hook scripts.
+  const config = readConfig();
+  try {
+    writeConfigMirror(config);
+  } catch (err) {
+    console.error("tui-companion: failed to write config mirror", err);
+  }
 
-  context.subscriptions.push(disposable);
+  // 2. Best-effort plugin install/registration (behind a setting; manual fallback documented).
+  if (vscode.workspace.getConfiguration("tui-companion").get<boolean>("plugin.autoInstall", true)) {
+    const pluginsRoot = vscode.Uri.joinPath(context.extensionUri, "plugins").fsPath;
+    const result = installPlugin(pluginsRoot);
+    console.log(`tui-companion: plugin install — ${result.detail}`);
+  }
+
+  // 3. Core services.
+  const agents = new AgentSessionService();
+  const repoService = new RepoService();
+  const worktrees = new WorktreeService();
+  const recents = new RecentRepoStore(context.globalState);
+  const planProvider = new PlanContentProvider();
+  const planGate = new PlanGateRegistry();
+  const planReview = new PlanReviewController(planProvider, planGate);
+  const reviewFeedback = new ReviewFeedbackQueue();
+  const statusBar = new StatusBarController(repoService, agents);
+
+  // Code review (Phase 3).
+  const diffService = new DiffService();
+  const reviewContent = new ReviewContentProvider();
+  const reviewStore = new ReviewStore(context.workspaceState);
+  const reviewController = new ReviewController(
+    repoService,
+    diffService,
+    reviewContent,
+    reviewStore,
+    agents,
+    reviewFeedback,
+  );
+  const reviewTree = new ReviewTreeProvider(reviewController);
+
+  context.subscriptions.push(
+    agents,
+    repoService,
+    planProvider,
+    planReview,
+    statusBar,
+    reviewContent,
+    reviewController,
+    reviewTree,
+    vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
+    vscode.workspace.registerTextDocumentContentProvider(Schemes.review, reviewContent),
+    vscode.window.createTreeView(Views.reviewTree, {
+      treeDataProvider: reviewTree,
+      showCollapseAll: false,
+    }),
+  );
+  void reviewController.refresh();
+
+  // 4. Bridge: one socket per open repo, dispatching inbound messages to the services.
+  const handlers: BridgeHandlers = {
+    onHookEvent: (msg) => {
+      agents.ingest(msg);
+      if (msg.event === "WorktreeCreate" || msg.event === "WorktreeRemove") {
+        worktrees.invalidate(msg.repoRoot);
+      }
+    },
+    onPlanReviewRequest: (msg) => planReview.presentPlan(msg),
+    onFeedbackPull: (msg) => reviewFeedback.pull(msg.sessionId),
+  };
+  const bridge = new BridgeManager(handlers);
+  context.subscriptions.push({ dispose: () => bridge.dispose() });
+  context.subscriptions.push({ dispose: () => planGate.drain({ decision: "allow" }) });
+
+  await repoService.init();
+
+  const serveOpenRepos = (): void => {
+    for (const repo of repoService.repositories) {
+      void bridge.ensureServerFor(repo.root.fsPath);
+    }
+  };
+  serveOpenRepos();
+  context.subscriptions.push(
+    repoService.onDidChange(() => {
+      serveOpenRepos();
+      void reviewController.refresh();
+    }),
+  );
+
+  const current = repoService.current();
+  if (current) {
+    void recents.touch(current.root.fsPath);
+  }
+
+  // 5. Commands.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(Commands.openSwitcher, () =>
+      showRepoSwitcher(repoService, worktrees, recents),
+    ),
+  );
+
+  console.log("tui-companion active:", path.basename(context.extensionUri.fsPath));
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate(): void {
+  // Disposables registered on context.subscriptions handle teardown (sockets, index entries).
+}
+
+function readConfig(): BridgeConfig {
+  const cfg = vscode.workspace.getConfiguration("tui-companion");
+  const gate = DEFAULT_CONFIG.planGate;
+  return {
+    planGate: {
+      onUnavailable: cfg.get("planGate.onUnavailable", gate.onUnavailable),
+      onTimeout: cfg.get("planGate.onTimeout", gate.onTimeout),
+      onMalformed: cfg.get("planGate.onMalformed", gate.onMalformed),
+      timeoutSeconds: cfg.get("planGate.timeoutSeconds", gate.timeoutSeconds),
+    },
+  };
+}

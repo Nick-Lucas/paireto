@@ -1,0 +1,13 @@
+{
+  "name": "tui-companion",
+  "owner": {
+    "name": "tui-companion"
+  },
+  "plugins": [
+    {
+      "name": "tui-companion",
+      "source": "./claude-code",
+      "description": "Bridges Claude Code to the VS Code TUI Companion extension (lifecycle telemetry + plan-approval gating)."
+    }
+  ]
+}
