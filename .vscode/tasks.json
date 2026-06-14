@@ -7,7 +7,7 @@
       "label": "watch",
       "dependsOn": ["npm: watch:tsc", "npm: watch:esbuild"],
       "presentation": {
-        "reveal": "silent", // "silent" only opens the terminal if the command errors out
+        "reveal": "never", // "silent" only opens the terminal if the command errors out
         "revealProblems": "never",
         "focus": false, // Keeps your cursor in the editor window
         "panel": "shared", // Reuses the same terminal instead of creating a new one each time
@@ -28,7 +28,7 @@
       "presentation": {
         "group": "watch",
         "revealProblems": "never",
-        "reveal": "silent", // "silent" only opens the terminal if the command errors out
+        "reveal": "never", // "silent" only opens the terminal if the command errors out
         "focus": false, // Keeps your cursor in the editor window
         "panel": "shared", // Reuses the same terminal instead of creating a new one each time
         "clear": true // Wipes old logs before running
@@ -45,7 +45,7 @@
         "group": "watch",
         "revealProblems": "never",
 
-        "reveal": "silent", // "silent" only opens the terminal if the command errors out
+        "reveal": "never",
         "focus": false, // Keeps your cursor in the editor window
         "panel": "shared", // Reuses the same terminal instead of creating a new one each time
         "clear": true // Wipes old logs before running
@@ -60,7 +60,7 @@
         "group": "watch",
         "revealProblems": "never",
 
-        "reveal": "silent", // "silent" only opens the terminal if the command errors out
+        "reveal": "never", // "silent" only opens the terminal if the command errors out
         "focus": false, // Keeps your cursor in the editor window
         "panel": "shared", // Reuses the same terminal instead of creating a new one each time
         "clear": true // Wipes old logs before running
@@ -74,7 +74,7 @@
         "group": "watch",
         "revealProblems": "never",
 
-        "reveal": "silent", // "silent" only opens the terminal if the command errors out
+        "reveal": "never", // "silent" only opens the terminal if the command errors out
         "focus": false, // Keeps your cursor in the editor window
         "panel": "shared", // Reuses the same terminal instead of creating a new one each time
         "clear": true // Wipes old logs before running
