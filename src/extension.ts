@@ -6,7 +6,6 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { AgentSessionService } from "./agents/AgentSessionService.js";
-import { AgentsProvider } from "./agents/AgentsProvider.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
 import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
@@ -16,21 +15,16 @@ import { DiffService } from "./git/DiffService.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
 import { PlanContentProvider } from "./plan/PlanContentProvider.js";
-import { PlanFeedbackProvider } from "./plan/PlanFeedbackProvider.js";
 import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
 import { PlanReviewController } from "./plan/PlanReviewController.js";
 import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
 import { ReviewFileDecorationProvider } from "./review/ReviewFileDecorationProvider.js";
-import {
-  ReviewFeedbackProvider,
-  ReviewFilesProvider,
-  reviewSummary,
-} from "./review/reviewViews.js";
 import { RecentRepoStore } from "./storage/RecentRepoStore.js";
 import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
+import { MainTreeProvider } from "./views/MainTreeProvider.js";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // 1. Mirror fail-mode config for the (settings-blind) hook scripts.
@@ -86,26 +80,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const reviewStore = new ReviewStore(context.workspaceState);
   const reviewController = new ReviewController(repoService, diffService, reviewStore);
 
-  const agentsTree = new AgentsProvider(agents);
-  const planTree = new PlanFeedbackProvider(planReview);
-  const filesTree = new ReviewFilesProvider(reviewController);
-  const feedbackTree = new ReviewFeedbackProvider(reviewController);
+  const mainTree = new MainTreeProvider(agents, reviewController, planReview);
   const fileDecorations = new ReviewFileDecorationProvider();
   const switcher = new RepoSwitcher(repoService, worktrees, recents);
 
-  const reviewView = vscode.window.createTreeView(Views.review, { treeDataProvider: filesTree });
-  const syncReviewSummary = (): void => {
-    reviewView.description = reviewSummary(reviewController.getState().spec);
-  };
-  syncReviewSummary();
-
-  // Re-apply file decorations and the title summary whenever review state updates.
-  context.subscriptions.push(
-    reviewController.onDidChangeState(() => {
-      fileDecorations.refresh();
-      syncReviewSummary();
-    })
-  );
+  // Refresh the changed-file status decorations whenever the review state updates.
+  context.subscriptions.push(reviewController.onDidChangeState(() => fileDecorations.refresh()));
 
   context.subscriptions.push(
     agents,
@@ -115,22 +95,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     reviewContent,
     reviewController,
-    agentsTree,
-    planTree,
-    filesTree,
-    feedbackTree,
+    mainTree,
     fileDecorations,
     switcher,
-    reviewView,
     vscode.commands.registerCommand(Commands.focusAgent, () =>
       vscode.commands.executeCommand("workbench.action.terminal.focus")
     ),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.review, reviewContent),
     vscode.window.registerFileDecorationProvider(fileDecorations),
-    vscode.window.createTreeView(Views.agents, { treeDataProvider: agentsTree }),
-    vscode.window.createTreeView(Views.planReview, { treeDataProvider: planTree }),
-    vscode.window.createTreeView(Views.reviewFeedback, { treeDataProvider: feedbackTree }),
+    vscode.window.createTreeView(Views.main, { treeDataProvider: mainTree }),
   );
   void reviewController.refresh();
 

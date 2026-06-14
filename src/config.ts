@@ -35,10 +35,8 @@ export const Schemes = {
 } as const;
 
 export const Views = {
-  agents: "tui.agents",
-  planReview: "tui.planReview",
-  review: "tui.review",
-  reviewFeedback: "tui.reviewFeedback",
+  /** The single combined sidebar view (Agents / Plan / Files / Feedback sections). */
+  main: "tui.main",
 } as const;
 
 export const ContextKeys = {

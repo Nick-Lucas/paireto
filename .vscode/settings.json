@@ -1,32 +1,32 @@
 // Place your settings in this file to overwrite default and user settings.
 {
-    "files.exclude": {
-        "out": false, // set this to true to hide the "out" folder with the compiled JS files
-        "dist": false // set this to true to hide the "dist" folder with the compiled JS files
-    },
-    "search.exclude": {
-        "out": true, // set this to false to include "out" folder in search results
-        "dist": true // set this to false to include "dist" folder in search results
-    },
-    // Turn off tsc task auto detection since we have the necessary tasks as npm scripts
-    "typescript.tsc.autoDetect": "off",
-    // Format with oxfmt and apply oxlint fixes on save (via the oxc.oxc-vscode extension).
-    // Both run through codeActionsOnSave so ordering is deterministic: format first, then lint fixes.
-    "editor.defaultFormatter": "oxc.oxc-vscode",
-    "editor.codeActionsOnSave": {
-        "source.format.oxc": "always",
-        "source.fixAll.oxc": "always"
-    },
-    "[typescript]": {
-        "editor.defaultFormatter": "oxc.oxc-vscode"
-    },
-    "[javascript]": {
-        "editor.defaultFormatter": "oxc.oxc-vscode"
-    },
-    "[json]": {
-        "editor.defaultFormatter": "oxc.oxc-vscode"
-    },
-    "[jsonc]": {
-        "editor.defaultFormatter": "oxc.oxc-vscode"
-    }
+  "files.exclude": {
+    "out": false, // set this to true to hide the "out" folder with the compiled JS files
+    "dist": false // set this to true to hide the "dist" folder with the compiled JS files
+  },
+  "search.exclude": {
+    "out": true, // set this to false to include "out" folder in search results
+    "dist": true // set this to false to include "dist" folder in search results
+  },
+  // Turn off tsc task auto detection since we have the necessary tasks as npm scripts
+  "typescript.tsc.autoDetect": "off",
+  // Format with oxfmt and apply oxlint fixes on save (via the oxc.oxc-vscode extension).
+  // Both run through codeActionsOnSave so ordering is deterministic: format first, then lint fixes.
+  "editor.defaultFormatter": "oxc.oxc-vscode",
+  "editor.codeActionsOnSave": {
+    "source.format.oxc": "always",
+    "source.fixAll.oxc": "always"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[json]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[jsonc]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  }
 }

@@ -128,6 +128,11 @@ export class PlanReviewController implements vscode.Disposable {
     return [...this.reviews.values()].flatMap((r) => this.collect(r));
   }
 
+  /** True while a plan is awaiting review (drives the Plan Review section). */
+  hasPendingPlan(): boolean {
+    return this.reviews.size > 0;
+  }
+
   private resolveReview(uri?: vscode.Uri): PlanReview | undefined {
     const target = uri ?? vscode.window.activeTextEditor?.document.uri;
     if (target && this.reviews.has(target.toString())) {

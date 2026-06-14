@@ -1,18 +1,40 @@
 {
   "name": "tui-companion",
   "displayName": "tui-companion",
-  "description": "Companion for TUI AI Harnesses",
   "version": "0.0.1",
-  "engines": {
-    "vscode": "^1.120.0"
-  },
+  "description": "Companion for TUI AI Harnesses",
   "categories": [
     "Other"
   ],
-  "activationEvents": [
-    "onStartupFinished"
-  ],
   "main": "./dist/extension.js",
+  "scripts": {
+    "vscode:prepublish": "pnpm run package",
+    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+    "watch": "npm-run-all -p watch:*",
+    "watch:esbuild": "node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "package": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
+    "compile-tests": "tsc -p . --outDir out",
+    "watch-tests": "tsc -p . -w --outDir out",
+    "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
+    "check-types": "tsc --noEmit",
+    "lint": "oxlint src",
+    "format": "oxfmt --check src",
+    "autofix": "oxlint --fix src && oxfmt src",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "22.x",
+    "@types/vscode": "^1.120.0",
+    "@vscode/test-cli": "^0.0.12",
+    "@vscode/test-electron": "^2.5.2",
+    "esbuild": "^0.27.3",
+    "npm-run-all": "^4.1.5",
+    "oxfmt": "^0.54.0",
+    "oxlint": "^1.69.0",
+    "typescript": "^5.9.3"
+  },
   "contributes": {
     "commands": [
       {
@@ -152,51 +174,54 @@
     "views": {
       "tui-companion": [
         {
-          "id": "tui.agents",
-          "name": "Agents",
+          "id": "tui.main",
+          "name": "TUI Companion",
           "type": "tree"
-        },
-        {
-          "id": "tui.planReview",
-          "name": "Plan Review",
-          "type": "tree",
-          "when": "tui.planPending"
-        },
-        {
-          "id": "tui.review",
-          "name": "Review",
-          "type": "tree",
-          "when": "tui.reviewSessionActive"
-        },
-        {
-          "id": "tui.reviewFeedback",
-          "name": "Feedback",
-          "type": "tree",
-          "when": "tui.reviewSessionActive"
         }
       ]
     },
-    "viewsWelcome": [
-      {
-        "view": "tui.agents",
-        "contents": "No Claude Code agents connected yet.\n\nStart `claude` in a terminal inside this repository — sessions appear here once the plugin's hooks fire.\n\nRun `/tui-review` in an agent to open a code review."
-      }
-    ],
     "menus": {
       "commandPalette": [
         {
           "command": "tui-companion.switcher.acceptThisWindow",
           "when": "false"
         },
-        { "command": "tui-companion.plan.addQuestion", "when": "false" },
-        { "command": "tui-companion.plan.addComment", "when": "false" },
-        { "command": "tui-companion.plan.addProblem", "when": "false" },
-        { "command": "tui-companion.review.addQuestion", "when": "false" },
-        { "command": "tui-companion.review.addComment", "when": "false" },
-        { "command": "tui-companion.review.addProblem", "when": "false" },
-        { "command": "tui-companion.review.openDiff", "when": "false" },
-        { "command": "tui-companion.review.revealComment", "when": "false" },
-        { "command": "tui-companion.review.deleteComment", "when": "false" }
+        {
+          "command": "tui-companion.plan.addQuestion",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.plan.addComment",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.plan.addProblem",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.review.addQuestion",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.review.addComment",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.review.addProblem",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.review.openDiff",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.review.revealComment",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.review.deleteComment",
+          "when": "false"
+        }
       ],
       "editor/title": [
         {
@@ -244,66 +269,61 @@
       ],
       "view/item/context": [
         {
+          "command": "tui-companion.focusAgent",
+          "when": "view == tui.main && viewItem == agentSession",
+          "group": "inline@1"
+        },
+        {
           "command": "tui-companion.review.deleteComment",
-          "when": "view == tui.reviewFeedback && viewItem == reviewComment",
+          "when": "view == tui.main && viewItem == reviewComment",
           "group": "inline@1"
         }
       ],
       "view/title": [
         {
-          "command": "tui-companion.focusAgent",
-          "when": "view == tui.agents",
-          "group": "navigation@1"
-        },
-        {
-          "command": "tui-companion.plan.approve",
-          "when": "view == tui.planReview",
-          "group": "navigation@1"
-        },
-        {
-          "command": "tui-companion.plan.sendFeedback",
-          "when": "view == tui.planReview",
-          "group": "navigation@2"
-        },
-        {
           "command": "tui-companion.review.pickMode",
-          "when": "view == tui.review",
+          "when": "view == tui.main",
           "group": "navigation@1"
         },
         {
           "command": "tui-companion.review.pickBase",
-          "when": "view == tui.review",
+          "when": "view == tui.main",
           "group": "navigation@2"
         },
         {
           "command": "tui-companion.review.refresh",
-          "when": "view == tui.review",
+          "when": "view == tui.main",
           "group": "navigation@3"
         },
         {
-          "command": "tui-companion.review.cancel",
-          "when": "view == tui.review",
+          "command": "tui-companion.plan.approve",
+          "when": "view == tui.main && tui.planPending",
           "group": "navigation@4"
+        },
+        {
+          "command": "tui-companion.plan.sendFeedback",
+          "when": "view == tui.main && tui.planPending",
+          "group": "navigation@5"
         },
         {
           "command": "tui-companion.review.sendFeedback",
-          "when": "view == tui.reviewFeedback",
-          "group": "navigation@1"
+          "when": "view == tui.main && tui.reviewSessionActive",
+          "group": "navigation@6"
         },
         {
           "command": "tui-companion.review.clearFeedback",
-          "when": "view == tui.reviewFeedback",
-          "group": "navigation@2"
+          "when": "view == tui.main && tui.reviewSessionActive",
+          "group": "navigation@7"
         },
         {
           "command": "tui-companion.review.export",
-          "when": "view == tui.reviewFeedback",
-          "group": "navigation@3"
+          "when": "view == tui.main && tui.reviewSessionActive",
+          "group": "navigation@8"
         },
         {
           "command": "tui-companion.review.cancel",
-          "when": "view == tui.reviewFeedback",
-          "group": "navigation@4"
+          "when": "view == tui.main && tui.reviewSessionActive",
+          "group": "navigation@9"
         }
       ]
     },
@@ -317,19 +337,31 @@
         },
         "tui-companion.planGate.onUnavailable": {
           "type": "string",
-          "enum": ["fail-open", "fail-visible", "deny"],
+          "enum": [
+            "fail-open",
+            "fail-visible",
+            "deny"
+          ],
           "default": "fail-open",
           "description": "Plan-gate behavior when no VS Code window is listening for this repo."
         },
         "tui-companion.planGate.onTimeout": {
           "type": "string",
-          "enum": ["fail-open", "fail-visible", "deny"],
+          "enum": [
+            "fail-open",
+            "fail-visible",
+            "deny"
+          ],
           "default": "fail-visible",
           "description": "Plan-gate behavior when the review times out."
         },
         "tui-companion.planGate.onMalformed": {
           "type": "string",
-          "enum": ["fail-open", "fail-visible", "deny"],
+          "enum": [
+            "fail-open",
+            "fail-visible",
+            "deny"
+          ],
           "default": "fail-visible",
           "description": "Plan-gate behavior on a malformed response."
         },
@@ -341,32 +373,10 @@
       }
     }
   },
-  "scripts": {
-    "vscode:prepublish": "pnpm run package",
-    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
-    "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
-    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "package": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
-    "compile-tests": "tsc -p . --outDir out",
-    "watch-tests": "tsc -p . -w --outDir out",
-    "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
-    "check-types": "tsc --noEmit",
-    "lint": "oxlint src",
-    "format": "oxfmt --check src",
-    "autofix": "oxlint --fix src && oxfmt src",
-    "test": "vscode-test"
-  },
-  "devDependencies": {
-    "@types/mocha": "^10.0.10",
-    "@types/node": "22.x",
-    "@types/vscode": "^1.120.0",
-    "@vscode/test-cli": "^0.0.12",
-    "@vscode/test-electron": "^2.5.2",
-    "esbuild": "^0.27.3",
-    "npm-run-all": "^4.1.5",
-    "oxfmt": "^0.54.0",
-    "oxlint": "^1.69.0",
-    "typescript": "^5.9.3"
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "engines": {
+    "vscode": "^1.120.0"
   }
 }

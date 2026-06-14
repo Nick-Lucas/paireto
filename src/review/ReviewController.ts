@@ -71,7 +71,10 @@ export class ReviewController implements vscode.Disposable {
       placeHolder: "Leave a comment for Claude",
     };
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) => fullDocumentCommentingRanges(doc, Schemes.review),
+      // Commenting is only enabled during an active /tui-review session; outside one the diffs are
+      // browse-only (the Changed Files section is always available).
+      provideCommentingRanges: (doc) =>
+        this.isSessionActive() ? fullDocumentCommentingRanges(doc, Schemes.review) : undefined,
     };
 
     this.disposables.push(
@@ -112,9 +115,9 @@ export class ReviewController implements vscode.Disposable {
   async startSession(requestId: string): Promise<ReviewGateResult> {
     this.activeRequestId = requestId;
     await this.setSessionActive(true);
-    await this.refresh();
+    await this.refresh(); // fires onDidChangeState → the Files/Feedback sections appear
     try {
-      await vscode.commands.executeCommand(`${Views.review}.focus`);
+      await vscode.commands.executeCommand(`${Views.main}.focus`);
     } catch {
       /* view may not be registered yet — non-fatal */
     }
@@ -122,8 +125,14 @@ export class ReviewController implements vscode.Disposable {
     if (this.activeRequestId === requestId) {
       this.activeRequestId = undefined;
       await this.setSessionActive(false);
+      this.changeEmitter.fire(); // sections collapse away
     }
     return result;
+  }
+
+  /** True while a /tui-review session is open (drives the Files/Feedback sections). */
+  isSessionActive(): boolean {
+    return this.activeRequestId !== undefined;
   }
 
   private async setSessionActive(active: boolean): Promise<void> {
