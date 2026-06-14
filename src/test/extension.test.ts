@@ -10,6 +10,7 @@ import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
+import { isStaleActive, STALE_ACTIVE_MS_FOR_TEST } from "../agents/AgentSessionService.js";
 
 suite("repoKey", () => {
   test("is deterministic and 16 hex chars", () => {
@@ -148,5 +149,26 @@ suite("ReviewGateRegistry", () => {
     reg.drain({ status: "cancelled", feedback: "" });
     assert.deepStrictEqual(await a, { status: "cancelled", feedback: "" });
     assert.deepStrictEqual(await b, { status: "cancelled", feedback: "" });
+  });
+});
+
+suite("isStaleActive (interrupt fallback)", () => {
+  const now = 1_000_000_000;
+  const old = now - STALE_ACTIVE_MS_FOR_TEST - 1;
+
+  test("active + silent past the window is stale", () => {
+    assert.strictEqual(isStaleActive("thinking", old, now), true);
+    assert.strictEqual(isStaleActive("toolRunning", old, now), true);
+  });
+
+  test("active but recent is not stale", () => {
+    assert.strictEqual(isStaleActive("thinking", now - 1000, now), false);
+  });
+
+  test("non-active states never go stale (resolved by their own flows)", () => {
+    assert.strictEqual(isStaleActive("idle", old, now), false);
+    assert.strictEqual(isStaleActive("stopped", old, now), false);
+    assert.strictEqual(isStaleActive("awaitingPlanApproval", old, now), false);
+    assert.strictEqual(isStaleActive("awaitingPermission", old, now), false);
   });
 });

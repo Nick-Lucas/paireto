@@ -10,6 +10,26 @@ import type { AgentSession, AgentState } from "../types.js";
 
 const ENDED_RETAIN_MS = 4000;
 
+// Claude Code fires NO hook on user interrupt (Esc): per the docs, `Stop` does not fire on
+// interrupts and there is no abort/cancel event. So a "thinking"/"toolRunning" session can be left
+// spinning forever after an interrupt. We bound that with a staleness sweep: an active session with
+// no telemetry for this long is downgraded to idle. It self-corrects instantly on the next event
+// (UserPromptSubmit/PreToolUse/Stop), so the only cost is a brief wrong-idle during a genuinely
+// silent operation longer than this window.
+const STALE_ACTIVE_MS = 120_000;
+const SWEEP_INTERVAL_MS = 20_000;
+
+/** States that represent the agent actively working (and so can go stale after an interrupt). */
+const ACTIVE_STATES: ReadonlySet<AgentState> = new Set<AgentState>(["thinking", "toolRunning"]);
+
+/** True if an active session has gone silent long enough to be treated as idle. */
+export function isStaleActive(state: AgentState, lastEventAt: number, now: number): boolean {
+  return ACTIVE_STATES.has(state) && lastEventAt < now - STALE_ACTIVE_MS;
+}
+
+/** Exposed for tests. */
+export const STALE_ACTIVE_MS_FOR_TEST = STALE_ACTIVE_MS;
+
 export interface RepoActivity {
   sessionCount: number;
   subagentCount: number;
@@ -20,6 +40,28 @@ export class AgentSessionService implements vscode.Disposable {
   private readonly sessions = new Map<string, AgentSession>();
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changeEmitter.event;
+  private readonly sweepTimer: ReturnType<typeof setInterval>;
+
+  constructor() {
+    this.sweepTimer = setInterval(() => this.sweepStale(), SWEEP_INTERVAL_MS);
+    // Don't keep the host process alive just for the sweep.
+    this.sweepTimer.unref?.();
+  }
+
+  /** Downgrade active sessions that have gone silent (e.g. after an un-hookable user interrupt). */
+  private sweepStale(): void {
+    const now = Date.now();
+    let changed = false;
+    for (const session of this.sessions.values()) {
+      if (isStaleActive(session.state, session.lastEventAt, now)) {
+        session.state = "idle";
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.changeEmitter.fire();
+    }
+  }
 
   ingest(msg: HookEventMessage): void {
     const now = Date.now();
@@ -118,6 +160,7 @@ export class AgentSessionService implements vscode.Disposable {
   }
 
   dispose(): void {
+    clearInterval(this.sweepTimer);
     this.sessions.clear();
     this.changeEmitter.dispose();
   }
