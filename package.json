@@ -106,6 +106,16 @@
         "command": "tui-companion.review.deleteComment",
         "title": "Delete Comment",
         "icon": "$(trash)"
+      },
+      {
+        "command": "tui-companion.review.cancel",
+        "title": "Cancel Review",
+        "icon": "$(close)"
+      },
+      {
+        "command": "tui-companion.focusAgent",
+        "title": "Focus Agent",
+        "icon": "$(terminal)"
       }
     ],
     "viewsContainers": {
@@ -142,17 +152,36 @@
     "views": {
       "tui-companion": [
         {
+          "id": "tui.agents",
+          "name": "Agents",
+          "type": "tree"
+        },
+        {
+          "id": "tui.planReview",
+          "name": "Plan Review",
+          "type": "tree",
+          "when": "tui.planPending"
+        },
+        {
           "id": "tui.review",
           "name": "Review",
-          "type": "tree"
+          "type": "tree",
+          "when": "tui.reviewSessionActive"
         },
         {
           "id": "tui.reviewFeedback",
           "name": "Feedback",
-          "type": "tree"
+          "type": "tree",
+          "when": "tui.reviewSessionActive"
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "tui.agents",
+        "contents": "No Claude Code agents connected yet.\n\nStart `claude` in a terminal inside this repository — sessions appear here once the plugin's hooks fire.\n\nRun `/tui-review` in an agent to open a code review."
+      }
+    ],
     "menus": {
       "commandPalette": [
         {
@@ -222,29 +251,39 @@
       ],
       "view/title": [
         {
+          "command": "tui-companion.focusAgent",
+          "when": "view == tui.agents",
+          "group": "navigation@1"
+        },
+        {
           "command": "tui-companion.plan.approve",
-          "when": "view == tui.review && tui.planPending",
+          "when": "view == tui.planReview",
           "group": "navigation@1"
         },
         {
           "command": "tui-companion.plan.sendFeedback",
-          "when": "view == tui.review && tui.planPending",
+          "when": "view == tui.planReview",
           "group": "navigation@2"
         },
         {
           "command": "tui-companion.review.pickMode",
           "when": "view == tui.review",
-          "group": "navigation@3"
+          "group": "navigation@1"
         },
         {
           "command": "tui-companion.review.pickBase",
           "when": "view == tui.review",
-          "group": "navigation@4"
+          "group": "navigation@2"
         },
         {
           "command": "tui-companion.review.refresh",
           "when": "view == tui.review",
-          "group": "navigation@5"
+          "group": "navigation@3"
+        },
+        {
+          "command": "tui-companion.review.cancel",
+          "when": "view == tui.review",
+          "group": "navigation@4"
         },
         {
           "command": "tui-companion.review.sendFeedback",
@@ -260,6 +299,11 @@
           "command": "tui-companion.review.export",
           "when": "view == tui.reviewFeedback",
           "group": "navigation@3"
+        },
+        {
+          "command": "tui-companion.review.cancel",
+          "when": "view == tui.reviewFeedback",
+          "group": "navigation@4"
         }
       ]
     },

@@ -104,6 +104,11 @@ export class AgentSessionService implements vscode.Disposable {
     return [...this.sessions.values()].filter((s) => canonicalize(s.repoRoot) === target);
   }
 
+  /** All tracked sessions (most recently active first), for the Agents panel. */
+  allSessions(): AgentSession[] {
+    return [...this.sessions.values()].sort((a, b) => b.lastEventAt - a.lastEventAt);
+  }
+
   /** Aggregate the busiest state for a repo (for the status-bar glyph). */
   activityForRepo(repoRoot: string): RepoActivity {
     const sessions = this.sessionsForRepo(repoRoot).filter((s) => s.state !== "ended");

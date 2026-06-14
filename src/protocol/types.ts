@@ -29,8 +29,8 @@ export type MessageType =
   | "hook.event"
   | "plan.review.request"
   | "plan.review.response"
-  | "feedback.pull.request"
-  | "feedback.pull.response";
+  | "review.await.request"
+  | "review.await.response";
 
 export interface Envelope {
   /** Message type tag. */
@@ -102,18 +102,25 @@ export interface PlanReviewResponse extends Envelope {
   reason?: string;
 }
 
-/** Hook pulls any queued code-review feedback for a session (used by UserPromptSubmit). */
-export interface FeedbackPullRequest extends Envelope {
-  t: "feedback.pull.request";
+/**
+ * Blocking code-review session. Sent by the MCP `tui_review` tool when the agent starts a review;
+ * the extension reveals the review panels and holds this open until the user submits or cancels.
+ */
+export interface ReviewAwaitRequest extends Envelope {
+  t: "review.await.request";
   id: string;
-  sessionId: string;
+  cwd: string;
   repoRoot: string;
 }
 
-export interface FeedbackPullResponse extends Envelope {
-  t: "feedback.pull.response";
+export type ReviewStatus = "submitted" | "cancelled";
+
+/** Extension's response to a {@link ReviewAwaitRequest}; same `id`. */
+export interface ReviewAwaitResponse extends Envelope {
+  t: "review.await.response";
   id: string;
-  /** Rendered feedback text to inject via additionalContext, or empty if none queued. */
+  status: ReviewStatus;
+  /** Rendered review feedback (empty when cancelled or no comments). */
   feedback: string;
 }
 
@@ -123,5 +130,5 @@ export type AnyMessage =
   | HookEventMessage
   | PlanReviewRequest
   | PlanReviewResponse
-  | FeedbackPullRequest
-  | FeedbackPullResponse;
+  | ReviewAwaitRequest
+  | ReviewAwaitResponse;

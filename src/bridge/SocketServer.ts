@@ -139,14 +139,15 @@ export class SocketServer {
         });
         break;
       }
-      case "feedback.pull.request": {
-        const feedback = this.handlers.onFeedbackPull(msg);
+      case "review.await.request": {
+        const result = await this.handlers.onReviewAwait(msg);
         send({
-          t: "feedback.pull.response",
+          t: "review.await.response",
           v: PROTOCOL_VERSION,
           id: msg.id,
           ts: new Date().toISOString(),
-          feedback,
+          status: result.status,
+          feedback: result.feedback,
         });
         break;
       }

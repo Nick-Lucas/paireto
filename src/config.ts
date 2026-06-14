@@ -23,6 +23,8 @@ export const Commands = {
   reviewAddProblem: "tui-companion.review.addProblem",
   reviewRevealComment: "tui-companion.review.revealComment",
   reviewDeleteComment: "tui-companion.review.deleteComment",
+  reviewCancel: "tui-companion.review.cancel",
+  focusAgent: "tui-companion.focusAgent",
 } as const;
 
 export const Schemes = {
@@ -33,6 +35,8 @@ export const Schemes = {
 } as const;
 
 export const Views = {
+  agents: "tui.agents",
+  planReview: "tui.planReview",
   review: "tui.review",
   reviewFeedback: "tui.reviewFeedback",
 } as const;
@@ -40,6 +44,7 @@ export const Views = {
 export const ContextKeys = {
   switcherVisible: "tui.switcherVisible",
   planPending: "tui.planPending",
+  reviewSessionActive: "tui.reviewSessionActive",
 } as const;
 
 export const StateKeys = {

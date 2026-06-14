@@ -6,15 +6,15 @@ import * as crypto from "node:crypto";
 
 import * as vscode from "vscode";
 
-import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { kindLabel, type CommentKind } from "../comments/kinds.js";
-import { Commands, Schemes } from "../config.js";
+import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { DiffService, type ChangedFile } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
-import type { ReviewFeedbackQueue } from "./ReviewFeedbackQueue.js";
+import type { ReviewGateResult } from "../bridge/types.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
+import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
 import { pickBaseRef, pickMode } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
@@ -56,13 +56,13 @@ export class ReviewController implements vscode.Disposable {
   private repoRoot?: string;
   private readonly comments = new Map<string, RComment>(); // comment id -> comment
   private readonly threads = new Map<vscode.CommentThread, RComment[]>();
+  private readonly gate = new ReviewGateRegistry();
+  private activeRequestId?: string;
 
   constructor(
     private readonly repoService: RepoService,
     private readonly diff: DiffService,
     private readonly store: ReviewStore,
-    private readonly agents: AgentSessionService,
-    private readonly feedbackQueue: ReviewFeedbackQueue,
   ) {
     this.spec = store.getSpec();
     this.controller = vscode.comments.createCommentController("tui.review", "Code Review");
@@ -100,8 +100,39 @@ export class ReviewController implements vscode.Disposable {
         this.deleteComment(c),
       ),
       vscode.commands.registerCommand(Commands.reviewSendFeedback, () => this.sendFeedback()),
+      vscode.commands.registerCommand(Commands.reviewCancel, () => this.cancelReview()),
       vscode.commands.registerCommand(Commands.reviewExport, () => this.exportReview()),
     );
+  }
+
+  /**
+   * Begin a blocking review session (invoked by the MCP tui_review tool via the bridge). Reveals
+   * the review panels and resolves when the user clicks Send Feedback or Cancel.
+   */
+  async startSession(requestId: string): Promise<ReviewGateResult> {
+    this.activeRequestId = requestId;
+    await this.setSessionActive(true);
+    await this.refresh();
+    try {
+      await vscode.commands.executeCommand(`${Views.review}.focus`);
+    } catch {
+      /* view may not be registered yet — non-fatal */
+    }
+    const result = await this.gate.awaitDecision(requestId);
+    if (this.activeRequestId === requestId) {
+      this.activeRequestId = undefined;
+      await this.setSessionActive(false);
+    }
+    return result;
+  }
+
+  private async setSessionActive(active: boolean): Promise<void> {
+    await vscode.commands.executeCommand("setContext", ContextKeys.reviewSessionActive, active);
+  }
+
+  /** Resolve any outstanding review gate (on dispose) so the MCP tool doesn't hang. */
+  drainGate(): void {
+    this.gate.drain({ status: "cancelled", feedback: "" });
   }
 
   getState(): ReviewState {
@@ -279,59 +310,50 @@ export class ReviewController implements vscode.Disposable {
     return [...this.comments.values()].map((c) => c.model);
   }
 
-  private allComments(): ReviewComment[] {
-    return this.getComments();
+  /** Resolve the active review session with the gathered feedback, then reset. */
+  private sendFeedback(): void {
+    if (!this.activeRequestId) {
+      return;
+    }
+    const feedback = renderReviewFeedback(this.getComments());
+    if (!feedback) {
+      void vscode.window.showWarningMessage(
+        "No comments to send. Add a comment, or Cancel the review."
+      );
+      return;
+    }
+    this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
+    this.resetComments();
   }
 
-  private async sendFeedback(): Promise<void> {
-    const feedback = renderReviewFeedback(this.allComments());
-    if (!feedback) {
-      void vscode.window.showWarningMessage("No unresolved suggestion/blocking comments to send.");
+  /** Resolve the active review session as cancelled (agent proceeds with no changes). */
+  private cancelReview(): void {
+    if (!this.activeRequestId) {
       return;
     }
-    if (!this.repoRoot) {
-      return;
+    this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
+    this.resetComments();
+  }
+
+  private resetComments(): void {
+    for (const thread of this.threads.keys()) {
+      thread.dispose();
     }
-    const sessions = this.agents
-      .sessionsForRepo(this.repoRoot)
-      .sort((a, b) => b.lastEventAt - a.lastEventAt);
-    if (sessions.length === 0) {
-      void vscode.window.showWarningMessage(
-        "No active Claude session for this repo. Feedback was not queued.",
-      );
-      return;
-    }
-    let target = sessions[0];
-    if (sessions.length > 1) {
-      const pick = await vscode.window.showQuickPick(
-        sessions.map((s) => ({ label: s.sessionId, description: s.state, session: s })),
-        { title: "Send feedback to which Claude session?" },
-      );
-      if (!pick) {
-        return;
-      }
-      target = pick.session;
-    }
-    this.feedbackQueue.enqueue(target.sessionId, feedback);
-    void vscode.window.showInformationMessage(
-      "Review feedback queued — it will be delivered to Claude on the next prompt.",
-    );
+    this.threads.clear();
+    this.comments.clear();
+    this.changeEmitter.fire();
   }
 
   private async exportReview(): Promise<void> {
     if (!this.repoRoot) {
       return;
     }
-    const file = await this.store.export(
-      this.repoRoot,
-      this.reviewId,
-      this.spec,
-      this.allComments(),
-    );
+    const file = await this.store.export(this.repoRoot, this.reviewId, this.spec, this.getComments());
     void vscode.window.showInformationMessage(`Review exported to ${file}`);
   }
 
   dispose(): void {
+    this.drainGate();
     for (const d of this.disposables) {
       d.dispose();
     }

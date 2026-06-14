@@ -43,6 +43,9 @@ export class PlanReviewController implements vscode.Disposable {
   private readonly controller: vscode.CommentController;
   private readonly reviews = new Map<string, PlanReview>(); // uri.toString() -> review
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  /** Fires when the gathered plan comments change (drives the Plan Review panel). */
+  readonly onDidChange = this.changeEmitter.event;
 
   constructor(
     private readonly provider: PlanContentProvider,
@@ -117,6 +120,12 @@ export class PlanReviewController implements vscode.Disposable {
     if (!review.threads.includes(reply.thread)) {
       review.threads.push(reply.thread);
     }
+    this.changeEmitter.fire();
+  }
+
+  /** All gathered plan comments across pending reviews (drives the Plan Review panel). */
+  getComments(): PlanCommentData[] {
+    return [...this.reviews.values()].flatMap((r) => this.collect(r));
   }
 
   private resolveReview(uri?: vscode.Uri): PlanReview | undefined {
@@ -191,6 +200,7 @@ export class PlanReviewController implements vscode.Disposable {
     }
     this.provider.clear(uri);
     this.updatePendingContext();
+    this.changeEmitter.fire();
   }
 
   private updatePendingContext(): void {
@@ -205,6 +215,7 @@ export class PlanReviewController implements vscode.Disposable {
     for (const d of this.disposables) {
       d.dispose();
     }
+    this.changeEmitter.dispose();
     this.reviews.clear();
   }
 }

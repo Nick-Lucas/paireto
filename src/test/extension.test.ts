@@ -9,6 +9,7 @@ import { parseNameStatus } from "../git/DiffService.js";
 import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
+import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
 
 suite("repoKey", () => {
   test("is deterministic and 16 hex chars", () => {
@@ -117,5 +118,35 @@ suite("renderReviewFeedback", () => {
 
   test("returns empty when all comments are resolved", () => {
     assert.strictEqual(renderReviewFeedback([mk({ resolved: true })]), "");
+  });
+});
+
+suite("ReviewGateRegistry", () => {
+  test("fulfill resolves the pending awaitDecision", async () => {
+    const reg = new ReviewGateRegistry();
+    const p = reg.awaitDecision("r1");
+    assert.strictEqual(reg.fulfill("r1", { status: "submitted", feedback: "fb" }), true);
+    assert.deepStrictEqual(await p, { status: "submitted", feedback: "fb" });
+  });
+
+  test("fulfill on unknown id is a no-op", () => {
+    const reg = new ReviewGateRegistry();
+    assert.strictEqual(reg.fulfill("missing", { status: "cancelled", feedback: "" }), false);
+  });
+
+  test("a second awaitDecision for the same id supersedes the first as cancelled", async () => {
+    const reg = new ReviewGateRegistry();
+    const first = reg.awaitDecision("r1");
+    reg.awaitDecision("r1"); // supersede
+    assert.deepStrictEqual(await first, { status: "cancelled", feedback: "" });
+  });
+
+  test("drain resolves all outstanding gates", async () => {
+    const reg = new ReviewGateRegistry();
+    const a = reg.awaitDecision("a");
+    const b = reg.awaitDecision("b");
+    reg.drain({ status: "cancelled", feedback: "" });
+    assert.deepStrictEqual(await a, { status: "cancelled", feedback: "" });
+    assert.deepStrictEqual(await b, { status: "cancelled", feedback: "" });
   });
 });

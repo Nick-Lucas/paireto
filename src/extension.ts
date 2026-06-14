@@ -6,20 +6,21 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { AgentSessionService } from "./agents/AgentSessionService.js";
+import { AgentsProvider } from "./agents/AgentsProvider.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
 import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
 import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
-import { Schemes, Views } from "./config.js";
+import { Commands, ContextKeys, Schemes, Views } from "./config.js";
 import { DiffService } from "./git/DiffService.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
 import { PlanContentProvider } from "./plan/PlanContentProvider.js";
+import { PlanFeedbackProvider } from "./plan/PlanFeedbackProvider.js";
 import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
 import { PlanReviewController } from "./plan/PlanReviewController.js";
 import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
-import { ReviewFeedbackQueue } from "./review/ReviewFeedbackQueue.js";
 import { ReviewFileDecorationProvider } from "./review/ReviewFileDecorationProvider.js";
 import {
   ReviewFeedbackProvider,
@@ -65,6 +66,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }
   }
 
+  // Session-scoped panels start hidden; their context keys gate visibility (see package.json `when`).
+  void vscode.commands.executeCommand("setContext", ContextKeys.reviewSessionActive, false);
+  void vscode.commands.executeCommand("setContext", ContextKeys.planPending, false);
+
   // 3. Core services.
   const agents = new AgentSessionService();
   const repoService = new RepoService();
@@ -73,20 +78,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const planProvider = new PlanContentProvider();
   const planGate = new PlanGateRegistry();
   const planReview = new PlanReviewController(planProvider, planGate);
-  const reviewFeedback = new ReviewFeedbackQueue();
   const statusBar = new StatusBarController(repoService, agents);
 
   // Code review (Phase 3).
   const diffService = new DiffService();
   const reviewContent = new ReviewContentProvider();
   const reviewStore = new ReviewStore(context.workspaceState);
-  const reviewController = new ReviewController(
-    repoService,
-    diffService,
-    reviewStore,
-    agents,
-    reviewFeedback,
-  );
+  const reviewController = new ReviewController(repoService, diffService, reviewStore);
+
+  const agentsTree = new AgentsProvider(agents);
+  const planTree = new PlanFeedbackProvider(planReview);
   const filesTree = new ReviewFilesProvider(reviewController);
   const feedbackTree = new ReviewFeedbackProvider(reviewController);
   const fileDecorations = new ReviewFileDecorationProvider();
@@ -114,14 +115,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     statusBar,
     reviewContent,
     reviewController,
+    agentsTree,
+    planTree,
     filesTree,
     feedbackTree,
     fileDecorations,
     switcher,
     reviewView,
+    vscode.commands.registerCommand(Commands.focusAgent, () =>
+      vscode.commands.executeCommand("workbench.action.terminal.focus")
+    ),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.review, reviewContent),
     vscode.window.registerFileDecorationProvider(fileDecorations),
+    vscode.window.createTreeView(Views.agents, { treeDataProvider: agentsTree }),
+    vscode.window.createTreeView(Views.planReview, { treeDataProvider: planTree }),
     vscode.window.createTreeView(Views.reviewFeedback, { treeDataProvider: feedbackTree }),
   );
   void reviewController.refresh();
@@ -135,11 +143,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     },
     onPlanReviewRequest: (msg) => planReview.presentPlan(msg),
-    onFeedbackPull: (msg) => reviewFeedback.pull(msg.sessionId),
+    onReviewAwait: (msg) => reviewController.startSession(msg.id),
   };
   const bridge = new BridgeManager(handlers);
   context.subscriptions.push({ dispose: () => bridge.dispose() });
   context.subscriptions.push({ dispose: () => planGate.drain({ decision: "allow" }) });
+  context.subscriptions.push({ dispose: () => reviewController.drainGate() });
 
   await repoService.init();
 

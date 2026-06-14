@@ -3,9 +3,10 @@
 // Phase 1/2/3 services directly — they register callbacks instead).
 
 import type {
-  FeedbackPullRequest,
   HookEventMessage,
   PlanReviewRequest,
+  ReviewAwaitRequest,
+  ReviewStatus,
 } from "../protocol/types.js";
 
 /** One row in $STATE/index.json — lets hooks discover live sockets and GC dead ones. */
@@ -39,12 +40,17 @@ export interface PlanGateResult {
   reason?: string;
 }
 
+export interface ReviewGateResult {
+  status: ReviewStatus;
+  feedback: string;
+}
+
 /** Callbacks the socket server invokes for inbound messages. */
 export interface BridgeHandlers {
   /** Passive telemetry — update session state, refresh worktrees, etc. */
   onHookEvent(msg: HookEventMessage): void;
   /** Blocking plan gate — resolve when the user approves or requests changes. */
   onPlanReviewRequest(msg: PlanReviewRequest): Promise<PlanGateResult>;
-  /** Pull queued code-review feedback for a session (returns rendered text, or ""). */
-  onFeedbackPull(msg: FeedbackPullRequest): string;
+  /** Blocking review session — resolve when the user submits feedback or cancels. */
+  onReviewAwait(msg: ReviewAwaitRequest): Promise<ReviewGateResult>;
 }
