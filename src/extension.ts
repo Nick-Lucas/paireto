@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import { AgentSessionService } from "./agents/AgentSessionService.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
-import { installPlugin } from "./bridge/PluginInstaller.js";
+import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
 import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
 import { Schemes, Views } from "./config.js";
 import { DiffService } from "./git/DiffService.js";
@@ -40,11 +40,29 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.error("tui-companion: failed to write config mirror", err);
   }
 
-  // 2. Best-effort plugin install/registration (behind a setting; manual fallback documented).
+  // 2. Best-effort plugin install/registration via the claude CLI (once per version, non-blocking).
   if (vscode.workspace.getConfiguration("tui-companion").get<boolean>("plugin.autoInstall", true)) {
-    const pluginsRoot = vscode.Uri.joinPath(context.extensionUri, "plugins").fsPath;
-    const result = installPlugin(pluginsRoot);
-    console.log(`tui-companion: plugin install — ${result.detail}`);
+    const marker = "tui.pluginInstalledVersion";
+    if (context.globalState.get<string>(marker) !== PLUGIN_VERSION) {
+      const pluginsRoot = vscode.Uri.joinPath(context.extensionUri, "plugins").fsPath;
+      void installPlugin(pluginsRoot).then(async (result) => {
+        console.log(`tui-companion: plugin install — ${result.detail}`);
+        if (result.ok) {
+          await context.globalState.update(marker, PLUGIN_VERSION);
+        } else if (result.manualCommand) {
+          const choice = await vscode.window.showWarningMessage(
+            "TUI Companion couldn't auto-install its Claude Code plugin. Register it manually?",
+            "Copy Command"
+          );
+          if (choice === "Copy Command") {
+            await vscode.env.clipboard.writeText(result.manualCommand);
+            void vscode.window.showInformationMessage(
+              "Command copied. Run it in a terminal, then restart Claude Code."
+            );
+          }
+        }
+      });
+    }
   }
 
   // 3. Core services.
