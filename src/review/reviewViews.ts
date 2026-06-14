@@ -8,12 +8,13 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
+import { kindColorId, kindIcon, kindLabel } from "../comments/kinds.js";
 import { Commands } from "../config.js";
 import type { ChangedFile } from "../git/DiffService.js";
 import { ReviewFileDecorationProvider } from "./ReviewFileDecorationProvider.js";
 import type { ReviewController } from "./ReviewController.js";
 import type { ReviewComment } from "./reviewTypes.js";
-import type { ReviewMode, ReviewSpec, Severity } from "../types.js";
+import type { ReviewMode, ReviewSpec } from "../types.js";
 
 const MODE_LABELS: Record<ReviewMode, string> = {
   unstaged: "Unstaged",
@@ -75,12 +76,23 @@ export class ReviewFeedbackProvider extends BaseProvider<ReviewComment> {
       `${path.basename(c.filePath)}:${c.line + 1}`,
       vscode.TreeItemCollapsibleState.None
     );
-    item.description = c.body;
-    item.iconPath = new vscode.ThemeIcon(severityIcon(c.severity), severityColor(c.severity));
-    item.tooltip = new vscode.MarkdownString(
-      `**${c.severity}** · ${c.filePath}:${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`
+    const dir = path.dirname(c.filePath);
+    item.description = dir === "." ? c.body : `${dir} · ${c.body}`;
+    const colorId = kindColorId(c.kind);
+    item.iconPath = new vscode.ThemeIcon(
+      kindIcon(c.kind),
+      colorId ? new vscode.ThemeColor(colorId) : undefined
     );
-    item.contextValue = c.resolved ? "reviewCommentResolved" : "reviewComment";
+    item.tooltip = new vscode.MarkdownString(
+      `**${kindLabel(c.kind)}** · ${c.filePath}:${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`
+    );
+    item.contextValue = "reviewComment";
+    // Click a row to jump back to the line/diff and expand the comment.
+    item.command = {
+      command: Commands.reviewRevealComment,
+      title: "Reveal Comment",
+      arguments: [c],
+    };
     return item;
   }
 
@@ -91,18 +103,4 @@ export class ReviewFeedbackProvider extends BaseProvider<ReviewComment> {
 
 function statusWord(s: ChangedFile["status"]): string {
   return { A: "Added", M: "Modified", D: "Deleted", R: "Renamed", C: "Copied", U: "Untracked" }[s];
-}
-
-function severityIcon(s: Severity): string {
-  return s === "blocking" ? "error" : s === "suggestion" ? "lightbulb" : "comment";
-}
-
-function severityColor(s: Severity): vscode.ThemeColor | undefined {
-  if (s === "blocking") {
-    return new vscode.ThemeColor("list.errorForeground");
-  }
-  if (s === "suggestion") {
-    return new vscode.ThemeColor("list.warningForeground");
-  }
-  return undefined;
 }

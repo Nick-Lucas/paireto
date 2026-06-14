@@ -1,36 +1,32 @@
 // Renders plan review comments into the deny message Claude receives. Modeled on plannotator's
-// planDenyFeedback wrapper: a firm directive plus the itemized feedback. Blocking first; notes are
-// omitted by default (only suggestion + blocking become action items).
+// planDenyFeedback wrapper: a firm directive plus the itemized feedback. Problems first, then
+// questions, then plain comments — all kinds are included.
 
-import type { Severity } from "../types.js";
+import { KIND_RANK, type CommentKind } from "../comments/kinds.js";
 
 export interface PlanCommentData {
   line: number; // 0-based
   quote: string;
   body: string;
-  severity: Severity;
+  kind: CommentKind;
 }
 
-const SEVERITY_RANK: Record<Severity, number> = { blocking: 0, suggestion: 1, note: 2 };
-
 export function renderPlanFeedback(comments: PlanCommentData[], toolName = "ExitPlanMode"): string {
-  const actionable = comments
-    .filter((c) => c.severity !== "note")
-    .sort((a, b) => SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] || a.line - b.line);
+  const sorted = comments
+    .slice()
+    .sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.line - b.line);
 
   const body =
-    actionable.length === 0
+    sorted.length === 0
       ? "Plan changes requested."
-      : actionable
+      : sorted
           .map((c) => {
-            const label = c.severity.toUpperCase();
+            const label = c.kind.toUpperCase();
             const loc = `line ${c.line + 1}`;
             const quote = c.quote.trim() ? `\n   Current text: "${c.quote.trim()}"` : "";
             return `[${label}] ${loc}${quote}\n   Feedback: ${c.body.trim()}`;
           })
           .join("\n\n");
-
-  const counts = summarize(actionable);
 
   return [
     "YOUR PLAN WAS NOT APPROVED.",
@@ -44,12 +40,11 @@ export function renderPlanFeedback(comments: PlanCommentData[], toolName = "Exit
     "",
     body,
     "",
-    counts,
+    summarize(sorted),
   ].join("\n");
 }
 
 function summarize(comments: PlanCommentData[]): string {
-  const blocking = comments.filter((c) => c.severity === "blocking").length;
-  const suggestion = comments.filter((c) => c.severity === "suggestion").length;
-  return `(${blocking} blocking, ${suggestion} suggestion)`;
+  const n = (k: CommentKind): number => comments.filter((c) => c.kind === k).length;
+  return `(${n("problem")} problem, ${n("question")} question, ${n("comment")} comment)`;
 }

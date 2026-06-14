@@ -1,6 +1,6 @@
 // Data shapes for code-review comments and their re-attachment anchors.
 
-import type { Severity } from "../types.js";
+import type { CommentKind } from "../comments/kinds.js";
 
 export interface ReviewAnchor {
   lineText: string;
@@ -14,7 +14,7 @@ export interface ReviewComment {
   filePath: string; // repo-relative
   side: "base" | "modified";
   line: number; // 0-based on the side's document
-  severity: Severity;
+  kind: CommentKind;
   body: string;
   resolved: boolean;
   quote: string;

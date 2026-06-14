@@ -8,10 +8,9 @@ export const Commands = {
   switcherAcceptThisWindow: "tui-companion.switcher.acceptThisWindow",
   planApprove: "tui-companion.plan.approve",
   planSendFeedback: "tui-companion.plan.sendFeedback",
+  planAddQuestion: "tui-companion.plan.addQuestion",
   planAddComment: "tui-companion.plan.addComment",
-  planSetSeverityBlocking: "tui-companion.plan.setSeverity.blocking",
-  planSetSeveritySuggestion: "tui-companion.plan.setSeverity.suggestion",
-  planSetSeverityNote: "tui-companion.plan.setSeverity.note",
+  planAddProblem: "tui-companion.plan.addProblem",
   reviewPickMode: "tui-companion.review.pickMode",
   reviewPickBase: "tui-companion.review.pickBase",
   reviewRefresh: "tui-companion.review.refresh",
@@ -19,10 +18,11 @@ export const Commands = {
   reviewSendFeedback: "tui-companion.review.sendFeedback",
   reviewClearFeedback: "tui-companion.review.clearFeedback",
   reviewExport: "tui-companion.review.export",
+  reviewAddQuestion: "tui-companion.review.addQuestion",
   reviewAddComment: "tui-companion.review.addComment",
-  reviewSetSeverityBlocking: "tui-companion.review.setSeverity.blocking",
-  reviewSetSeveritySuggestion: "tui-companion.review.setSeverity.suggestion",
-  reviewSetSeverityNote: "tui-companion.review.setSeverity.note",
+  reviewAddProblem: "tui-companion.review.addProblem",
+  reviewRevealComment: "tui-companion.review.revealComment",
+  reviewDeleteComment: "tui-companion.review.deleteComment",
 } as const;
 
 export const Schemes = {

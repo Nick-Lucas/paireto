@@ -74,16 +74,17 @@ suite("parseNameStatus", () => {
 });
 
 suite("renderPlanFeedback", () => {
-  test("orders blocking before suggestion and omits notes", () => {
+  test("orders problem before question/comment and includes all kinds", () => {
     const out = renderPlanFeedback([
-      { line: 5, quote: "do X", body: "make it Y", severity: "suggestion" },
-      { line: 1, quote: "do Z", body: "must not Z", severity: "blocking" },
-      { line: 9, quote: "fyi", body: "ignore me", severity: "note" },
+      { line: 5, quote: "do X", body: "make it Y", kind: "comment" },
+      { line: 1, quote: "do Z", body: "must not Z", kind: "problem" },
+      { line: 9, quote: "fyi", body: "consider this", kind: "question" },
     ]);
     assert.ok(out.includes("NOT APPROVED"));
-    assert.ok(out.indexOf("[BLOCKING]") < out.indexOf("[SUGGESTION]"));
-    assert.ok(!out.includes("ignore me"));
-    assert.ok(out.includes("(1 blocking, 1 suggestion)"));
+    assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
+    assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
+    assert.ok(out.includes("consider this"));
+    assert.ok(out.includes("(1 problem, 1 question, 1 comment)"));
   });
 });
 
@@ -93,7 +94,7 @@ suite("renderReviewFeedback", () => {
     filePath: "src/a.ts",
     side: "modified",
     line: 0,
-    severity: "suggestion",
+    kind: "comment",
     body: "fix",
     resolved: false,
     quote: "line",
@@ -101,19 +102,20 @@ suite("renderReviewFeedback", () => {
     ...over,
   });
 
-  test("excludes resolved and note comments", () => {
+  test("includes all unresolved kinds, excludes resolved, problems first", () => {
     const out = renderReviewFeedback([
-      mk({ severity: "note", body: "note-only" }),
+      mk({ kind: "question", body: "a-question" }),
       mk({ resolved: true, body: "resolved-only" }),
-      mk({ severity: "blocking", body: "real-issue", line: 41 }),
+      mk({ kind: "problem", body: "real-issue", line: 41 }),
     ]);
     assert.ok(out.includes("real-issue"));
-    assert.ok(!out.includes("note-only"));
+    assert.ok(out.includes("a-question"));
     assert.ok(!out.includes("resolved-only"));
+    assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
     assert.ok(out.includes("src/a.ts:42"));
   });
 
-  test("returns empty when nothing actionable", () => {
-    assert.strictEqual(renderReviewFeedback([mk({ severity: "note" })]), "");
+  test("returns empty when all comments are resolved", () => {
+    assert.strictEqual(renderReviewFeedback([mk({ resolved: true })]), "");
   });
 });

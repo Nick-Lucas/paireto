@@ -1,5 +1,5 @@
 // Orchestrates the code-review experience: tracks the current review spec + changed files, opens
-// native diff editors, hosts inline comments (severity + anchoring), and ships feedback to Claude
+// native diff editors, hosts inline comments (kinds + anchoring), and ships feedback to Claude
 // via the per-session queue (delivered on the agent's next prompt).
 
 import * as crypto from "node:crypto";
@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
+import { kindLabel, type CommentKind } from "../comments/kinds.js";
 import { Commands, Schemes } from "../config.js";
 import { DiffService, type ChangedFile } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
@@ -18,20 +19,22 @@ import { renderReviewFeedback } from "./reviewFeedback.js";
 import { pickBaseRef, pickMode } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
-import type { ReviewSpec, Severity } from "../types.js";
+import type { ReviewSpec } from "../types.js";
 
 class RComment implements vscode.Comment {
   mode = vscode.CommentMode.Preview;
   author: vscode.CommentAuthorInformation = { name: "Reviewer" };
   contextValue: string;
   label: string;
+  /** The thread this comment lives on (for reveal/delete from the Feedback panel). */
+  thread?: vscode.CommentThread;
   constructor(
     public body: string | vscode.MarkdownString,
-    public severity: Severity,
+    public kind: CommentKind,
     public readonly model: ReviewComment,
   ) {
-    this.contextValue = severity;
-    this.label = severity;
+    this.contextValue = kind;
+    this.label = kindLabel(kind);
   }
 }
 
@@ -57,7 +60,6 @@ export class ReviewController implements vscode.Disposable {
   constructor(
     private readonly repoService: RepoService,
     private readonly diff: DiffService,
-    private readonly content: ReviewContentProvider,
     private readonly store: ReviewStore,
     private readonly agents: AgentSessionService,
     private readonly feedbackQueue: ReviewFeedbackQueue,
@@ -81,18 +83,21 @@ export class ReviewController implements vscode.Disposable {
       vscode.commands.registerCommand(Commands.reviewOpenDiff, (f: ChangedFile) =>
         this.openDiff(f),
       ),
+      vscode.commands.registerCommand(Commands.reviewAddQuestion, (r: vscode.CommentReply) =>
+        this.addComment(r, "question"),
+      ),
       vscode.commands.registerCommand(Commands.reviewAddComment, (r: vscode.CommentReply) =>
-        this.addComment(r),
+        this.addComment(r, "comment"),
+      ),
+      vscode.commands.registerCommand(Commands.reviewAddProblem, (r: vscode.CommentReply) =>
+        this.addComment(r, "problem"),
       ),
       vscode.commands.registerCommand(Commands.reviewClearFeedback, () => this.clearFeedback()),
-      vscode.commands.registerCommand(Commands.reviewSetSeverityBlocking, (c: RComment) =>
-        this.setSeverity(c, "blocking"),
+      vscode.commands.registerCommand(Commands.reviewRevealComment, (c: ReviewComment) =>
+        this.revealComment(c),
       ),
-      vscode.commands.registerCommand(Commands.reviewSetSeveritySuggestion, (c: RComment) =>
-        this.setSeverity(c, "suggestion"),
-      ),
-      vscode.commands.registerCommand(Commands.reviewSetSeverityNote, (c: RComment) =>
-        this.setSeverity(c, "note"),
+      vscode.commands.registerCommand(Commands.reviewDeleteComment, (c: ReviewComment) =>
+        this.deleteComment(c),
       ),
       vscode.commands.registerCommand(Commands.reviewSendFeedback, () => this.sendFeedback()),
       vscode.commands.registerCommand(Commands.reviewExport, () => this.exportReview()),
@@ -165,7 +170,7 @@ export class ReviewController implements vscode.Disposable {
     void ensureCommentingVisible();
   }
 
-  private async addComment(reply: vscode.CommentReply): Promise<void> {
+  private async addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<void> {
     const uri = reply.thread.uri;
     if (uri.scheme !== Schemes.review) {
       return;
@@ -189,7 +194,7 @@ export class ReviewController implements vscode.Disposable {
       filePath: relPath,
       side,
       line,
-      severity: "suggestion",
+      kind,
       body: reply.text,
       resolved: false,
       quote,
@@ -200,11 +205,51 @@ export class ReviewController implements vscode.Disposable {
         lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
       },
     };
-    const comment = new RComment(reply.text, "suggestion", model);
+    const comment = new RComment(reply.text, kind, model);
+    comment.thread = reply.thread;
     reply.thread.comments = [...reply.thread.comments, comment];
     reply.thread.label = `${relPath}:${line + 1}`;
     this.comments.set(model.id, comment);
     this.threads.set(reply.thread, [...(this.threads.get(reply.thread) ?? []), comment]);
+    this.changeEmitter.fire();
+  }
+
+  /** Reveal a feedback row's line in its diff and expand the comment thread. */
+  private async revealComment(c: ReviewComment): Promise<void> {
+    const file = this.files.find((f) => f.path === c.filePath);
+    if (file) {
+      await this.openDiff(file);
+    }
+    const editor = vscode.window.activeTextEditor;
+    if (editor) {
+      const pos = new vscode.Position(c.line, 0);
+      editor.selection = new vscode.Selection(pos, pos);
+      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    }
+    const rc = this.comments.get(c.id);
+    if (rc?.thread) {
+      rc.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    }
+  }
+
+  /** Delete a single feedback comment (and its thread if now empty). */
+  private deleteComment(c: ReviewComment): void {
+    const rc = this.comments.get(c.id);
+    if (!rc) {
+      return;
+    }
+    const thread = rc.thread;
+    if (thread) {
+      const remaining = (this.threads.get(thread) ?? []).filter((x) => x !== rc);
+      if (remaining.length === 0) {
+        thread.dispose();
+        this.threads.delete(thread);
+      } else {
+        thread.comments = thread.comments.filter((x) => x !== rc);
+        this.threads.set(thread, remaining);
+      }
+    }
+    this.comments.delete(c.id);
     this.changeEmitter.fire();
   }
 
@@ -226,19 +271,6 @@ export class ReviewController implements vscode.Disposable {
     }
     this.threads.clear();
     this.comments.clear();
-    this.changeEmitter.fire();
-  }
-
-  private setSeverity(comment: RComment, severity: Severity): void {
-    comment.severity = severity;
-    comment.contextValue = severity;
-    comment.label = severity;
-    comment.model.severity = severity;
-    for (const [thread, list] of this.threads) {
-      if (list.includes(comment)) {
-        thread.comments = [...thread.comments];
-      }
-    }
     this.changeEmitter.fire();
   }
 

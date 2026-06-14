@@ -1,5 +1,5 @@
 // Owns the plan-review UX: opens the plan as a tui-plan:// markdown doc, attaches a
-// CommentController for line comments with severity, and wires Approve / Send-Feedback to resolve
+// CommentController for line comments with kinds, and wires Approve / Send-Feedback to resolve
 // the blocking plan gate (allow, or deny + serialized feedback).
 
 import * as vscode from "vscode";
@@ -7,9 +7,9 @@ import * as vscode from "vscode";
 import type { PlanGateResult } from "../bridge/types.js";
 import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
+import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes } from "../config.js";
 import type { PlanReviewRequest } from "../protocol/types.js";
-import type { Severity } from "../types.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
 import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
@@ -21,10 +21,10 @@ class PlanComment implements vscode.Comment {
   label: string;
   constructor(
     public body: string | vscode.MarkdownString,
-    public severity: Severity,
+    public kind: CommentKind,
   ) {
-    this.contextValue = severity;
-    this.label = severityLabel(severity);
+    this.contextValue = kind;
+    this.label = kindLabel(kind);
   }
 }
 
@@ -58,17 +58,14 @@ export class PlanReviewController implements vscode.Disposable {
     };
     this.disposables.push(
       this.controller,
+      vscode.commands.registerCommand(Commands.planAddQuestion, (r: vscode.CommentReply) =>
+        this.addComment(r, "question"),
+      ),
       vscode.commands.registerCommand(Commands.planAddComment, (r: vscode.CommentReply) =>
-        this.addComment(r),
+        this.addComment(r, "comment"),
       ),
-      vscode.commands.registerCommand(Commands.planSetSeverityBlocking, (c: PlanComment) =>
-        this.setSeverity(c, "blocking"),
-      ),
-      vscode.commands.registerCommand(Commands.planSetSeveritySuggestion, (c: PlanComment) =>
-        this.setSeverity(c, "suggestion"),
-      ),
-      vscode.commands.registerCommand(Commands.planSetSeverityNote, (c: PlanComment) =>
-        this.setSeverity(c, "note"),
+      vscode.commands.registerCommand(Commands.planAddProblem, (r: vscode.CommentReply) =>
+        this.addComment(r, "problem"),
       ),
       vscode.commands.registerCommand(Commands.planApprove, (uri?: vscode.Uri) =>
         this.approve(uri),
@@ -109,31 +106,16 @@ export class PlanReviewController implements vscode.Disposable {
     return result;
   }
 
-  private addComment(reply: vscode.CommentReply): void {
+  private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
     const review = this.reviews.get(reply.thread.uri.toString());
     if (!review) {
       return;
     }
-    const comment = new PlanComment(reply.text, "suggestion");
+    const comment = new PlanComment(reply.text, kind);
     reply.thread.comments = [...reply.thread.comments, comment];
-    reply.thread.label = severityLabel(comment.severity);
+    reply.thread.label = kindLabel(kind);
     if (!review.threads.includes(reply.thread)) {
       review.threads.push(reply.thread);
-    }
-  }
-
-  private setSeverity(comment: PlanComment, severity: Severity): void {
-    comment.severity = severity;
-    comment.contextValue = severity;
-    comment.label = severityLabel(severity);
-    // Re-assign comments arrays so VS Code re-renders the affected threads.
-    for (const review of this.reviews.values()) {
-      for (const thread of review.threads) {
-        if (thread.comments.includes(comment)) {
-          thread.comments = [...thread.comments];
-          thread.label = severityLabel(severity);
-        }
-      }
     }
   }
 
@@ -151,10 +133,10 @@ export class PlanReviewController implements vscode.Disposable {
     if (!review) {
       return;
     }
-    const hasBlocking = this.collect(review).some((c) => c.severity === "blocking");
-    if (hasBlocking) {
+    const hasProblem = this.collect(review).some((c) => c.kind === "problem");
+    if (hasProblem) {
       const choice = await vscode.window.showWarningMessage(
-        "This plan has unresolved blocking comments. Approve anyway?",
+        "This plan has unresolved problems. Approve anyway?",
         { modal: true },
         "Approve Anyway",
       );
@@ -187,13 +169,13 @@ export class PlanReviewController implements vscode.Disposable {
     const result: PlanCommentData[] = [];
     for (const thread of review.threads) {
       const line = thread.range?.start.line ?? 0;
-      const severity = highestSeverity(thread.comments as PlanComment[]);
+      const kind = highestKind(thread.comments as PlanComment[]);
       const body = (thread.comments as PlanComment[])
         .map((c) => commentText(c.body))
         .join(" ")
         .trim();
       if (body) {
-        result.push({ line, quote: lines[line] ?? "", body, severity });
+        result.push({ line, quote: lines[line] ?? "", body, kind });
       }
     }
     return result;
@@ -227,18 +209,11 @@ export class PlanReviewController implements vscode.Disposable {
   }
 }
 
-function severityLabel(severity: Severity): string {
-  return severity === "blocking" ? "Blocking" : severity === "suggestion" ? "Suggestion" : "Note";
-}
-
-function highestSeverity(comments: PlanComment[]): Severity {
-  if (comments.some((c) => c.severity === "blocking")) {
-    return "blocking";
-  }
-  if (comments.some((c) => c.severity === "suggestion")) {
-    return "suggestion";
-  }
-  return "note";
+/** The highest-priority kind among a thread's comments (problem > question > comment). */
+function highestKind(comments: PlanComment[]): CommentKind {
+  return comments
+    .map((c) => c.kind)
+    .sort((a, b) => KIND_RANK[a] - KIND_RANK[b])[0] ?? "comment";
 }
 
 function commentText(body: string | vscode.MarkdownString): string {

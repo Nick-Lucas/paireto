@@ -36,20 +36,18 @@
       },
       {
         "command": "tui-companion.plan.addComment",
-        "title": "Add Comment",
+        "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.plan.setSeverity.blocking",
-        "title": "Mark Blocking"
+        "command": "tui-companion.plan.addQuestion",
+        "title": "Question",
+        "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.plan.setSeverity.suggestion",
-        "title": "Mark Suggestion"
-      },
-      {
-        "command": "tui-companion.plan.setSeverity.note",
-        "title": "Mark Note"
+        "command": "tui-companion.plan.addProblem",
+        "title": "Problem",
+        "enablement": "!commentIsEmpty"
       },
       {
         "command": "tui-companion.review.refresh",
@@ -87,20 +85,27 @@
       },
       {
         "command": "tui-companion.review.addComment",
-        "title": "Add Comment",
+        "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.review.setSeverity.blocking",
-        "title": "Mark Blocking"
+        "command": "tui-companion.review.addQuestion",
+        "title": "Question",
+        "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.review.setSeverity.suggestion",
-        "title": "Mark Suggestion"
+        "command": "tui-companion.review.addProblem",
+        "title": "Problem",
+        "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.review.setSeverity.note",
-        "title": "Mark Note"
+        "command": "tui-companion.review.revealComment",
+        "title": "Reveal Comment"
+      },
+      {
+        "command": "tui-companion.review.deleteComment",
+        "title": "Delete Comment",
+        "icon": "$(trash)"
       }
     ],
     "viewsContainers": {
@@ -124,6 +129,14 @@
         "command": "tui-companion.switcher.acceptThisWindow",
         "key": "shift+enter",
         "when": "tui.switcherVisible"
+      },
+      {
+        "command": "editor.action.submitComment",
+        "key": "cmd+enter",
+        "mac": "cmd+enter",
+        "win": "ctrl+enter",
+        "linux": "ctrl+enter",
+        "when": "commentEditorFocused && (commentController == tui.plan || commentController == tui.review)"
       }
     ],
     "views": {
@@ -145,7 +158,16 @@
         {
           "command": "tui-companion.switcher.acceptThisWindow",
           "when": "false"
-        }
+        },
+        { "command": "tui-companion.plan.addQuestion", "when": "false" },
+        { "command": "tui-companion.plan.addComment", "when": "false" },
+        { "command": "tui-companion.plan.addProblem", "when": "false" },
+        { "command": "tui-companion.review.addQuestion", "when": "false" },
+        { "command": "tui-companion.review.addComment", "when": "false" },
+        { "command": "tui-companion.review.addProblem", "when": "false" },
+        { "command": "tui-companion.review.openDiff", "when": "false" },
+        { "command": "tui-companion.review.revealComment", "when": "false" },
+        { "command": "tui-companion.review.deleteComment", "when": "false" }
       ],
       "editor/title": [
         {
@@ -166,41 +188,36 @@
           "group": "inline@1"
         },
         {
+          "command": "tui-companion.plan.addQuestion",
+          "when": "commentController == tui.plan",
+          "group": "inline@2"
+        },
+        {
+          "command": "tui-companion.plan.addProblem",
+          "when": "commentController == tui.plan",
+          "group": "inline@3"
+        },
+        {
           "command": "tui-companion.review.addComment",
           "when": "commentController == tui.review",
           "group": "inline@1"
+        },
+        {
+          "command": "tui-companion.review.addQuestion",
+          "when": "commentController == tui.review",
+          "group": "inline@2"
+        },
+        {
+          "command": "tui-companion.review.addProblem",
+          "when": "commentController == tui.review",
+          "group": "inline@3"
         }
       ],
-      "comments/comment/title": [
+      "view/item/context": [
         {
-          "command": "tui-companion.plan.setSeverity.blocking",
-          "when": "commentController == tui.plan",
-          "group": "1_severity@1"
-        },
-        {
-          "command": "tui-companion.plan.setSeverity.suggestion",
-          "when": "commentController == tui.plan",
-          "group": "1_severity@2"
-        },
-        {
-          "command": "tui-companion.plan.setSeverity.note",
-          "when": "commentController == tui.plan",
-          "group": "1_severity@3"
-        },
-        {
-          "command": "tui-companion.review.setSeverity.blocking",
-          "when": "commentController == tui.review",
-          "group": "1_severity@1"
-        },
-        {
-          "command": "tui-companion.review.setSeverity.suggestion",
-          "when": "commentController == tui.review",
-          "group": "1_severity@2"
-        },
-        {
-          "command": "tui-companion.review.setSeverity.note",
-          "when": "commentController == tui.review",
-          "group": "1_severity@3"
+          "command": "tui-companion.review.deleteComment",
+          "when": "view == tui.reviewFeedback && viewItem == reviewComment",
+          "group": "inline@1"
         }
       ],
       "view/title": [

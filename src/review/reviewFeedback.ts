@@ -1,19 +1,18 @@
 // Renders code-review comments into the feedback block delivered to Claude (via additionalContext
-// on the next prompt). By default only unresolved suggestion + blocking comments become items.
+// on the next prompt). All unresolved comments are included; problems first, then questions, then
+// plain comments.
 
-import type { Severity } from "../types.js";
+import { KIND_RANK } from "../comments/kinds.js";
 import type { ReviewComment } from "./reviewTypes.js";
-
-const SEVERITY_RANK: Record<Severity, number> = { blocking: 0, suggestion: 1, note: 2 };
 
 export function renderReviewFeedback(comments: ReviewComment[]): string {
   const actionable = comments
-    .filter((c) => !c.resolved && c.severity !== "note")
+    .filter((c) => !c.resolved)
     .sort(
       (a, b) =>
-        SEVERITY_RANK[a.severity] - SEVERITY_RANK[b.severity] ||
+        KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
         a.filePath.localeCompare(b.filePath) ||
-        a.line - b.line,
+        a.line - b.line
     );
 
   if (actionable.length === 0) {
@@ -22,7 +21,7 @@ export function renderReviewFeedback(comments: ReviewComment[]): string {
 
   const items = actionable
     .map((c) => {
-      const loc = `${c.filePath}:${c.line + 1}  [${c.severity.toUpperCase()}]`;
+      const loc = `${c.filePath}:${c.line + 1}  [${c.kind.toUpperCase()}]`;
       const quote = c.quote.trim() ? `\n> ${c.quote.trim()}` : "";
       return `${loc}${quote}\n${c.body.trim()}`;
     })
@@ -31,7 +30,7 @@ export function renderReviewFeedback(comments: ReviewComment[]): string {
   return [
     `Code review feedback (${actionable.length} item${actionable.length === 1 ? "" : "s"}):`,
     "",
-    "Address these review comments. Each item is file:line followed by the quoted line and the requested change.",
+    "Address these review comments. Each item is file:line and its kind, the quoted line, and the note.",
     "",
     items,
   ].join("\n");

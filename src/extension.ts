@@ -83,7 +83,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const reviewController = new ReviewController(
     repoService,
     diffService,
-    reviewContent,
     reviewStore,
     agents,
     reviewFeedback,

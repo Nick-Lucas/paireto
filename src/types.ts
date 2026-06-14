@@ -1,7 +1,5 @@
 // Cross-cutting domain types shared across plan review, code review, and agent tracking.
 
-export type Severity = "note" | "suggestion" | "blocking";
-
 export type ReviewMode = "unstaged" | "staged" | "uncommitted" | "branch" | "commitRange";
 
 export interface ReviewSpec {
