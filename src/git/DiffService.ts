@@ -1,12 +1,12 @@
-// Computes the changed-file list and the base/modified content refs for each review mode, using
-// the git CLI for exact behavior. Returns "content refs" that the ReviewContentProvider resolves
-// to actual text (HEAD/branch/commit blob, the index, the working file, or empty).
+// Computes the grouped "Changes" model (Staged / Unstaged / Committed) and the base/modified content
+// refs per file, plus the git write-ops (stage/unstage/discard). Uses the git CLI for exact behavior;
+// the ReviewContentProvider resolves the returned ContentRefs to actual text.
 
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { git, gitSafe, splitNul } from "./gitCli.js";
-import type { ReviewMode, ReviewSpec } from "../types.js";
+import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 
 export type FileStatus = "A" | "M" | "D" | "R" | "C" | "U"; // U = untracked
 
@@ -14,8 +14,19 @@ export interface ChangedFile {
   path: string; // repo-relative (the "new" path for renames)
   oldPath?: string;
   status: FileStatus;
+  group: FileGroup;
   additions: number;
   deletions: number;
+}
+
+export interface ChangesModel {
+  staged: ChangedFile[];
+  unstaged: ChangedFile[];
+  committed: ChangedFile[];
+  /** Human label for the resolved Compare-To point (e.g. "main", "merge-base"). */
+  compareLabel: string;
+  /** Resolved ref the committed group is diffed against, or null when Compare-To = HEAD. */
+  compareRef: string | null;
 }
 
 /** A reference the content provider knows how to read. */
@@ -30,14 +41,51 @@ export interface FileSides {
   modified: ContentRef;
 }
 
-export class DiffService {
-  /** List changed files for a review spec (untracked auto-included for working-tree modes). */
-  async listChanges(repoRoot: string, spec: ReviewSpec): Promise<ChangedFile[]> {
-    const out = await gitSafe(repoRoot, nameStatusArgs(spec));
-    const files = parseNameStatus(out);
+type Counts = Map<string, { additions: number; deletions: number }>;
 
-    // Merge in +/- line counts from --numstat.
-    const counts = await this.numstat(repoRoot, spec);
+export class DiffService {
+  /** Build the grouped Changes model for the given Compare-To point. */
+  async getChanges(repoRoot: string, compareTo: CompareTo): Promise<ChangesModel> {
+    const resolved = await this.resolveCompareTo(repoRoot, compareTo);
+
+    const staged = await this.collect(repoRoot, ["diff", "--cached"], "staged");
+    const unstaged = await this.collect(repoRoot, ["diff"], "unstaged");
+
+    // Untracked files are working-tree changes → Unstaged group.
+    const untrackedOut = await gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
+    for (const p of splitNul(untrackedOut)) {
+      unstaged.push({
+        path: p,
+        status: "U",
+        group: "unstaged",
+        additions: await countLines(repoRoot, p),
+        deletions: 0,
+      });
+    }
+
+    // Committed = changed between Compare-To and HEAD, minus anything already staged/unstaged.
+    let committed: ChangedFile[] = [];
+    if (resolved.ref) {
+      const here = new Set([...staged, ...unstaged].map((f) => f.path));
+      committed = (await this.collect(repoRoot, ["diff", resolved.ref, "HEAD"], "committed")).filter(
+        (f) => !here.has(f.path)
+      );
+    }
+
+    const sort = (a: ChangedFile, b: ChangedFile): number => a.path.localeCompare(b.path);
+    return {
+      staged: staged.sort(sort),
+      unstaged: unstaged.sort(sort),
+      committed: committed.sort(sort),
+      compareLabel: resolved.label,
+      compareRef: resolved.ref,
+    };
+  }
+
+  /** Run a name-status diff + numstat for one group and merge the line counts. */
+  private async collect(repoRoot: string, diffArgs: string[], group: FileGroup): Promise<ChangedFile[]> {
+    const files = parseNameStatus(await gitSafe(repoRoot, [...diffArgs, "--name-status", "-z"]), group);
+    const counts = parseNumstat(await gitSafe(repoRoot, [...diffArgs, "--numstat", "-z"]));
     for (const f of files) {
       const c = counts.get(f.path);
       if (c) {
@@ -45,61 +93,99 @@ export class DiffService {
         f.deletions = c.deletions;
       }
     }
-
-    // Untracked files only belong in working-tree reviews, not ref comparisons.
-    if (spec.mode === "unstaged" || spec.mode === "uncommitted") {
-      const untrackedOut = await gitSafe(repoRoot, [
-        "ls-files",
-        "--others",
-        "--exclude-standard",
-        "-z",
-      ]);
-      for (const p of splitNul(untrackedOut)) {
-        files.push({ path: p, status: "U", additions: await countLines(repoRoot, p), deletions: 0 });
-      }
-    }
-    return files.sort((a, b) => a.path.localeCompare(b.path));
+    return files;
   }
 
-  /** Per-file added/deleted line counts via `git diff --numstat -z`. */
-  private async numstat(
+  /** Resolve a Compare-To descriptor to a concrete ref (null = HEAD, no committed group) + label. */
+  async resolveCompareTo(
     repoRoot: string,
-    spec: ReviewSpec
-  ): Promise<Map<string, { additions: number; deletions: number }>> {
-    const args = nameStatusArgs(spec).map((a) => (a === "--name-status" ? "--numstat" : a));
-    const out = await gitSafe(repoRoot, args);
-    const map = new Map<string, { additions: number; deletions: number }>();
-    // -z numstat: <add>\t<del>\t<path>\0  (renames emit add\tdel\t\0oldpath\0newpath\0)
-    const tokens = splitNul(out);
-    for (let i = 0; i < tokens.length; i++) {
-      const m = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(tokens[i]);
-      if (!m) {
-        continue;
+    compareTo: CompareTo
+  ): Promise<{ ref: string | null; label: string }> {
+    switch (compareTo.kind) {
+      case "head":
+        return { ref: null, label: "HEAD" };
+      case "default": {
+        const branch = await this.defaultBranch(repoRoot);
+        return { ref: branch ?? null, label: branch ?? "default" };
       }
-      let p = m[3];
-      if (p === "") {
-        // rename: next two tokens are old, new paths
-        i += 1;
-        p = tokens[i + 1] ?? tokens[i] ?? "";
-        i += 1;
+      case "mergeBase": {
+        const branch = await this.defaultBranch(repoRoot);
+        if (!branch) {
+          return { ref: null, label: "merge-base" };
+        }
+        const base = (await gitSafe(repoRoot, ["merge-base", branch, "HEAD"])).trim();
+        return { ref: base || branch, label: `merge-base(${branch})` };
       }
-      map.set(p, {
-        additions: m[1] === "-" ? 0 : Number(m[1]),
-        deletions: m[2] === "-" ? 0 : Number(m[2]),
-      });
+      case "ref":
+        return { ref: compareTo.ref ?? null, label: compareTo.ref ?? "HEAD" };
     }
-    return map;
   }
 
-  /** Resolve the base/modified content refs for a file under a given spec. */
-  async fileSides(repoRoot: string, spec: ReviewSpec, file: ChangedFile): Promise<FileSides> {
-    if (file.status === "U") {
-      return { base: { kind: "empty" }, modified: { kind: "working" } };
+  /** Auto-detect the default branch (main/master/origin's HEAD), or undefined. */
+  async defaultBranch(repoRoot: string): Promise<string | undefined> {
+    const head = (
+      await gitSafe(repoRoot, ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"])
+    ).trim();
+    if (head) {
+      return head; // e.g. "origin/main"
     }
-    if (file.status === "D") {
-      return { base: await baseRef(repoRoot, spec), modified: { kind: "empty" } };
+    for (const candidate of ["main", "master"]) {
+      const ok = await gitSafe(repoRoot, ["rev-parse", "--verify", "--quiet", candidate]);
+      if (ok.trim()) {
+        return candidate;
+      }
     }
-    return { base: await baseRef(repoRoot, spec), modified: modifiedRef(spec) };
+    return undefined;
+  }
+
+  /** List local + remote branches (for the Compare-To "Branch/Ref…" picker). */
+  async listRefs(repoRoot: string): Promise<string[]> {
+    const out = await gitSafe(repoRoot, [
+      "for-each-ref",
+      "--format=%(refname:short)",
+      "--sort=-committerdate",
+      "-z",
+      "refs/heads",
+      "refs/remotes",
+    ]);
+    return splitNul(out).filter((r) => r.length > 0 && !r.endsWith("/HEAD"));
+  }
+
+  /** Resolve base/modified content refs for a file, given the committed group's compare ref. */
+  fileSides(file: ChangedFile, compareRef: string | null): FileSides {
+    if (file.group === "staged") {
+      return wrapDeleted(file, { kind: "ref", ref: "HEAD" }, { kind: "index" });
+    }
+    if (file.group === "unstaged") {
+      if (file.status === "U") {
+        return { base: { kind: "empty" }, modified: { kind: "working" } };
+      }
+      return wrapDeleted(file, { kind: "index" }, { kind: "working" });
+    }
+    // committed
+    const base: ContentRef = compareRef ? { kind: "ref", ref: compareRef } : { kind: "ref", ref: "HEAD" };
+    return wrapDeleted(file, base, { kind: "ref", ref: "HEAD" });
+  }
+
+  // ── Git write-ops (operate on repo-relative paths) ─────────────────────────
+  async stage(repoRoot: string, paths: string[]): Promise<void> {
+    await git(repoRoot, ["add", "--", ...paths]);
+  }
+
+  async unstage(repoRoot: string, paths: string[]): Promise<void> {
+    await git(repoRoot, ["restore", "--staged", "--", ...paths]);
+  }
+
+  /** Discard working-tree changes: restore tracked files; delete untracked ones. */
+  async discard(repoRoot: string, files: { path: string; untracked: boolean }[]): Promise<void> {
+    const tracked = files.filter((f) => !f.untracked).map((f) => f.path);
+    const untracked = files.filter((f) => f.untracked).map((f) => f.path);
+    if (tracked.length) {
+      await git(repoRoot, ["restore", "--", ...tracked]);
+    }
+    for (const p of untracked) {
+      await rm(join(repoRoot, p), { force: true });
+    }
   }
 
   /** Encode a ContentRef as the `ref` query value used in tui-review URIs. */
@@ -117,55 +203,19 @@ export class DiffService {
   }
 }
 
-function nameStatusArgs(spec: ReviewSpec): string[] {
-  const common = ["--name-status", "-z"];
-  switch (spec.mode) {
-    case "unstaged":
-      return ["diff", ...common];
-    case "staged":
-      return ["diff", "--cached", ...common];
-    case "uncommitted":
-      return ["diff", "HEAD", ...common];
-    case "branch":
-      return ["diff", `${spec.baseRef ?? "main"}...HEAD`, ...common];
-    case "commitRange":
-      return ["diff", spec.baseRef ?? "HEAD~1", spec.compareRef ?? "HEAD", ...common];
+/** Deleted files have no modified side; everything else uses the given sides. */
+function wrapDeleted(file: ChangedFile, base: ContentRef, modified: ContentRef): FileSides {
+  if (file.status === "D") {
+    return { base, modified: { kind: "empty" } };
   }
+  if (file.status === "A" || file.status === "U") {
+    return { base: { kind: "empty" }, modified };
+  }
+  return { base, modified };
 }
 
-function modifiedRef(spec: ReviewSpec): ContentRef {
-  switch (spec.mode) {
-    case "unstaged":
-    case "uncommitted":
-      return { kind: "working" };
-    case "staged":
-      return { kind: "index" };
-    case "branch":
-      return { kind: "ref", ref: spec.compareRef ?? "HEAD" };
-    case "commitRange":
-      return { kind: "ref", ref: spec.compareRef ?? "HEAD" };
-  }
-}
-
-async function baseRef(repoRoot: string, spec: ReviewSpec): Promise<ContentRef> {
-  switch (spec.mode) {
-    case "unstaged":
-      return { kind: "index" };
-    case "staged":
-    case "uncommitted":
-      return { kind: "ref", ref: "HEAD" };
-    case "branch": {
-      const base = spec.baseRef ?? "main";
-      const mergeBase = (await gitSafe(repoRoot, ["merge-base", base, "HEAD"])).trim();
-      return { kind: "ref", ref: mergeBase || base };
-    }
-    case "commitRange":
-      return { kind: "ref", ref: spec.baseRef ?? "HEAD~1" };
-  }
-}
-
-/** Parse `git diff --name-status -z` output. Renames/copies consume two path tokens. */
-export function parseNameStatus(output: string): ChangedFile[] {
+/** Parse `git diff --name-status -z` output, tagging each file with its group. */
+export function parseNameStatus(output: string, group: FileGroup): ChangedFile[] {
   const tokens = splitNul(output);
   const files: ChangedFile[] = [];
   let i = 0;
@@ -179,19 +229,42 @@ export function parseNameStatus(output: string): ChangedFile[] {
       const oldPath = tokens[i++];
       const newPath = tokens[i++];
       if (newPath !== undefined) {
-        files.push({ path: newPath, oldPath, status: letter, additions: 0, deletions: 0 });
+        files.push({ path: newPath, oldPath, status: letter, group, additions: 0, deletions: 0 });
       }
     } else {
       const p = tokens[i++];
       if (p !== undefined) {
-        files.push({ path: p, status: normalizeStatus(letter), additions: 0, deletions: 0 });
+        files.push({ path: p, status: normalizeStatus(letter), group, additions: 0, deletions: 0 });
       }
     }
   }
   return files;
 }
 
-/** Count lines in a working-tree file (used for untracked additions). Best-effort. */
+/** Parse `git diff --numstat -z` into per-path counts. */
+export function parseNumstat(output: string): Counts {
+  const map: Counts = new Map();
+  const tokens = splitNul(output);
+  for (let i = 0; i < tokens.length; i++) {
+    const m = /^(\d+|-)\t(\d+|-)\t(.*)$/.exec(tokens[i]);
+    if (!m) {
+      continue;
+    }
+    let p = m[3];
+    if (p === "") {
+      // rename: next two tokens are old, new paths
+      i += 1;
+      p = tokens[i + 1] ?? tokens[i] ?? "";
+      i += 1;
+    }
+    map.set(p, {
+      additions: m[1] === "-" ? 0 : Number(m[1]),
+      deletions: m[2] === "-" ? 0 : Number(m[2]),
+    });
+  }
+  return map;
+}
+
 async function countLines(repoRoot: string, relPath: string): Promise<number> {
   try {
     const text = await readFile(join(repoRoot, relPath), "utf8");
@@ -211,14 +284,4 @@ function normalizeStatus(letter: string): FileStatus {
   return "M";
 }
 
-/** Detect whether the diff treats a path as binary (numstat shows "-\t-"). */
-export async function isBinary(repoRoot: string, spec: ReviewSpec, p: string): Promise<boolean> {
-  const args = nameStatusArgs(spec)
-    .map((a) => (a === "--name-status" ? "--numstat" : a))
-    .filter((a) => a !== "-z");
-  const out = await gitSafe(repoRoot, [...args, "--", p]);
-  return out.trim().startsWith("-\t-");
-}
-
-export type { ReviewMode };
-export { git };
+export type { FileLayout };

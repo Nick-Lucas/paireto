@@ -1,53 +1,55 @@
-// QuickPicks for the review sidebar selectors (mode, base ref). Kept separate from the tree so the
-// tree stays a plain data provider.
+// The "Compare To" QuickPick: choose the point the Committed group is diffed against.
+// Presets: HEAD, merge-base, the auto-detected default branch, up to 3 recent refs, and a
+// Branch/Ref… picker (whose choice is added to the recents).
 
 import * as vscode from "vscode";
 
-import { gitSafe, splitNul } from "../git/gitCli.js";
-import type { ReviewMode } from "../types.js";
+import type { DiffService } from "../git/DiffService.js";
+import type { CompareTo } from "../types.js";
 
-const MODE_LABELS: Record<ReviewMode, string> = {
-  unstaged: "Unstaged changes",
-  staged: "Staged changes",
-  uncommitted: "All uncommitted (vs HEAD)",
-  branch: "Branch (base...HEAD)",
-  commitRange: "Commit range (A..B)",
-};
-
-export async function pickMode(current: ReviewMode): Promise<ReviewMode | undefined> {
-  const items = (Object.keys(MODE_LABELS) as ReviewMode[]).map((mode) => ({
-    label: MODE_LABELS[mode],
-    description: mode === current ? "current" : undefined,
-    mode,
-  }));
-  const pick = await vscode.window.showQuickPick(items, { title: "Review mode" });
-  return pick?.mode;
+interface CompareItem extends vscode.QuickPickItem {
+  value?: CompareTo;
+  pickRef?: boolean;
 }
 
-export async function pickBaseRef(
+export async function pickCompareTo(
   repoRoot: string,
-  current: string | undefined,
-): Promise<string | undefined> {
-  const out = await gitSafe(repoRoot, [
-    "for-each-ref",
-    "--format=%(refname:short)",
-    "-z",
-    "refs/heads",
-    "refs/remotes",
-  ]);
-  const branches = splitNul(out).filter((b) => b.length > 0);
-  const items: vscode.QuickPickItem[] = branches.map((b) => ({
-    label: b,
-    description: b === current ? "current base" : undefined,
-  }));
-  items.unshift({ label: "$(edit) Enter ref manually…", alwaysShow: true });
+  diff: DiffService,
+  recentRefs: string[]
+): Promise<CompareTo | undefined> {
+  const defaultBranch = await diff.defaultBranch(repoRoot);
+  const items: CompareItem[] = [
+    { label: "$(git-commit) HEAD", description: "working changes only", value: { kind: "head" } },
+    { label: "$(git-pull-request) Merge base", description: "since you branched", value: { kind: "mergeBase" } },
+  ];
+  if (defaultBranch) {
+    items.push({
+      label: `$(git-branch) ${defaultBranch}`,
+      description: "default branch",
+      value: { kind: "default" },
+    });
+  }
+  if (recentRefs.length) {
+    items.push({ label: "Recent", kind: vscode.QuickPickItemKind.Separator });
+    for (const ref of recentRefs) {
+      items.push({ label: `$(history) ${ref}`, value: { kind: "ref", ref } });
+    }
+  }
+  items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
+  items.push({ label: "$(git-branch) Branch/Ref…", description: "pick any branch or ref", pickRef: true });
 
-  const pick = await vscode.window.showQuickPick(items, { title: "Base ref" });
-  if (!pick) {
+  const choice = await vscode.window.showQuickPick(items, { title: "Compare To" });
+  if (!choice) {
     return undefined;
   }
-  if (pick.label.startsWith("$(edit)")) {
-    return vscode.window.showInputBox({ title: "Base ref", value: current ?? "main" });
+  if (choice.pickRef) {
+    return pickRef(repoRoot, diff);
   }
-  return pick.label;
+  return choice.value;
+}
+
+async function pickRef(repoRoot: string, diff: DiffService): Promise<CompareTo | undefined> {
+  const refs = await diff.listRefs(repoRoot);
+  const picked = await vscode.window.showQuickPick(refs, { title: "Compare To: branch / ref" });
+  return picked ? { kind: "ref", ref: picked } : undefined;
 }

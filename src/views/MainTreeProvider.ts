@@ -1,8 +1,7 @@
 // The single TUI Companion sidebar view. Top-level rows are collapsible section headers — Agents,
-// Plan Review, Changed Files, Feedback — and their children are the items. Sections appear by state:
-// Agents always; Plan Review while a plan is pending; Changed Files + Feedback during a /tui-review
-// session. Section-scoped actions live as inline buttons on the section header rows (see package.json
-// view/item/context, keyed on the `section:<id>` contextValue).
+// Plan Review, Changed Files, Feedback. The Changed Files section nests group headers (Staged /
+// Unstaged / Committed), each laid out flat or as a compressed folder tree. Section/group/file
+// actions are inline buttons (see package.json view/item/context, keyed on contextValue).
 
 import * as path from "node:path";
 
@@ -17,25 +16,20 @@ import type { PlanCommentData } from "../plan/planFeedback.js";
 import { ReviewFileDecorationProvider } from "../review/ReviewFileDecorationProvider.js";
 import type { ReviewController } from "../review/ReviewController.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
-import type { AgentSession, AgentState, ReviewMode, ReviewSpec } from "../types.js";
+import type { AgentSession, AgentState, FileGroup } from "../types.js";
+import { buildFileTree, type TreeEntry } from "./fileTree.js";
 
 type SectionId = "agents" | "plan" | "files" | "feedback";
 
 type Node =
   | { kind: "section"; id: SectionId; label: string; description?: string }
-  | { kind: "agent"; session: AgentSession }
+  | { kind: "group"; group: FileGroup; label: string; count: number }
+  | { kind: "folder"; entry: Extract<TreeEntry, { type: "folder" }> }
   | { kind: "file"; file: ChangedFile }
+  | { kind: "agent"; session: AgentSession }
   | { kind: "reviewComment"; comment: ReviewComment }
   | { kind: "planComment"; comment: PlanCommentData }
   | { kind: "placeholder"; label: string };
-
-const MODE_LABELS: Record<ReviewMode, string> = {
-  unstaged: "Unstaged",
-  staged: "Staged",
-  uncommitted: "Uncommitted",
-  branch: "Branch",
-  commitRange: "Commit range",
-};
 
 const STATE_LABEL: Record<AgentState, string> = {
   idle: "idle",
@@ -56,12 +50,6 @@ const STATE_ICON: Record<AgentState, string> = {
   stopped: "primitive-square",
   ended: "circle-slash",
 };
-
-function reviewSummary(spec: ReviewSpec): string {
-  const base =
-    spec.mode === "branch" || spec.mode === "commitRange" ? ` · ${spec.baseRef ?? "—"}` : "";
-  return `${MODE_LABELS[spec.mode]}${base}`;
-}
 
 function statusWord(s: ChangedFile["status"]): string {
   return { A: "Added", M: "Modified", D: "Deleted", R: "Renamed", C: "Copied", U: "Untracked" }[s];
@@ -88,18 +76,28 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   getTreeItem(node: Node): vscode.TreeItem {
     switch (node.kind) {
       case "section": {
-        const item = new vscode.TreeItem(
-          node.label,
-          vscode.TreeItemCollapsibleState.Expanded
-        );
+        const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.contextValue = `section:${node.id}`;
         item.description = node.description;
         return item;
       }
-      case "agent":
-        return agentItem(node.session);
+      case "group": {
+        const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
+        item.contextValue = `group:${node.group}`;
+        item.description = String(node.count);
+        return item;
+      }
+      case "folder": {
+        const item = new vscode.TreeItem(node.entry.name, vscode.TreeItemCollapsibleState.Expanded);
+        item.resourceUri = vscode.Uri.file(node.entry.path);
+        item.iconPath = vscode.ThemeIcon.Folder;
+        item.contextValue = "folder";
+        return item;
+      }
       case "file":
         return fileItem(node.file);
+      case "agent":
+        return agentItem(node.session);
       case "reviewComment":
         return reviewCommentItem(node.comment);
       case "planComment":
@@ -116,34 +114,15 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (!node) {
       return this.sections();
     }
-    if (node.kind !== "section") {
-      return [];
-    }
-    switch (node.id) {
-      case "agents": {
-        const sessions = this.agents.allSessions().filter((s) => s.state !== "ended");
-        return sessions.length
-          ? sessions.map((session) => ({ kind: "agent", session }) as Node)
-          : [placeholder("No agents connected")];
-      }
-      case "plan": {
-        const comments = this.plan.getComments();
-        return comments.length
-          ? comments.map((comment) => ({ kind: "planComment", comment }) as Node)
-          : [placeholder("No comments — Approve, or add feedback on the plan")];
-      }
-      case "files": {
-        const files = this.review.getState().files;
-        return files.length
-          ? files.map((file) => ({ kind: "file", file }) as Node)
-          : [placeholder("No changes for this review mode")];
-      }
-      case "feedback": {
-        const comments = this.review.getComments();
-        return comments.length
-          ? comments.map((comment) => ({ kind: "reviewComment", comment }) as Node)
-          : [placeholder("No comments yet — add them on the diff")];
-      }
+    switch (node.kind) {
+      case "section":
+        return this.sectionChildren(node.id);
+      case "group":
+        return this.groupChildren(node.group);
+      case "folder":
+        return node.entry.children.map((e) => entryToNode(e));
+      default:
+        return [];
     }
   }
 
@@ -152,15 +131,13 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const agentCount = this.agents.allSessions().filter((s) => s.state !== "ended").length;
     out.push({ kind: "section", id: "agents", label: "Agents", description: count(agentCount) });
 
-    // Changed Files is always available for browsing the working diff.
     out.push({
       kind: "section",
       id: "files",
       label: "Changed Files",
-      description: reviewSummary(this.review.getState().spec),
+      description: this.review.getState().changes.compareLabel,
     });
 
-    // Plan + Feedback only appear during their respective review flows.
     if (this.plan.hasPendingPlan()) {
       out.push({ kind: "section", id: "plan", label: "Plan Review" });
     }
@@ -175,12 +152,72 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     return out;
   }
 
+  private sectionChildren(id: SectionId): Node[] {
+    switch (id) {
+      case "agents": {
+        const sessions = this.agents.allSessions().filter((s) => s.state !== "ended");
+        return sessions.length
+          ? sessions.map((session) => ({ kind: "agent", session }) as Node)
+          : [placeholder("No agents connected")];
+      }
+      case "files": {
+        const { staged, unstaged, committed } = this.review.getState().changes;
+        const groups: Node[] = [];
+        if (staged.length) {
+          groups.push({ kind: "group", group: "staged", label: "Staged", count: staged.length });
+        }
+        if (unstaged.length) {
+          groups.push({
+            kind: "group",
+            group: "unstaged",
+            label: "Unstaged",
+            count: unstaged.length,
+          });
+        }
+        if (committed.length) {
+          groups.push({
+            kind: "group",
+            group: "committed",
+            label: "Committed",
+            count: committed.length,
+          });
+        }
+        return groups.length ? groups : [placeholder("No changes")];
+      }
+      case "plan": {
+        const comments = this.plan.getComments();
+        return comments.length
+          ? comments.map((comment) => ({ kind: "planComment", comment }) as Node)
+          : [placeholder("No comments — Approve, or add feedback on the plan")];
+      }
+      case "feedback": {
+        const comments = this.review.getComments();
+        return comments.length
+          ? comments.map((comment) => ({ kind: "reviewComment", comment }) as Node)
+          : [placeholder("No comments yet — add them on the diff")];
+      }
+    }
+  }
+
+  private groupChildren(group: FileGroup): Node[] {
+    const { changes, layout } = this.review.getState();
+    const files = changes[group];
+    if (layout === "flat") {
+      return files.map((file) => ({ kind: "file", file }) as Node);
+    }
+    return buildFileTree(files).map((e) => entryToNode(e));
+  }
+
   dispose(): void {
     for (const d of this.subs) {
       d.dispose();
     }
     this.emitter.dispose();
   }
+}
+
+function entryToNode(entry: TreeEntry): Node {
+  return entry.type === "folder" ? { kind: "folder", entry } : { kind: "file", file: entry.file };
 }
 
 function count(n: number): string | undefined {
@@ -206,11 +243,12 @@ function fileItem(file: ChangedFile): vscode.TreeItem {
     ReviewFileDecorationProvider.fileUri(file.path, file.status),
     vscode.TreeItemCollapsibleState.None
   );
+  item.label = path.basename(file.path);
   const dir = path.dirname(file.path);
   const counts = `+${file.additions} -${file.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${file.path}\n${statusWord(file.status)} · ${counts}`;
-  item.contextValue = "changedFile";
+  item.contextValue = `changedFile:${file.group}`;
   item.command = { command: Commands.reviewOpenDiff, title: "Open Diff", arguments: [file] };
   return item;
 }

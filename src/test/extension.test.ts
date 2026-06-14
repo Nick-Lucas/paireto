@@ -5,7 +5,8 @@ import * as path from "node:path";
 
 import { canonicalize, repoKey } from "../protocol/paths.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
-import { parseNameStatus } from "../git/DiffService.js";
+import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
+import { buildFileTree } from "../views/fileTree.js";
 import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
@@ -59,19 +60,65 @@ suite("parseWorktrees", () => {
 });
 
 suite("parseNameStatus", () => {
-  test("parses modify, rename (two paths), add", () => {
+  test("parses modify, rename (two paths), add — tagged with group", () => {
     const z = "M\0src/a.ts\0R100\0old.ts\0new.ts\0A\0c.ts\0";
-    const files = parseNameStatus(z);
+    const files = parseNameStatus(z, "staged");
     assert.strictEqual(files.length, 3);
-    assert.deepStrictEqual(files[0], { path: "src/a.ts", status: "M", additions: 0, deletions: 0 });
+    assert.deepStrictEqual(files[0], {
+      path: "src/a.ts",
+      status: "M",
+      group: "staged",
+      additions: 0,
+      deletions: 0,
+    });
     assert.deepStrictEqual(files[1], {
       path: "new.ts",
       oldPath: "old.ts",
       status: "R",
+      group: "staged",
       additions: 0,
       deletions: 0,
     });
-    assert.deepStrictEqual(files[2], { path: "c.ts", status: "A", additions: 0, deletions: 0 });
+    assert.deepStrictEqual(files[2], {
+      path: "c.ts",
+      status: "A",
+      group: "staged",
+      additions: 0,
+      deletions: 0,
+    });
+  });
+});
+
+suite("buildFileTree", () => {
+  const mk = (p: string): ChangedFile => ({
+    path: p,
+    status: "M",
+    group: "unstaged",
+    additions: 0,
+    deletions: 0,
+  });
+
+  test("nests files under folders and sorts folders before files", () => {
+    const tree = buildFileTree([mk("z.ts"), mk("src/a.ts"), mk("src/b.ts")]);
+    assert.strictEqual(tree.length, 2);
+    assert.strictEqual(tree[0].type, "folder");
+    if (tree[0].type === "folder") {
+      assert.strictEqual(tree[0].name, "src");
+      assert.strictEqual(tree[0].children.length, 2);
+    }
+    assert.strictEqual(tree[1].type, "file");
+  });
+
+  test("compresses single-child folder chains", () => {
+    const tree = buildFileTree([mk("src/review/x.ts")]);
+    assert.strictEqual(tree.length, 1);
+    assert.strictEqual(tree[0].type, "folder");
+    if (tree[0].type === "folder") {
+      assert.strictEqual(tree[0].name, "src/review");
+      assert.strictEqual(tree[0].path, "src/review");
+      assert.strictEqual(tree[0].children.length, 1);
+      assert.strictEqual(tree[0].children[0].type, "file");
+    }
   });
 });
 
