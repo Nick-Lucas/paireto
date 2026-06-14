@@ -5,6 +5,8 @@
 import * as vscode from "vscode";
 
 import type { PlanGateResult } from "../bridge/types.js";
+import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
+import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { Commands, ContextKeys, Schemes } from "../config.js";
 import type { PlanReviewRequest } from "../protocol/types.js";
 import type { Severity } from "../types.js";
@@ -47,16 +49,12 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly registry: PlanGateRegistry,
   ) {
     this.controller = vscode.comments.createCommentController("tui.plan", "Plan Review");
+    this.controller.options = {
+      prompt: "Add plan feedback",
+      placeHolder: "Comment on this line of the plan",
+    };
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) => {
-        if (doc.uri.scheme !== Schemes.plan) {
-          return undefined;
-        }
-        return {
-          enableFileComments: false,
-          ranges: [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)],
-        };
-      },
+      provideCommentingRanges: (doc) => fullDocumentCommentingRanges(doc, Schemes.plan),
     };
     this.disposables.push(
       this.controller,
@@ -101,6 +99,7 @@ export class PlanReviewController implements vscode.Disposable {
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.languages.setTextDocumentLanguage(doc, "markdown");
     await vscode.window.showTextDocument(doc, { preview: false });
+    void ensureCommentingVisible();
     void vscode.window.showInformationMessage(
       "Claude is waiting on plan review. Add comments, then Approve or Send Feedback.",
     );

@@ -7,6 +7,8 @@ import * as crypto from "node:crypto";
 import * as vscode from "vscode";
 
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
+import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
+import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { Commands, Schemes } from "../config.js";
 import { DiffService, type ChangedFile } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
@@ -62,18 +64,12 @@ export class ReviewController implements vscode.Disposable {
   ) {
     this.spec = store.getSpec();
     this.controller = vscode.comments.createCommentController("tui.review", "Code Review");
+    this.controller.options = {
+      prompt: "Add a review comment",
+      placeHolder: "Leave a comment for Claude",
+    };
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) => {
-        if (doc.uri.scheme !== Schemes.review) {
-          return undefined;
-        }
-        // Return the CommentingRanges object shape (not a bare Range[]), which is what
-        // reliably surfaces the gutter "+" affordance.
-        return {
-          enableFileComments: false,
-          ranges: [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)],
-        };
-      },
+      provideCommentingRanges: (doc) => fullDocumentCommentingRanges(doc, Schemes.review),
     };
 
     this.disposables.push(
@@ -166,6 +162,7 @@ export class ReviewController implements vscode.Disposable {
       `${file.path} (${this.spec.mode})`,
       { preview: true },
     );
+    void ensureCommentingVisible();
   }
 
   private async addComment(reply: vscode.CommentReply): Promise<void> {
