@@ -6,7 +6,7 @@ import * as path from "node:path";
 import { canonicalize, repoKey } from "../protocol/paths.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
 import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
-import { buildFileTree } from "../views/fileTree.js";
+import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
@@ -119,6 +119,14 @@ suite("buildFileTree", () => {
       assert.strictEqual(tree[0].children.length, 1);
       assert.strictEqual(tree[0].children[0].type, "file");
     }
+  });
+
+  test("filesInEntry collects all files under a folder, including nested subfolders", () => {
+    const tree = buildFileTree([mk("src/a.ts"), mk("src/git/b.ts"), mk("src/git/c.ts")]);
+    const srcFolder = tree.find((e) => e.type === "folder");
+    assert.ok(srcFolder);
+    const paths = filesInEntry(srcFolder).map((f) => f.path).sort();
+    assert.deepStrictEqual(paths, ["src/a.ts", "src/git/b.ts", "src/git/c.ts"]);
   });
 });
 

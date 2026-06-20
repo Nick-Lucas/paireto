@@ -23,7 +23,7 @@
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
-    "check-types": "tsc --noEmit",
+    "check-types": "tsc --noEmit && tsc -p plugins/claude-code",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
@@ -114,11 +114,6 @@
         "icon": "$(remove)"
       },
       {
-        "command": "tui-companion.review.discard",
-        "title": "Discard Changes",
-        "icon": "$(discard)"
-      },
-      {
         "command": "tui-companion.review.stageAll",
         "title": "Stage All Changes",
         "icon": "$(add)"
@@ -127,6 +122,11 @@
         "command": "tui-companion.review.unstageAll",
         "title": "Unstage All Changes",
         "icon": "$(remove)"
+      },
+      {
+        "command": "tui-companion.review.discard",
+        "title": "Discard Changes",
+        "icon": "$(discard)"
       },
       {
         "command": "tui-companion.review.discardAll",
@@ -339,12 +339,12 @@
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.stageAll",
+          "command": "tui-companion.review.discardAll",
           "when": "view == tui.main && viewItem == group:unstaged",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.discardAll",
+          "command": "tui-companion.review.stageAll",
           "when": "view == tui.main && viewItem == group:unstaged",
           "group": "inline@2"
         },
@@ -391,6 +391,36 @@
         {
           "command": "tui-companion.review.unstage",
           "when": "view == tui.main && viewItem == changedFile:staged",
+          "group": "2_git@1"
+        },
+        {
+          "command": "tui-companion.review.stage",
+          "when": "view == tui.main && viewItem == folder:unstaged",
+          "group": "inline@2"
+        },
+        {
+          "command": "tui-companion.review.discard",
+          "when": "view == tui.main && viewItem == folder:unstaged",
+          "group": "inline@1"
+        },
+        {
+          "command": "tui-companion.review.unstage",
+          "when": "view == tui.main && viewItem == folder:staged",
+          "group": "inline@1"
+        },
+        {
+          "command": "tui-companion.review.stage",
+          "when": "view == tui.main && viewItem == folder:unstaged",
+          "group": "2_git@1"
+        },
+        {
+          "command": "tui-companion.review.discard",
+          "when": "view == tui.main && viewItem == folder:unstaged",
+          "group": "2_git@2"
+        },
+        {
+          "command": "tui-companion.review.unstage",
+          "when": "view == tui.main && viewItem == folder:staged",
           "group": "2_git@1"
         }
       ],

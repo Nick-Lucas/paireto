@@ -16,6 +16,7 @@ import { DiffService, type ChangedFile, type ChangesModel } from "../git/DiffSer
 import type { RepoService } from "../git/RepoService.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
+import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
@@ -108,9 +109,9 @@ export class ReviewController implements vscode.Disposable {
         }
       }),
       reg(Commands.reviewOpenFile, (a: unknown) => this.openFile(asFile(a))),
-      reg(Commands.reviewStage, (a: unknown) => this.stageFiles(asFiles(a))),
-      reg(Commands.reviewUnstage, (a: unknown) => this.unstageFiles(asFiles(a))),
-      reg(Commands.reviewDiscard, (a: unknown) => this.discardFiles(asFiles(a))),
+      reg(Commands.reviewStage, (a: unknown) => this.stageFiles(filesFromArg(a))),
+      reg(Commands.reviewUnstage, (a: unknown) => this.unstageFiles(filesFromArg(a))),
+      reg(Commands.reviewDiscard, (a: unknown) => this.discardFiles(filesFromArg(a))),
       reg(Commands.reviewStageAll, () => this.stageFiles(this.changes.unstaged)),
       reg(Commands.reviewUnstageAll, () => this.unstageFiles(this.changes.staged)),
       reg(Commands.reviewDiscardAll, () => this.discardFiles(this.changes.unstaged)),
@@ -439,7 +440,18 @@ function asFile(arg: unknown): ChangedFile | undefined {
   return undefined;
 }
 
-function asFiles(arg: unknown): ChangedFile[] {
+/**
+ * Collect every ChangedFile a git action should apply to. Handles a single file row, a folder row
+ * (all descendant files, matching the native git panel), and a raw ChangedFile from a caller.
+ */
+function filesFromArg(arg: unknown): ChangedFile[] {
+  if (!arg || typeof arg !== "object") {
+    return [];
+  }
+  const o = arg as { kind?: string; entry?: TreeEntry };
+  if (o.kind === "folder" && o.entry) {
+    return filesInEntry(o.entry);
+  }
   const f = asFile(arg);
   return f ? [f] : [];
 }

@@ -1,0 +1,16 @@
+{
+  // Type-checks the plugin's TypeScript dev scripts (e.g. scripts/emulator.ts) on their own,
+  // separate from the extension build: they run directly on Node's type-stripping, never emit,
+  // and live outside the extension's rootDir ("src"). check-types runs this alongside the root.
+  "compilerOptions": {
+    "module": "Node16",
+    "moduleResolution": "Node16",
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "rootDir": ".",
+    "strict": true,
+    "noEmit": true,
+    "types": ["node"]
+  },
+  "include": ["scripts/**/*.ts"]
+}

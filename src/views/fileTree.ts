@@ -36,6 +36,14 @@ export function buildFileTree(files: ChangedFile[]): TreeEntry[] {
   return toEntries(root, "");
 }
 
+/** All files at or below an entry — used to stage/unstage/discard a whole folder at once. */
+export function filesInEntry(entry: TreeEntry): ChangedFile[] {
+  if (entry.type === "file") {
+    return [entry.file];
+  }
+  return entry.children.flatMap(filesInEntry);
+}
+
 function toEntries(node: MutFolder, prefix: string): TreeEntry[] {
   const folders: TreeEntry[] = [];
   for (const [name, child] of [...node.folders.entries()].sort(([a], [b]) => a.localeCompare(b))) {

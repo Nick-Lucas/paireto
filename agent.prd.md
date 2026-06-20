@@ -57,10 +57,14 @@ are correlated by repository directory, not terminal.
 ### Changes View (always available)
 - Native-git-panel-style list of working changes, grouped: **Staged**, **Unstaged**, **Committed**.
   - Committed = files changed since the Compare-To point that aren't already staged/unstaged.
+  - Each group title row shows a muted `+adds -dels` line-count indicator after the label, plus a
+    colored far-right file-count badge (green=staged / orange=unstaged / blue=committed).
 - **Compare To** presets: HEAD, merge-base, default branch (main/master auto-detected), recent refs,
   or any branch/ref via picker.
 - **Flat / Tree** layout toggle.
 - Per-file: open changes (row click), open file, stage, unstage, discard (confirm) + right-click menu.
+- Per-folder (tree layout): stage / unstage / discard every change under the folder, via the same
+  inline buttons — matching the native git panel.
 - Group-level: Stage All, Unstage All, Discard All.
 - Git controls apply to Staged/Unstaged; the Committed group is read-only.
 

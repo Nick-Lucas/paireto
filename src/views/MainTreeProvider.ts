@@ -23,8 +23,15 @@ type SectionId = "agents" | "plan" | "files" | "feedback";
 
 type Node =
   | { kind: "section"; id: SectionId; label: string; description?: string }
-  | { kind: "group"; group: FileGroup; label: string; count: number }
-  | { kind: "folder"; entry: Extract<TreeEntry, { type: "folder" }> }
+  | {
+      kind: "group";
+      group: FileGroup;
+      label: string;
+      count: number;
+      additions: number;
+      deletions: number;
+    }
+  | { kind: "folder"; group: FileGroup; entry: Extract<TreeEntry, { type: "folder" }> }
   | { kind: "file"; file: ChangedFile }
   | { kind: "agent"; session: AgentSession }
   | { kind: "reviewComment"; comment: ReviewComment }
@@ -63,13 +70,13 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   constructor(
     private readonly agents: AgentSessionService,
     private readonly review: ReviewController,
-    private readonly plan: PlanReviewController
+    private readonly plan: PlanReviewController,
   ) {
     const fire = (): void => this.emitter.fire();
     this.subs.push(
       this.agents.onDidChange(fire),
       this.review.onDidChangeState(fire),
-      this.plan.onDidChange(fire)
+      this.plan.onDidChange(fire),
     );
   }
 
@@ -84,14 +91,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "group": {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.contextValue = `group:${node.group}`;
-        item.description = String(node.count);
+        item.description = `+${node.additions} -${node.deletions}`;
+        item.resourceUri = ReviewFileDecorationProvider.groupUri(node.group, node.count);
+        // resourceUri makes the file-icon theme inject a generic icon; "blank" keeps the row clean.
+        item.iconPath = new vscode.ThemeIcon("blank");
+        const fileWord = node.count === 1 ? "file" : "files";
+        item.tooltip = `${node.count} ${fileWord} · +${node.additions} -${node.deletions}`;
         return item;
       }
       case "folder": {
         const item = new vscode.TreeItem(node.entry.name, vscode.TreeItemCollapsibleState.Expanded);
         item.resourceUri = vscode.Uri.file(node.entry.path);
         item.iconPath = vscode.ThemeIcon.Folder;
-        item.contextValue = "folder";
+        item.contextValue = `folder:${node.group}`;
         return item;
       }
       case "file":
@@ -120,7 +132,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "group":
         return this.groupChildren(node.group);
       case "folder":
-        return node.entry.children.map((e) => entryToNode(e));
+        return node.entry.children.map((e) => entryToNode(e, node.group));
       default:
         return [];
     }
@@ -164,23 +176,13 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const { staged, unstaged, committed } = this.review.getState().changes;
         const groups: Node[] = [];
         if (staged.length) {
-          groups.push({ kind: "group", group: "staged", label: "Staged", count: staged.length });
+          groups.push(groupNode("staged", "Staged", staged));
         }
         if (unstaged.length) {
-          groups.push({
-            kind: "group",
-            group: "unstaged",
-            label: "Unstaged",
-            count: unstaged.length,
-          });
+          groups.push(groupNode("unstaged", "Unstaged", unstaged));
         }
         if (committed.length) {
-          groups.push({
-            kind: "group",
-            group: "committed",
-            label: "Committed",
-            count: committed.length,
-          });
+          groups.push(groupNode("committed", "Committed", committed));
         }
         return groups.length ? groups : [placeholder("No changes")];
       }
@@ -205,7 +207,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (layout === "flat") {
       return files.map((file) => ({ kind: "file", file }) as Node);
     }
-    return buildFileTree(files).map((e) => entryToNode(e));
+    return buildFileTree(files).map((e) => entryToNode(e, group));
   }
 
   dispose(): void {
@@ -216,8 +218,20 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   }
 }
 
-function entryToNode(entry: TreeEntry): Node {
-  return entry.type === "folder" ? { kind: "folder", entry } : { kind: "file", file: entry.file };
+function groupNode(group: FileGroup, label: string, files: ChangedFile[]): Node {
+  let additions = 0;
+  let deletions = 0;
+  for (const f of files) {
+    additions += f.additions;
+    deletions += f.deletions;
+  }
+  return { kind: "group", group, label, count: files.length, additions, deletions };
+}
+
+function entryToNode(entry: TreeEntry, group: FileGroup): Node {
+  return entry.type === "folder"
+    ? { kind: "folder", group, entry }
+    : { kind: "file", file: entry.file };
 }
 
 function count(n: number): string | undefined {
@@ -241,7 +255,7 @@ function agentItem(s: AgentSession): vscode.TreeItem {
 function fileItem(file: ChangedFile): vscode.TreeItem {
   const item = new vscode.TreeItem(
     ReviewFileDecorationProvider.fileUri(file.path, file.status),
-    vscode.TreeItemCollapsibleState.None
+    vscode.TreeItemCollapsibleState.None,
   );
   item.label = path.basename(file.path);
   const dir = path.dirname(file.path);
@@ -256,13 +270,13 @@ function fileItem(file: ChangedFile): vscode.TreeItem {
 function reviewCommentItem(c: ReviewComment): vscode.TreeItem {
   const item = new vscode.TreeItem(
     `${path.basename(c.filePath)}:${c.line + 1}`,
-    vscode.TreeItemCollapsibleState.None
+    vscode.TreeItemCollapsibleState.None,
   );
   const dir = path.dirname(c.filePath);
   item.description = dir === "." ? c.body : `${dir} · ${c.body}`;
   item.iconPath = kindThemeIcon(c.kind);
   item.tooltip = new vscode.MarkdownString(
-    `**${kindLabel(c.kind)}** · ${c.filePath}:${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`
+    `**${kindLabel(c.kind)}** · ${c.filePath}:${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`,
   );
   item.contextValue = "reviewComment";
   item.command = { command: Commands.reviewRevealComment, title: "Reveal Comment", arguments: [c] };
@@ -274,7 +288,7 @@ function planCommentItem(c: PlanCommentData): vscode.TreeItem {
   item.description = c.body;
   item.iconPath = kindThemeIcon(c.kind);
   item.tooltip = new vscode.MarkdownString(
-    `**${kindLabel(c.kind)}** · line ${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`
+    `**${kindLabel(c.kind)}** · line ${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`,
   );
   item.contextValue = "planComment";
   return item;
