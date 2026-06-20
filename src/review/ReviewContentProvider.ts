@@ -21,6 +21,26 @@ export class ReviewContentProvider implements vscode.TextDocumentContentProvider
     this.emitter.fire(uri);
   }
 
+  /** Re-fetch every open virtual diff side whose file path matches `relPath`. */
+  refreshOpenForPath(relPath: string): void {
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        const input = tab.input;
+        const uris =
+          input instanceof vscode.TabInputTextDiff
+            ? [input.original, input.modified]
+            : input instanceof vscode.TabInputText
+              ? [input.uri]
+              : [];
+        for (const u of uris) {
+          if (u.scheme === Schemes.review && stripSide(u.path) === relPath) {
+            this.emitter.fire(u);
+          }
+        }
+      }
+    }
+  }
+
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
     const params = new URLSearchParams(uri.query);
     const ref = params.get("ref") ?? "EMPTY";

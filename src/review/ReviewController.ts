@@ -3,7 +3,7 @@
 // (stage/unstage/discard), hosts inline comments, and ships feedback to the waiting agent.
 
 import * as crypto from "node:crypto";
-import { join } from "node:path";
+import { isAbsolute, join, relative, sep } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -32,7 +32,7 @@ class RComment implements vscode.Comment {
   constructor(
     public body: string | vscode.MarkdownString,
     public kind: CommentKind,
-    public readonly model: ReviewComment
+    public readonly model: ReviewComment,
   ) {
     this.contextValue = kind;
     this.label = kindLabel(kind);
@@ -51,6 +51,13 @@ const GROUP_LABEL: Record<FileGroup, string> = {
   staged: "Staged",
   unstaged: "Unstaged",
   committed: "Committed",
+};
+
+/** Groups strictly "below" a given group, from highest (committed) to lowest (unstaged). */
+const LOWER_GROUPS: Record<FileGroup, FileGroup[]> = {
+  committed: ["staged", "unstaged"],
+  staged: ["unstaged"],
+  unstaged: [],
 };
 
 export interface ReviewState {
@@ -75,11 +82,19 @@ export class ReviewController implements vscode.Disposable {
   private readonly threads = new Map<vscode.CommentThread, RComment[]>();
   private readonly gate = new ReviewGateRegistry();
   private activeRequestId?: string;
+  /** The file currently shown in the diff editor, so an edit can re-target its compare base. */
+  private openDiffFile?: { path: string; group: FileGroup };
+  /** Debounced refresh of diffs when their underlying files change on disk. */
+  private fsWatcher?: vscode.FileSystemWatcher;
+  private watchedRoot?: string;
+  private readonly dirtyPaths = new Set<string>();
+  private fsDebounce?: ReturnType<typeof setTimeout>;
 
   constructor(
     private readonly repoService: RepoService,
     private readonly diff: DiffService,
-    private readonly store: ReviewStore
+    private readonly store: ReviewStore,
+    private readonly reviewContent: ReviewContentProvider,
   ) {
     this.compareTo = store.getCompareTo();
     this.layout = store.getLayout();
@@ -123,7 +138,16 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewDeleteComment, (c: ReviewComment) => this.deleteComment(c)),
       reg(Commands.reviewSendFeedback, () => this.sendFeedback()),
       reg(Commands.reviewCancel, () => this.cancelReview()),
-      reg(Commands.reviewExport, () => this.exportReview())
+      reg(Commands.reviewExport, () => this.exportReview()),
+      // Editing an editable staged/committed diff routes the change to the working tree — flip the
+      // diff to the unstaged base immediately, on the first keystroke (before any save).
+      vscode.workspace.onDidChangeTextDocument((e) => this.maybeSwitchToUnstaged(e.document.uri)),
+      // Saving writes to the working tree — keep the Changes view in sync.
+      vscode.workspace.onDidSaveTextDocument((doc) => {
+        if (doc.uri.scheme === "file" && this.repoRoot && isInside(this.repoRoot, doc.uri.fsPath)) {
+          void this.refresh();
+        }
+      }),
     );
   }
 
@@ -175,7 +199,54 @@ export class ReviewController implements vscode.Disposable {
     } else {
       this.changes = await this.diff.getChanges(this.repoRoot, this.compareTo);
     }
+    this.ensureFsWatcher();
     this.changeEmitter.fire();
+  }
+
+  // ── Underlying-file watch: refresh open diffs + the Changes view when files change on disk ──
+  private ensureFsWatcher(): void {
+    if (this.repoRoot === this.watchedRoot) {
+      return;
+    }
+    this.fsWatcher?.dispose();
+    this.watchedRoot = this.repoRoot;
+    if (!this.repoRoot) {
+      this.fsWatcher = undefined;
+      return;
+    }
+    const w = vscode.workspace.createFileSystemWatcher(
+      new vscode.RelativePattern(this.repoRoot, "**/*")
+    );
+    const onChange = (uri: vscode.Uri): void => this.onFsChange(uri);
+    w.onDidChange(onChange);
+    w.onDidCreate(onChange);
+    w.onDidDelete(onChange);
+    this.fsWatcher = w;
+  }
+
+  private onFsChange(uri: vscode.Uri): void {
+    if (uri.scheme !== "file" || !this.repoRoot) {
+      return;
+    }
+    const rel = relative(this.repoRoot, uri.fsPath);
+    if (rel.startsWith("..") || isAbsolute(rel) || rel.includes(`.git${sep}`) || rel.includes(`node_modules${sep}`)) {
+      return;
+    }
+    this.dirtyPaths.add(rel.split(sep).join("/"));
+    if (this.fsDebounce) {
+      clearTimeout(this.fsDebounce);
+    }
+    this.fsDebounce = setTimeout(() => void this.flushFsChanges(), 200);
+  }
+
+  private async flushFsChanges(): Promise<void> {
+    this.fsDebounce = undefined;
+    const paths = [...this.dirtyPaths];
+    this.dirtyPaths.clear();
+    for (const p of paths) {
+      this.reviewContent.refreshOpenForPath(p);
+    }
+    await this.refresh();
   }
 
   private async changeCompareTo(): Promise<void> {
@@ -203,14 +274,20 @@ export class ReviewController implements vscode.Disposable {
   // ── Git write-ops ──────────────────────────────────────────────────────────
   private async stageFiles(files: ChangedFile[]): Promise<void> {
     if (this.repoRoot && files.length) {
-      await this.diff.stage(this.repoRoot, files.map((f) => f.path));
+      await this.diff.stage(
+        this.repoRoot,
+        files.map((f) => f.path),
+      );
       await this.refresh();
     }
   }
 
   private async unstageFiles(files: ChangedFile[]): Promise<void> {
     if (this.repoRoot && files.length) {
-      await this.diff.unstage(this.repoRoot, files.map((f) => f.path));
+      await this.diff.unstage(
+        this.repoRoot,
+        files.map((f) => f.path),
+      );
       await this.refresh();
     }
   }
@@ -224,16 +301,96 @@ export class ReviewController implements vscode.Disposable {
     const choice = await vscode.window.showWarningMessage(
       `Discard ${label}? This cannot be undone.`,
       { modal: true },
-      "Discard Changes"
+      "Discard Changes",
     );
     if (choice !== "Discard Changes") {
       return;
     }
     await this.diff.discard(
       this.repoRoot,
-      files.map((f) => ({ path: f.path, untracked: f.status === "U" }))
+      files.map((f) => ({ path: f.path, untracked: f.status === "U" })),
     );
     await this.refresh();
+  }
+
+  /**
+   * Editing the working-tree side of an editable staged/committed diff puts the change at the
+   * unstaged level, so re-target the open diff's base to the index — keeping the same (live, dirty)
+   * working file on the right, and restoring the caret + focus the user was typing at.
+   */
+  private maybeSwitchToUnstaged(uri: vscode.Uri): void {
+    const open = this.openDiffFile;
+    if (uri.scheme !== "file" || !this.repoRoot || !open || open.group === "unstaged") {
+      return;
+    }
+    if (join(this.repoRoot, open.path) !== uri.fsPath) {
+      return; // not the file shown in the tracked diff
+    }
+    // Only act when the edit is in OUR active higher-level diff (base = tui-review, right = the file),
+    // never a plain editor on the same path.
+    const oldTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    const input = oldTab?.input;
+    const isOurDiff =
+      input instanceof vscode.TabInputTextDiff &&
+      input.original.scheme === Schemes.review &&
+      input.modified.scheme === "file" &&
+      input.modified.fsPath === uri.fsPath;
+    if (!isOurDiff) {
+      return;
+    }
+    this.openDiffFile = { path: open.path, group: "unstaged" }; // flip synchronously: no re-entry
+    // Defer so the editor's selection reflects the just-typed character (it updates after the
+    // onDidChangeTextDocument event), then re-target the diff base and restore the caret.
+    setTimeout(() => {
+      const active = vscode.window.activeTextEditor;
+      const selection =
+        active && active.document.uri.fsPath === uri.fsPath ? active.selection : undefined;
+      void this.showUnstagedDiff(open.path, selection, oldTab);
+    }, 0);
+  }
+
+  private async showUnstagedDiff(
+    relPath: string,
+    selection?: vscode.Selection,
+    replaceTab?: vscode.Tab
+  ): Promise<void> {
+    if (!this.repoRoot) {
+      return;
+    }
+    const baseUri = ReviewContentProvider.buildUri(
+      this.reviewId,
+      "base",
+      relPath,
+      DiffService.encodeRef({ kind: "index" }),
+      this.repoRoot
+    );
+    const modUri = vscode.Uri.file(join(this.repoRoot, relPath));
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      baseUri,
+      modUri,
+      `${relPath} (${GROUP_LABEL.unstaged})`,
+      { preview: true }
+    );
+
+    // The edited (dirty) higher-level diff opens as a separate tab — close it so this replaces it
+    // rather than stacking. The document stays open here, so no save prompt.
+    const newTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+    if (replaceTab && replaceTab !== newTab) {
+      void vscode.window.tabGroups.close(replaceTab);
+    }
+
+    // Restore the caret + keep focus on the modified side.
+    const editor = vscode.window.visibleTextEditors.find(
+      (ed) => ed.document.uri.toString() === modUri.toString()
+    );
+    if (editor && selection) {
+      editor.selection = selection;
+      editor.revealRange(
+        new vscode.Range(selection.active, selection.active),
+        vscode.TextEditorRevealType.Default
+      );
+    }
   }
 
   private async openFile(file?: ChangedFile): Promise<void> {
@@ -247,29 +404,49 @@ export class ReviewController implements vscode.Disposable {
     if (!this.repoRoot) {
       return;
     }
+    this.openDiffFile = { path: file.path, group: file.group };
     const sides = this.diff.fileSides(file, this.changes.compareRef);
     const baseUri = ReviewContentProvider.buildUri(
       this.reviewId,
       "base",
       file.path,
       DiffService.encodeRef(sides.base),
-      this.repoRoot
+      this.repoRoot,
     );
-    const modUri = ReviewContentProvider.buildUri(
-      this.reviewId,
-      "modified",
-      file.path,
-      DiffService.encodeRef(sides.modified),
-      this.repoRoot
-    );
+
+    // When editable, the modified side is the real working-tree file: it gets LSP + editing, and
+    // edits land in the lowest (unstaged) level. Otherwise it's a read-only virtual document.
+    const editable = this.isEditable(file);
+    const modUri = editable
+      ? vscode.Uri.file(join(this.repoRoot, file.path))
+      : ReviewContentProvider.buildUri(
+          this.reviewId,
+          "modified",
+          file.path,
+          DiffService.encodeRef(sides.modified),
+          this.repoRoot,
+        );
+
     await vscode.commands.executeCommand(
       "vscode.diff",
       baseUri,
       modUri,
       `${file.path} (${GROUP_LABEL[file.group]})`,
-      { preview: true }
+      { preview: true },
     );
     void ensureCommentingVisible();
+  }
+
+  /**
+   * A file is editable iff it has no change at a lower level (committed > staged > unstaged) — so
+   * editing its working-tree copy is unambiguous and lands in the unstaged level. During a review
+   * session diffs stay virtual so inline comments (tui-review scheme only) keep working.
+   */
+  private isEditable(file: ChangedFile): boolean {
+    if (this.isSessionActive() || file.status === "D") {
+      return false;
+    }
+    return !LOWER_GROUPS[file.group].some((g) => this.changes[g].some((f) => f.path === file.path));
   }
 
   private async addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<void> {
@@ -361,7 +538,7 @@ export class ReviewController implements vscode.Disposable {
     const choice = await vscode.window.showWarningMessage(
       `Clear all ${this.comments.size} review comment(s)? This cannot be undone.`,
       { modal: true },
-      "Clear"
+      "Clear",
     );
     if (choice === "Clear") {
       this.resetComments();
@@ -378,7 +555,9 @@ export class ReviewController implements vscode.Disposable {
     }
     const feedback = renderReviewFeedback(this.getComments());
     if (!feedback) {
-      void vscode.window.showWarningMessage("No comments to send. Add a comment, or Cancel the review.");
+      void vscode.window.showWarningMessage(
+        "No comments to send. Add a comment, or Cancel the review.",
+      );
       return;
     }
     this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
@@ -409,7 +588,7 @@ export class ReviewController implements vscode.Disposable {
       this.repoRoot,
       this.reviewId,
       this.changes.compareLabel,
-      this.getComments()
+      this.getComments(),
     );
     void vscode.window.showInformationMessage(`Review exported to ${file}`);
   }
@@ -420,6 +599,10 @@ export class ReviewController implements vscode.Disposable {
 
   dispose(): void {
     this.drainGate();
+    if (this.fsDebounce) {
+      clearTimeout(this.fsDebounce);
+    }
+    this.fsWatcher?.dispose();
     for (const d of this.disposables) {
       d.dispose();
     }
@@ -458,4 +641,10 @@ function filesFromArg(arg: unknown): ChangedFile[] {
 
 function newReviewId(): string {
   return "review-" + crypto.randomBytes(4).toString("hex");
+}
+
+/** True when `child` is the same as or nested under `root` (both absolute fs paths). */
+function isInside(root: string, child: string): boolean {
+  const rel = relative(root, child);
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }

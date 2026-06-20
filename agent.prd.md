@@ -62,7 +62,14 @@ are correlated by repository directory, not terminal.
 - **Compare To** presets: HEAD, merge-base, default branch (main/master auto-detected), recent refs,
   or any branch/ref via picker.
 - **Flat / Tree** layout toggle.
-- Per-file: open changes (row click), open file, stage, unstage, discard (confirm) + right-click menu.
+- Per-file: open changes (row click), open file (first inline button on every row), stage, unstage,
+  discard (confirm) + right-click menu.
+- Browsing diffs are **editable with full LSP** when the file has no change at a lower level
+  (committed > staged > unstaged): the modified side is the real working-tree file, so edits land in
+  the unstaged level and the view refreshes on save. The first edit to a staged/committed file's
+  diff flips it straight to the unstaged diff (index → live working tree), preserving caret + focus.
+  Diffs stay read-only during a `/tui-review`
+  session (so inline comments work) and for deleted files.
 - Per-folder (tree layout): stage / unstage / discard every change under the folder, via the same
   inline buttons — matching the native git panel.
 - Group-level: Stage All, Unstage All, Discard All.

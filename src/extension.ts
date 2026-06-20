@@ -78,7 +78,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const diffService = new DiffService();
   const reviewContent = new ReviewContentProvider();
   const reviewStore = new ReviewStore(context.workspaceState);
-  const reviewController = new ReviewController(repoService, diffService, reviewStore);
+  const reviewController = new ReviewController(repoService, diffService, reviewStore, reviewContent);
 
   const mainTree = new MainTreeProvider(agents, reviewController, planReview);
   const fileDecorations = new ReviewFileDecorationProvider();

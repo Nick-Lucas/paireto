@@ -354,19 +354,24 @@
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.stage",
-          "when": "view == tui.main && viewItem == changedFile:unstaged",
-          "group": "inline@2"
+          "command": "tui-companion.review.openFile",
+          "when": "view == tui.main && viewItem =~ /^changedFile:/",
+          "group": "inline@1"
         },
         {
           "command": "tui-companion.review.discard",
           "when": "view == tui.main && viewItem == changedFile:unstaged",
-          "group": "inline@1"
+          "group": "inline@2"
+        },
+        {
+          "command": "tui-companion.review.stage",
+          "when": "view == tui.main && viewItem == changedFile:unstaged",
+          "group": "inline@3"
         },
         {
           "command": "tui-companion.review.unstage",
           "when": "view == tui.main && viewItem == changedFile:staged",
-          "group": "inline@1"
+          "group": "inline@2"
         },
         {
           "command": "tui-companion.review.openFile",
