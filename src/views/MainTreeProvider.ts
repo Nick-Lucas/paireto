@@ -9,7 +9,7 @@ import * as vscode from "vscode";
 
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { kindColorId, kindIcon, kindLabel } from "../comments/kinds.js";
-import { Commands } from "../config.js";
+import { Commands, Views } from "../config.js";
 import type { ChangedFile } from "../git/DiffService.js";
 import type { PlanReviewController } from "../plan/PlanReviewController.js";
 import type { PlanCommentData } from "../plan/planFeedback.js";
@@ -66,6 +66,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
   private readonly subs: vscode.Disposable[] = [];
+  private view?: vscode.TreeView<Node>;
+  /** A diff whose row isn't in the tree yet (e.g. the unstaged row before save) — select on arrival. */
+  private pendingReveal?: { group: FileGroup; path: string };
 
   constructor(
     private readonly agents: AgentSessionService,
@@ -75,21 +78,101 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const fire = (): void => this.emitter.fire();
     this.subs.push(
       this.agents.onDidChange(fire),
-      this.review.onDidChangeState(fire),
+      this.review.onDidChangeState(() => {
+        this.emitter.fire();
+        this.maybeRevealPending();
+      }),
       this.plan.onDidChange(fire),
+      this.review.onDidChangeActiveDiff((t) => this.syncSelection(t)),
     );
+  }
+
+  /** Create the sidebar tree view (kept here so `reveal` can select the row of the focused diff). */
+  register(): vscode.TreeView<Node> {
+    this.view = vscode.window.createTreeView(Views.main, { treeDataProvider: this });
+    this.subs.push(this.view);
+    return this.view;
+  }
+
+  // ── Selection sync: keep the highlighted row pointed at the diff the editor is showing ──
+  private syncSelection(target: { group: FileGroup; path: string }): void {
+    if (this.rowFor(target)) {
+      void this.revealRow(target);
+      this.pendingReveal = undefined;
+    } else {
+      this.pendingReveal = target; // row not in the tree yet (e.g. unstaged before save)
+    }
+  }
+
+  private maybeRevealPending(): void {
+    if (this.pendingReveal && this.rowFor(this.pendingReveal)) {
+      void this.revealRow(this.pendingReveal);
+      this.pendingReveal = undefined;
+    }
+  }
+
+  private rowFor(t: { group: FileGroup; path: string }): ChangedFile | undefined {
+    return this.review.getState().changes[t.group].find((f) => f.path === t.path);
+  }
+
+  private async revealRow(t: { group: FileGroup; path: string }): Promise<void> {
+    const file = this.rowFor(t);
+    if (!file || !this.view) {
+      return;
+    }
+    try {
+      // select highlights the row; focus stays in the editor the user is working in.
+      await this.view.reveal({ kind: "file", file }, { select: true, focus: false });
+    } catch {
+      /* tree not ready / row collapsed away — non-fatal */
+    }
+  }
+
+  getParent(node: Node): Node | undefined {
+    switch (node.kind) {
+      case "group":
+        return { kind: "section", id: "files", label: "Changed Files" };
+      case "folder":
+        return this.entryParent(node.group, (e) => e.type === "folder" && e.path === node.entry.path);
+      case "file":
+        return this.entryParent(
+          node.file.group,
+          (e) => e.type === "file" && e.file.path === node.file.path
+        );
+      case "agent":
+        return { kind: "section", id: "agents", label: "Agents" };
+      case "reviewComment":
+        return { kind: "section", id: "feedback", label: "Feedback" };
+      case "planComment":
+        return { kind: "section", id: "plan", label: "Plan Review" };
+      default:
+        return undefined; // sections + placeholders are top-level
+    }
+  }
+
+  /** Parent node of a file/folder entry: its containing folder (tree layout) or the group header. */
+  private entryParent(group: FileGroup, matches: (e: TreeEntry) => boolean): Node {
+    const { changes, layout } = this.review.getState();
+    const groupHeader = groupNode(group, GROUP_LABELS[group], changes[group]);
+    if (layout === "flat") {
+      return groupHeader;
+    }
+    const parent = findEntryParent(buildFileTree(changes[group]), matches);
+    return parent ? { kind: "folder", group, entry: parent } : groupHeader;
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
     switch (node.kind) {
       case "section": {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
+        item.id = `section:${node.id}`;
         item.contextValue = `section:${node.id}`;
         item.description = node.description;
         return item;
       }
       case "group": {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
+        item.id = `group:${node.group}`;
         item.contextValue = `group:${node.group}`;
         item.description = `+${node.additions} -${node.deletions}`;
         item.resourceUri = ReviewFileDecorationProvider.groupUri(node.group, node.count);
@@ -101,6 +184,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       }
       case "folder": {
         const item = new vscode.TreeItem(node.entry.name, vscode.TreeItemCollapsibleState.Expanded);
+        item.id = `folder:${node.group}:${node.entry.path}`;
         item.resourceUri = vscode.Uri.file(node.entry.path);
         item.iconPath = vscode.ThemeIcon.Folder;
         item.contextValue = `folder:${node.group}`;
@@ -174,15 +258,16 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       }
       case "files": {
         const { staged, unstaged, committed } = this.review.getState().changes;
+        // Highest layer first, matching the git stack: Committed → Staged → Working Tree.
         const groups: Node[] = [];
+        if (committed.length) {
+          groups.push(groupNode("committed", GROUP_LABELS.committed, committed));
+        }
         if (staged.length) {
-          groups.push(groupNode("staged", "Staged", staged));
+          groups.push(groupNode("staged", GROUP_LABELS.staged, staged));
         }
         if (unstaged.length) {
-          groups.push(groupNode("unstaged", "Unstaged", unstaged));
-        }
-        if (committed.length) {
-          groups.push(groupNode("committed", "Committed", committed));
+          groups.push(groupNode("unstaged", GROUP_LABELS.unstaged, unstaged));
         }
         return groups.length ? groups : [placeholder("No changes")];
       }
@@ -216,6 +301,36 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     }
     this.emitter.dispose();
   }
+}
+
+const GROUP_LABELS: Record<FileGroup, string> = {
+  staged: "Staged",
+  unstaged: "Working Tree",
+  committed: "Committed",
+};
+
+/**
+ * The folder entry directly containing the entry matched by `matches`, or undefined when the match
+ * is at the tree root (parent is the group header) or absent. The ambiguity is intentional — callers
+ * fall back to the group header in both cases.
+ */
+function findEntryParent(
+  entries: TreeEntry[],
+  matches: (e: TreeEntry) => boolean,
+  parent?: Extract<TreeEntry, { type: "folder" }>,
+): Extract<TreeEntry, { type: "folder" }> | undefined {
+  for (const e of entries) {
+    if (matches(e)) {
+      return parent;
+    }
+    if (e.type === "folder") {
+      const found = findEntryParent(e.children, matches, e);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+  }
+  return undefined;
 }
 
 function groupNode(group: FileGroup, label: string, files: ChangedFile[]): Node {
@@ -257,6 +372,7 @@ function fileItem(file: ChangedFile): vscode.TreeItem {
     ReviewFileDecorationProvider.fileUri(file.path, file.status),
     vscode.TreeItemCollapsibleState.None,
   );
+  item.id = `file:${file.group}:${file.path}`;
   item.label = path.basename(file.path);
   const dir = path.dirname(file.path);
   const counts = `+${file.additions} -${file.deletions}`;

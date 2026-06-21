@@ -10,7 +10,7 @@ import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
 import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
 import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
-import { Commands, ContextKeys, Schemes, Views } from "./config.js";
+import { Commands, ContextKeys, Schemes } from "./config.js";
 import { DiffService } from "./git/DiffService.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
@@ -102,11 +102,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.executeCommand("workbench.action.terminal.focus")
     ),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
-    vscode.workspace.registerTextDocumentContentProvider(Schemes.review, reviewContent),
+    vscode.workspace.registerFileSystemProvider(Schemes.review, reviewContent, {
+      isReadonly: true,
+      isCaseSensitive: true,
+    }),
     vscode.window.registerFileDecorationProvider(fileDecorations),
-    vscode.window.createTreeView(Views.main, { treeDataProvider: mainTree }),
+    mainTree.register(),
   );
-  void reviewController.refresh();
 
   // 4. Bridge: one socket per open repo, dispatching inbound messages to the services.
   const handlers: BridgeHandlers = {
@@ -125,6 +127,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => reviewController.drainGate() });
 
   await repoService.init();
+  void reviewController.refresh("init"); // after init so the first model has a real repo
 
   const serveOpenRepos = (): void => {
     for (const repo of repoService.repositories) {
@@ -135,7 +138,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(
     repoService.onDidChange(() => {
       serveOpenRepos();
-      void reviewController.refresh();
+      void reviewController.refresh("git"); // the git extension is our sole working-tree/index signal
     }),
   );
 

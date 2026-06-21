@@ -55,10 +55,11 @@ are correlated by repository directory, not terminal.
   proceeds with no changes. Export → save the review to `.vscode/agent-reviews/`.
 
 ### Changes View (always available)
-- Native-git-panel-style list of working changes, grouped: **Staged**, **Unstaged**, **Committed**.
+- Native-git-panel-style list of working changes, grouped top-down by git layer: **Committed**,
+  **Staged**, **Working Tree**.
   - Committed = files changed since the Compare-To point that aren't already staged/unstaged.
   - Each group title row shows a muted `+adds -dels` line-count indicator after the label, plus a
-    colored far-right file-count badge (green=staged / orange=unstaged / blue=committed).
+    colored far-right file-count badge (blue=committed / green=staged / orange=working tree).
 - **Compare To** presets: HEAD, merge-base, default branch (main/master auto-detected), recent refs,
   or any branch/ref via picker.
 - **Flat / Tree** layout toggle.
@@ -67,11 +68,14 @@ are correlated by repository directory, not terminal.
 - Browsing diffs are **editable with full LSP** when the file has no change at a lower level
   (committed > staged > unstaged): the modified side is the real working-tree file, so edits land in
   the unstaged level and the view refreshes on save. The first edit to a staged/committed file's
-  diff flips it straight to the unstaged diff (index → live working tree), preserving caret + focus.
-  Diffs stay read-only during a `/tui-review`
+  diff re-targets it in place to the unstaged diff (index → live working tree) — same tab, no save
+  prompt, caret + focus preserved. Diffs stay read-only during a `/tui-review`
   session (so inline comments work) and for deleted files.
 - Per-folder (tree layout): stage / unstage / discard every change under the folder, via the same
   inline buttons — matching the native git panel.
+- The tree selection follows the diff in focus: opening a file or switching between open diff tabs
+  selects its row, and when an edit demotes a staged/committed diff to the working tree, the Unstaged
+  row is highlighted as it appears.
 - Group-level: Stage All, Unstage All, Discard All.
 - Git controls apply to Staged/Unstaged; the Committed group is read-only.
 

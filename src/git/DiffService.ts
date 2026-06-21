@@ -64,12 +64,18 @@ export class DiffService {
     }
 
     // Committed = changed between Compare-To and HEAD, minus anything already staged/unstaged.
+    // A bad/unresolvable compare ref is a persistent condition, so degrade to empty here rather than
+    // failing the whole model (staged/unstaged failures, by contrast, propagate and keep last-good).
     let committed: ChangedFile[] = [];
     if (resolved.ref) {
-      const here = new Set([...staged, ...unstaged].map((f) => f.path));
-      committed = (await this.collect(repoRoot, ["diff", resolved.ref, "HEAD"], "committed")).filter(
-        (f) => !here.has(f.path)
-      );
+      try {
+        const here = new Set([...staged, ...unstaged].map((f) => f.path));
+        committed = (
+          await this.collect(repoRoot, ["diff", resolved.ref, "HEAD"], "committed")
+        ).filter((f) => !here.has(f.path));
+      } catch {
+        committed = [];
+      }
     }
 
     const sort = (a: ChangedFile, b: ChangedFile): number => a.path.localeCompare(b.path);
@@ -82,9 +88,12 @@ export class DiffService {
     };
   }
 
-  /** Run a name-status diff + numstat for one group and merge the line counts. */
+  /** Run a name-status diff + numstat for one group and merge the line counts.
+   *  name-status uses {@link git} (throwing) so a transient git failure surfaces as an error rather
+   *  than a spurious "no changes" — the caller keeps the last good model instead of blanking it. */
   private async collect(repoRoot: string, diffArgs: string[], group: FileGroup): Promise<ChangedFile[]> {
-    const files = parseNameStatus(await gitSafe(repoRoot, [...diffArgs, "--name-status", "-z"]), group);
+    const nameStatus = (await git(repoRoot, [...diffArgs, "--name-status", "-z"])).stdout;
+    const files = parseNameStatus(nameStatus, group);
     const counts = parseNumstat(await gitSafe(repoRoot, [...diffArgs, "--numstat", "-z"]));
     for (const f of files) {
       const c = counts.get(f.path);

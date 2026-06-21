@@ -485,6 +485,11 @@
           "default": true,
           "description": "Automatically register the bundled Claude Code plugin on activation."
         },
+        "tui-companion.debug": {
+          "type": "boolean",
+          "default": false,
+          "description": "Log TUI Companion diagnostics (refreshes, diff open decisions) to the 'TUI Companion' output channel."
+        },
         "tui-companion.planGate.onUnavailable": {
           "type": "string",
           "enum": [
