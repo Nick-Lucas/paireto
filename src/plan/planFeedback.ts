@@ -11,37 +11,60 @@ export interface PlanCommentData {
   kind: CommentKind;
 }
 
+/** "Send Feedback": deny + a directive to revise the plan to address the feedback. */
 export function renderPlanFeedback(comments: PlanCommentData[], toolName = "ExitPlanMode"): string {
-  const sorted = comments
-    .slice()
-    .sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.line - b.line);
-
-  const body =
-    sorted.length === 0
-      ? "Plan changes requested."
-      : sorted
-          .map((c) => {
-            const label = c.kind.toUpperCase();
-            const loc = `line ${c.line + 1}`;
-            const quote = c.quote.trim() ? `\n   Current text: "${c.quote.trim()}"` : "";
-            return `[${label}] ${loc}${quote}\n   Feedback: ${c.body.trim()}`;
-          })
-          .join("\n\n");
-
+  const sorted = sortComments(comments);
   return [
-    "YOUR PLAN WAS NOT APPROVED.",
+    "YOUR PLAN HAS FEEDBACK PROVIDED BY THE USER.",
     "",
-    `You MUST revise the plan to address ALL of the feedback below before calling ${toolName} again.`,
+    `Revise the plan to address the feedback below before calling ${toolName} again.`,
     "",
     "Rules:",
     "- Do not resubmit the same plan unchanged.",
     "- Do NOT change the plan title (first # heading) unless explicitly asked.",
-    "- Keep the existing plan structure unless a comment asks for a rewrite.",
+    "- Keep the existing plan structure unless the user asks for a rewrite.",
     "",
-    body,
+    itemize(sorted),
     "",
     summarize(sorted),
   ].join("\n");
+}
+
+/** "Reject Plan": deny + a directive to STOP and discuss the problems with the user (not revise). */
+export function renderPlanRejection(
+  comments: PlanCommentData[],
+  toolName = "ExitPlanMode",
+): string {
+  const sorted = sortComments(comments);
+  return [
+    "YOUR PLAN WAS REJECTED.",
+    "",
+    `Do NOT revise the plan or call ${toolName}. Stop and discuss the problems below with ` +
+      "the user first — ask clarifying questions, understand their concerns, and agree on an approach " +
+      "together before planning again.",
+    "",
+    itemize(sorted),
+    "",
+    summarize(sorted),
+  ].join("\n");
+}
+
+function sortComments(comments: PlanCommentData[]): PlanCommentData[] {
+  return comments.slice().sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.line - b.line);
+}
+
+function itemize(sorted: PlanCommentData[]): string {
+  if (sorted.length === 0) {
+    return "(No line comments — see the user's message.)";
+  }
+  return sorted
+    .map((c) => {
+      const label = c.kind.toUpperCase();
+      const loc = `line ${c.line + 1}`;
+      const quote = c.quote.trim() ? `\n   Current text: "${c.quote.trim()}"` : "";
+      return `[${label}] ${loc}${quote}\n   Feedback: ${c.body.trim()}`;
+    })
+    .join("\n\n");
 }
 
 function summarize(comments: PlanCommentData[]): string {

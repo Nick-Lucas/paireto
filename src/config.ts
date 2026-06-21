@@ -8,6 +8,7 @@ export const Commands = {
   switcherAcceptThisWindow: "tui-companion.switcher.acceptThisWindow",
   planApprove: "tui-companion.plan.approve",
   planSendFeedback: "tui-companion.plan.sendFeedback",
+  planReject: "tui-companion.plan.reject",
   planAddQuestion: "tui-companion.plan.addQuestion",
   planAddComment: "tui-companion.plan.addComment",
   planAddProblem: "tui-companion.plan.addProblem",

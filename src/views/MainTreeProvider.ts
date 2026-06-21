@@ -174,12 +174,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.id = `group:${node.group}`;
         item.contextValue = `group:${node.group}`;
-        item.description = `+${node.additions} -${node.deletions}`;
-        item.resourceUri = ReviewFileDecorationProvider.groupUri(node.group, node.count);
-        // resourceUri makes the file-icon theme inject a generic icon; "blank" keeps the row clean.
-        item.iconPath = new vscode.ThemeIcon("blank");
+        // No resourceUri here: it would force a (blank) icon slot, gapping the label off the chevron.
         const fileWord = node.count === 1 ? "file" : "files";
-        item.tooltip = `${node.count} ${fileWord} · +${node.additions} -${node.deletions}`;
+        item.description = `${node.count} ${fileWord} · +${node.additions} -${node.deletions}`;
         return item;
       }
       case "folder": {

@@ -11,7 +11,7 @@ import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes } from "../config.js";
 import type { PlanReviewRequest } from "../protocol/types.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
-import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
+import { renderPlanFeedback, renderPlanRejection, type PlanCommentData } from "./planFeedback.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
 
 class PlanComment implements vscode.Comment {
@@ -76,6 +76,7 @@ export class PlanReviewController implements vscode.Disposable {
       vscode.commands.registerCommand(Commands.planSendFeedback, (uri?: vscode.Uri) =>
         this.sendFeedback(uri),
       ),
+      vscode.commands.registerCommand(Commands.planReject, (uri?: vscode.Uri) => this.reject(uri)),
     );
   }
 
@@ -174,6 +175,17 @@ export class PlanReviewController implements vscode.Disposable {
       return;
     }
     const reason = renderPlanFeedback(comments);
+    this.registry.fulfill(review.key, { decision: "deny", reason });
+  }
+
+  /** Reject: deny the plan and tell the agent to discuss the problems with the user (not revise).
+   *  Unlike Send Feedback, comments are optional — a rejection stands on its own. */
+  private reject(uri?: vscode.Uri): void {
+    const review = this.resolveReview(uri);
+    if (!review) {
+      return;
+    }
+    const reason = renderPlanRejection(this.collect(review));
     this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 

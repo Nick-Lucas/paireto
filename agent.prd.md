@@ -46,7 +46,9 @@ are correlated by repository directory, not terminal.
 - When the agent finishes a plan (ExitPlanMode), the plan opens in VS Code automatically and the
   agent blocks waiting for a decision.
 - Add line comments tagged Question / Comment / Problem.
-- Approve → agent proceeds. Send Feedback → agent gets the comments and revises (deny-with-feedback).
+- Three actions (colored icons): **Approve** (green) → agent proceeds; **Send Feedback** (amber) →
+  deny-with-feedback, agent revises the plan; **Reject** (red) → deny-with-feedback, agent stops and
+  discusses the problems with the user instead of revising. Reject works with or without comments.
 
 ### Code Review (`/tui-review`)
 - Run `/tui-review` in the agent; it opens a blocking review session in VS Code and waits.
@@ -58,11 +60,10 @@ are correlated by repository directory, not terminal.
 - Native-git-panel-style list of working changes, grouped top-down by git layer: **Committed**,
   **Staged**, **Working Tree**.
   - Committed = files changed since the Compare-To point that aren't already staged/unstaged.
-  - Each group title row shows a muted `+adds -dels` line-count indicator after the label, plus a
-    colored far-right file-count badge (blue=committed / green=staged / orange=working tree).
-- **Compare To** presets: HEAD, merge-base, default branch (main/master auto-detected), recent refs,
-  or any branch/ref via picker.
-- **Flat / Tree** layout toggle.
+  - Each group title row shows a muted `N files · +adds -dels` indicator after the label.
+- **Compare To** presets (HEAD, merge-base, default branch (main/master auto-detected), recent refs,
+  or any branch/ref via picker) and the **Flat / Tree** layout toggle are inline buttons on the
+  Changed Files section row.
 - Per-file: open changes (row click), open file (first inline button on every row), stage, unstage,
   discard (confirm) + right-click menu.
 - Browsing diffs are **editable with full LSP** when the file has no change at a lower level
@@ -81,7 +82,9 @@ are correlated by repository directory, not terminal.
 
 ### Sidebar
 - One "TUI Companion" view with collapsible sections: Agents, Changed Files (always), Plan Review
-  (while a plan is pending), Feedback (during a review session). Section controls live in the title bar.
+  (while a plan is pending), Feedback (during a review session). Section controls live on their
+  section rows / the title bar; the Approve (green), Send Feedback (amber), and Reject/Cancel (red)
+  plan & review actions use colored icons.
 
 ---
 
@@ -90,7 +93,7 @@ are correlated by repository directory, not terminal.
 **Plan approval**
 1. Agent presents a plan → it opens in VS Code, agent waits.
 2. You read it, optionally comment.
-3. Approve (agent continues) or Send Feedback (agent revises).
+3. Approve (agent continues), Send Feedback (agent revises), or Reject (agent stops and discusses).
 
 **Code review**
 1. You/agent: run `/tui-review`.

@@ -58,12 +58,17 @@
       {
         "command": "tui-companion.plan.approve",
         "title": "Approve Plan",
-        "icon": "$(check)"
+        "icon": "media/approve.svg"
       },
       {
         "command": "tui-companion.plan.sendFeedback",
         "title": "Send Plan Feedback to Claude",
-        "icon": "$(comment-discussion)"
+        "icon": "media/send-feedback.svg"
+      },
+      {
+        "command": "tui-companion.plan.reject",
+        "title": "Reject Plan",
+        "icon": "media/reject.svg"
       },
       {
         "command": "tui-companion.plan.addComment",
@@ -137,7 +142,7 @@
       {
         "command": "tui-companion.review.sendFeedback",
         "title": "Send Feedback",
-        "icon": "$(comment-discussion)"
+        "icon": "media/send-feedback.svg"
       },
       {
         "command": "tui-companion.review.clearFeedback",
@@ -176,7 +181,7 @@
       {
         "command": "tui-companion.review.cancel",
         "title": "Cancel Review",
-        "icon": "$(close)"
+        "icon": "media/reject.svg"
       },
       {
         "command": "tui-companion.focusAgent",
@@ -294,6 +299,11 @@
           "command": "tui-companion.plan.sendFeedback",
           "when": "resourceScheme == tui-plan",
           "group": "navigation@2"
+        },
+        {
+          "command": "tui-companion.plan.reject",
+          "when": "resourceScheme == tui-plan",
+          "group": "navigation@3"
         }
       ],
       "comments/commentThread/context": [
@@ -329,6 +339,16 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "tui-companion.review.pickCompareTo",
+          "when": "view == tui.main && viewItem == section:files",
+          "group": "inline@1"
+        },
+        {
+          "command": "tui-companion.review.toggleLayout",
+          "when": "view == tui.main && viewItem == section:files",
+          "group": "inline@2"
+        },
         {
           "command": "tui-companion.focusAgent",
           "when": "view == tui.main && viewItem == agentSession",
@@ -432,16 +452,6 @@
       ],
       "view/title": [
         {
-          "command": "tui-companion.review.pickCompareTo",
-          "when": "view == tui.main",
-          "group": "navigation@1"
-        },
-        {
-          "command": "tui-companion.review.toggleLayout",
-          "when": "view == tui.main",
-          "group": "navigation@2"
-        },
-        {
           "command": "tui-companion.review.refresh",
           "when": "view == tui.main",
           "group": "navigation@3"
@@ -457,24 +467,29 @@
           "group": "navigation@5"
         },
         {
-          "command": "tui-companion.review.sendFeedback",
-          "when": "view == tui.main && tui.reviewSessionActive",
+          "command": "tui-companion.plan.reject",
+          "when": "view == tui.main && tui.planPending",
           "group": "navigation@6"
         },
         {
-          "command": "tui-companion.review.clearFeedback",
+          "command": "tui-companion.review.sendFeedback",
           "when": "view == tui.main && tui.reviewSessionActive",
           "group": "navigation@7"
         },
         {
-          "command": "tui-companion.review.export",
+          "command": "tui-companion.review.clearFeedback",
           "when": "view == tui.main && tui.reviewSessionActive",
           "group": "navigation@8"
         },
         {
-          "command": "tui-companion.review.cancel",
+          "command": "tui-companion.review.export",
           "when": "view == tui.main && tui.reviewSessionActive",
           "group": "navigation@9"
+        },
+        {
+          "command": "tui-companion.review.cancel",
+          "when": "view == tui.main && tui.reviewSessionActive",
+          "group": "navigation@10"
         }
       ]
     },

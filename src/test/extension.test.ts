@@ -7,7 +7,7 @@ import { canonicalize, repoKey } from "../protocol/paths.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
 import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
-import { renderPlanFeedback } from "../plan/planFeedback.js";
+import { renderPlanFeedback, renderPlanRejection } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
@@ -142,6 +142,24 @@ suite("renderPlanFeedback", () => {
     assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
     assert.ok(out.includes("consider this"));
     assert.ok(out.includes("(1 problem, 1 question, 1 comment)"));
+  });
+});
+
+suite("renderPlanRejection", () => {
+  test("tells the agent to discuss (not revise) and includes the comments", () => {
+    const out = renderPlanRejection([
+      { line: 2, quote: "do Z", body: "this approach is wrong", kind: "problem" },
+    ]);
+    assert.ok(out.includes("REJECTED"));
+    assert.ok(/discuss/i.test(out));
+    assert.ok(!out.includes("revise the plan to address")); // not the Send-Feedback revise directive
+    assert.ok(out.includes("this approach is wrong"));
+  });
+
+  test("works with no comments", () => {
+    const out = renderPlanRejection([]);
+    assert.ok(out.includes("REJECTED"));
+    assert.ok(/discuss/i.test(out));
   });
 });
 
