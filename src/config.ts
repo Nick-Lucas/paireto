@@ -6,9 +6,13 @@ export const EXT_ID = "tui-companion";
 export const Commands = {
   openSwitcher: "tui-companion.openSwitcher",
   switcherAcceptThisWindow: "tui-companion.switcher.acceptThisWindow",
-  planApprove: "tui-companion.plan.approve",
-  planSendFeedback: "tui-companion.plan.sendFeedback",
-  planReject: "tui-companion.plan.reject",
+  // Shared gate outcomes (dispatch to the active Plan or Review flow via the coordinator).
+  gateApprove: "tui-companion.gate.approve",
+  gateSendFeedback: "tui-companion.gate.sendFeedback",
+  // Shared comment editing (operate on any GateComment regardless of controller).
+  commentEdit: "tui-companion.comment.edit",
+  commentSave: "tui-companion.comment.save",
+  commentDelete: "tui-companion.comment.delete",
   planAddQuestion: "tui-companion.plan.addQuestion",
   planAddComment: "tui-companion.plan.addComment",
   planAddProblem: "tui-companion.plan.addProblem",
@@ -23,15 +27,11 @@ export const Commands = {
   reviewStageAll: "tui-companion.review.stageAll",
   reviewUnstageAll: "tui-companion.review.unstageAll",
   reviewDiscardAll: "tui-companion.review.discardAll",
-  reviewSendFeedback: "tui-companion.review.sendFeedback",
-  reviewClearFeedback: "tui-companion.review.clearFeedback",
-  reviewExport: "tui-companion.review.export",
   reviewAddQuestion: "tui-companion.review.addQuestion",
   reviewAddComment: "tui-companion.review.addComment",
   reviewAddProblem: "tui-companion.review.addProblem",
   reviewRevealComment: "tui-companion.review.revealComment",
   reviewDeleteComment: "tui-companion.review.deleteComment",
-  reviewCancel: "tui-companion.review.cancel",
   focusAgent: "tui-companion.focusAgent",
 } as const;
 

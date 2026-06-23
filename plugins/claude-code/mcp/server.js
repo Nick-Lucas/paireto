@@ -84,7 +84,7 @@ async function runReview() {
         if (msg.status === "submitted" && msg.feedback) {
           finish(textResult(msg.feedback, false));
         } else {
-          finish(textResult("Review cancelled — no changes requested.", false));
+          finish(textResult("Review approved — proceeding with no changes.", false));
         }
       }
     });

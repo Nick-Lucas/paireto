@@ -7,6 +7,12 @@ import * as assert from "node:assert";
 import * as vscode from "vscode";
 
 import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
+import {
+  GateComment,
+  editComment,
+  saveComment,
+  deleteComment,
+} from "../comments/CommentSession.js";
 
 const SCHEME = "tui-test-doc";
 
@@ -24,7 +30,10 @@ suite("commenting integration", () => {
 
   async function openDoc(lines: number): Promise<vscode.TextDocument> {
     const uri = vscode.Uri.parse(`${SCHEME}://t/doc-${lines}.md`);
-    contents.set(uri.toString(), Array.from({ length: lines }, (_, i) => `line ${i + 1}`).join("\n"));
+    contents.set(
+      uri.toString(),
+      Array.from({ length: lines }, (_, i) => `line ${i + 1}`).join("\n"),
+    );
     const doc = await vscode.workspace.openTextDocument(uri);
     return doc;
   }
@@ -55,6 +64,60 @@ suite("commenting integration", () => {
       const thread = controller.createCommentThread(doc.uri, new vscode.Range(1, 0, 1, 0), []);
       assert.ok(thread);
       assert.strictEqual(thread.uri.toString(), doc.uri.toString());
+      thread.dispose();
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  test("editComment/saveComment toggle mode + contextValue and sync the edited body", async () => {
+    const controller = vscode.comments.createCommentController("tui-test-edit", "Test");
+    try {
+      const doc = await openDoc(4);
+      const thread = controller.createCommentThread(doc.uri, new vscode.Range(1, 0, 1, 0), []);
+      const comment = new GateComment("original", "comment");
+      comment.thread = thread;
+      let saved: string | undefined;
+      comment.onSaved = (b) => {
+        saved = b;
+      };
+      thread.comments = [comment];
+
+      editComment(comment);
+      assert.strictEqual(comment.mode, vscode.CommentMode.Editing);
+      assert.strictEqual(comment.contextValue, "editing");
+
+      comment.body = "edited"; // VS Code mutates body in the editing widget
+      saveComment(comment);
+      assert.strictEqual(comment.mode, vscode.CommentMode.Preview);
+      assert.strictEqual(comment.contextValue, "preview");
+      assert.strictEqual(saved, "edited");
+
+      thread.dispose();
+    } finally {
+      controller.dispose();
+    }
+  });
+
+  test("deleteComment removes the comment from its thread and fires onDeleted", async () => {
+    const controller = vscode.comments.createCommentController("tui-test-del", "Test");
+    try {
+      const doc = await openDoc(4);
+      const thread = controller.createCommentThread(doc.uri, new vscode.Range(1, 0, 1, 0), []);
+      const keep = new GateComment("keep", "comment");
+      const drop = new GateComment("drop", "problem");
+      keep.thread = thread;
+      drop.thread = thread;
+      let deleted = false;
+      drop.onDeleted = () => {
+        deleted = true;
+      };
+      thread.comments = [keep, drop];
+
+      deleteComment(drop);
+      assert.strictEqual(deleted, true);
+      assert.deepStrictEqual(thread.comments, [keep]);
+
       thread.dispose();
     } finally {
       controller.dispose();

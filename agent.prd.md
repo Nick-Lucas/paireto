@@ -42,19 +42,31 @@ are correlated by repository directory, not terminal.
 - `Cmd/Ctrl+Shift+K` (or status bar click) opens a picker: current window, worktrees, recent repos.
 - Enter opens in a new window; `Shift+Enter` opens in the current window.
 
+### Plan & Code Review (shared gate)
+Plan Review and Code Review are two surfaces over one shared "gate": only one can be active at a
+time, both gather kinded line comments, and both resolve with the same two actions.
+- **Two actions (colored icons):** **Approve** (green) → agent proceeds; **Send Feedback** (amber) →
+  deny-with-feedback (plan: agent revises; review: agent acts on the comments). No Reject — Send
+  Feedback covers it.
+- Line comments tagged Question / Comment / Problem; **comments are editable and deletable** after
+  creation (edit/save/delete on the comment).
+- **One at a time:** while a plan or review is active, a second plan/review request waits until the
+  first is resolved or cleared (the agent's hook is blocked meanwhile).
+- **Disconnect resets state:** if the agent side ends another way (interrupt, crash, ExitPlanMode
+  resolved in the terminal), the dropped connection auto-closes the plan/review and resets the UI.
+
 ### Plan Review
-- When the agent finishes a plan (ExitPlanMode), the plan opens in VS Code automatically and the
-  agent blocks waiting for a decision.
-- Add line comments tagged Question / Comment / Problem.
-- Three actions (colored icons): **Approve** (green) → agent proceeds; **Send Feedback** (amber) →
-  deny-with-feedback, agent revises the plan; **Reject** (red) → deny-with-feedback, agent stops and
-  discusses the problems with the user instead of revising. Reject works with or without comments.
+- When the agent finishes a plan (ExitPlanMode), the plan opens in VS Code automatically, the bottom
+  panel (terminal) is hidden, and the agent blocks waiting for a decision.
+- On any resolution the plan tab auto-closes and the terminal panel is restored.
+- Closing the plan tab while it's still pending prompts you to Approve or Send Feedback (dismiss to
+  keep reviewing).
 
 ### Code Review (`/tui-review`)
 - Run `/tui-review` in the agent; it opens a blocking review session in VS Code and waits.
-- Review the diffs, add inline comments (Question / Comment / Problem; `Cmd+Enter` submits).
-- Send Feedback → comments returned to the agent, which acts on them immediately. Cancel → agent
-  proceeds with no changes. Export → save the review to `.vscode/agent-reviews/`.
+- Review the diffs, add/edit inline comments (Question / Comment / Problem; `Cmd+Enter` submits).
+- Send Feedback → comments returned to the agent, which acts on them immediately. Approve → agent
+  proceeds with no changes.
 
 ### Changes View (always available)
 - Native-git-panel-style list of working changes, grouped top-down by git layer: **Committed**,
@@ -83,22 +95,23 @@ are correlated by repository directory, not terminal.
 ### Sidebar
 - One "TUI Companion" view with collapsible sections: Agents, Changed Files (always), Plan Review
   (while a plan is pending), Feedback (during a review session). Section controls live on their
-  section rows / the title bar; the Approve (green), Send Feedback (amber), and Reject/Cancel (red)
-  plan & review actions use colored icons.
+  section rows / the title bar; the shared Approve (green) and Send Feedback (amber) gate actions use
+  colored icons and appear whenever a plan or review is active.
 
 ---
 
 ## Core workflows
 
 **Plan approval**
-1. Agent presents a plan → it opens in VS Code, agent waits.
-2. You read it, optionally comment.
-3. Approve (agent continues), Send Feedback (agent revises), or Reject (agent stops and discusses).
+1. Agent presents a plan → it opens in VS Code (terminal panel hidden), agent waits.
+2. You read it, optionally comment (comments are editable).
+3. Approve (agent continues) or Send Feedback (agent revises). The tab auto-closes and the terminal
+   returns.
 
 **Code review**
 1. You/agent: run `/tui-review`.
 2. VS Code reveals the review; you comment on the diffs.
-3. Send Feedback (agent applies) or Cancel.
+3. Send Feedback (agent applies) or Approve (agent proceeds with no changes).
 
 **Browse changes**
 1. Open the Changes section any time.

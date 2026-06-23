@@ -7,10 +7,11 @@ import { canonicalize, repoKey } from "../protocol/paths.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
 import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
-import { renderPlanFeedback, renderPlanRejection } from "../plan/planFeedback.js";
+import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
+import { GateCoordinator, type GateSession } from "../gate/GateCoordinator.js";
 import { isStaleActive, STALE_ACTIVE_MS_FOR_TEST } from "../agents/AgentSessionService.js";
 
 suite("repoKey", () => {
@@ -125,7 +126,9 @@ suite("buildFileTree", () => {
     const tree = buildFileTree([mk("src/a.ts"), mk("src/git/b.ts"), mk("src/git/c.ts")]);
     const srcFolder = tree.find((e) => e.type === "folder");
     assert.ok(srcFolder);
-    const paths = filesInEntry(srcFolder).map((f) => f.path).sort();
+    const paths = filesInEntry(srcFolder)
+      .map((f) => f.path)
+      .sort();
     assert.deepStrictEqual(paths, ["src/a.ts", "src/git/b.ts", "src/git/c.ts"]);
   });
 });
@@ -137,29 +140,11 @@ suite("renderPlanFeedback", () => {
       { line: 1, quote: "do Z", body: "must not Z", kind: "problem" },
       { line: 9, quote: "fyi", body: "consider this", kind: "question" },
     ]);
-    assert.ok(out.includes("NOT APPROVED"));
+    assert.ok(/feedback/i.test(out));
     assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
     assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
     assert.ok(out.includes("consider this"));
     assert.ok(out.includes("(1 problem, 1 question, 1 comment)"));
-  });
-});
-
-suite("renderPlanRejection", () => {
-  test("tells the agent to discuss (not revise) and includes the comments", () => {
-    const out = renderPlanRejection([
-      { line: 2, quote: "do Z", body: "this approach is wrong", kind: "problem" },
-    ]);
-    assert.ok(out.includes("REJECTED"));
-    assert.ok(/discuss/i.test(out));
-    assert.ok(!out.includes("revise the plan to address")); // not the Send-Feedback revise directive
-    assert.ok(out.includes("this approach is wrong"));
-  });
-
-  test("works with no comments", () => {
-    const out = renderPlanRejection([]);
-    assert.ok(out.includes("REJECTED"));
-    assert.ok(/discuss/i.test(out));
   });
 });
 
@@ -222,6 +207,73 @@ suite("ReviewGateRegistry", () => {
     reg.drain({ status: "cancelled", feedback: "" });
     assert.deepStrictEqual(await a, { status: "cancelled", feedback: "" });
     assert.deepStrictEqual(await b, { status: "cancelled", feedback: "" });
+  });
+});
+
+suite("GateCoordinator (one-at-a-time)", () => {
+  const session = (kind: "plan" | "review"): GateSession => ({
+    kind,
+    approve() {},
+    sendFeedback() {},
+  });
+
+  test("first acquire is immediate; a second waits until the first releases", async () => {
+    const c = new GateCoordinator();
+    const relA = await c.acquire(session("plan"));
+    assert.strictEqual(c.isActive(), true);
+    assert.strictEqual(c.current?.kind, "plan");
+
+    let bAcquired = false;
+    const pB = c.acquire(session("review")).then((rel) => {
+      bAcquired = true;
+      return rel;
+    });
+    await Promise.resolve();
+    assert.strictEqual(
+      bAcquired,
+      false,
+      "second acquire must block while the first holds the slot",
+    );
+    assert.strictEqual(c.current?.kind, "plan");
+
+    relA();
+    const relB = await pB;
+    assert.strictEqual(bAcquired, true);
+    assert.strictEqual(c.current?.kind, "review");
+    relB();
+    assert.strictEqual(c.isActive(), false);
+  });
+
+  test("abort while queued rejects the waiter and leaves the active slot held", async () => {
+    const c = new GateCoordinator();
+    const relA = await c.acquire(session("plan"));
+    const ac = new AbortController();
+    const pB = c.acquire(session("review"), ac.signal);
+    ac.abort();
+    await assert.rejects(pB);
+    assert.strictEqual(
+      c.current?.kind,
+      "plan",
+      "the queued waiter dropping out must not disturb the holder",
+    );
+    relA();
+    assert.strictEqual(c.isActive(), false);
+  });
+
+  test("acquire with an already-aborted signal rejects immediately", async () => {
+    const c = new GateCoordinator();
+    const ac = new AbortController();
+    ac.abort();
+    await assert.rejects(c.acquire(session("plan"), ac.signal));
+    assert.strictEqual(c.isActive(), false);
+  });
+
+  test("release is idempotent", async () => {
+    const c = new GateCoordinator();
+    const rel = await c.acquire(session("plan"));
+    rel();
+    rel();
+    assert.strictEqual(c.isActive(), false);
   });
 });
 

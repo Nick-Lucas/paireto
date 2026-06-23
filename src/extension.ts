@@ -10,7 +10,9 @@ import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
 import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
 import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
+import { registerCommentEditingCommands } from "./comments/CommentSession.js";
 import { Commands, ContextKeys, Schemes } from "./config.js";
+import { GateCoordinator } from "./gate/GateCoordinator.js";
 import { DiffService } from "./git/DiffService.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
@@ -47,12 +49,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         } else if (result.manualCommand) {
           const choice = await vscode.window.showWarningMessage(
             "TUI Companion couldn't auto-install its Claude Code plugin. Register it manually?",
-            "Copy Command"
+            "Copy Command",
           );
           if (choice === "Copy Command") {
             await vscode.env.clipboard.writeText(result.manualCommand);
             void vscode.window.showInformationMessage(
-              "Command copied. Run it in a terminal, then restart Claude Code."
+              "Command copied. Run it in a terminal, then restart Claude Code.",
             );
           }
         }
@@ -69,16 +71,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const repoService = new RepoService();
   const worktrees = new WorktreeService();
   const recents = new RecentRepoStore(context.globalState);
+  // One gate slot shared by Plan + Review so only one is ever active at a time.
+  const coordinator = new GateCoordinator();
   const planProvider = new PlanContentProvider();
   const planGate = new PlanGateRegistry();
-  const planReview = new PlanReviewController(planProvider, planGate);
+  const planReview = new PlanReviewController(planProvider, planGate, coordinator);
   const statusBar = new StatusBarController(repoService, agents);
 
   // Code review (Phase 3).
   const diffService = new DiffService();
   const reviewContent = new ReviewContentProvider();
   const reviewStore = new ReviewStore(context.workspaceState);
-  const reviewController = new ReviewController(repoService, diffService, reviewStore, reviewContent);
+  const reviewController = new ReviewController(
+    repoService,
+    diffService,
+    reviewStore,
+    reviewContent,
+    coordinator,
+  );
 
   const mainTree = new MainTreeProvider(agents, reviewController, planReview);
   const fileDecorations = new ReviewFileDecorationProvider();
@@ -99,8 +109,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     fileDecorations,
     switcher,
     vscode.commands.registerCommand(Commands.focusAgent, () =>
-      vscode.commands.executeCommand("workbench.action.terminal.focus")
+      vscode.commands.executeCommand("workbench.action.terminal.focus"),
     ),
+    // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
+    vscode.commands.registerCommand(Commands.gateApprove, () => coordinator.current?.approve()),
+    vscode.commands.registerCommand(Commands.gateSendFeedback, () =>
+      coordinator.current?.sendFeedback(),
+    ),
+    registerCommentEditingCommands(),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
     vscode.workspace.registerFileSystemProvider(Schemes.review, reviewContent, {
       isReadonly: true,
@@ -118,8 +134,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         worktrees.invalidate(msg.repoRoot);
       }
     },
-    onPlanReviewRequest: (msg) => planReview.presentPlan(msg),
-    onReviewAwait: (msg) => reviewController.startSession(msg.id),
+    onPlanReviewRequest: (msg, signal) => planReview.presentPlan(msg, signal),
+    onReviewAwait: (msg, signal) => reviewController.startSession(msg.id, signal),
   };
   const bridge = new BridgeManager(handlers);
   context.subscriptions.push({ dispose: () => bridge.dispose() });

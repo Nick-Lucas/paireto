@@ -30,25 +30,6 @@ export function renderPlanFeedback(comments: PlanCommentData[], toolName = "Exit
   ].join("\n");
 }
 
-/** "Reject Plan": deny + a directive to STOP and discuss the problems with the user (not revise). */
-export function renderPlanRejection(
-  comments: PlanCommentData[],
-  toolName = "ExitPlanMode",
-): string {
-  const sorted = sortComments(comments);
-  return [
-    "YOUR PLAN WAS REJECTED.",
-    "",
-    `Do NOT revise the plan or call ${toolName}. Stop and discuss the problems below with ` +
-      "the user first — ask clarifying questions, understand their concerns, and agree on an approach " +
-      "together before planning again.",
-    "",
-    itemize(sorted),
-    "",
-    summarize(sorted),
-  ].join("\n");
-}
-
 function sortComments(comments: PlanCommentData[]): PlanCommentData[] {
   return comments.slice().sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.line - b.line);
 }

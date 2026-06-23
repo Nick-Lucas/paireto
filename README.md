@@ -9,6 +9,12 @@ Quick fixes:
 * Review should have "Send Feedback" and "Approve" as the outcomes, same as Plan mode
 * The extension should have a 1-at-a-time queue for tasks, a Plan and a Review should not be able to be active at the same moment for instance. In order for another instance of either to start the previous state must be resolved/cleared
 
+Next fixes:
+
+* LSP / type awareness seems to be broken in editable Working Tree review files
+* The active agents section should list what agents are awaiting which mode to return, indicating the queue. Clicking on them should switch the extension connection over to that agent
+* Make the emulator also emulate a connected agent session properly
+
 Feature Ideas:
 
 * Show me / Explain to me skill, prints a whole lesson on how something works with a UI to navigate you though

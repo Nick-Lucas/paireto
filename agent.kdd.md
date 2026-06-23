@@ -1,5 +1,29 @@
 # TUI Companion — Key Decisions
 
+- **Plan and Review share one gate model.** A `GateCoordinator` (`src/gate/GateCoordinator.ts`) owns
+  a single one-at-a-time slot: `PlanReviewController` and `ReviewController` both `acquire()` it
+  before opening any UI and release it when their gate resolves, so a plan and a review can never be
+  active at once (a second request queues — its hook is already blocked on the socket — and drops out
+  via the abort signal if its connection closes first). Both implement `GateSession`
+  (`{kind, approve, sendFeedback}`); the shared `gate.approve` / `gate.sendFeedback` commands
+  dispatch to `coordinator.current`. There is no Reject (Send Feedback covers it) and review's
+  "Approve" is the old cancel path (proceed, no feedback). Inline comments are factored into a shared
+  `CommentSession` (`src/comments/CommentSession.ts`) with global, controller-agnostic
+  edit/save/delete commands operating on a `GateComment` (its `contextValue` flips preview↔editing to
+  gate the comment menus).
+
+- **A dropped socket connection resets gate state.** `SocketServer.handleConnection` wraps each
+  blocking `plan.review.request` / `review.await.request` in an `AbortController` and aborts it on
+  `socket.on("close")`; the signal threads through `BridgeHandlers` into `presentPlan` /
+  `startSession`, which fulfill their gate and reset (close the plan tab, clear comments + context
+  keys, restore the terminal panel, release the slot). This is the single mechanism behind "close the
+  plan when ExitPlanMode completes in the agent" and "reset on any closed connection." The plan tab
+  also auto-closes on a normal decision (cleared `active` first, so our own close doesn't trip the
+  early-close prompt), and closing it manually while pending prompts Approve / Send Feedback. The
+  bottom panel is hidden on plan open and restored on resolve. (The virtual-doc-in-search item is
+  verification-driven — auto-close/reset removes lingering virtual editors; confirm in the dev host
+  before adding any further suppression.)
+
 - **Plugin TS dev scripts get their own tsconfig.** `plugins/claude-code/scripts/*.ts` (e.g. the
   bridge emulator) run directly on Node's type-stripping and live outside the extension's
   `rootDir: "src"`. They're type-checked via `plugins/claude-code/tsconfig.json` (noEmit), which

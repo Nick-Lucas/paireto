@@ -56,19 +56,29 @@
         "title": "TUI Companion: Open Selected in This Window"
       },
       {
-        "command": "tui-companion.plan.approve",
-        "title": "Approve Plan",
+        "command": "tui-companion.gate.approve",
+        "title": "Approve",
         "icon": "media/approve.svg"
       },
       {
-        "command": "tui-companion.plan.sendFeedback",
-        "title": "Send Plan Feedback to Claude",
+        "command": "tui-companion.gate.sendFeedback",
+        "title": "Send Feedback",
         "icon": "media/send-feedback.svg"
       },
       {
-        "command": "tui-companion.plan.reject",
-        "title": "Reject Plan",
-        "icon": "media/reject.svg"
+        "command": "tui-companion.comment.edit",
+        "title": "Edit Comment",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "tui-companion.comment.save",
+        "title": "Save Comment",
+        "icon": "$(check)"
+      },
+      {
+        "command": "tui-companion.comment.delete",
+        "title": "Delete Comment",
+        "icon": "$(trash)"
       },
       {
         "command": "tui-companion.plan.addComment",
@@ -140,21 +150,6 @@
         "icon": "$(discard)"
       },
       {
-        "command": "tui-companion.review.clearFeedback",
-        "title": "Clear Feedback",
-        "icon": "$(clear-all)"
-      },
-      {
-        "command": "tui-companion.review.export",
-        "title": "Export Review",
-        "icon": "$(save)"
-      },
-      {
-        "command": "tui-companion.review.sendFeedback",
-        "title": "Send Feedback",
-        "icon": "media/send-feedback.svg"
-      },
-      {
         "command": "tui-companion.review.addComment",
         "title": "Comment",
         "enablement": "!commentIsEmpty"
@@ -177,11 +172,6 @@
         "command": "tui-companion.review.deleteComment",
         "title": "Delete Comment",
         "icon": "$(trash)"
-      },
-      {
-        "command": "tui-companion.review.cancel",
-        "title": "Cancel Review",
-        "icon": "media/reject.svg"
       },
       {
         "command": "tui-companion.focusAgent",
@@ -287,23 +277,38 @@
         {
           "command": "tui-companion.review.deleteComment",
           "when": "false"
+        },
+        {
+          "command": "tui-companion.gate.approve",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.gate.sendFeedback",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.comment.edit",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.comment.save",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.comment.delete",
+          "when": "false"
         }
       ],
       "editor/title": [
         {
-          "command": "tui-companion.plan.approve",
+          "command": "tui-companion.gate.approve",
           "when": "resourceScheme == tui-plan",
           "group": "navigation@1"
         },
         {
-          "command": "tui-companion.plan.sendFeedback",
+          "command": "tui-companion.gate.sendFeedback",
           "when": "resourceScheme == tui-plan",
           "group": "navigation@2"
-        },
-        {
-          "command": "tui-companion.plan.reject",
-          "when": "resourceScheme == tui-plan",
-          "group": "navigation@3"
         }
       ],
       "comments/commentThread/context": [
@@ -336,6 +341,25 @@
           "command": "tui-companion.review.addProblem",
           "when": "commentController == tui.review",
           "group": "inline@3"
+        }
+      ],
+      "comments/comment/title": [
+        {
+          "command": "tui-companion.comment.edit",
+          "when": "(commentController == tui.plan || commentController == tui.review) && comment == preview",
+          "group": "group@1"
+        },
+        {
+          "command": "tui-companion.comment.delete",
+          "when": "(commentController == tui.plan || commentController == tui.review) && comment == preview",
+          "group": "group@2"
+        }
+      ],
+      "comments/comment/context": [
+        {
+          "command": "tui-companion.comment.save",
+          "when": "(commentController == tui.plan || commentController == tui.review) && comment == editing",
+          "group": "inline@1"
         }
       ],
       "view/item/context": [
@@ -457,39 +481,14 @@
           "group": "navigation@3"
         },
         {
-          "command": "tui-companion.plan.approve",
-          "when": "view == tui.main && tui.planPending",
+          "command": "tui-companion.gate.approve",
+          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive)",
           "group": "navigation@4"
         },
         {
-          "command": "tui-companion.plan.sendFeedback",
-          "when": "view == tui.main && tui.planPending",
+          "command": "tui-companion.gate.sendFeedback",
+          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive)",
           "group": "navigation@5"
-        },
-        {
-          "command": "tui-companion.plan.reject",
-          "when": "view == tui.main && tui.planPending",
-          "group": "navigation@6"
-        },
-        {
-          "command": "tui-companion.review.clearFeedback",
-          "when": "view == tui.main && tui.reviewSessionActive",
-          "group": "navigation@7"
-        },
-        {
-          "command": "tui-companion.review.export",
-          "when": "view == tui.main && tui.reviewSessionActive",
-          "group": "navigation@8"
-        },
-        {
-          "command": "tui-companion.review.sendFeedback",
-          "when": "view == tui.main && tui.reviewSessionActive",
-          "group": "navigation@9"
-        },
-        {
-          "command": "tui-companion.review.cancel",
-          "when": "view == tui.main && tui.reviewSessionActive",
-          "group": "navigation@10"
         }
       ]
     },

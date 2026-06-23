@@ -49,8 +49,13 @@ export interface ReviewGateResult {
 export interface BridgeHandlers {
   /** Passive telemetry — update session state, refresh worktrees, etc. */
   onHookEvent(msg: HookEventMessage): void;
-  /** Blocking plan gate — resolve when the user approves or requests changes. */
-  onPlanReviewRequest(msg: PlanReviewRequest): Promise<PlanGateResult>;
-  /** Blocking review session — resolve when the user submits feedback or cancels. */
-  onReviewAwait(msg: ReviewAwaitRequest): Promise<ReviewGateResult>;
+  /**
+   * Blocking plan gate — resolve when the user approves or requests changes. `signal` aborts if the
+   * connection drops before a decision (the hook died / the user resolved ExitPlanMode another way),
+   * so the controller can close the plan and reset its state.
+   */
+  onPlanReviewRequest(msg: PlanReviewRequest, signal: AbortSignal): Promise<PlanGateResult>;
+  /** Blocking review session — resolve when the user submits feedback or approves. `signal` aborts
+   *  on disconnect so the controller can reset. */
+  onReviewAwait(msg: ReviewAwaitRequest, signal: AbortSignal): Promise<ReviewGateResult>;
 }

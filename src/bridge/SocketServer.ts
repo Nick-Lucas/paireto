@@ -70,6 +70,10 @@ export class SocketServer {
     socket.setEncoding("utf8");
     let buffer = "";
     let handshaken = false;
+    // Blocking requests in flight on THIS connection. If the socket drops before a decision arrives
+    // (hook killed, interrupt, the user resolved ExitPlanMode another way), abort them so the
+    // controllers close their UI and reset, rather than hanging open forever.
+    const inflight = new Set<AbortController>();
 
     const send = (obj: AnyMessage): void => {
       if (!socket.destroyed) {
@@ -78,6 +82,12 @@ export class SocketServer {
     };
 
     socket.on("error", () => socket.destroy());
+    socket.on("close", () => {
+      for (const ac of inflight) {
+        ac.abort();
+      }
+      inflight.clear();
+    });
     socket.on("data", (chunk: string) => {
       buffer += chunk;
       let idx: number;
@@ -117,38 +127,54 @@ export class SocketServer {
           }
           continue;
         }
-        void this.route(msg, send);
+        void this.route(msg, send, inflight);
       }
     });
   }
 
-  private async route(msg: AnyMessage, send: (obj: AnyMessage) => void): Promise<void> {
+  private async route(
+    msg: AnyMessage,
+    send: (obj: AnyMessage) => void,
+    inflight: Set<AbortController>,
+  ): Promise<void> {
     switch (msg.t) {
       case "hook.event":
         this.handlers.onHookEvent(msg);
         break;
       case "plan.review.request": {
-        const result = await this.handlers.onPlanReviewRequest(msg);
-        send({
-          t: "plan.review.response",
-          v: PROTOCOL_VERSION,
-          id: msg.id,
-          ts: new Date().toISOString(),
-          decision: result.decision,
-          reason: result.reason,
-        });
+        const ac = new AbortController();
+        inflight.add(ac);
+        try {
+          const result = await this.handlers.onPlanReviewRequest(msg, ac.signal);
+          send({
+            t: "plan.review.response",
+            v: PROTOCOL_VERSION,
+            id: msg.id,
+            ts: new Date().toISOString(),
+            decision: result.decision,
+            reason: result.reason,
+          });
+        } finally {
+          inflight.delete(ac);
+        }
         break;
       }
       case "review.await.request": {
-        const result = await this.handlers.onReviewAwait(msg);
-        send({
-          t: "review.await.response",
-          v: PROTOCOL_VERSION,
-          id: msg.id,
-          ts: new Date().toISOString(),
-          status: result.status,
-          feedback: result.feedback,
-        });
+        const ac = new AbortController();
+        inflight.add(ac);
+        try {
+          const result = await this.handlers.onReviewAwait(msg, ac.signal);
+          send({
+            t: "review.await.response",
+            v: PROTOCOL_VERSION,
+            id: msg.id,
+            ts: new Date().toISOString(),
+            status: result.status,
+            feedback: result.feedback,
+          });
+        } finally {
+          inflight.delete(ac);
+        }
         break;
       }
       default:

@@ -8,10 +8,11 @@ import { isAbsolute, join, relative } from "node:path";
 import * as vscode from "vscode";
 
 import type { ReviewGateResult } from "../bridge/types.js";
-import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
+import { CommentSession, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
-import { kindLabel, type CommentKind } from "../comments/kinds.js";
+import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
+import { GateCoordinator, type GateSession } from "../gate/GateCoordinator.js";
 import { DiffService, type ChangedFile, type ChangesModel } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
@@ -23,20 +24,10 @@ import { renderReviewFeedback } from "./reviewFeedback.js";
 import { pickCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
-class RComment implements vscode.Comment {
-  mode = vscode.CommentMode.Preview;
-  author: vscode.CommentAuthorInformation = { name: "Reviewer" };
-  contextValue: string;
-  label: string;
-  thread?: vscode.CommentThread;
-  constructor(
-    public body: string | vscode.MarkdownString,
-    public kind: CommentKind,
-    public readonly model: ReviewComment,
-  ) {
-    this.contextValue = kind;
-    this.label = kindLabel(kind);
-  }
+/** A review comment: the VS Code comment instance paired with its serializable model. */
+interface ReviewEntry {
+  comment: GateComment;
+  model: ReviewComment;
 }
 
 const EMPTY_CHANGES: ChangesModel = {
@@ -67,13 +58,17 @@ export interface ReviewState {
   changes: ChangesModel;
 }
 
-export class ReviewController implements vscode.Disposable {
-  private readonly controller: vscode.CommentController;
+export class ReviewController implements vscode.Disposable, GateSession {
+  readonly kind = "review" as const;
+  private readonly commentSession: CommentSession;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChangeState = this.changeEmitter.event;
   /** Fires the (group, path) of the diff the editor is now showing, so the tree can select its row. */
-  private readonly activeDiffEmitter = new vscode.EventEmitter<{ group: FileGroup; path: string }>();
+  private readonly activeDiffEmitter = new vscode.EventEmitter<{
+    group: FileGroup;
+    path: string;
+  }>();
   readonly onDidChangeActiveDiff = this.activeDiffEmitter.event;
 
   private reviewId = newReviewId();
@@ -81,10 +76,11 @@ export class ReviewController implements vscode.Disposable {
   private layout: FileLayout;
   private changes: ChangesModel = EMPTY_CHANGES;
   private repoRoot?: string;
-  private readonly comments = new Map<string, RComment>();
-  private readonly threads = new Map<vscode.CommentThread, RComment[]>();
+  private readonly comments = new Map<string, ReviewEntry>();
   private readonly gate = new ReviewGateRegistry();
   private activeRequestId?: string;
+  /** Frees the coordinator slot when the active review session resolves. */
+  private activeRelease?: () => void;
   /** The file currently shown in the diff editor, so an edit can re-target its compare base. */
   private openDiffFile?: { path: string; group: FileGroup };
   /** Each open diff's (group, path), keyed by its base URI (stable across demotion) — lets a tab
@@ -93,31 +89,32 @@ export class ReviewController implements vscode.Disposable {
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private refreshSeq = 0;
   private readonly log = vscode.window.createOutputChannel("TUI Companion");
-  private debugEnabled = vscode.workspace.getConfiguration("tui-companion").get<boolean>("debug", false);
+  private debugEnabled = vscode.workspace
+    .getConfiguration("tui-companion")
+    .get<boolean>("debug", false);
 
   constructor(
     private readonly repoService: RepoService,
     private readonly diff: DiffService,
     private readonly store: ReviewStore,
     private readonly reviewContent: ReviewContentProvider,
+    private readonly coordinator: GateCoordinator,
   ) {
     this.compareTo = store.getCompareTo();
     this.layout = store.getLayout();
-    this.controller = vscode.comments.createCommentController("tui.review", "Code Review");
-    this.controller.options = {
-      prompt: "Add a review comment",
-      placeHolder: "Leave a comment for Claude",
-    };
-    this.controller.commentingRangeProvider = {
-      // Commenting is only enabled during an active /tui-review session; outside one the diffs are
-      // browse-only (the Changed Files section is always available).
-      provideCommentingRanges: (doc) =>
-        this.isSessionActive() ? fullDocumentCommentingRanges(doc, Schemes.review) : undefined,
-    };
+    // Commenting is only enabled during an active /tui-review session; outside one the diffs are
+    // browse-only (the Changed Files section is always available).
+    this.commentSession = new CommentSession(
+      "tui.review",
+      "Code Review",
+      Schemes.review,
+      { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
+      () => this.isSessionActive(),
+    );
 
     const reg = vscode.commands.registerCommand;
     this.disposables.push(
-      this.controller,
+      this.commentSession,
       this.changeEmitter,
       this.activeDiffEmitter,
       reg(Commands.reviewRefresh, () => this.refresh()),
@@ -139,12 +136,8 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewAddQuestion, (r: vscode.CommentReply) => this.addComment(r, "question")),
       reg(Commands.reviewAddComment, (r: vscode.CommentReply) => this.addComment(r, "comment")),
       reg(Commands.reviewAddProblem, (r: vscode.CommentReply) => this.addComment(r, "problem")),
-      reg(Commands.reviewClearFeedback, () => this.clearFeedback()),
       reg(Commands.reviewRevealComment, (c: ReviewComment) => this.revealComment(c)),
       reg(Commands.reviewDeleteComment, (c: ReviewComment) => this.deleteComment(c)),
-      reg(Commands.reviewSendFeedback, () => this.sendFeedback()),
-      reg(Commands.reviewCancel, () => this.cancelReview()),
-      reg(Commands.reviewExport, () => this.exportReview()),
       this.log,
       vscode.workspace.onDidChangeConfiguration((e) => {
         if (e.affectsConfiguration("tui-companion.debug")) {
@@ -173,8 +166,16 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /** Begin a blocking review session (invoked by the MCP tui_review tool via the bridge). */
-  async startSession(requestId: string): Promise<ReviewGateResult> {
+  async startSession(requestId: string, signal: AbortSignal): Promise<ReviewGateResult> {
+    let release: () => void;
+    try {
+      release = await this.coordinator.acquire(this, signal);
+    } catch {
+      // Connection dropped while queued behind another gate — nothing was opened.
+      return { status: "cancelled", feedback: "" };
+    }
     this.activeRequestId = requestId;
+    this.activeRelease = release;
     await this.setSessionActive(true);
     await this.refresh();
     try {
@@ -182,11 +183,21 @@ export class ReviewController implements vscode.Disposable {
     } catch {
       /* view may not be registered yet — non-fatal */
     }
+    // A dropped connection ends the session (resolve the gate so this unblocks, then reset).
+    const onAbort = (): void => {
+      this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
     const result = await this.gate.awaitDecision(requestId);
+    signal.removeEventListener("abort", onAbort);
     if (this.activeRequestId === requestId) {
       this.activeRequestId = undefined;
       await this.setSessionActive(false);
+      this.resetComments();
       this.changeEmitter.fire();
+      this.activeRelease?.();
+      this.activeRelease = undefined;
     }
     return result;
   }
@@ -250,7 +261,7 @@ export class ReviewController implements vscode.Disposable {
 
     if (changed) {
       this.debug(
-        `refresh(${reason}) #${seq}: staged=${next.staged.length} unstaged=${next.unstaged.length} committed=${next.committed.length}`
+        `refresh(${reason}) #${seq}: staged=${next.staged.length} unstaged=${next.unstaged.length} committed=${next.committed.length}`,
       );
       this.changeEmitter.fire(); // re-render the tree
     } else {
@@ -491,12 +502,22 @@ export class ReviewController implements vscode.Disposable {
         lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
       },
     };
-    const comment = new RComment(reply.text, kind, model);
-    comment.thread = reply.thread;
-    reply.thread.comments = [...reply.thread.comments, comment];
+    const comment = this.commentSession.add(reply, kind, {
+      id: model.id,
+      onSaved: (newBody) => {
+        model.body = newBody;
+        this.changeEmitter.fire();
+      },
+      onDeleted: () => {
+        this.comments.delete(model.id);
+        if (reply.thread.comments.length === 0) {
+          this.commentSession.forget(reply.thread);
+        }
+        this.changeEmitter.fire();
+      },
+    });
     reply.thread.label = `${relPath}:${line + 1}`;
-    this.comments.set(model.id, comment);
-    this.threads.set(reply.thread, [...(this.threads.get(reply.thread) ?? []), comment]);
+    this.comments.set(model.id, { comment, model });
     this.changeEmitter.fire();
   }
 
@@ -512,92 +533,60 @@ export class ReviewController implements vscode.Disposable {
       editor.selection = new vscode.Selection(pos, pos);
       editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
     }
-    const rc = this.comments.get(c.id);
-    if (rc?.thread) {
-      rc.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    const entry = this.comments.get(c.id);
+    if (entry?.comment.thread) {
+      entry.comment.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     }
   }
 
+  /** Delete a comment from the Feedback tree row (its in-diff thread also drops it). */
   private deleteComment(c: ReviewComment): void {
-    const rc = this.comments.get(c.id);
-    if (!rc) {
+    const entry = this.comments.get(c.id);
+    if (!entry) {
       return;
     }
-    const thread = rc.thread;
+    const thread = entry.comment.thread;
     if (thread) {
-      const remaining = (this.threads.get(thread) ?? []).filter((x) => x !== rc);
-      if (remaining.length === 0) {
+      thread.comments = thread.comments.filter((x) => x !== entry.comment);
+      if (thread.comments.length === 0) {
         thread.dispose();
-        this.threads.delete(thread);
-      } else {
-        thread.comments = thread.comments.filter((x) => x !== rc);
-        this.threads.set(thread, remaining);
+        this.commentSession.forget(thread);
       }
     }
     this.comments.delete(c.id);
     this.changeEmitter.fire();
   }
 
-  private async clearFeedback(): Promise<void> {
-    if (this.comments.size === 0) {
-      return;
-    }
-    const choice = await vscode.window.showWarningMessage(
-      `Clear all ${this.comments.size} review comment(s)? This cannot be undone.`,
-      { modal: true },
-      "Clear",
-    );
-    if (choice === "Clear") {
-      this.resetComments();
-    }
-  }
-
   getComments(): ReviewComment[] {
-    return [...this.comments.values()].map((c) => c.model);
+    return [...this.comments.values()].map((e) => e.model);
   }
 
-  private sendFeedback(): void {
+  // ── GateSession (shared Approve / Send-Feedback commands dispatch here while active) ──
+  /** Approve: proceed with no changes (the agent continues, no feedback). */
+  approve(): void {
+    if (this.activeRequestId) {
+      this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
+    }
+  }
+
+  sendFeedback(): void {
     if (!this.activeRequestId) {
       return;
     }
     const feedback = renderReviewFeedback(this.getComments());
     if (!feedback) {
       void vscode.window.showWarningMessage(
-        "No comments to send. Add a comment, or Cancel the review.",
+        "No comments to send. Add a comment, or Approve to proceed with no changes.",
       );
       return;
     }
     this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
-    this.resetComments();
-  }
-
-  private cancelReview(): void {
-    if (this.activeRequestId) {
-      this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
-      this.resetComments();
-    }
   }
 
   private resetComments(): void {
-    for (const thread of this.threads.keys()) {
-      thread.dispose();
-    }
-    this.threads.clear();
+    this.commentSession.reset();
     this.comments.clear();
     this.changeEmitter.fire();
-  }
-
-  private async exportReview(): Promise<void> {
-    if (!this.repoRoot) {
-      return;
-    }
-    const file = await this.store.export(
-      this.repoRoot,
-      this.reviewId,
-      this.changes.compareLabel,
-      this.getComments(),
-    );
-    void vscode.window.showInformationMessage(`Review exported to ${file}`);
   }
 
   private allFiles(): ChangedFile[] {
