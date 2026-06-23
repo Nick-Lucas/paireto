@@ -21,7 +21,6 @@ import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
 import { PlanReviewController } from "./plan/PlanReviewController.js";
 import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
-import { ReviewFileDecorationProvider } from "./review/ReviewFileDecorationProvider.js";
 import { RecentRepoStore } from "./storage/RecentRepoStore.js";
 import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
@@ -71,7 +70,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const repoService = new RepoService();
   const worktrees = new WorktreeService();
   const recents = new RecentRepoStore(context.globalState);
-  // One gate slot shared by Plan + Review so only one is ever active at a time.
+  // Shared gate manager: several plans/reviews can be pending, one foreground at a time (switchable).
   const coordinator = new GateCoordinator();
   const planProvider = new PlanContentProvider();
   const planGate = new PlanGateRegistry();
@@ -90,23 +89,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     coordinator,
   );
 
-  const mainTree = new MainTreeProvider(agents, reviewController, planReview);
-  const fileDecorations = new ReviewFileDecorationProvider();
+  const mainTree = new MainTreeProvider(
+    agents,
+    reviewController,
+    planReview,
+    repoService,
+    coordinator,
+    context.extensionUri,
+  );
   const switcher = new RepoSwitcher(repoService, worktrees, recents);
-
-  // Refresh the changed-file status decorations whenever the review state updates.
-  context.subscriptions.push(reviewController.onDidChangeState(() => fileDecorations.refresh()));
 
   context.subscriptions.push(
     agents,
     repoService,
+    coordinator,
     planProvider,
     planReview,
     statusBar,
     reviewContent,
     reviewController,
     mainTree,
-    fileDecorations,
     switcher,
     vscode.commands.registerCommand(Commands.focusAgent, () =>
       vscode.commands.executeCommand("workbench.action.terminal.focus"),
@@ -122,7 +124,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       isReadonly: true,
       isCaseSensitive: true,
     }),
-    vscode.window.registerFileDecorationProvider(fileDecorations),
     mainTree.register(),
   );
 
@@ -135,7 +136,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     },
     onPlanReviewRequest: (msg, signal) => planReview.presentPlan(msg, signal),
-    onReviewAwait: (msg, signal) => reviewController.startSession(msg.id, signal),
+    onReviewAwait: (msg, signal) => {
+      // Reviews carry no sessionId reliably; attribute to the most-recently-active session in the
+      // request's repo so the Agents panel can show "awaiting review" on the right row.
+      const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
+      return reviewController.startSession(msg.id, sessionId, signal);
+    },
   };
   const bridge = new BridgeManager(handlers);
   context.subscriptions.push({ dispose: () => bridge.dispose() });

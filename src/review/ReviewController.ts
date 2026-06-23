@@ -12,7 +12,7 @@ import { CommentSession, type GateComment } from "../comments/CommentSession.js"
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
-import { GateCoordinator, type GateSession } from "../gate/GateCoordinator.js";
+import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { DiffService, type ChangedFile, type ChangesModel } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
@@ -58,8 +58,7 @@ export interface ReviewState {
   changes: ChangesModel;
 }
 
-export class ReviewController implements vscode.Disposable, GateSession {
-  readonly kind = "review" as const;
+export class ReviewController implements vscode.Disposable {
   private readonly commentSession: CommentSession;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changeEmitter = new vscode.EventEmitter<void>();
@@ -79,8 +78,11 @@ export class ReviewController implements vscode.Disposable, GateSession {
   private readonly comments = new Map<string, ReviewEntry>();
   private readonly gate = new ReviewGateRegistry();
   private activeRequestId?: string;
-  /** Frees the coordinator slot when the active review session resolves. */
-  private activeRelease?: () => void;
+  /** Owning agent session of the active review (best-effort; drives the Agents panel). */
+  private activeSessionId?: string;
+  /** Only one review may be pending at a time; a second startSession waits here. */
+  private reviewBusy = false;
+  private readonly reviewWaiters: Array<() => void> = [];
   /** The file currently shown in the diff editor, so an edit can re-target its compare base. */
   private openDiffFile?: { path: string; group: FileGroup };
   /** Each open diff's (group, path), keyed by its base URI (stable across demotion) — lets a tab
@@ -165,24 +167,35 @@ export class ReviewController implements vscode.Disposable, GateSession {
     );
   }
 
-  /** Begin a blocking review session (invoked by the MCP tui_review tool via the bridge). */
-  async startSession(requestId: string, signal: AbortSignal): Promise<ReviewGateResult> {
-    let release: () => void;
-    try {
-      release = await this.coordinator.acquire(this, signal);
-    } catch {
-      // Connection dropped while queued behind another gate — nothing was opened.
-      return { status: "cancelled", feedback: "" };
+  /** Begin a blocking review session (invoked by the MCP tui_review tool via the bridge). At most
+   *  one review is pending at a time; a second waits until the first resolves. */
+  async startSession(
+    requestId: string,
+    sessionId: string | undefined,
+    signal: AbortSignal,
+  ): Promise<ReviewGateResult> {
+    if (!(await this.acquireReviewSlot(signal))) {
+      return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
     this.activeRequestId = requestId;
-    this.activeRelease = release;
-    await this.setSessionActive(true);
+    this.activeSessionId = sessionId;
     await this.refresh();
-    try {
-      await vscode.commands.executeCommand(`${Views.main}.focus`);
-    } catch {
-      /* view may not be registered yet — non-fatal */
-    }
+
+    const entry: GateEntry = {
+      id: requestId,
+      sessionId: this.activeSessionId,
+      kind: "review",
+      repoRoot: this.repoRoot ?? "",
+      session: {
+        kind: "review",
+        approve: () => this.approve(),
+        sendFeedback: () => this.sendFeedback(),
+      },
+      foreground: () => this.foreground(),
+      background: () => this.background(),
+    };
+    await this.coordinator.register(entry);
+
     // A dropped connection ends the session (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
       this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
@@ -193,21 +206,78 @@ export class ReviewController implements vscode.Disposable, GateSession {
     signal.removeEventListener("abort", onAbort);
     if (this.activeRequestId === requestId) {
       this.activeRequestId = undefined;
-      await this.setSessionActive(false);
+      this.activeSessionId = undefined;
+      await this.setReviewContext(false);
       this.resetComments();
+      await this.coordinator.unregister(requestId);
+      this.releaseReviewSlot();
       this.changeEmitter.fire();
-      this.activeRelease?.();
-      this.activeRelease = undefined;
     }
     return result;
   }
 
+  /** Foreground: commenting on, Feedback section shown, view focused. */
+  private async foreground(): Promise<void> {
+    await this.setReviewContext(true);
+    await this.refresh();
+    try {
+      await vscode.commands.executeCommand(`${Views.main}.focus`);
+    } catch {
+      /* view may not be registered yet — non-fatal */
+    }
+    this.changeEmitter.fire();
+  }
+
+  /** Background: hide the Feedback section without resolving; comments are preserved. */
+  private async background(): Promise<void> {
+    await this.setReviewContext(false);
+    this.changeEmitter.fire();
+  }
+
+  /** True while a review is pending (drives commenting + diff read-only mode), even if backgrounded. */
   isSessionActive(): boolean {
     return this.activeRequestId !== undefined;
   }
 
-  private async setSessionActive(active: boolean): Promise<void> {
-    await vscode.commands.executeCommand("setContext", ContextKeys.reviewSessionActive, active);
+  /** The owning agent session of the pending review, if known (drives the Agents panel). */
+  activeReviewSessionId(): string | undefined {
+    return this.activeSessionId;
+  }
+
+  private async setReviewContext(foreground: boolean): Promise<void> {
+    await vscode.commands.executeCommand("setContext", ContextKeys.reviewSessionActive, foreground);
+  }
+
+  /** Acquire the single review slot, waiting if busy. Returns false if `signal` aborts while queued. */
+  private acquireReviewSlot(signal: AbortSignal): Promise<boolean> {
+    if (!this.reviewBusy) {
+      this.reviewBusy = true;
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve) => {
+      const grant = (): void => {
+        signal.removeEventListener("abort", onAbort);
+        this.reviewBusy = true;
+        resolve(true);
+      };
+      const onAbort = (): void => {
+        const i = this.reviewWaiters.indexOf(grant);
+        if (i >= 0) {
+          this.reviewWaiters.splice(i, 1);
+        }
+        resolve(false);
+      };
+      this.reviewWaiters.push(grant);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
+  private releaseReviewSlot(): void {
+    this.reviewBusy = false;
+    const next = this.reviewWaiters.shift();
+    if (next) {
+      next();
+    }
   }
 
   drainGate(): void {
@@ -451,7 +521,16 @@ export class ReviewController implements vscode.Disposable, GateSession {
     const title = editable
       ? `${file.path} (Working Tree)`
       : `${file.path} (${GROUP_LABEL[file.group]})`;
-    await vscode.commands.executeCommand("vscode.diff", baseUri, modUri, title, { preview: true });
+    if (editable) {
+      // Open the real working-tree file as a normal document first so the TypeScript server attaches
+      // it to the workspace's configured project. Opening it only as a diff's modified side can leave
+      // it in an inferred single-file project, so imported types resolve to `any`. Non-preview so the
+      // editable tab isn't recycled out from under an edit.
+      await vscode.workspace.openTextDocument(modUri);
+    }
+    await vscode.commands.executeCommand("vscode.diff", baseUri, modUri, title, {
+      preview: !editable,
+    });
     void ensureCommentingVisible();
   }
 

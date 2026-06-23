@@ -33,13 +33,13 @@ export const Commands = {
   reviewRevealComment: "tui-companion.review.revealComment",
   reviewDeleteComment: "tui-companion.review.deleteComment",
   focusAgent: "tui-companion.focusAgent",
+  /** Click an agent row: switch the foreground gate to that agent's pending plan/review. */
+  agentSwitch: "tui-companion.agent.switch",
 } as const;
 
 export const Schemes = {
   plan: "tui-plan",
   review: "tui-review",
-  /** Synthetic scheme for changed-file tree rows so our decorations don't touch real files. */
-  reviewFile: "tui-review-file",
 } as const;
 
 export const Views = {

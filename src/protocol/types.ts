@@ -111,6 +111,10 @@ export interface ReviewAwaitRequest extends Envelope {
   id: string;
   cwd: string;
   repoRoot: string;
+  /** Owning agent session, best-effort (the MCP tool may not know it). Used to attribute the review
+   *  to an agent row in the Agents panel; the extension falls back to repo recency if absent. */
+  sessionId?: string;
+  agentId?: string;
 }
 
 export type ReviewStatus = "submitted" | "cancelled";

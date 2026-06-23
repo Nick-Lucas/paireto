@@ -151,6 +151,13 @@ export class AgentSessionService implements vscode.Disposable {
     return [...this.sessions.values()].sort((a, b) => b.lastEventAt - a.lastEventAt);
   }
 
+  /** The most-recently-active non-ended session in a repo (best-effort review attribution). */
+  mostRecentSessionForRepo(repoRoot: string): string | undefined {
+    return this.sessionsForRepo(repoRoot)
+      .filter((s) => s.state !== "ended")
+      .sort((a, b) => b.lastEventAt - a.lastEventAt)[0]?.sessionId;
+  }
+
   /** Aggregate the busiest state for a repo (for the status-bar glyph). */
   activityForRepo(repoRoot: string): RepoActivity {
     const sessions = this.sessionsForRepo(repoRoot).filter((s) => s.state !== "ended");

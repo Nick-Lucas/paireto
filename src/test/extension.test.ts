@@ -11,7 +11,7 @@ import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
-import { GateCoordinator, type GateSession } from "../gate/GateCoordinator.js";
+import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { isStaleActive, STALE_ACTIVE_MS_FOR_TEST } from "../agents/AgentSessionService.js";
 
 suite("repoKey", () => {
@@ -210,69 +210,90 @@ suite("ReviewGateRegistry", () => {
   });
 });
 
-suite("GateCoordinator (one-at-a-time)", () => {
-  const session = (kind: "plan" | "review"): GateSession => ({
+suite("GateCoordinator (foreground registry)", () => {
+  const makeEntry = (id: string, kind: "plan" | "review", log: string[]): GateEntry => ({
+    id,
+    sessionId: id,
     kind,
-    approve() {},
-    sendFeedback() {},
+    repoRoot: "/repo",
+    session: { kind, approve() {}, sendFeedback() {} },
+    foreground: () => {
+      log.push(`fg:${id}`);
+    },
+    background: () => {
+      log.push(`bg:${id}`);
+    },
+  });
+  test("first registered gate is foreground; a second stays pending", async () => {
+    const c = new GateCoordinator(
+      async () => {},
+      async () => {},
+    );
+    const log: string[] = [];
+    await c.register(makeEntry("a", "plan", log));
+    await c.register(makeEntry("b", "plan", log));
+    assert.strictEqual(c.isForeground("a"), true);
+    assert.strictEqual(c.isForeground("b"), false);
+    assert.strictEqual(c.current?.kind, "plan");
+    assert.deepStrictEqual(log, ["fg:a"]);
   });
 
-  test("first acquire is immediate; a second waits until the first releases", async () => {
-    const c = new GateCoordinator();
-    const relA = await c.acquire(session("plan"));
+  test("switchTo backgrounds the current and foregrounds the target, and back again", async () => {
+    const c = new GateCoordinator(
+      async () => {},
+      async () => {},
+    );
+    const log: string[] = [];
+    await c.register(makeEntry("a", "plan", log));
+    await c.register(makeEntry("b", "review", log));
+    await c.switchTo("b");
+    assert.strictEqual(c.isForeground("b"), true);
+    assert.deepStrictEqual(log, ["fg:a", "bg:a", "fg:b"]);
+    await c.switchTo("a");
+    assert.strictEqual(c.isForeground("a"), true);
+    assert.deepStrictEqual(log, ["fg:a", "bg:a", "fg:b", "bg:b", "fg:a"]);
+  });
+
+  test("unregistering the foreground promotes the most-recent remaining gate", async () => {
+    const c = new GateCoordinator(
+      async () => {},
+      async () => {},
+    );
+    const log: string[] = [];
+    await c.register(makeEntry("a", "plan", log));
+    await c.register(makeEntry("b", "plan", log));
+    await c.unregister("a");
+    assert.strictEqual(c.isForeground("b"), true);
     assert.strictEqual(c.isActive(), true);
-    assert.strictEqual(c.current?.kind, "plan");
+  });
 
-    let bAcquired = false;
-    const pB = c.acquire(session("review")).then((rel) => {
-      bAcquired = true;
-      return rel;
-    });
-    await Promise.resolve();
-    assert.strictEqual(
-      bAcquired,
-      false,
-      "second acquire must block while the first holds the slot",
+  test("entryForSession and entriesForRepo", async () => {
+    const c = new GateCoordinator(
+      async () => {},
+      async () => {},
     );
-    assert.strictEqual(c.current?.kind, "plan");
-
-    relA();
-    const relB = await pB;
-    assert.strictEqual(bAcquired, true);
-    assert.strictEqual(c.current?.kind, "review");
-    relB();
-    assert.strictEqual(c.isActive(), false);
+    const log: string[] = [];
+    await c.register(makeEntry("a", "plan", log));
+    assert.strictEqual(c.entryForSession("a")?.id, "a");
+    assert.strictEqual(c.entriesForRepo("/repo").length, 1);
+    assert.strictEqual(c.entriesForRepo("/other").length, 0);
   });
 
-  test("abort while queued rejects the waiter and leaves the active slot held", async () => {
-    const c = new GateCoordinator();
-    const relA = await c.acquire(session("plan"));
-    const ac = new AbortController();
-    const pB = c.acquire(session("review"), ac.signal);
-    ac.abort();
-    await assert.rejects(pB);
-    assert.strictEqual(
-      c.current?.kind,
-      "plan",
-      "the queued waiter dropping out must not disturb the holder",
+  test("terminal panel hides for a foreground plan and restores when none remain", async () => {
+    const panel: string[] = [];
+    const c = new GateCoordinator(
+      async () => {
+        panel.push("hide");
+      },
+      async () => {
+        panel.push("show");
+      },
     );
-    relA();
-    assert.strictEqual(c.isActive(), false);
-  });
-
-  test("acquire with an already-aborted signal rejects immediately", async () => {
-    const c = new GateCoordinator();
-    const ac = new AbortController();
-    ac.abort();
-    await assert.rejects(c.acquire(session("plan"), ac.signal));
-    assert.strictEqual(c.isActive(), false);
-  });
-
-  test("release is idempotent", async () => {
-    const c = new GateCoordinator();
-    const rel = await c.acquire(session("plan"));
-    rel();
-    rel();
+    const log: string[] = [];
+    await c.register(makeEntry("a", "plan", log));
+    assert.deepStrictEqual(panel, ["hide"]);
+    await c.unregister("a");
+    assert.deepStrictEqual(panel, ["hide", "show"]);
     assert.strictEqual(c.isActive(), false);
   });
 });

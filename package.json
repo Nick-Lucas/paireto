@@ -177,6 +177,10 @@
         "command": "tui-companion.focusAgent",
         "title": "Focus Agent",
         "icon": "$(terminal)"
+      },
+      {
+        "command": "tui-companion.agent.switch",
+        "title": "Switch to Agent"
       }
     ],
     "viewsContainers": {
@@ -296,6 +300,10 @@
         },
         {
           "command": "tui-companion.comment.delete",
+          "when": "false"
+        },
+        {
+          "command": "tui-companion.agent.switch",
           "when": "false"
         }
       ],

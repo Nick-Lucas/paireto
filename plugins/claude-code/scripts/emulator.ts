@@ -100,6 +100,7 @@ interface ReviewAwaitRequest extends Envelope {
   id: string;
   cwd: string;
   repoRoot: string;
+  sessionId?: string;
 }
 
 type ReviewStatus = "submitted" | "cancelled";
@@ -289,6 +290,43 @@ function resolveTarget(opts: Opts): Target | null {
 function connect(target: Target, timeoutMs: number): Promise<Connection> {
   const key = bridge.repoKey(target.repoRoot);
   return bridge.connectAndHandshake(target.socketPath, key, timeoutMs);
+}
+
+/** Build a telemetry hook.event for a session (so it shows up as a live agent in the panel). */
+function telemetry(
+  session: string,
+  target: Target,
+  event: HookEventName,
+  tool?: string
+): HookEventMessage {
+  return {
+    t: "hook.event",
+    v: bridge.PROTOCOL_VERSION,
+    ts: bridge.nowIso(),
+    event,
+    sessionId: session,
+    cwd: target.cwd,
+    repoRoot: target.repoRoot,
+    toolName: tool,
+    toolInput: tool ? defaultToolInput(tool) : undefined,
+  };
+}
+
+/** Write one message on an existing connection (fire-and-forget). */
+function writeOn(conn: Connection, msg: Envelope): Promise<void> {
+  return new Promise((resolve) => conn.sock.write(JSON.stringify(msg) + "\n", () => resolve()));
+}
+
+/** Emit the hook telemetry that makes a session appear as a connected, working agent. */
+async function announceSession(
+  conn: Connection,
+  session: string,
+  target: Target,
+  events: Array<{ event: HookEventName; tool?: string }>
+): Promise<void> {
+  for (const e of events) {
+    await writeOn(conn, telemetry(session, target, e.event, e.tool));
+  }
 }
 
 function noTargetError(opts: Opts): void {
@@ -496,6 +534,13 @@ async function cmdPlan(opts: Opts): Promise<void> {
     return;
   }
 
+  // Announce a live agent session reaching ExitPlanMode, so it shows in the Agents panel.
+  await announceSession(conn, request.sessionId, target, [
+    { event: "SessionStart" },
+    { event: "UserPromptSubmit" },
+    { event: "PreToolUse", tool: "ExitPlanMode" },
+  ]);
+
   dumpMessage(ARROW_OUT, request);
   console.log("");
   console.log(yellow(`  ⏳ blocking — approve or send feedback in VS Code (timeout ${timeoutMs / 1000}s)…`));
@@ -529,6 +574,7 @@ async function cmdReview(opts: Opts): Promise<void> {
 
   const timeoutMs = Number(strOpt(opts, "timeout") || 600) * 1000;
   const id = crypto.randomUUID();
+  const session = strOpt(opts, "session") || DEFAULT_SESSION;
   const request: ReviewAwaitRequest = {
     t: "review.await.request",
     v: bridge.PROTOCOL_VERSION,
@@ -536,6 +582,7 @@ async function cmdReview(opts: Opts): Promise<void> {
     ts: bridge.nowIso(),
     cwd: target.cwd,
     repoRoot: target.repoRoot,
+    sessionId: session,
   };
 
   heading("Code review · tui_review (MCP)");
@@ -548,9 +595,15 @@ async function cmdReview(opts: Opts): Promise<void> {
     return;
   }
 
+  // Announce a live agent session that's asking for a review, so it shows in the Agents panel.
+  await announceSession(conn, session, target, [
+    { event: "SessionStart" },
+    { event: "UserPromptSubmit" },
+  ]);
+
   dumpMessage(ARROW_OUT, request);
   console.log("");
-  console.log(yellow(`  ⏳ blocking — review the diff in VS Code, then Send Feedback / Cancel (timeout ${timeoutMs / 1000}s)…`));
+  console.log(yellow(`  ⏳ blocking — review the diff in VS Code, then Send Feedback / Approve (timeout ${timeoutMs / 1000}s)…`));
 
   const pending = awaitResponse<ReviewAwaitResponse>(conn, id, "review.await.response", timeoutMs);
   bridge.sendLine(conn.sock, request);
@@ -567,7 +620,7 @@ async function cmdReview(opts: Opts): Promise<void> {
     console.log("");
     console.log(indent(response.feedback, "  │ ", blue));
   } else {
-    banner("REVIEW CANCELLED — no changes requested", yellow);
+    banner("REVIEW APPROVED — agent proceeds, no changes", yellow);
   }
 }
 

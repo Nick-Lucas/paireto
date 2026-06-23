@@ -14,6 +14,12 @@ Next fixes:
 * LSP / type awareness seems to be broken in editable Working Tree review files
 * The active agents section should list what agents are awaiting which mode to return, indicating the queue. Clicking on them should switch the extension connection over to that agent
 * Make the emulator also emulate a connected agent session properly
+* The changes tree is colouring all files instead of just their M/U/D indicators etc, we should only colour the indicators
+
+Next next fixes:
+
+* notification sound / indicator when an agent finishes
+* when staging or unstaging a file which has its tab open, automatically change the tab over to look at the new location
 
 Feature Ideas:
 

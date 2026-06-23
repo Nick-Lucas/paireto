@@ -1,8 +1,8 @@
-// Owns the plan-review UX: opens the plan as a tui-plan:// markdown doc, attaches a shared
-// CommentSession for line comments, and resolves the blocking plan gate via the shared
-// Approve / Send-Feedback commands. One plan at a time (via the GateCoordinator). The plan auto-
-// closes on any resolution, the bottom panel is hidden while reviewing, closing the tab early warns,
-// and a dropped connection (abort signal) abandons the plan and resets state.
+// Owns the plan-review UX. Several plans can be PENDING at once (one tui-plan:// doc each); the
+// GateCoordinator decides which is foreground (its tab open). Backgrounding a plan closes its tab
+// without resolving it, so it can be returned to. Resolution goes through the shared Approve /
+// Send-Feedback commands (dispatched to the foreground plan's GateSession). A dropped connection
+// (abort signal) abandons that plan and resets it.
 
 import * as vscode from "vscode";
 
@@ -11,34 +11,36 @@ import { CommentSession, commentText, type GateComment } from "../comments/Comme
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes } from "../config.js";
-import { GateCoordinator, type GateSession } from "../gate/GateCoordinator.js";
-import { closeTabsForUri, hideBottomPanel, showTerminalPanel, tabUri } from "../gate/tabs.js";
+import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
+import { closeTabsForUri, tabUri } from "../gate/tabs.js";
 import type { PlanReviewRequest } from "../protocol/types.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
 import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
 
 interface PlanReview {
+  id: string;
   key: string;
+  sessionId: string;
   uri: vscode.Uri;
   markdown: string;
-  /** Frees the coordinator slot when this plan resolves. */
-  release: () => void;
 }
 
 let planCounter = 0;
 
-export class PlanReviewController implements vscode.Disposable, GateSession {
-  readonly kind = "plan" as const;
+export class PlanReviewController implements vscode.Disposable {
   private readonly comments: CommentSession;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   /** Fires when the gathered plan comments change (drives the Plan Review panel). */
   readonly onDidChange = this.changeEmitter.event;
 
-  /** The single plan currently under review (one at a time via the coordinator). */
-  private active?: PlanReview;
-  private panelHidden = false;
+  /** All pending plans, keyed by their gate-entry id. */
+  private readonly plans = new Map<string, PlanReview>();
+  /** The plan whose tab is currently shown (drives the Plan Review section). */
+  private foregroundReview?: PlanReview;
+  /** URIs we're closing programmatically, so the early-close prompt ignores our own closes. */
+  private readonly closingTabs = new Set<string>();
 
   constructor(
     private readonly provider: PlanContentProvider,
@@ -65,35 +67,37 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
     );
   }
 
-  /** Open the plan and return a promise that resolves with the user's decision. */
+  /** Open the plan (foregrounded only if no other gate is) and resolve with the user's decision. */
   async presentPlan(req: PlanReviewRequest, signal: AbortSignal): Promise<PlanGateResult> {
-    let release: () => void;
-    try {
-      release = await this.coordinator.acquire(this, signal);
-    } catch {
-      // Connection dropped while queued behind another gate — nothing was opened.
-      return { decision: "deny", reason: "Connection closed before plan review." };
-    }
-
     const planId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${planCounter++}`;
     const uri = vscode.Uri.parse(`${Schemes.plan}://${req.sessionId}/${planId}.md`);
     const key = PlanGateRegistry.key(req.sessionId, planId);
-    const review: PlanReview = { key, uri, markdown: req.plan, release };
+    const review: PlanReview = { id: key, key, sessionId: req.sessionId, uri, markdown: req.plan };
 
     this.provider.set(uri, req.plan);
-    this.active = review;
-    this.updatePendingContext();
+    this.plans.set(review.id, review);
 
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.languages.setTextDocumentLanguage(doc, "markdown");
-    await vscode.window.showTextDocument(doc, { preview: false });
-    void ensureCommentingVisible();
-    await this.hidePanel();
+    const entry: GateEntry = {
+      id: review.id,
+      sessionId: req.sessionId,
+      kind: "plan",
+      repoRoot: req.repoRoot,
+      session: {
+        kind: "plan",
+        approve: () => this.approve(review),
+        sendFeedback: () => this.sendFeedback(review),
+      },
+      foreground: () => this.foreground(review),
+      background: () => this.background(review),
+    };
+    await this.coordinator.register(entry);
+    this.updatePendingContext();
+    this.changeEmitter.fire();
     void vscode.window.showInformationMessage(
       "Claude is waiting on plan review. Add comments, then Approve or Send Feedback.",
     );
 
-    // A dropped connection abandons the plan (resolve the gate so this promise unblocks, then reset).
+    // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
       this.registry.fulfill(key, { decision: "deny", reason: "Plan review connection closed." });
     };
@@ -105,10 +109,28 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
     return result;
   }
 
-  // ── GateSession (shared Approve / Send-Feedback commands dispatch here while active) ──
-  async approve(): Promise<void> {
-    const review = this.active;
-    if (!review) {
+  // ── GateEntry foreground/background ──────────────────────────────────────────────────────────
+  private async foreground(review: PlanReview): Promise<void> {
+    const doc = await vscode.workspace.openTextDocument(review.uri);
+    await vscode.languages.setTextDocumentLanguage(doc, "markdown");
+    await vscode.window.showTextDocument(doc, { preview: false });
+    this.foregroundReview = review;
+    void ensureCommentingVisible();
+    this.changeEmitter.fire();
+  }
+
+  private async background(review: PlanReview): Promise<void> {
+    if (this.foregroundReview === review) {
+      this.foregroundReview = undefined;
+    }
+    this.closingTabs.add(review.uri.toString());
+    await closeTabsForUri(review.uri);
+    this.changeEmitter.fire();
+  }
+
+  // ── GateSession outcomes (bound per-plan; invoked via the shared commands on the foreground) ──
+  private async approve(review: PlanReview): Promise<void> {
+    if (!this.plans.has(review.id)) {
       return;
     }
     const hasProblem = this.collect(review).some((c) => c.kind === "problem");
@@ -118,16 +140,15 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
         { modal: true },
         "Approve Anyway",
       );
-      if (choice !== "Approve Anyway" || this.active !== review) {
+      if (choice !== "Approve Anyway" || !this.plans.has(review.id)) {
         return;
       }
     }
     this.registry.fulfill(review.key, { decision: "allow" });
   }
 
-  sendFeedback(): void {
-    const review = this.active;
-    if (!review) {
+  private sendFeedback(review: PlanReview): void {
+    if (!this.plans.has(review.id)) {
       return;
     }
     const comments = this.collect(review);
@@ -141,8 +162,8 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
   }
 
   private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
-    const review = this.active;
-    if (!review || reply.thread.uri.toString() !== review.uri.toString()) {
+    const review = this.planForUri(reply.thread.uri);
+    if (!review) {
       return;
     }
     this.comments.add(reply, kind, {
@@ -158,17 +179,23 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
     this.changeEmitter.fire();
   }
 
-  /** All gathered plan comments for the active plan (drives the Plan Review panel). */
+  /** Gathered comments for the foreground plan (drives the Plan Review panel). */
   getComments(): PlanCommentData[] {
-    return this.active ? this.collect(this.active) : [];
+    const review = this.foregroundReview ?? [...this.plans.values()].at(-1);
+    return review ? this.collect(review) : [];
   }
 
-  /** True while a plan is awaiting review (drives the Plan Review section). */
+  /** True while any plan is awaiting review (drives the Plan Review section). */
   hasPendingPlan(): boolean {
-    return this.active !== undefined;
+    return this.plans.size > 0;
   }
 
-  /** Flatten the active review's threads into serializable comment data. */
+  private planForUri(uri: vscode.Uri): PlanReview | undefined {
+    const target = uri.toString();
+    return [...this.plans.values()].find((p) => p.uri.toString() === target);
+  }
+
+  /** Flatten one plan's threads into serializable comment data. */
   private collect(review: PlanReview): PlanCommentData[] {
     const lines = review.markdown.split("\n");
     const result: PlanCommentData[] = [];
@@ -191,15 +218,20 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
   }
 
   // ── Tab lifecycle ────────────────────────────────────────────────────────────────────────────
-  /** A tab closed: if it's the pending plan and we didn't close it ourselves, ask what to do. */
+  /** A tab closed: if it's a still-pending plan we didn't close ourselves, ask what to do. */
   private async onTabsChanged(e: vscode.TabChangeEvent): Promise<void> {
-    const review = this.active;
-    if (!review) {
-      return; // resolved plans clear `active` before we close their tab, so our own close is ignored
-    }
     for (const tab of e.closed) {
       const uri = tabUri(tab);
-      if (uri && uri.toString() === review.uri.toString()) {
+      if (!uri) {
+        continue;
+      }
+      const key = uri.toString();
+      if (this.closingTabs.has(key)) {
+        this.closingTabs.delete(key);
+        continue; // our own programmatic close
+      }
+      const review = this.planForUri(uri);
+      if (review) {
         await this.promptOnEarlyClose(review);
         return;
       }
@@ -207,7 +239,7 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
   }
 
   private async promptOnEarlyClose(review: PlanReview): Promise<void> {
-    if (this.active !== review) {
+    if (!this.plans.has(review.id)) {
       return;
     }
     const APPROVE = "Approve";
@@ -221,11 +253,11 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
       APPROVE,
       FEEDBACK,
     );
-    if (this.active !== review) {
+    if (!this.plans.has(review.id)) {
       return; // resolved while the dialog was open
     }
     if (choice === APPROVE) {
-      await this.approve();
+      await this.approve(review);
     } else if (choice === FEEDBACK) {
       if (this.collect(review).length === 0) {
         await this.reopen(review);
@@ -234,7 +266,7 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
         );
         return;
       }
-      this.sendFeedback();
+      this.sendFeedback(review);
     } else {
       await this.reopen(review); // dismissed — keep the gate alive
     }
@@ -245,46 +277,44 @@ export class PlanReviewController implements vscode.Disposable, GateSession {
     await vscode.window.showTextDocument(doc, { preview: false });
   }
 
-  /** Resolve cleanup: close the plan tab, reset comments, restore the panel, free the slot. */
+  /** Resolve cleanup: dispose this plan's comments + tab, then unregister (promotes the next gate). */
   private async finish(review: PlanReview): Promise<void> {
-    if (this.active !== review) {
+    if (!this.plans.has(review.id)) {
       return;
     }
-    this.active = undefined; // cleared first so closing the tab doesn't trip the early-close prompt
-    this.comments.reset();
+    this.plans.delete(review.id);
+    if (this.foregroundReview === review) {
+      this.foregroundReview = undefined;
+    }
+    this.disposeThreadsFor(review.uri);
+    this.closingTabs.add(review.uri.toString());
     await closeTabsForUri(review.uri);
     this.provider.clear(review.uri);
+    await this.coordinator.unregister(review.id);
     this.updatePendingContext();
     this.changeEmitter.fire();
-    await this.showPanel();
-    review.release();
   }
 
-  private async hidePanel(): Promise<void> {
-    this.panelHidden = true;
-    await hideBottomPanel();
-  }
-
-  private async showPanel(): Promise<void> {
-    if (this.panelHidden) {
-      this.panelHidden = false;
-      await showTerminalPanel();
+  private disposeThreadsFor(uri: vscode.Uri): void {
+    const target = uri.toString();
+    for (const thread of this.comments.threads()) {
+      if (thread.uri.toString() === target) {
+        thread.dispose();
+        this.comments.forget(thread);
+      }
     }
   }
 
   private updatePendingContext(): void {
-    void vscode.commands.executeCommand(
-      "setContext",
-      ContextKeys.planPending,
-      this.active !== undefined,
-    );
+    void vscode.commands.executeCommand("setContext", ContextKeys.planPending, this.plans.size > 0);
   }
 
   dispose(): void {
     for (const d of this.disposables) {
       d.dispose();
     }
-    this.active = undefined;
+    this.plans.clear();
+    this.foregroundReview = undefined;
   }
 }
 

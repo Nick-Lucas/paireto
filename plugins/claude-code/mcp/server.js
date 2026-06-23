@@ -95,6 +95,9 @@ async function runReview() {
       ts: bridge.nowIso(),
       cwd,
       repoRoot: target.repoRoot,
+      // Best-effort agent attribution: Claude Code may expose the session id to MCP servers via env.
+      // If absent the extension falls back to the most-recently-active session in this repo.
+      sessionId: process.env.CLAUDE_SESSION_ID || undefined,
     });
   });
   return result;

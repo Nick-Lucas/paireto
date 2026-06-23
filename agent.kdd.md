@@ -1,11 +1,38 @@
 # TUI Companion — Key Decisions
 
-- **Plan and Review share one gate model.** A `GateCoordinator` (`src/gate/GateCoordinator.ts`) owns
-  a single one-at-a-time slot: `PlanReviewController` and `ReviewController` both `acquire()` it
-  before opening any UI and release it when their gate resolves, so a plan and a review can never be
-  active at once (a second request queues — its hook is already blocked on the socket — and drops out
-  via the abort signal if its connection closes first). Both implement `GateSession`
-  (`{kind, approve, sendFeedback}`); the shared `gate.approve` / `gate.sendFeedback` commands
+- **Changed-file status indicators are coloured-letter SVGs (left iconPath), not FileDecorations.**
+  We want git's look: a coloured status letter with a *default-coloured* filename. The generic
+  `FileDecorationProvider` API (all a custom `TreeView` can use) tints the whole label+badge together
+  — there's no badge-only colour; only VS Code's built-in **Source Control viewlet** (the `vscode.scm`
+  API) renders a letter-only colour, and that's not available to a TreeView. A `TreeItem` also has no
+  right-aligned icon slot. So `MainTreeProvider.fileItem` sets `iconPath` to a per-status SVG
+  (`media/status/{a,m,d,r,c,u}-{light,dark}.svg`) that bakes the git colour into a letter glyph —
+  tree iconPath SVGs render as-is (not theme-tinted), hence the light/dark variants (git default
+  hexes). The old `ReviewFileDecorationProvider` + `tui-review-file` scheme were removed. Tradeoff:
+  the indicator is a left letter, not a right-aligned one, and rows show the status letter instead of
+  a file-type icon (a real-file `resourceUri` would re-introduce git's own label colouring).
+
+- **Plan/Review gates are a foreground registry, not a hard one-at-a-time lock.** The
+  `GateCoordinator` (`src/gate/GateCoordinator.ts`) holds many pending `GateEntry`s but only one
+  *foreground* (it owns the editor/comment surfaces and is `coordinator.current`, the target of the
+  shared Approve/Send-Feedback commands). `register` foregrounds only if nothing else is; `switchTo`
+  backgrounds the current entry (hides its UI **without resolving** — e.g. closes the plan tab) and
+  foregrounds another; `unregister` (on resolve) promotes the most-recent remaining entry. The
+  terminal panel is hidden while the foreground is a plan, restored otherwise (panel hooks are
+  injectable so the coordinator stays unit-testable). **Multiple plans** can be pending (each is its
+  own `tui-plan://` doc + URI-anchored threads, so backgrounding just closes the tab and preserves
+  comments); **at most one review** is pending (`ReviewController` has an internal queue — a second
+  `/tui-review` waits) to avoid two reviews colliding on the same `tui-review://` diff-URI namespace.
+  Clicking an agent row (`MainTreeProvider` → `tui-companion.agent.switch`) calls `switchTo` its
+  gate. The Agents section is scoped to the current repo (`sessionsForRepo`). Reviews carry no
+  reliable `sessionId`, so the extension attributes a review to the most-recently-active session in
+  its `repoRoot` (`AgentSessionService.mostRecentSessionForRepo`) when the MCP tool can't supply one.
+  This refined the earlier strict block: a queued gate is no longer invisible — it's pending and
+  switchable.
+
+- **Plan and Review share one gate model.** `PlanReviewController` and `ReviewController` register a
+  per-gate `GateEntry` carrying its own `GateSession` (`{kind, approve, sendFeedback}`) rather than
+  implementing `GateSession` directly. The shared `gate.approve` / `gate.sendFeedback` commands
   dispatch to `coordinator.current`. There is no Reject (Send Feedback covers it) and review's
   "Approve" is the old cancel path (proceed, no feedback). Inline comments are factored into a shared
   `CommentSession` (`src/comments/CommentSession.ts`) with global, controller-agnostic
@@ -15,12 +42,12 @@
 - **A dropped socket connection resets gate state.** `SocketServer.handleConnection` wraps each
   blocking `plan.review.request` / `review.await.request` in an `AbortController` and aborts it on
   `socket.on("close")`; the signal threads through `BridgeHandlers` into `presentPlan` /
-  `startSession`, which fulfill their gate and reset (close the plan tab, clear comments + context
-  keys, restore the terminal panel, release the slot). This is the single mechanism behind "close the
-  plan when ExitPlanMode completes in the agent" and "reset on any closed connection." The plan tab
-  also auto-closes on a normal decision (cleared `active` first, so our own close doesn't trip the
-  early-close prompt), and closing it manually while pending prompts Approve / Send Feedback. The
-  bottom panel is hidden on plan open and restored on resolve. (The virtual-doc-in-search item is
+  `startSession`, which fulfill their gate and reset (dispose comments, close the plan tab,
+  `coordinator.unregister` to promote the next pending gate). This is the single mechanism behind
+  "close the plan when ExitPlanMode completes in the agent" and "reset on any closed connection." The
+  plan tab also auto-closes on a normal decision; our own programmatic closes are tracked in a
+  `closingTabs` set so they don't trip the early-close prompt, while a user closing a still-pending
+  plan tab is prompted for Approve / Send Feedback. (The virtual-doc-in-search item is
   verification-driven — auto-close/reset removes lingering virtual editors; confirm in the dev host
   before adding any further suppression.)
 

@@ -10,14 +10,39 @@ import * as vscode from "vscode";
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { kindColorId, kindIcon, kindLabel } from "../comments/kinds.js";
 import { Commands, Views } from "../config.js";
-import type { ChangedFile } from "../git/DiffService.js";
+import type { GateCoordinator } from "../gate/GateCoordinator.js";
+import type { ChangedFile, FileStatus } from "../git/DiffService.js";
+import type { RepoService } from "../git/RepoService.js";
 import type { PlanReviewController } from "../plan/PlanReviewController.js";
 import type { PlanCommentData } from "../plan/planFeedback.js";
-import { ReviewFileDecorationProvider } from "../review/ReviewFileDecorationProvider.js";
 import type { ReviewController } from "../review/ReviewController.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import type { AgentSession, AgentState, FileGroup } from "../types.js";
 import { buildFileTree, type TreeEntry } from "./fileTree.js";
+
+// Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
+// per-status SVG so the colour stays on the indicator only (a FileDecoration would tint the whole
+// filename label). Tree-item iconPath SVGs are shown as-is (not theme-tinted), so we ship light/dark
+// variants. Maps each status to the basename under media/status/ (e.g. "m" -> m-{light,dark}.svg).
+const STATUS_ICON_FILE: Record<FileStatus, string> = {
+  A: "a",
+  M: "m",
+  D: "d",
+  R: "r",
+  C: "c",
+  U: "u",
+};
+
+function statusIcon(
+  extensionUri: vscode.Uri,
+  status: FileStatus,
+): { light: vscode.Uri; dark: vscode.Uri } {
+  const name = STATUS_ICON_FILE[status] ?? "m";
+  return {
+    light: vscode.Uri.joinPath(extensionUri, "media", "status", `${name}-light.svg`),
+    dark: vscode.Uri.joinPath(extensionUri, "media", "status", `${name}-dark.svg`),
+  };
+}
 
 type SectionId = "agents" | "plan" | "files" | "feedback";
 
@@ -74,6 +99,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     private readonly agents: AgentSessionService,
     private readonly review: ReviewController,
     private readonly plan: PlanReviewController,
+    private readonly repoService: RepoService,
+    private readonly coordinator: GateCoordinator,
+    private readonly extensionUri: vscode.Uri,
   ) {
     const fire = (): void => this.emitter.fire();
     this.subs.push(
@@ -84,7 +112,24 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       }),
       this.plan.onDidChange(fire),
       this.review.onDidChangeActiveDiff((t) => this.syncSelection(t)),
+      // Re-render on repo change (Agents list is scoped to the current repo) and on gate
+      // foreground/queue changes (agent rows show which gate is active/pending).
+      this.repoService.onDidChange(fire),
+      this.coordinator.onDidChange(fire),
+      vscode.commands.registerCommand(Commands.agentSwitch, (s: AgentSession) =>
+        this.switchToAgent(s),
+      ),
     );
+  }
+
+  /** Click an agent: switch the foreground gate to that agent's pending plan/review, else focus terminal. */
+  private switchToAgent(session: AgentSession): void {
+    const entry = this.coordinator.entryForSession(session.sessionId);
+    if (entry) {
+      void this.coordinator.switchTo(entry.id);
+    } else {
+      void vscode.commands.executeCommand("workbench.action.terminal.focus");
+    }
   }
 
   /** Create the sidebar tree view (kept here so `reveal` can select the row of the focused diff). */
@@ -133,11 +178,14 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "group":
         return { kind: "section", id: "files", label: "Changed Files" };
       case "folder":
-        return this.entryParent(node.group, (e) => e.type === "folder" && e.path === node.entry.path);
+        return this.entryParent(
+          node.group,
+          (e) => e.type === "folder" && e.path === node.entry.path,
+        );
       case "file":
         return this.entryParent(
           node.file.group,
-          (e) => e.type === "file" && e.file.path === node.file.path
+          (e) => e.type === "file" && e.file.path === node.file.path,
         );
       case "agent":
         return { kind: "section", id: "agents", label: "Agents" };
@@ -188,9 +236,14 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return item;
       }
       case "file":
-        return fileItem(node.file);
-      case "agent":
-        return agentItem(node.session);
+        return fileItem(node.file, this.extensionUri);
+      case "agent": {
+        const entry = this.coordinator.entryForSession(node.session.sessionId);
+        const gate = entry
+          ? { kind: entry.kind, foreground: this.coordinator.isForeground(entry.id) }
+          : undefined;
+        return agentItem(node.session, gate);
+      }
       case "reviewComment":
         return reviewCommentItem(node.comment);
       case "planComment":
@@ -219,9 +272,18 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     }
   }
 
+  /** Sessions for the current repo (the Agents list is scoped to it). */
+  private scopedAgents(): AgentSession[] {
+    const root = this.repoService.current()?.root.fsPath;
+    const sessions = root ? this.agents.sessionsForRepo(root) : this.agents.allSessions();
+    return sessions
+      .filter((s) => s.state !== "ended")
+      .sort((a, b) => b.lastEventAt - a.lastEventAt);
+  }
+
   private sections(): Node[] {
     const out: Node[] = [];
-    const agentCount = this.agents.allSessions().filter((s) => s.state !== "ended").length;
+    const agentCount = this.scopedAgents().length;
     out.push({ kind: "section", id: "agents", label: "Agents", description: count(agentCount) });
 
     out.push({
@@ -248,7 +310,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   private sectionChildren(id: SectionId): Node[] {
     switch (id) {
       case "agents": {
-        const sessions = this.agents.allSessions().filter((s) => s.state !== "ended");
+        const sessions = this.scopedAgents();
         return sessions.length
           ? sessions.map((session) => ({ kind: "agent", session }) as Node)
           : [placeholder("No agents connected")];
@@ -354,23 +416,38 @@ function placeholder(label: string): Node {
   return { kind: "placeholder", label };
 }
 
-function agentItem(s: AgentSession): vscode.TreeItem {
+function agentItem(
+  s: AgentSession,
+  gate?: { kind: "plan" | "review"; foreground: boolean },
+): vscode.TreeItem {
   const item = new vscode.TreeItem(path.basename(s.repoRoot), vscode.TreeItemCollapsibleState.None);
   const subs = s.subagentCount > 0 ? ` · ${s.subagentCount} sub` : "";
-  item.description = `${STATE_LABEL[s.state]}${subs}`;
-  item.iconPath = new vscode.ThemeIcon(STATE_ICON[s.state]);
-  item.tooltip = `${s.repoRoot}\nSession ${s.sessionId}\n${STATE_LABEL[s.state]}`;
+  if (gate) {
+    const role = gate.kind === "plan" ? "plan review" : "code review";
+    const slot = gate.foreground ? "active" : "pending";
+    item.description = `awaiting ${role} · ${slot}${subs}`;
+    item.iconPath = new vscode.ThemeIcon(
+      gate.foreground ? "circle-large-filled" : "circle-large-outline",
+    );
+    item.tooltip = `${s.repoRoot}\nSession ${s.sessionId}\nAwaiting ${role} (${slot}) — click to ${
+      gate.foreground ? "keep viewing" : "switch to it"
+    }`;
+  } else {
+    item.description = `${STATE_LABEL[s.state]}${subs}`;
+    item.iconPath = new vscode.ThemeIcon(STATE_ICON[s.state]);
+    item.tooltip = `${s.repoRoot}\nSession ${s.sessionId}\n${STATE_LABEL[s.state]}`;
+  }
   item.contextValue = "agentSession";
+  item.command = { command: Commands.agentSwitch, title: "Switch to Agent", arguments: [s] };
   return item;
 }
 
-function fileItem(file: ChangedFile): vscode.TreeItem {
-  const item = new vscode.TreeItem(
-    ReviewFileDecorationProvider.fileUri(file.path, file.status),
-    vscode.TreeItemCollapsibleState.None,
-  );
+function fileItem(file: ChangedFile, extensionUri: vscode.Uri): vscode.TreeItem {
+  // Colour only the status indicator (a coloured letter, like git), leaving the filename default —
+  // a FileDecoration would instead tint the whole label.
+  const item = new vscode.TreeItem(path.basename(file.path), vscode.TreeItemCollapsibleState.None);
   item.id = `file:${file.group}:${file.path}`;
-  item.label = path.basename(file.path);
+  item.iconPath = statusIcon(extensionUri, file.status);
   const dir = path.dirname(file.path);
   const counts = `+${file.additions} -${file.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;

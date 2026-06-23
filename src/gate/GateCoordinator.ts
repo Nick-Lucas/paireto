@@ -1,11 +1,13 @@
-// One-at-a-time gate slot shared by Plan Review and Code Review. A held-open ExitPlanMode plan and
-// a /tui-review session must never be active simultaneously (their controls and comment surfaces
-// would collide), so both acquire this single slot before opening any UI and release it when their
-// gate resolves. A second request waits its turn — its hook is already blocked on the socket, so
-// queueing is free — and drops out cleanly if its connection disconnects first (the abort signal).
-//
-// The coordinator also tracks the active GateSession so the shared `gate.approve` / `gate.sendFeedback`
-// commands can dispatch to whichever flow is running.
+// Coordinates the gate surfaces (Plan Review + Code Review) across potentially several concurrently
+// PENDING agents. Only ONE gate is *foreground* at a time — it occupies the editor/comment surfaces
+// and is the target of the shared Approve / Send-Feedback commands — but multiple may be pending
+// (their agents blocked on the socket). The user switches the foreground by clicking an agent; the
+// backgrounded gate is hidden, NOT resolved, and can be returned to. The integrated terminal panel
+// is hidden while the foreground gate is a plan and restored otherwise.
+
+import * as vscode from "vscode";
+
+import { hideBottomPanel, showTerminalPanel } from "./tabs.js";
 
 export type GateKind = "plan" | "review";
 
@@ -16,82 +18,126 @@ export interface GateSession {
   sendFeedback(): void | Promise<void>;
 }
 
-function abortError(): Error {
-  const err = new Error("Gate acquisition aborted");
-  err.name = "AbortError";
-  return err;
+/** A pending gate: its identity, the agent that owns it, and how to show/hide its UI. */
+export interface GateEntry {
+  readonly id: string;
+  /** Owning agent session (plans always; reviews best-effort). */
+  readonly sessionId?: string;
+  readonly kind: GateKind;
+  readonly repoRoot: string;
+  readonly session: GateSession;
+  /** Show this gate's UI (open its plan tab / activate its review). */
+  foreground(): void | Promise<void>;
+  /** Hide this gate's UI WITHOUT resolving it (close its tab / deactivate its review). */
+  background(): void | Promise<void>;
 }
 
-export class GateCoordinator {
-  private locked = false;
-  private active?: GateSession;
-  /** Grant callbacks for queued acquirers, in arrival order. */
-  private readonly waiters: Array<() => void> = [];
+export class GateCoordinator implements vscode.Disposable {
+  private readonly entries: GateEntry[] = [];
+  private foregroundId?: string;
+  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  /** Fires whenever the set of pending gates or the foreground changes (drives the Agents panel). */
+  readonly onDidChange = this.changeEmitter.event;
+  private panelHiddenForPlan = false;
 
-  /** The currently-active gate session, if any. */
+  constructor(
+    // Injectable so unit tests can run without touching the real VS Code panel.
+    private readonly hidePanel: () => Promise<void> | void = hideBottomPanel,
+    private readonly showPanel: () => Promise<void> | void = showTerminalPanel,
+  ) {}
+
+  /** The foreground gate's session (target of the shared Approve / Send-Feedback commands). */
   get current(): GateSession | undefined {
-    return this.active;
+    return this.foregroundEntry?.session;
+  }
+
+  get foregroundEntry(): GateEntry | undefined {
+    return this.entries.find((e) => e.id === this.foregroundId);
   }
 
   isActive(): boolean {
-    return this.active !== undefined;
+    return this.foregroundId !== undefined;
   }
 
-  /**
-   * Acquire the single gate slot for `session`. Resolves with a release function once the slot is
-   * free and this session is active. Rejects with an AbortError if `signal` aborts while waiting in
-   * the queue (the caller's connection dropped before it got a turn). Call the returned release when
-   * the gate resolves; it clears the slot and lets the next waiter in. Release is idempotent.
-   */
-  async acquire(session: GateSession, signal?: AbortSignal): Promise<() => void> {
-    if (signal?.aborted) {
-      throw abortError();
+  isForeground(id: string): boolean {
+    return this.foregroundId === id;
+  }
+
+  entriesForRepo(repoRoot: string): GateEntry[] {
+    return this.entries.filter((e) => e.repoRoot === repoRoot);
+  }
+
+  /** The pending gate owned by an agent session, if any. */
+  entryForSession(sessionId: string): GateEntry | undefined {
+    return this.entries.find((e) => e.sessionId === sessionId);
+  }
+
+  /** Register a newly-pending gate. Foregrounds it only if nothing else is foreground. */
+  async register(entry: GateEntry): Promise<void> {
+    this.entries.push(entry);
+    if (this.foregroundId === undefined) {
+      await this.setForeground(entry.id);
     }
-    await this.waitForSlot(signal);
-    this.active = session;
-    let released = false;
-    return () => {
-      if (released) {
-        return;
-      }
-      released = true;
-      if (this.active === session) {
-        this.active = undefined;
-      }
-      this.startNext();
-    };
+    this.changeEmitter.fire();
   }
 
-  /** Resolve when the slot is free (immediately if idle, else when granted from the queue). */
-  private waitForSlot(signal?: AbortSignal): Promise<void> {
-    if (!this.locked) {
-      this.locked = true;
-      return Promise.resolve();
+  /** Remove a resolved gate. If it was foreground, promote the most-recent remaining gate. */
+  async unregister(id: string): Promise<void> {
+    const idx = this.entries.findIndex((e) => e.id === id);
+    if (idx === -1) {
+      return;
     }
-    return new Promise<void>((resolve, reject) => {
-      const grant = (): void => {
-        signal?.removeEventListener("abort", onAbort);
-        this.locked = true;
-        resolve();
-      };
-      const onAbort = (): void => {
-        const i = this.waiters.indexOf(grant);
-        if (i >= 0) {
-          this.waiters.splice(i, 1);
-        }
-        reject(abortError());
-      };
-      this.waiters.push(grant);
-      signal?.addEventListener("abort", onAbort, { once: true });
-    });
+    this.entries.splice(idx, 1);
+    if (this.foregroundId === id) {
+      this.foregroundId = undefined;
+      const next = this.entries[this.entries.length - 1];
+      if (next) {
+        await this.setForeground(next.id);
+      } else {
+        await this.applyPanel(undefined);
+      }
+    }
+    this.changeEmitter.fire();
   }
 
-  /** Free the slot and hand it to the next queued waiter, if any. */
-  private startNext(): void {
-    this.locked = false;
-    const next = this.waiters.shift();
+  /** Switch the foreground to a pending gate (backgrounding the current one, without resolving it). */
+  async switchTo(id: string): Promise<void> {
+    if (this.foregroundId === id || !this.entries.some((e) => e.id === id)) {
+      return;
+    }
+    await this.setForeground(id);
+    this.changeEmitter.fire();
+  }
+
+  private async setForeground(id: string): Promise<void> {
+    const prev = this.foregroundEntry;
+    if (prev && prev.id !== id) {
+      await prev.background();
+    }
+    this.foregroundId = id;
+    const next = this.foregroundEntry;
     if (next) {
-      next();
+      await next.foreground();
+      await this.applyPanel(next.kind);
     }
+  }
+
+  /** Hide the terminal panel while a plan is foreground; restore it otherwise. */
+  private async applyPanel(kind: GateKind | undefined): Promise<void> {
+    try {
+      if (kind === "plan") {
+        this.panelHiddenForPlan = true;
+        await this.hidePanel();
+      } else if (this.panelHiddenForPlan) {
+        this.panelHiddenForPlan = false;
+        await this.showPanel();
+      }
+    } catch {
+      /* panel commands are best-effort */
+    }
+  }
+
+  dispose(): void {
+    this.changeEmitter.dispose();
   }
 }

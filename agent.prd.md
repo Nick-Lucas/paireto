@@ -32,10 +32,12 @@ are correlated by repository directory, not terminal.
 ## Features
 
 ### Agents
-- Live list of connected Claude sessions for the workspace, with status (idle / thinking / running
-  tool / awaiting plan / awaiting permission) and subagent count.
+- Live list of connected Claude sessions **for the current repo/worktree**, with status (idle /
+  thinking / running tool / awaiting plan / awaiting permission) and subagent count. Rows awaiting a
+  gate show which kind (plan/code review) and whether it's foreground (active) or pending.
 - Status bar item showing current repo · branch + agent activity.
-- "Focus Agent" action on each session row.
+- Clicking an agent row switches its pending plan/review to the foreground (or focuses the terminal
+  if it has none); a "Focus Agent" button focuses the terminal directly.
 - Stuck-state safety net: an agent that goes silent after an un-hookable interrupt is auto-cleared.
 
 ### Repo / Worktree Switcher
@@ -43,15 +45,20 @@ are correlated by repository directory, not terminal.
 - Enter opens in a new window; `Shift+Enter` opens in the current window.
 
 ### Plan & Code Review (shared gate)
-Plan Review and Code Review are two surfaces over one shared "gate": only one can be active at a
-time, both gather kinded line comments, and both resolve with the same two actions.
+Plan Review and Code Review are two surfaces over one shared "gate". Several agents' gates can be
+**pending at once**, but only **one is foreground** (occupying the editor/comment surfaces) at a
+time — the others wait, unresolved, until brought forward. Both gather kinded line comments, and both
+resolve with the same two actions.
 - **Two actions (colored icons):** **Approve** (green) → agent proceeds; **Send Feedback** (amber) →
   deny-with-feedback (plan: agent revises; review: agent acts on the comments). No Reject — Send
   Feedback covers it.
 - Line comments tagged Question / Comment / Problem; **comments are editable and deletable** after
   creation (edit/save/delete on the comment).
-- **One at a time:** while a plan or review is active, a second plan/review request waits until the
-  first is resolved or cleared (the agent's hook is blocked meanwhile).
+- **Switch between agents:** the Agents section is scoped to the current repo/worktree and shows
+  which agents are awaiting which gate (plan vs review) and which is foreground vs pending. Clicking
+  an agent brings its gate to the foreground (backgrounding the current one without resolving it), so
+  you can flip between several pending plans/reviews and come back. At most one review is pending at a
+  time; multiple plans can be.
 - **Disconnect resets state:** if the agent side ends another way (interrupt, crash, ExitPlanMode
   resolved in the terminal), the dropped connection auto-closes the plan/review and resets the UI.
 
