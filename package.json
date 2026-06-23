@@ -140,11 +140,6 @@
         "icon": "$(discard)"
       },
       {
-        "command": "tui-companion.review.sendFeedback",
-        "title": "Send Feedback",
-        "icon": "media/send-feedback.svg"
-      },
-      {
         "command": "tui-companion.review.clearFeedback",
         "title": "Clear Feedback",
         "icon": "$(clear-all)"
@@ -153,6 +148,11 @@
         "command": "tui-companion.review.export",
         "title": "Export Review",
         "icon": "$(save)"
+      },
+      {
+        "command": "tui-companion.review.sendFeedback",
+        "title": "Send Feedback",
+        "icon": "media/send-feedback.svg"
       },
       {
         "command": "tui-companion.review.addComment",
@@ -472,17 +472,17 @@
           "group": "navigation@6"
         },
         {
-          "command": "tui-companion.review.sendFeedback",
+          "command": "tui-companion.review.clearFeedback",
           "when": "view == tui.main && tui.reviewSessionActive",
           "group": "navigation@7"
         },
         {
-          "command": "tui-companion.review.clearFeedback",
+          "command": "tui-companion.review.export",
           "when": "view == tui.main && tui.reviewSessionActive",
           "group": "navigation@8"
         },
         {
-          "command": "tui-companion.review.export",
+          "command": "tui-companion.review.sendFeedback",
           "when": "view == tui.main && tui.reviewSessionActive",
           "group": "navigation@9"
         },
