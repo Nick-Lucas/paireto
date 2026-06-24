@@ -21,6 +21,9 @@
 * notification sound / indicator when an agent finishes
   * in extension sidebar agents section
   * in the Repo/Worktree switcher (summarise the states of agents in each location as well indicating if the repo/worktree even has an open editor)
+
+# WIP 4
+
 * when staging or unstaging a file which has its tab open, automatically update the tab to look at the new location
 * Extract a better sessionId for presentation that the project/CWD name - it's the same for every agent right now
 * For claude code when approving a plan there's a way to tell the agent what mode to enter next. Make sure it defaults to auto-mode
