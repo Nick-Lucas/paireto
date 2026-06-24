@@ -37,7 +37,13 @@ are correlated by repository directory, not terminal.
   gate show which kind (plan/code review) and whether it's foreground (active) or pending.
 - Status bar item showing current repo · branch + agent activity.
 - Clicking an agent row switches its pending plan/review to the foreground (or focuses the terminal
-  if it has none); a "Focus Agent" button focuses the terminal directly.
+  if it has none); a "Focus Agent" button focuses the terminal directly. Clicking also clears the
+  row's "needs you" marker.
+- **Needs-you alert:** when an agent enters a state that wants the user — finished a turn (Stop),
+  awaiting permission, or awaiting plan approval — an orange bell appears on the agent row (and in the
+  status bar + repo switcher), and once per transition a sound plays (`tui-companion.notify.type` =
+  `sound` (default, sound from `tui-companion.notify.sound`) or `disabled`). Only this window's agents
+  alert.
 - Stuck-state safety net: an agent that goes silent after an un-hookable interrupt is auto-cleared;
   an agent whose process is killed (no SessionEnd hook fires) is detected via a liveness connection
   the plugin's MCP server holds open, and dropped from the list immediately.
@@ -45,6 +51,9 @@ are correlated by repository directory, not terminal.
 ### Repo / Worktree Switcher
 - `Cmd/Ctrl+Shift+K` (or status bar click) opens a picker: current window, worktrees, recent repos.
 - Enter opens in a new window; `Shift+Enter` opens in the current window.
+- Each row summarises that location's agent activity and whether it has an open window: `no window`,
+  `open · idle`, a live state (`thinking · 2 agents`, `plan review`, …), or `needs you`. The data
+  comes from per-repo activity files each window publishes (there's no cross-window VS Code API).
 
 ### Plan & Code Review (shared gate)
 Plan Review and Code Review are two surfaces over one shared "gate". Several agents' gates can be

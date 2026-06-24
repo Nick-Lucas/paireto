@@ -124,6 +124,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   /** Click an agent: switch the foreground gate to that agent's pending plan/review, else focus terminal. */
   private switchToAgent(session: AgentSession): void {
+    // The user looked at this agent — drop its attention marker.
+    this.agents.clearAttention(session.sessionId);
     const entry = this.coordinator.entryForSession(session.sessionId);
     if (entry) {
       void this.coordinator.switchTo(entry.id);
@@ -436,6 +438,11 @@ function agentItem(
     item.description = `${STATE_LABEL[s.state]}${subs}`;
     item.iconPath = new vscode.ThemeIcon(STATE_ICON[s.state]);
     item.tooltip = `${s.repoRoot}\nSession ${s.sessionId}\n${STATE_LABEL[s.state]}`;
+  }
+  // The agent has paused and wants the user (and they haven't looked yet) — flag it prominently.
+  if (s.needsAttention && !gate?.foreground) {
+    item.description = `${item.description} · needs you`;
+    item.iconPath = new vscode.ThemeIcon("bell-dot", new vscode.ThemeColor("charts.orange"));
   }
   item.contextValue = "agentSession";
   item.command = { command: Commands.agentSwitch, title: "Switch to Agent", arguments: [s] };

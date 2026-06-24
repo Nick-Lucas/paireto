@@ -3,7 +3,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { canonicalize, repoKey } from "../protocol/paths.js";
+import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
+import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
+import { summarizeActivity } from "../agents/activitySummary.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
 import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
@@ -474,5 +476,231 @@ suite("AgentSessionService liveness ref-counting", () => {
     } finally {
       svc.dispose();
     }
+  });
+});
+
+suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
+  const ev = (event: string, toolName?: string): HookEventMessage =>
+    ({
+      t: "hook.event",
+      v: 1,
+      ts: "t",
+      event,
+      sessionId: "s1",
+      cwd: "/repo",
+      repoRoot: "/repo",
+      toolName,
+    }) as HookEventMessage;
+
+  const session = (svc: AgentSessionService) => svc.sessionsForRepo("/repo")[0];
+  // Window not focused, so needs-you transitions DO mark/ping (the default reads the real window).
+  const mkSvc = () => new AgentSessionService(() => false);
+
+  test("fires once on entering a needs-you state and sets needsAttention", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit"));
+      assert.deepStrictEqual(fired, [], "busy states don't notify");
+      svc.ingest(ev("Stop"));
+      assert.deepStrictEqual(fired, ["stopped"]);
+      assert.strictEqual(session(svc).needsAttention, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("does NOT re-fire while staying within needs-you states", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop")); // stopped (needs-you) — fires
+      svc.ingest(ev("PermissionRequest")); // awaitingPermission (still needs-you) — no re-fire
+      assert.deepStrictEqual(fired, ["stopped"]);
+      assert.strictEqual(session(svc).needsAttention, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("clears on going busy/idle and re-arms on the next needs-you transition", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop"));
+      assert.strictEqual(session(svc).needsAttention, true);
+      svc.ingest(ev("UserPromptSubmit")); // a new turn — clears
+      assert.strictEqual(session(svc).needsAttention, false);
+      svc.ingest(ev("PreToolUse", "ExitPlanMode")); // awaitingPlanApproval — re-arms + re-fires
+      assert.deepStrictEqual(fired, ["stopped", "awaitingPlanApproval"]);
+      assert.strictEqual(session(svc).needsAttention, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("does NOT mark or fire when this window is focused", () => {
+    const svc = new AgentSessionService(() => true); // user is already looking at the editor
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop"));
+      assert.deepStrictEqual(fired, [], "no ping while focused");
+      assert.strictEqual(session(svc).needsAttention, false, "no bell while focused");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("clearAttention drops the marker without a state change", () => {
+    const svc = mkSvc();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop"));
+      assert.strictEqual(session(svc).needsAttention, true);
+      svc.clearAttention("s1");
+      assert.strictEqual(session(svc).needsAttention, false);
+      assert.strictEqual(session(svc).state, "stopped", "state is untouched");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("markIdleOnDisconnect also clears the marker", () => {
+    const svc = mkSvc();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("PreToolUse", "ExitPlanMode"));
+      assert.strictEqual(session(svc).needsAttention, true);
+      svc.markIdleOnDisconnect("s1");
+      assert.strictEqual(session(svc).needsAttention, false);
+      assert.strictEqual(session(svc).state, "idle");
+    } finally {
+      svc.dispose();
+    }
+  });
+});
+
+suite("summarizeActivity", () => {
+  test("needsAttention wins over state", () => {
+    const s = summarizeActivity(
+      { sessionCount: 1, subagentCount: 0, state: "thinking", needsAttention: true },
+      true,
+    );
+    assert.match(s, /needs you/);
+  });
+  test("no sessions → idle", () => {
+    assert.strictEqual(
+      summarizeActivity({
+        sessionCount: 0,
+        subagentCount: 0,
+        state: "idle",
+        needsAttention: false,
+      }),
+      "idle",
+    );
+  });
+  test("renders the busy state with a codicon and agent count", () => {
+    const s = summarizeActivity({
+      sessionCount: 2,
+      subagentCount: 1,
+      state: "thinking",
+      needsAttention: false,
+    });
+    assert.match(s, /thinking/);
+    assert.match(s, /2 agents/);
+    assert.match(s, /1 sub/);
+  });
+});
+
+suite("repoSnapshots (cross-repo switcher activity)", () => {
+  // Point the state dir at a temp location so we read a synthetic index + activity files.
+  let prevXdg: string | undefined;
+  let dir: string;
+
+  const writeIndex = (entries: object[]): void => {
+    fs.mkdirSync(stateDir(), { recursive: true });
+    fs.writeFileSync(indexPath(), JSON.stringify({ version: 1, entries }));
+  };
+  const writeActivity = (root: string, body: object): void => {
+    fs.mkdirSync(path.dirname(activityPath(root)), { recursive: true });
+    fs.writeFileSync(activityPath(root), JSON.stringify(body));
+  };
+
+  setup(() => {
+    prevXdg = process.env.XDG_STATE_HOME;
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tui-activity-"));
+    process.env.XDG_STATE_HOME = dir;
+  });
+  teardown(() => {
+    if (prevXdg === undefined) {
+      delete process.env.XDG_STATE_HOME;
+    } else {
+      process.env.XDG_STATE_HOME = prevXdg;
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  test("open repo with a live window reports its published activity", () => {
+    const root = "/work/open-repo";
+    writeIndex([
+      {
+        repoRoot: root,
+        key: repoKey(root),
+        socketPath: "x.sock",
+        pid: process.pid, // this test process is alive
+        windowId: "w1",
+        startedAt: "t",
+        protocolVersion: 1,
+      },
+    ]);
+    writeActivity(root, {
+      version: 1,
+      repoRoot: root,
+      repoKey: repoKey(root),
+      pid: process.pid,
+      updatedAt: "t",
+      activity: { sessionCount: 1, subagentCount: 0, state: "thinking" },
+      needsAttention: true,
+    });
+
+    const snap = repoSnapshots([root]).get(root);
+    assert.ok(snap);
+    assert.strictEqual(snap.open, true);
+    assert.strictEqual(snap.needsAttention, true);
+    assert.strictEqual(snap.activity?.state, "thinking");
+  });
+
+  test("a repo with no index entry reports closed (no window)", () => {
+    writeIndex([]);
+    const root = "/work/closed-repo";
+    const snap = repoSnapshots([root]).get(root);
+    assert.ok(snap);
+    assert.strictEqual(snap.open, false);
+    assert.strictEqual(snap.activity, undefined);
+  });
+
+  test("a dead pid in the index does not count as open", () => {
+    const root = "/work/dead-repo";
+    writeIndex([
+      {
+        repoRoot: root,
+        key: repoKey(root),
+        socketPath: "x.sock",
+        pid: 2147483646, // not a live pid
+        windowId: "w1",
+        startedAt: "t",
+        protocolVersion: 1,
+      },
+    ]);
+    const snap = repoSnapshots([root]).get(root);
+    assert.strictEqual(snap?.open, false);
   });
 });

@@ -6,6 +6,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { AgentSessionService } from "./agents/AgentSessionService.js";
+import { ActivityPublisher } from "./bridge/ActivityPublisher.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
 import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
@@ -16,6 +17,7 @@ import { GateCoordinator } from "./gate/GateCoordinator.js";
 import { DiffService } from "./git/DiffService.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
+import { NotificationController } from "./notify/NotificationController.js";
 import { PlanContentProvider } from "./plan/PlanContentProvider.js";
 import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
 import { PlanReviewController } from "./plan/PlanReviewController.js";
@@ -76,6 +78,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const planGate = new PlanGateRegistry();
   const planReview = new PlanReviewController(planProvider, planGate, coordinator);
   const statusBar = new StatusBarController(repoService, agents);
+  // Ping the user when one of this window's agents needs them; publish activity for other windows.
+  const notifications = new NotificationController(agents);
+  const activityPublisher = new ActivityPublisher(agents);
 
   // Code review (Phase 3).
   const diffService = new DiffService();
@@ -97,7 +102,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     coordinator,
     context.extensionUri,
   );
-  const switcher = new RepoSwitcher(repoService, worktrees, recents);
+  const switcher = new RepoSwitcher(repoService, worktrees, recents, context.extensionUri);
 
   context.subscriptions.push(
     agents,
@@ -106,6 +111,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     planProvider,
     planReview,
     statusBar,
+    notifications,
+    activityPublisher,
     reviewContent,
     reviewController,
     mainTree,

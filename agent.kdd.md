@@ -19,6 +19,45 @@
   attach, so Ctrl+C (fully quitting any of them) simulates a process kill and drops the agent;
   `doctor`/`event`/`flow` are probes with no attach.
 
+- **"An agent finished" = entering a needs-you state, fired once on the edge.** `AgentSessionService`
+  has no event that *means* "done" — the state machine just transitions. So `ingest()` captures the
+  prior state and, when the new state is in `NEEDS_ATTENTION` (`stopped` / `awaitingPermission` /
+  `awaitingPlanApproval`) and the prior wasn't, sets `session.needsAttention = true` and fires a
+  dedicated `onDidFinish(session)` (distinct from the void `onDidChange`) — UNLESS this VS Code window
+  is focused at that moment (`isWindowFocused`, injected, defaults to `vscode.window.state.focused`):
+  if the user is already looking at the editor we neither mark nor ping (it'd just be noise). Staying
+  within needs-you states (e.g. `stopped`→`awaitingPermission`) does *not* re-fire; going busy/idle
+  clears the flag and re-arms, so a new turn (`UserPromptSubmit` → thinking) drops the marker.
+  `clearAttention(sessionId)` (called when the user clicks/focuses the agent row) and
+  `markIdleOnDisconnect` also clear it. The cue is **visual everywhere + an optional sound** — we
+  deliberately do NOT push OS notifications. (We tried: macOS osascript notifications are silently
+  dropped unless "Script Editor" is allowed and the TCC-protected DB can't detect that;
+  `alerter --sender`/AXRaise worked but needed extra installs + Accessibility and still mis-focused
+  windows. Not worth it.) So `NotificationController` (`src/notify/`) only — gated on
+  `tui-companion.notify.type` (`sound` | `disabled`, default `sound`) — plays a sound
+  (`afplay`/`paplay`/PowerShell `SystemSounds`; `notify.sound` picks it), best-effort, failures
+  logged to a lazily-created "TUI Companion" channel. It only ever sees *this* window's sessions.
+  The orange "needs you" cue appears in three places driven off `needsAttention`: the sidebar agent
+  row (`bell-dot`), the status bar (`bell-dot` glyph + `statusBarItem.warningBackground`), and the
+  repo/worktree switcher (the row's **left icon** becomes a baked-orange bell SVG). NOTE the switcher
+  needs an SVG, not a `ThemeIcon`+`ThemeColor`: a QuickPick **ignores the ThemeColor** on an iconPath
+  ThemeIcon (and label `$(codicon)`s can't be coloured either), so — like the changed-file status
+  letters — we ship `media/bell-orange.svg` and set it as the iconPath (trees DO honour ThemeColor,
+  which is why the sidebar bell can stay a tinted `bell-dot`). To support the status bar + switcher,
+  `RepoActivity` carries a `needsAttention` flag (`activityForRepo`), which also rides in the
+  published activity file.
+
+- **Cross-window agent activity travels through per-repo files, not a VS Code API (there is none).**
+  A window can't inspect another window's workspace or agent state, and state lives only in-memory per
+  window. So each window publishes `$STATE/activity/<repoKey>.json` (atomic tmp+rename, lock-free —
+  one writer per repo since first-window-wins owns the socket and thus the telemetry) via
+  `ActivityPublisher` (debounced on `agents.onDidChange`; deletes a repo's file when it goes quiet, and
+  all its files on dispose). The repo/worktree switcher reads these plus `index.json` through
+  `repoSnapshots()` (`src/bridge/ActivitySnapshot.ts`): `open` = a live `index.json` entry for that
+  `repoKey` (`IndexRegistry.liveKeys()` filters dead pids), `activity`/`needsAttention` from the file.
+  `IndexRegistry.gc()` unlinks orphaned activity files alongside orphaned `.sock`s. The switcher and
+  any other activity surface render through the shared `summarizeActivity()` (`src/agents/`).
+
 - **Changed-file status indicators are coloured-letter SVGs (left iconPath), not FileDecorations.**
   We want git's look: a coloured status letter with a *default-coloured* filename. The generic
   `FileDecorationProvider` API (all a custom `TreeView` can use) tints the whole label+badge together

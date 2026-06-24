@@ -513,6 +513,24 @@
           "default": false,
           "description": "Log TUI Companion diagnostics (refreshes, diff open decisions) to the 'TUI Companion' output channel."
         },
+        "tui-companion.notify.type": {
+          "type": "string",
+          "enum": [
+            "sound",
+            "disabled"
+          ],
+          "enumDescriptions": [
+            "Play the selected sound when an agent needs you.",
+            "No sound (the sidebar, status bar, and switcher indicators still update)."
+          ],
+          "default": "sound",
+          "description": "How to alert you when one of this window's agents finishes a turn or needs input (stopped / awaiting plan / awaiting permission)."
+        },
+        "tui-companion.notify.sound": {
+          "type": "string",
+          "default": "Ping",
+          "description": "Sound played when 'tui-companion.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
+        },
         "tui-companion.planGate.onUnavailable": {
           "type": "string",
           "enum": [

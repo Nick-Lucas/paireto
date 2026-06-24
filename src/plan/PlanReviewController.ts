@@ -93,9 +93,6 @@ export class PlanReviewController implements vscode.Disposable {
     await this.coordinator.register(entry);
     this.updatePendingContext();
     this.changeEmitter.fire();
-    void vscode.window.showInformationMessage(
-      "Claude is waiting on plan review. Add comments, then Approve or Send Feedback.",
-    );
 
     // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {

@@ -33,4 +33,7 @@ export interface AgentSession {
   lastTool?: string;
   startedAt: number;
   lastEventAt: number;
+  /** Set when the session enters a "needs you" state (stopped / awaiting plan / awaiting permission)
+   *  until the user looks at it or the agent goes busy again. Drives the sidebar attention marker. */
+  needsAttention: boolean;
 }

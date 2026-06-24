@@ -6,7 +6,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-import { indexLockPath, indexPath, stateDir } from "../protocol/paths.js";
+import { activityDir, indexLockPath, indexPath, stateDir } from "../protocol/paths.js";
 import type { IndexEntry, IndexFile } from "./types.js";
 
 const INDEX_VERSION = 1;
@@ -75,6 +75,15 @@ export class IndexRegistry {
     fs.renameSync(tmp, indexPath());
   }
 
+  /** repoKeys of windows currently alive — the switcher uses this to tell "open" from "no window". */
+  liveKeys(): Set<string> {
+    return new Set(
+      this.read()
+        .entries.filter((e) => this.isAlive(e.pid))
+        .map((e) => e.key),
+    );
+  }
+
   private isAlive(pid: number): boolean {
     if (typeof pid !== "number") {
       return false;
@@ -113,12 +122,13 @@ export class IndexRegistry {
     this.mutate((entries) => entries.filter((e) => e.socketPath !== socketPath));
   }
 
-  /** GC pass: drop dead pids and unlink orphaned .sock files they left behind. */
+  /** GC pass: drop dead pids and unlink orphaned .sock / activity files they left behind. */
   gc(): void {
     this.mutate((entries) => entries);
+    const liveEntries = this.read().entries;
     // Unlink socket files with no live owner in the (now-cleaned) index.
     try {
-      const live = new Set(this.read().entries.map((e) => e.socketPath));
+      const live = new Set(liveEntries.map((e) => e.socketPath));
       const dir = path.dirname(indexPath());
       const sockDir = path.join(dir, "s");
       for (const name of fs.readdirSync(sockDir)) {
@@ -132,6 +142,18 @@ export class IndexRegistry {
       }
     } catch {
       /* socket dir may not exist yet */
+    }
+    // Unlink activity summaries whose repoKey has no live window.
+    try {
+      const liveKeys = new Set(liveEntries.map((e) => e.key));
+      const aDir = activityDir();
+      for (const name of fs.readdirSync(aDir)) {
+        if (name.endsWith(".json") && !liveKeys.has(name.slice(0, -5))) {
+          fs.rmSync(path.join(aDir, name), { force: true });
+        }
+      }
+    } catch {
+      /* activity dir may not exist yet */
     }
   }
 }

@@ -26,6 +26,16 @@ export function indexPath(): string {
   return path.join(stateDir(), "index.json");
 }
 
+/** Directory of per-repo activity summaries each window publishes for the cross-repo switcher view. */
+export function activityDir(): string {
+  return path.join(stateDir(), "activity");
+}
+
+/** Activity file for a repo/worktree root: `activity/<repoKey>.json`. */
+export function activityPath(toplevel: string): string {
+  return path.join(activityDir(), `${repoKey(toplevel)}.json`);
+}
+
 export function indexLockPath(): string {
   return path.join(stateDir(), "index.lock");
 }

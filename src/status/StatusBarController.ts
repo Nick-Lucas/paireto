@@ -8,7 +8,6 @@ import * as vscode from "vscode";
 import type { AgentSessionService, RepoActivity } from "../agents/AgentSessionService.js";
 import { Commands } from "../config.js";
 import type { RepoService } from "../git/RepoService.js";
-import type { AgentState } from "../types.js";
 
 export class StatusBarController implements vscode.Disposable {
   private readonly item: vscode.StatusBarItem;
@@ -42,7 +41,7 @@ export class StatusBarController implements vscode.Disposable {
 
     this.item.text = `$(repo) ${repoName} · ${branch}${glyph}`;
     this.item.tooltip = buildTooltip(repo.root.fsPath, branch, activity);
-    this.item.backgroundColor = activityBackground(activity.state);
+    this.item.backgroundColor = activityBackground(activity);
     this.item.show();
   }
 
@@ -59,6 +58,10 @@ function activityGlyph(activity: RepoActivity): string {
   }
   const agents = activity.sessionCount > 1 ? ` ${activity.sessionCount} agents` : "";
   const subs = activity.subagentCount > 0 ? ` (${activity.subagentCount} sub)` : "";
+  // Waiting-for-you trumps the underlying state — make it unmissable.
+  if (activity.needsAttention) {
+    return ` $(bell-dot) needs you${subs}`;
+  }
   switch (activity.state) {
     case "awaitingPlanApproval":
       return ` $(comment-discussion) plan review${subs}`;
@@ -73,8 +76,8 @@ function activityGlyph(activity: RepoActivity): string {
   }
 }
 
-function activityBackground(state: AgentState): vscode.ThemeColor | undefined {
-  if (state === "awaitingPlanApproval" || state === "awaitingPermission") {
+function activityBackground(activity: RepoActivity): vscode.ThemeColor | undefined {
+  if (activity.needsAttention) {
     return new vscode.ThemeColor("statusBarItem.warningBackground");
   }
   return undefined;

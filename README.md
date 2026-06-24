@@ -19,9 +19,13 @@
 # WIP 3
 
 * notification sound / indicator when an agent finishes
-* when staging or unstaging a file which has its tab open, automatically change the tab over to look at the new location
+  * in extension sidebar agents section
+  * in the Repo/Worktree switcher (summarise the states of agents in each location as well indicating if the repo/worktree even has an open editor)
+* when staging or unstaging a file which has its tab open, automatically update the tab to look at the new location
 * Extract a better sessionId for presentation that the project/CWD name - it's the same for every agent right now
 * For claude code when approving a plan there's a way to tell the agent what mode to enter next. Make sure it defaults to auto-mode
+* When there is feedback queued remove or disable "approve" button, and before feedback is queued remove/disable the Send Feedback button instead
+* support code-reviewing from UI before the agent is in review mode, allow the agent to request a review before finishing, and keep the skill so that a review can be started manually
 
 # Feature Ideas:
 

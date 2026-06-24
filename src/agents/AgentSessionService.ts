@@ -22,6 +22,13 @@ const SWEEP_INTERVAL_MS = 20_000;
 /** States that represent the agent actively working (and so can go stale after an interrupt). */
 const ACTIVE_STATES: ReadonlySet<AgentState> = new Set<AgentState>(["thinking", "toolRunning"]);
 
+/** States where the agent has paused and wants the user — entering one of these "finishes" a turn. */
+const NEEDS_ATTENTION: ReadonlySet<AgentState> = new Set<AgentState>([
+  "stopped",
+  "awaitingPermission",
+  "awaitingPlanApproval",
+]);
+
 /** True if an active session has gone silent long enough to be treated as idle. */
 export function isStaleActive(state: AgentState, lastEventAt: number, now: number): boolean {
   return ACTIVE_STATES.has(state) && lastEventAt < now - STALE_ACTIVE_MS;
@@ -34,15 +41,24 @@ export interface RepoActivity {
   sessionCount: number;
   subagentCount: number;
   state: AgentState;
+  /** True if any session in the repo is waiting for the user (drives the orange "needs you" cue). */
+  needsAttention: boolean;
 }
 
 export class AgentSessionService implements vscode.Disposable {
   private readonly sessions = new Map<string, AgentSession>();
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changeEmitter.event;
+  /** Fires when a session enters a "needs you" state — drives the notification/sound. */
+  private readonly finishEmitter = new vscode.EventEmitter<AgentSession>();
+  readonly onDidFinish = this.finishEmitter.event;
   private readonly sweepTimer: ReturnType<typeof setInterval>;
 
-  constructor() {
+  constructor(
+    // Injectable so unit tests can simulate focus without a real window. If this window is focused
+    // when an agent reaches a needs-you state, the user is already looking — no bell, no sound.
+    private readonly isWindowFocused: () => boolean = () => vscode.window.state.focused,
+  ) {
     this.sweepTimer = setInterval(() => this.sweepStale(), SWEEP_INTERVAL_MS);
     // Don't keep the host process alive just for the sweep.
     this.sweepTimer.unref?.();
@@ -74,11 +90,13 @@ export class AgentSessionService implements vscode.Disposable {
         subagentCount: 0,
         startedAt: now,
         lastEventAt: now,
+        needsAttention: false,
       };
       this.sessions.set(msg.sessionId, session);
     }
     session.lastEventAt = now;
     session.repoRoot = msg.repoRoot || session.repoRoot;
+    const prevState = session.state;
 
     const isSubagentToolEvent =
       !!msg.agentId && (msg.event === "PreToolUse" || msg.event === "PostToolUse");
@@ -129,6 +147,20 @@ export class AgentSessionService implements vscode.Disposable {
       case "WorktreeCreate":
       case "WorktreeRemove":
         break;
+    }
+
+    // "Finishes" = entering a needs-you state from one that isn't. Fire once on the edge (so
+    // stopped→awaitingPermission doesn't re-notify); re-arm when the agent goes busy/idle again — so
+    // a new turn (UserPromptSubmit → thinking) clears the marker. But if the user is already looking
+    // at this window, don't mark or ping at all (the bell/sound would just be noise).
+    const nowNeeds = NEEDS_ATTENTION.has(session.state);
+    if (nowNeeds && !NEEDS_ATTENTION.has(prevState)) {
+      if (!this.isWindowFocused()) {
+        session.needsAttention = true;
+        this.finishEmitter.fire(session);
+      }
+    } else if (!nowNeeds) {
+      session.needsAttention = false;
     }
 
     this.changeEmitter.fire();
@@ -191,7 +223,17 @@ export class AgentSessionService implements vscode.Disposable {
     const session = this.sessions.get(sessionId);
     if (session && session.state !== "ended" && session.state !== "idle") {
       session.state = "idle";
+      session.needsAttention = false;
       session.lastEventAt = Date.now();
+      this.changeEmitter.fire();
+    }
+  }
+
+  /** The user looked at the agent (focused/switched to it) — drop its attention marker. */
+  clearAttention(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session?.needsAttention) {
+      session.needsAttention = false;
       this.changeEmitter.fire();
     }
   }
@@ -208,13 +250,15 @@ export class AgentSessionService implements vscode.Disposable {
     const sessions = this.sessionsForRepo(repoRoot).filter((s) => s.state !== "ended");
     const subagentCount = sessions.reduce((n, s) => n + s.subagentCount, 0);
     const state = sessions.map((s) => s.state).sort(byPriority)[0] ?? "idle";
-    return { sessionCount: sessions.length, subagentCount, state };
+    const needsAttention = sessions.some((s) => s.needsAttention);
+    return { sessionCount: sessions.length, subagentCount, state, needsAttention };
   }
 
   dispose(): void {
     clearInterval(this.sweepTimer);
     this.sessions.clear();
     this.changeEmitter.dispose();
+    this.finishEmitter.dispose();
   }
 }
 
