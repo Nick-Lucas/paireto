@@ -51,6 +51,8 @@ export const ContextKeys = {
   switcherVisible: "tui.switcherVisible",
   planPending: "tui.planPending",
   reviewSessionActive: "tui.reviewSessionActive",
+  /** True when the foreground gate has ≥1 actionable comment — shows Send Feedback, hides Approve. */
+  gateHasFeedback: "tui.gateHasFeedback",
 } as const;
 
 export const StateKeys = {

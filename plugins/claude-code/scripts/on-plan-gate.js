@@ -16,12 +16,18 @@ const bridge = require("./bridge.js");
 const CONNECT_TIMEOUT_MS = 3000;
 const SOFT_TIMEOUT_BUFFER_MS = 5000;
 
-function emitAllow() {
+function emitAllow(nextMode) {
+  // On allow, optionally set the permission mode the session enters next (e.g. "auto"). Claude Code
+  // otherwise restores whatever mode was active before plan mode; `updatedPermissions` overrides that.
+  const decision = { behavior: "allow" };
+  if (nextMode) {
+    decision.updatedPermissions = [{ type: "setMode", mode: nextMode, destination: "session" }];
+  }
   writeAndExit(
     JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PermissionRequest",
-        decision: { behavior: "allow" },
+        decision,
       },
     })
   );
@@ -130,7 +136,7 @@ async function main() {
       clearTimeout(timer);
       conn.sock.destroy();
       if (msg.decision === "allow") {
-        emitAllow();
+        emitAllow(msg.nextMode);
       } else {
         emitDeny(msg.reason || "Plan changes requested.");
       }

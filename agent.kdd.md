@@ -62,3 +62,29 @@
 
 - **Folder rows reuse the file stage/unstage/discard commands** — a folder's `contextValue` is
   `folder:<group>` and handlers flatten it to descendant files. Committed rows are read-only.
+
+- **Agent rows are labelled by short session id** (`sessionId.slice(0,8)`), not the repo basename —
+  the basename was identical for every agent in a repo; repo/start-time/tool live in the tooltip.
+
+- **Approving a plan defaults the agent into `auto` mode** via the PermissionRequest decision's
+  `updatedPermissions: [{type:"setMode", mode}]` (Claude otherwise restores the pre-plan mode).
+  Overridable by `tui-companion.planApprove.mode` (`off` = leave unchanged).
+
+- **Staging/unstaging/discarding re-points an open diff tab** to the file's new git layer
+  (`reconcileOpenDiffsAfterWrite`: close+reopen at the new group, or close if the change is gone).
+
+- **One gate button shows at a time, via `tui.gateHasFeedback`** — set from the foreground gate's
+  `hasFeedback()`; `when` clauses show Approve before any feedback, Send Feedback once there is some.
+
+- **Commenting on Changes diffs is always on; the first comment auto-starts a "deferred" review.**
+  Comments anchor on the review-scheme side of a locked diff OR the editable working-tree (file:) side
+  of an editable one — so commenting works in both cases.
+
+- **Editability is purely structural and session-independent** (`isFileEditable`): editable iff the
+  file isn't deleted and has no change at a lower git layer. A review never forces a diff read-only;
+  reconcile/stage-unstage leaves a file alone once it has a comment (`hasCommentOnPath`).
+
+- **A blocking `Stop` hook delivers deferred-review feedback at turn-end** (`on-review-gate.js` +
+  `awaitStopOutcome`). It only enters review mode when the turn touched files (edit-class PostToolUse /
+  FileChanged; backup: any uncommitted change), waits for the user, and **never auto-submits** —
+  feedback reaches the agent only via an explicit Send Feedback. Fails open instantly otherwise.

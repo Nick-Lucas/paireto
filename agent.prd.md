@@ -35,6 +35,8 @@ are correlated by repository directory, not terminal.
 - Live list of connected Claude sessions **for the current repo/worktree**, with status (idle /
   thinking / running tool / awaiting plan / awaiting permission) and subagent count. Rows awaiting a
   gate show which kind (plan/code review) and whether it's foreground (active) or pending.
+- Each row is labelled by its short session id, so agents in one repo are distinguishable; the repo,
+  start time, and current/last tool are in the tooltip.
 - Status bar item showing current repo · branch + agent activity.
 - Clicking an agent row switches its pending plan/review to the foreground (or focuses the terminal
   if it has none); a "Focus Agent" button focuses the terminal directly. Clicking also clears the
@@ -62,7 +64,8 @@ time — the others wait, unresolved, until brought forward. Both gather kinded 
 resolve with the same two actions.
 - **Two actions (colored icons):** **Approve** (green) → agent proceeds; **Send Feedback** (amber) →
   deny-with-feedback (plan: agent revises; review: agent acts on the comments). No Reject — Send
-  Feedback covers it.
+  Feedback covers it. Only the relevant one shows: **Approve** until any feedback is queued, then
+  **Send Feedback**.
 - Line comments tagged Question / Comment / Problem; **comments are editable and deletable** after
   creation (edit/save/delete on the comment).
 - **Switch between agents:** the Agents section is scoped to the current repo/worktree and shows
@@ -80,12 +83,20 @@ resolve with the same two actions.
 - On any resolution the plan tab auto-closes and the terminal panel is restored.
 - Closing the plan tab while it's still pending prompts you to Approve or Send Feedback (dismiss to
   keep reviewing).
+- Approving puts the agent into **auto** mode by default so it proceeds without re-prompting
+  (`tui-companion.planApprove.mode` — `auto` / `acceptEdits` / `default` / `plan` / `off`).
 
-### Code Review (`/tui-review`)
-- Run `/tui-review` in the agent; it opens a blocking review session in VS Code and waits.
-- Review the diffs, add/edit inline comments (Question / Comment / Problem; `Cmd+Enter` submits).
-- Send Feedback → comments returned to the agent, which acts on them immediately. Approve → agent
-  proceeds with no changes.
+### Code Review
+- **Comment any time:** open any Changes-section diff and add inline comments (Question / Comment /
+  Problem) without starting anything — the first comment auto-starts a review and reveals the Feedback
+  section. Commenting works whether or not the diff is editable; editability is purely structural
+  (editable when the file has no lower-level change, locked otherwise) and a review never changes it.
+- **Resolved at turn-end:** when the agent finishes a turn in which it changed files (or there are
+  uncommitted changes), it parks in review mode until you act — **Send Feedback** delivers your
+  comments, **Approve** lets it finish with nothing sent. Nothing is ever sent without an explicit
+  Send Feedback; a turn that changed nothing is never delayed.
+- **Manual `/tui-review`:** still available — opens a blocking review session in VS Code and waits;
+  Send Feedback returns the comments, Approve proceeds with no changes (`Cmd+Enter` submits).
 
 ### Changes View (always available)
 - Native-git-panel-style list of working changes, grouped top-down by git layer: **Committed**,
@@ -114,8 +125,8 @@ resolve with the same two actions.
 ### Sidebar
 - One "TUI Companion" view with collapsible sections: Agents, Changed Files (always), Plan Review
   (while a plan is pending), Feedback (during a review session). Section controls live on their
-  section rows / the title bar; the shared Approve (green) and Send Feedback (amber) gate actions use
-  colored icons and appear whenever a plan or review is active.
+  section rows / the title bar; the shared gate actions use colored icons whenever a plan or review is
+  active — **Approve** (green) until feedback is queued, then **Send Feedback** (amber).
 
 ---
 
@@ -124,13 +135,14 @@ resolve with the same two actions.
 **Plan approval**
 1. Agent presents a plan → it opens in VS Code (terminal panel hidden), agent waits.
 2. You read it, optionally comment (comments are editable).
-3. Approve (agent continues) or Send Feedback (agent revises). The tab auto-closes and the terminal
-   returns.
+3. Approve (agent continues, in auto mode by default) or Send Feedback (agent revises). The tab
+   auto-closes and the terminal returns.
 
 **Code review**
-1. You/agent: run `/tui-review`.
-2. VS Code reveals the review; you comment on the diffs.
-3. Send Feedback (agent applies) or Approve (agent proceeds with no changes).
+1. Comment on the diffs whenever you like (the first comment starts a review), or run `/tui-review`
+   for a blocking session on demand.
+2. When the agent finishes a turn that changed files, it parks in review mode until you act.
+3. Send Feedback (agent applies the comments) or Approve (agent proceeds with no changes).
 
 **Browse changes**
 1. Open the Changes section any time.

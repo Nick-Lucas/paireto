@@ -34,7 +34,7 @@
 
 * notifications are being sent for subagents, for instance in plan mode. We don't currently care about the status of sub agents at all
 * when prompted for a question I think the notification sound didn't fire, but need to check
-
+* Make the user in comments match the VS Code signed in user name, PC login name, or just "Developer" as the fallback
 
 # Feature Ideas:
 
@@ -44,3 +44,5 @@
   * with GitHub PR import
 * when addressing feedback, the agent can send back answers in the same thread, and then the user can continue those threads
 * when receiving a new plan, if there was a previous plan from the same agent, put both states into a diff view
+* support the plan and review gates automatically forwarding to another agent to propose some comments
+* revisit the currently in-progress plan at any point in the future

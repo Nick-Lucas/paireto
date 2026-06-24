@@ -104,6 +104,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const switcher = new RepoSwitcher(repoService, worktrees, recents, context.extensionUri);
 
+  // A comment-started deferred review attributes to the current repo's most-recent agent session.
+  reviewController.resolveActiveSession = () => {
+    const repo = repoService.current();
+    return repo ? agents.mostRecentSessionForRepo(repo.root.fsPath) : undefined;
+  };
+
+  // Drive which gate button shows: only Send Feedback once feedback is queued, only Approve before.
+  // Recompute whenever the foreground gate switches or its comments change.
+  const refreshGateFeedback = (): void => {
+    void vscode.commands.executeCommand(
+      "setContext",
+      ContextKeys.gateHasFeedback,
+      coordinator.current?.hasFeedback() ?? false,
+    );
+  };
+  refreshGateFeedback();
+  context.subscriptions.push(
+    coordinator.onDidChange(refreshGateFeedback),
+    planReview.onDidChange(refreshGateFeedback),
+    reviewController.onDidChangeState(refreshGateFeedback),
+  );
+
   context.subscriptions.push(
     agents,
     repoService,
@@ -161,6 +183,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         });
       }
       return reviewController.startSession(msg.id, sessionId, signal);
+    },
+    onStopGate: (msg, signal) => {
+      // Fires on every turn-end. Resolves "allow" instantly unless a review is warranted for this
+      // session (the turn touched files, a deferred review is open, or feedback is queued).
+      const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
+      return reviewController.awaitStopOutcome(
+        sessionId,
+        agents.didChangeThisTurn(sessionId),
+        signal,
+      );
     },
     // The MCP server holds a liveness connection per session; when the last one drops, the agent
     // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).

@@ -13,6 +13,7 @@ import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
+import { PlanGateRegistry } from "../plan/PlanGateRegistry.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import {
   AgentSessionService,
@@ -20,6 +21,10 @@ import {
   STALE_ACTIVE_MS_FOR_TEST,
 } from "../agents/AgentSessionService.js";
 import type { HookEventMessage } from "../protocol/types.js";
+import { shortSessionId } from "../views/MainTreeProvider.js";
+import { isFileEditable, reconcileDiffTarget, stopGateAction } from "../review/ReviewController.js";
+import type { ChangesModel } from "../git/DiffService.js";
+import type { FileGroup } from "../types.js";
 
 suite("repoKey", () => {
   test("is deterministic and 16 hex chars", () => {
@@ -218,12 +223,17 @@ suite("ReviewGateRegistry", () => {
 });
 
 suite("GateCoordinator (foreground registry)", () => {
-  const makeEntry = (id: string, kind: "plan" | "review", log: string[]): GateEntry => ({
+  const makeEntry = (
+    id: string,
+    kind: "plan" | "review",
+    log: string[],
+    hasFeedback = false,
+  ): GateEntry => ({
     id,
     sessionId: id,
     kind,
     repoRoot: "/repo",
-    session: { kind, approve() {}, sendFeedback() {} },
+    session: { kind, approve() {}, sendFeedback() {}, hasFeedback: () => hasFeedback },
     foreground: () => {
       log.push(`fg:${id}`);
     },
@@ -272,6 +282,20 @@ suite("GateCoordinator (foreground registry)", () => {
     await c.unregister("a");
     assert.strictEqual(c.isForeground("b"), true);
     assert.strictEqual(c.isActive(), true);
+  });
+
+  test("current.hasFeedback() reflects the foreground gate (drives which button shows)", async () => {
+    const c = new GateCoordinator(
+      async () => {},
+      async () => {},
+    );
+    const log: string[] = [];
+    await c.register(makeEntry("a", "plan", log, false)); // no comments yet → Approve shows
+    assert.strictEqual(c.current?.hasFeedback(), false);
+    await c.register(makeEntry("b", "review", log, true)); // pending, not foreground
+    assert.strictEqual(c.current?.hasFeedback(), false); // still showing "a"
+    await c.switchTo("b"); // switch foreground → its feedback drives the button
+    assert.strictEqual(c.current?.hasFeedback(), true);
   });
 
   test("entryForSession and entriesForRepo", async () => {
@@ -702,5 +726,205 @@ suite("repoSnapshots (cross-repo switcher activity)", () => {
     ]);
     const snap = repoSnapshots([root]).get(root);
     assert.strictEqual(snap?.open, false);
+  });
+});
+
+suite("reconcileDiffTarget (open-diff re-point after stage/unstage/discard)", () => {
+  test("staging an unstaged file re-points it to staged", () => {
+    assert.strictEqual(reconcileDiffTarget("unstaged", ["staged"], "staged"), "staged");
+  });
+
+  test("unstaging a staged file re-points it to unstaged", () => {
+    assert.strictEqual(reconcileDiffTarget("staged", ["unstaged"], "unstaged"), "unstaged");
+  });
+
+  test("discarding the only change closes the tab", () => {
+    assert.strictEqual(reconcileDiffTarget("unstaged", []), "close");
+  });
+
+  test("a partially-staged file still present at its old level is kept", () => {
+    assert.strictEqual(reconcileDiffTarget("unstaged", ["staged", "unstaged"], "staged"), "keep");
+  });
+
+  test("falls back to the first candidate when the preferred group isn't present", () => {
+    assert.strictEqual(reconcileDiffTarget("staged", ["committed"], "unstaged"), "committed");
+  });
+});
+
+suite("isFileEditable (structural, session-independent)", () => {
+  const f = (path: string, group: FileGroup, status = "M"): ChangedFile =>
+    ({ path, group, status, additions: 1, deletions: 0 }) as ChangedFile;
+  const model = (over: Partial<ChangesModel>): ChangesModel => ({
+    staged: [],
+    unstaged: [],
+    committed: [],
+    compareLabel: "HEAD",
+    compareRef: null,
+    ...over,
+  });
+
+  test("an unstaged file is editable", () => {
+    const file = f("a.ts", "unstaged");
+    assert.strictEqual(isFileEditable(file, model({ unstaged: [file] })), true);
+  });
+
+  test("a staged file with no unstaged change is editable", () => {
+    const file = f("a.ts", "staged");
+    assert.strictEqual(isFileEditable(file, model({ staged: [file] })), true);
+  });
+
+  test("a staged file that also has unstaged changes is locked", () => {
+    const staged = f("a.ts", "staged");
+    assert.strictEqual(
+      isFileEditable(staged, model({ staged: [staged], unstaged: [f("a.ts", "unstaged")] })),
+      false,
+    );
+  });
+
+  test("a committed file with a lower-level change is locked", () => {
+    const committed = f("a.ts", "committed");
+    assert.strictEqual(
+      isFileEditable(committed, model({ committed: [committed], staged: [f("a.ts", "staged")] })),
+      false,
+    );
+  });
+
+  test("a deleted file is never editable", () => {
+    const file = f("a.ts", "unstaged", "D");
+    assert.strictEqual(isFileEditable(file, model({ unstaged: [file] })), false);
+  });
+});
+
+suite("stopGateAction (turn-end review gate)", () => {
+  const base = {
+    hasPendingFeedback: false,
+    reviewActive: false,
+    reviewIsDeferred: false,
+    changedThisTurn: false,
+    hasUncommittedChanges: false,
+    reviewBusy: false,
+  };
+  test("allows immediately when the turn changed nothing", () => {
+    assert.strictEqual(stopGateAction(base), "allow");
+  });
+  test("opens a review when the turn touched files", () => {
+    assert.strictEqual(stopGateAction({ ...base, changedThisTurn: true }), "review");
+  });
+  test("opens a review when there are uncommitted changes (backup signal)", () => {
+    assert.strictEqual(stopGateAction({ ...base, hasUncommittedChanges: true }), "review");
+  });
+  test("delivers already-submitted feedback", () => {
+    assert.strictEqual(
+      stopGateAction({ ...base, hasPendingFeedback: true, changedThisTurn: true }),
+      "deliver-pending",
+    );
+  });
+  test("waits on an in-progress deferred review", () => {
+    assert.strictEqual(
+      stopGateAction({ ...base, reviewActive: true, reviewIsDeferred: true }),
+      "review",
+    );
+  });
+  test("stays out of the way of a blocking /tui-review session", () => {
+    assert.strictEqual(
+      stopGateAction({
+        ...base,
+        reviewActive: true,
+        reviewIsDeferred: false,
+        changedThisTurn: true,
+      }),
+      "allow",
+    );
+  });
+  test("does not open a second review while the slot is busy", () => {
+    assert.strictEqual(
+      stopGateAction({ ...base, changedThisTurn: true, reviewBusy: true }),
+      "allow",
+    );
+  });
+});
+
+suite("AgentSessionService.didChangeThisTurn (Stop-gate signal)", () => {
+  const ev = (event: string, toolName?: string): HookEventMessage =>
+    ({
+      t: "hook.event",
+      v: 1,
+      ts: "t",
+      event,
+      sessionId: "s1",
+      cwd: "/repo",
+      repoRoot: "/repo",
+      toolName,
+    }) as HookEventMessage;
+  const mk = () => new AgentSessionService(() => false);
+
+  test("an edit-class tool marks the turn as having touched files", () => {
+    const svc = mk();
+    try {
+      svc.ingest(ev("UserPromptSubmit"));
+      assert.strictEqual(svc.didChangeThisTurn("s1"), false);
+      svc.ingest(ev("PreToolUse", "Edit"));
+      svc.ingest(ev("PostToolUse", "Edit"));
+      assert.strictEqual(svc.didChangeThisTurn("s1"), true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a read-only tool does not mark the turn", () => {
+    const svc = mk();
+    try {
+      svc.ingest(ev("UserPromptSubmit"));
+      svc.ingest(ev("PostToolUse", "Read"));
+      assert.strictEqual(svc.didChangeThisTurn("s1"), false);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a new turn (UserPromptSubmit) resets the flag", () => {
+    const svc = mk();
+    try {
+      svc.ingest(ev("PostToolUse", "Write"));
+      assert.strictEqual(svc.didChangeThisTurn("s1"), true);
+      svc.ingest(ev("UserPromptSubmit"));
+      assert.strictEqual(svc.didChangeThisTurn("s1"), false);
+    } finally {
+      svc.dispose();
+    }
+  });
+});
+
+suite("PlanGateRegistry (plan auto-mode forwarding)", () => {
+  test("carries nextMode from fulfill through to the awaited decision", async () => {
+    const reg = new PlanGateRegistry();
+    const key = PlanGateRegistry.key("s1", "p1");
+    const decision = reg.awaitDecision(key);
+    reg.fulfill(key, { decision: "allow", nextMode: "auto" });
+    assert.deepStrictEqual(await decision, { decision: "allow", nextMode: "auto" });
+  });
+
+  test("deny carries no nextMode", async () => {
+    const reg = new PlanGateRegistry();
+    const key = PlanGateRegistry.key("s1", "p1");
+    const decision = reg.awaitDecision(key);
+    reg.fulfill(key, { decision: "deny", reason: "fix it" });
+    const result = await decision;
+    assert.strictEqual(result.decision, "deny");
+    assert.strictEqual(result.nextMode, undefined);
+  });
+});
+
+suite("shortSessionId (agent label)", () => {
+  test("takes the first 8 chars of the session UUID", () => {
+    assert.strictEqual(shortSessionId("a1b2c3d4-e5f6-7890-abcd-ef0123456789"), "a1b2c3d4");
+  });
+
+  test("distinguishes two sessions sharing a repo", () => {
+    assert.notStrictEqual(shortSessionId("11111111-aaaa"), shortSessionId("22222222-bbbb"));
+  });
+
+  test("returns short ids unchanged", () => {
+    assert.strictEqual(shortSessionId("abc"), "abc");
   });
 });

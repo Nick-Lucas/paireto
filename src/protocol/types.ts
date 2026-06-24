@@ -31,7 +31,9 @@ export type MessageType =
   | "plan.review.request"
   | "plan.review.response"
   | "review.await.request"
-  | "review.await.response";
+  | "review.await.response"
+  | "stop.gate.request"
+  | "stop.gate.response";
 
 export interface Envelope {
   /** Message type tag. */
@@ -113,6 +115,9 @@ export interface PlanReviewResponse extends Envelope {
   decision: PlanDecision;
   /** Feedback surfaced back to Claude on deny. */
   reason?: string;
+  /** On allow: the Claude permission mode to enter next (e.g. "auto"). Maps to the hook's
+   *  PermissionRequest `decision.updatedPermissions` setMode. Omitted = leave the mode unchanged. */
+  nextMode?: string;
 }
 
 /**
@@ -141,6 +146,31 @@ export interface ReviewAwaitResponse extends Envelope {
   feedback: string;
 }
 
+/**
+ * Blocking turn-end (Stop) gate. Sent by the Stop hook on every turn-end; the extension holds it
+ * open only when a review for this session is in progress or the turn touched files, then resolves
+ * with whether to block the stop (and inject feedback). Otherwise it resolves "allow" immediately.
+ */
+export interface StopGateRequest extends Envelope {
+  t: "stop.gate.request";
+  id: string;
+  cwd: string;
+  repoRoot: string;
+  sessionId?: string;
+  agentId?: string;
+}
+
+export type StopDecision = "allow" | "block";
+
+/** Extension's response to a {@link StopGateRequest}; same `id`. */
+export interface StopGateResponse extends Envelope {
+  t: "stop.gate.response";
+  id: string;
+  decision: StopDecision;
+  /** On block: the review feedback fed back to Claude so it keeps going and addresses it. */
+  reason?: string;
+}
+
 export type AnyMessage =
   | HelloMessage
   | HelloAckMessage
@@ -149,4 +179,6 @@ export type AnyMessage =
   | PlanReviewRequest
   | PlanReviewResponse
   | ReviewAwaitRequest
-  | ReviewAwaitResponse;
+  | ReviewAwaitResponse
+  | StopGateRequest
+  | StopGateResponse;

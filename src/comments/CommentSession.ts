@@ -7,7 +7,7 @@
 import * as vscode from "vscode";
 
 import { Commands } from "../config.js";
-import { fullDocumentCommentingRanges } from "./commentingRanges.js";
+import { wholeDocumentRange } from "./commentingRanges.js";
 import { kindLabel, type CommentKind } from "./kinds.js";
 
 /** A reviewer comment shared across both flows. The owner attaches onSaved/onDeleted to sync state. */
@@ -100,14 +100,14 @@ export class CommentSession implements vscode.Disposable {
     label: string,
     scheme: string,
     options: vscode.CommentOptions,
-    /** Gate commenting on/off (e.g. only during an active review session). Defaults to always-on. */
-    private readonly enabled: () => boolean = () => true,
+    /** Which docs are commentable. Defaults to "this controller's scheme"; the review controller
+     *  widens it to also cover the editable working-tree (file:) side of its changed-file diffs. */
+    matches: (doc: vscode.TextDocument) => boolean = (doc) => doc.uri.scheme === scheme,
   ) {
     this.controller = vscode.comments.createCommentController(id, label);
     this.controller.options = options;
     this.controller.commentingRangeProvider = {
-      provideCommentingRanges: (doc) =>
-        this.enabled() ? fullDocumentCommentingRanges(doc, scheme) : undefined,
+      provideCommentingRanges: (doc) => (matches(doc) ? wholeDocumentRange(doc) : undefined),
     };
   }
 

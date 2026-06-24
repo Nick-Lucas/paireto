@@ -7,12 +7,13 @@ import { isAbsolute, join, relative } from "node:path";
 
 import * as vscode from "vscode";
 
-import type { ReviewGateResult } from "../bridge/types.js";
+import type { ReviewGateResult, StopGateResult } from "../bridge/types.js";
 import { CommentSession, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
+import { closeTabsWhere } from "../gate/tabs.js";
 import { DiffService, type ChangedFile, type ChangesModel } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
@@ -83,6 +84,18 @@ export class ReviewController implements vscode.Disposable {
   /** Only one review may be pending at a time; a second startSession waits here. */
   private reviewBusy = false;
   private readonly reviewWaiters: Array<() => void> = [];
+  /** True when the active review is "deferred" (user/Stop-gate driven) rather than a blocking
+   *  /tui-review tool call — its outcome is delivered to the Stop gate / queue, not a socket reply. */
+  private activeIsDeferred = false;
+  /** A turn-end Stop gate currently waiting for the user to resolve the deferred review. */
+  private stopWaiter?: { resolve: (outcome: StopGateResult) => void };
+  /** Feedback the user submitted on a deferred review while no Stop gate was waiting — delivered at
+   *  the next turn-end. Keyed by repoRoot (the Stop gate and the comment that started the review both
+   *  know the repo, whereas sessionId attribution is best-effort). */
+  private readonly pendingFeedback = new Map<string, string>();
+  /** Best-effort owning-session resolver for a comment-started deferred review (set by extension.ts
+   *  so the Agents panel can show "awaiting code review" on the right row). */
+  resolveActiveSession?: () => string | undefined;
   /** The file currently shown in the diff editor, so an edit can re-target its compare base. */
   private openDiffFile?: { path: string; group: FileGroup };
   /** Each open diff's (group, path), keyed by its base URI (stable across demotion) — lets a tab
@@ -104,14 +117,17 @@ export class ReviewController implements vscode.Disposable {
   ) {
     this.compareTo = store.getCompareTo();
     this.layout = store.getLayout();
-    // Commenting is only enabled during an active /tui-review session; outside one the diffs are
-    // browse-only (the Changed Files section is always available).
+    // Commenting is always available on the Changes diffs — on the review-scheme side of a locked
+    // diff AND on the editable working-tree (file:) side of an editable one, so it works regardless
+    // of whether the file can be edited. The first comment auto-starts a "deferred" review.
     this.commentSession = new CommentSession(
       "tui.review",
       "Code Review",
       Schemes.review,
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
-      () => this.isSessionActive(),
+      (doc) =>
+        doc.uri.scheme === Schemes.review ||
+        (doc.uri.scheme === "file" && this.isChangedFileDoc(doc.uri)),
     );
 
     const reg = vscode.commands.registerCommand;
@@ -177,24 +193,7 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
-    this.activeRequestId = requestId;
-    this.activeSessionId = sessionId;
-    await this.refresh();
-
-    const entry: GateEntry = {
-      id: requestId,
-      sessionId: this.activeSessionId,
-      kind: "review",
-      repoRoot: this.repoRoot ?? "",
-      session: {
-        kind: "review",
-        approve: () => this.approve(),
-        sendFeedback: () => this.sendFeedback(),
-      },
-      foreground: () => this.foreground(),
-      background: () => this.background(),
-    };
-    await this.coordinator.register(entry);
+    await this.registerReviewGate(requestId, sessionId, false);
 
     // A dropped connection ends the session (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
@@ -205,15 +204,144 @@ export class ReviewController implements vscode.Disposable {
     const result = await this.gate.awaitDecision(requestId);
     signal.removeEventListener("abort", onAbort);
     if (this.activeRequestId === requestId) {
-      this.activeRequestId = undefined;
-      this.activeSessionId = undefined;
-      await this.setReviewContext(false);
-      this.resetComments();
-      await this.coordinator.unregister(requestId);
-      this.releaseReviewSlot();
-      this.changeEmitter.fire();
+      await this.cleanupReview(requestId);
     }
     return result;
+  }
+
+  /** Register a review gate (foregrounded if nothing else is) and mark it active. Shared by the
+   *  blocking /tui-review path and the deferred (user/Stop-gate) path. Caller owns the review slot. */
+  private async registerReviewGate(
+    requestId: string,
+    sessionId: string | undefined,
+    deferred: boolean,
+  ): Promise<void> {
+    this.activeRequestId = requestId;
+    this.activeSessionId = sessionId;
+    this.activeIsDeferred = deferred;
+    await this.refresh();
+    const entry: GateEntry = {
+      id: requestId,
+      sessionId,
+      kind: "review",
+      repoRoot: this.repoRoot ?? "",
+      session: {
+        kind: "review",
+        approve: () => this.approve(),
+        sendFeedback: () => this.sendFeedback(),
+        hasFeedback: () => this.hasFeedback(),
+      },
+      foreground: () => this.foreground(),
+      background: () => this.background(),
+    };
+    await this.coordinator.register(entry);
+  }
+
+  /** Tear down the active review: drop its comments, unregister its gate, release the slot. */
+  private async cleanupReview(requestId: string): Promise<void> {
+    if (this.activeRequestId !== requestId) {
+      return;
+    }
+    this.activeRequestId = undefined;
+    this.activeSessionId = undefined;
+    this.activeIsDeferred = false;
+    await this.setReviewContext(false);
+    this.resetComments();
+    await this.coordinator.unregister(requestId);
+    this.releaseReviewSlot();
+    this.changeEmitter.fire();
+  }
+
+  /**
+   * Open a non-blocking "deferred" review (the user started commenting, or the Stop gate is opening
+   * review mode at turn-end). No-op if a review is already active. Returns the new request id.
+   */
+  async requestDeferredReview(sessionId: string | undefined): Promise<string | undefined> {
+    if (this.reviewBusy || this.isSessionActive()) {
+      return this.activeRequestId; // a review is already in progress
+    }
+    this.reviewBusy = true;
+    const requestId = newReviewId();
+    await this.registerReviewGate(requestId, sessionId, true);
+    return requestId;
+  }
+
+  /**
+   * The blocking turn-end gate. Resolves "allow" immediately unless a review is warranted for this
+   * session, in which case it surfaces review mode and waits for the user to Approve / Send Feedback.
+   * `changedThisTurn` is the agent's "touched files this turn" signal (uncommitted changes back it up).
+   */
+  async awaitStopOutcome(
+    sessionId: string | undefined,
+    changedThisTurn: boolean,
+    signal: AbortSignal,
+  ): Promise<StopGateResult> {
+    const key = this.repoRoot ?? "";
+    const action = stopGateAction({
+      hasPendingFeedback: this.pendingFeedback.has(key),
+      reviewActive: this.isSessionActive(),
+      reviewIsDeferred: this.activeIsDeferred,
+      changedThisTurn,
+      hasUncommittedChanges: this.hasUncommittedChanges(),
+      reviewBusy: this.reviewBusy,
+    });
+    // 1. Feedback the user already submitted this turn — deliver it (user-initiated, time-shifted).
+    if (action === "deliver-pending") {
+      const queued = this.pendingFeedback.get(key) ?? "";
+      this.pendingFeedback.delete(key);
+      return { block: true, reason: queued };
+    }
+    // Allow immediately: nothing changed, busy, or a blocking /tui-review collects its own result.
+    if (action === "allow") {
+      return { block: false };
+    }
+    // 2/3. Open a deferred review if the turn touched files, else wait on the in-progress one.
+    if (!this.isSessionActive()) {
+      const id = await this.requestDeferredReview(sessionId);
+      if (!id) {
+        return { block: false };
+      }
+    }
+    if (this.activeRequestId) {
+      await this.coordinator.switchTo(this.activeRequestId); // bring review mode to the foreground
+    }
+    return await new Promise<StopGateResult>((resolve) => {
+      this.stopWaiter = { resolve };
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (this.stopWaiter) {
+            this.stopWaiter = undefined;
+            resolve({ block: false }); // connection dropped — let the agent stop
+          }
+        },
+        { once: true },
+      );
+    });
+  }
+
+  /** True when there are staged/unstaged changes (the Stop-gate fallback for "the turn touched files"). */
+  private hasUncommittedChanges(): boolean {
+    return this.changes.staged.length > 0 || this.changes.unstaged.length > 0;
+  }
+
+  /**
+   * Resolve a deferred review's outcome: hand it to a waiting Stop gate if one is parked, otherwise
+   * queue submitted feedback for the session's next turn-end. Always tears the review down.
+   */
+  private resolveDeferred(outcome: StopGateResult): void {
+    const key = this.repoRoot ?? "";
+    const requestId = this.activeRequestId;
+    if (this.stopWaiter) {
+      const waiter = this.stopWaiter;
+      this.stopWaiter = undefined;
+      waiter.resolve(outcome);
+    } else if (outcome.block && outcome.reason) {
+      this.pendingFeedback.set(key, outcome.reason);
+    }
+    if (requestId) {
+      void this.cleanupReview(requestId);
+    }
   }
 
   /** Foreground: commenting on, Feedback section shown, view focused. */
@@ -371,21 +499,19 @@ export class ReviewController implements vscode.Disposable {
   // ── Git write-ops ──────────────────────────────────────────────────────────
   private async stageFiles(files: ChangedFile[]): Promise<void> {
     if (this.repoRoot && files.length) {
-      await this.diff.stage(
-        this.repoRoot,
-        files.map((f) => f.path),
-      );
+      const paths = files.map((f) => f.path);
+      await this.diff.stage(this.repoRoot, paths);
       await this.refresh();
+      await this.reconcileOpenDiffsAfterWrite(paths, "staged");
     }
   }
 
   private async unstageFiles(files: ChangedFile[]): Promise<void> {
     if (this.repoRoot && files.length) {
-      await this.diff.unstage(
-        this.repoRoot,
-        files.map((f) => f.path),
-      );
+      const paths = files.map((f) => f.path);
+      await this.diff.unstage(this.repoRoot, paths);
       await this.refresh();
+      await this.reconcileOpenDiffsAfterWrite(paths, "unstaged");
     }
   }
 
@@ -408,6 +534,76 @@ export class ReviewController implements vscode.Disposable {
       files.map((f) => ({ path: f.path, untracked: f.status === "U" })),
     );
     await this.refresh();
+    await this.reconcileOpenDiffsAfterWrite(files.map((f) => f.path));
+  }
+
+  /**
+   * After a stage/unstage/discard, an open diff tab may now point at the wrong git layer. For each
+   * affected path with an open diff: if its change is gone (discarded) close the tab; if it moved to a
+   * different group (e.g. unstaged→staged), re-point the tab by closing it and reopening the diff at
+   * its new location (preserving the column); if it's still present at the same level, leave it (the
+   * refresh()'s content re-render already covers it). A file that already has a comment is left
+   * untouched so we never yank a diff the user is reviewing.
+   */
+  private async reconcileOpenDiffsAfterWrite(
+    paths: string[],
+    preferredGroup?: FileGroup,
+  ): Promise<void> {
+    if (this.openDiffs.size === 0) {
+      return;
+    }
+    const affected = new Set(paths);
+    const order: FileGroup[] = ["committed", "staged", "unstaged"];
+    // Snapshot so we can mutate openDiffs (delete re-pointed entries) while iterating.
+    const snapshot = Array.from(this.openDiffs.entries());
+    for (const [baseKey, { group: oldGroup, path: relPath }] of snapshot) {
+      if (!affected.has(relPath) || this.hasCommentOnPath(relPath)) {
+        continue;
+      }
+      const candidates = order.filter((g) => this.changes[g].some((f) => f.path === relPath));
+      const target = reconcileDiffTarget(oldGroup, candidates, preferredGroup);
+      if (target === "keep") {
+        continue; // still present at the same level — content refresh handles it
+      }
+      const located = this.locateDiffTab(baseKey);
+      this.openDiffs.delete(baseKey);
+      if (this.openDiffFile?.path === relPath && this.openDiffFile.group === oldGroup) {
+        this.openDiffFile = undefined;
+      }
+      await closeTabsWhere(
+        (tab) =>
+          tab.input instanceof vscode.TabInputTextDiff && tab.input.original.toString() === baseKey,
+      );
+      if (target === "close") {
+        this.debug(`reconcile: ${relPath} gone — closed diff tab`);
+        continue;
+      }
+      const file = this.changes[target].find((f) => f.path === relPath);
+      if (file) {
+        await this.openDiff(file, {
+          viewColumn: located?.viewColumn,
+          preserveFocus: !located?.active,
+        });
+        this.debug(`reconcile: ${relPath} ${oldGroup} -> ${target}`);
+      }
+    }
+  }
+
+  /** The open review diff tab whose base URI matches `baseKey`: its column and whether it's active. */
+  private locateDiffTab(
+    baseKey: string,
+  ): { viewColumn: vscode.ViewColumn; active: boolean } | undefined {
+    for (const group of vscode.window.tabGroups.all) {
+      for (const tab of group.tabs) {
+        if (
+          tab.input instanceof vscode.TabInputTextDiff &&
+          tab.input.original.toString() === baseKey
+        ) {
+          return { viewColumn: group.viewColumn, active: tab.isActive };
+        }
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -481,7 +677,10 @@ export class ReviewController implements vscode.Disposable {
     await vscode.window.showTextDocument(vscode.Uri.file(join(this.repoRoot, file.path)));
   }
 
-  private async openDiff(file: ChangedFile): Promise<void> {
+  private async openDiff(
+    file: ChangedFile,
+    show?: { viewColumn?: vscode.ViewColumn; preserveFocus?: boolean },
+  ): Promise<void> {
     if (!this.repoRoot) {
       return;
     }
@@ -530,29 +729,40 @@ export class ReviewController implements vscode.Disposable {
     }
     await vscode.commands.executeCommand("vscode.diff", baseUri, modUri, title, {
       preview: !editable,
+      viewColumn: show?.viewColumn,
+      preserveFocus: show?.preserveFocus,
     });
     void ensureCommentingVisible();
   }
 
   /**
-   * A file is editable iff it has no change at a lower level (committed > staged > unstaged) — so
-   * editing its working-tree copy is unambiguous and lands in the unstaged level. During a review
-   * session diffs stay virtual so inline comments (tui-review scheme only) keep working.
+   * A file is editable iff it has no change at a lower level (committed > staged > unstaged) and isn't
+   * deleted — so editing its working-tree copy is unambiguous and lands in the unstaged level. This is
+   * purely structural: it does NOT depend on whether a review is active (commenting works in both the
+   * editable and the locked case, so a review never forces a diff read-only).
    */
   private isEditable(file: ChangedFile): boolean {
-    if (this.isSessionActive() || file.status === "D") {
+    return isFileEditable(file, this.changes);
+  }
+
+  /** True if a `file:` doc is one of the repo's changed files (so its diff is commentable). */
+  private isChangedFileDoc(uri: vscode.Uri): boolean {
+    if (!this.repoRoot || !isInside(this.repoRoot, uri.fsPath)) {
       return false;
     }
-    return !LOWER_GROUPS[file.group].some((g) => this.changes[g].some((f) => f.path === file.path));
+    const rel = relative(this.repoRoot, uri.fsPath);
+    return this.allFiles().some((f) => f.path === rel);
   }
 
   private async addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<void> {
     const uri = reply.thread.uri;
-    if (uri.scheme !== Schemes.review) {
+    // Comments anchor on the review-scheme side of a locked diff OR the editable working-tree (file:)
+    // side of an editable one (its modified side is the live file).
+    const anchor = this.resolveCommentAnchor(uri);
+    if (!anchor) {
       return;
     }
-    const side = uri.path.replace(/^\//, "").split("/")[0] as "base" | "modified";
-    const relPath = uri.path.replace(/^\/(base|modified)\//, "");
+    const { side, relPath } = anchor;
     const line = reply.thread.range?.start.line ?? 0;
 
     const doc = await vscode.workspace.openTextDocument(uri);
@@ -598,6 +808,29 @@ export class ReviewController implements vscode.Disposable {
     reply.thread.label = `${relPath}:${line + 1}`;
     this.comments.set(model.id, { comment, model });
     this.changeEmitter.fire();
+
+    // The first comment auto-starts a "deferred" review (reveals the Feedback section + registers the
+    // gate); the blocking review gate then surfaces it at turn-end. Editability is unaffected.
+    if (!this.isSessionActive() && this.repoRoot) {
+      await this.requestDeferredReview(this.resolveActiveSession?.());
+    }
+  }
+
+  /**
+   * Map a comment thread's URI to (side, relPath). The thread sits on either a `tui-review://` diff
+   * side (`/base/<path>` or `/modified/<path>`) or the editable working-tree file (its modified side).
+   */
+  private resolveCommentAnchor(
+    uri: vscode.Uri,
+  ): { side: "base" | "modified"; relPath: string } | undefined {
+    if (uri.scheme === Schemes.review) {
+      const side = uri.path.replace(/^\//, "").split("/")[0] as "base" | "modified";
+      return { side, relPath: uri.path.replace(/^\/(base|modified)\//, "") };
+    }
+    if (uri.scheme === "file" && this.repoRoot && isInside(this.repoRoot, uri.fsPath)) {
+      return { side: "modified", relPath: relative(this.repoRoot, uri.fsPath) };
+    }
+    return undefined;
   }
 
   /** Reveal a feedback row's line in its diff and expand the comment thread. */
@@ -643,7 +876,12 @@ export class ReviewController implements vscode.Disposable {
   // ── GateSession (shared Approve / Send-Feedback commands dispatch here while active) ──
   /** Approve: proceed with no changes (the agent continues, no feedback). */
   approve(): void {
-    if (this.activeRequestId) {
+    if (!this.activeRequestId) {
+      return;
+    }
+    if (this.activeIsDeferred) {
+      this.resolveDeferred({ block: false }); // let the turn-end through with nothing to address
+    } else {
       this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
     }
   }
@@ -659,7 +897,21 @@ export class ReviewController implements vscode.Disposable {
       );
       return;
     }
-    this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
+    if (this.activeIsDeferred) {
+      this.resolveDeferred({ block: true, reason: feedback });
+    } else {
+      this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
+    }
+  }
+
+  /** True when there's ≥1 actionable (unresolved) comment to send (drives which gate button shows). */
+  hasFeedback(): boolean {
+    return renderReviewFeedback(this.getComments()).length > 0;
+  }
+
+  /** True if any comment is anchored on this file (so reconcile won't yank the diff out from it). */
+  private hasCommentOnPath(relPath: string): boolean {
+    return [...this.comments.values()].some((e) => e.model.filePath === relPath);
   }
 
   private resetComments(): void {
@@ -712,6 +964,71 @@ function filesFromArg(arg: unknown): ChangedFile[] {
 
 function newReviewId(): string {
   return "review-" + crypto.randomBytes(4).toString("hex");
+}
+
+/**
+ * Decide what to do with an open diff tab after a git write-op moved its file. `candidates` is the set
+ * of groups that now contain the path (after refresh). Returns "keep" if it's still at the same level,
+ * "close" if the change is gone entirely, otherwise the group to re-point the tab to (preferring the
+ * write-op's destination group when the file landed in several).
+ */
+export function reconcileDiffTarget(
+  oldGroup: FileGroup,
+  candidates: FileGroup[],
+  preferred?: FileGroup,
+): "keep" | "close" | FileGroup {
+  if (candidates.includes(oldGroup)) {
+    return "keep";
+  }
+  if (candidates.length === 0) {
+    return "close";
+  }
+  return preferred && candidates.includes(preferred) ? preferred : candidates[0];
+}
+
+/**
+ * A file is editable iff it isn't deleted and has no change at a lower git layer (committed > staged >
+ * unstaged) — editing its working-tree copy is then unambiguous and lands in the unstaged level.
+ * Purely structural: independent of whether a review is active (a review never forces a diff
+ * read-only; commenting works on both editable and locked diffs).
+ */
+export function isFileEditable(file: ChangedFile, changes: ChangesModel): boolean {
+  if (file.status === "D") {
+    return false;
+  }
+  return !LOWER_GROUPS[file.group].some((g) => changes[g].some((f) => f.path === file.path));
+}
+
+export type StopGateAction = "deliver-pending" | "allow" | "review";
+
+/**
+ * Decide what the blocking Stop gate does at a turn-end. Pure so it's unit-testable apart from the
+ * VS Code surfaces. "deliver-pending" = the user already submitted feedback (hand it over);
+ * "review" = enter/continue review mode and wait for the user; "allow" = let the agent stop now.
+ */
+export function stopGateAction(opts: {
+  hasPendingFeedback: boolean;
+  reviewActive: boolean;
+  reviewIsDeferred: boolean;
+  changedThisTurn: boolean;
+  hasUncommittedChanges: boolean;
+  reviewBusy: boolean;
+}): StopGateAction {
+  if (opts.hasPendingFeedback) {
+    return "deliver-pending";
+  }
+  // A blocking /tui-review owns its own delivery; the agent can't reach Stop while parked in it.
+  if (opts.reviewActive && !opts.reviewIsDeferred) {
+    return "allow";
+  }
+  if (opts.reviewActive) {
+    return "review"; // an in-progress deferred review — wait for the user to resolve it
+  }
+  // No review active: only open one if the turn touched files (uncommitted changes back it up).
+  if (opts.reviewBusy || !(opts.changedThisTurn || opts.hasUncommittedChanges)) {
+    return "allow";
+  }
+  return "review";
 }
 
 /** True when `child` is the same as or nested under `root` (both absolute fs paths). */

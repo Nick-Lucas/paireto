@@ -7,6 +7,7 @@ import type {
   PlanReviewRequest,
   ReviewAwaitRequest,
   ReviewStatus,
+  StopGateRequest,
 } from "../protocol/types.js";
 
 /** One row in $STATE/index.json — lets hooks discover live sockets and GC dead ones. */
@@ -38,11 +39,20 @@ export interface BridgeConfig {
 export interface PlanGateResult {
   decision: "allow" | "deny";
   reason?: string;
+  /** On allow: the Claude permission mode the agent should enter next (e.g. "auto"). */
+  nextMode?: string;
 }
 
 export interface ReviewGateResult {
   status: ReviewStatus;
   feedback: string;
+}
+
+export interface StopGateResult {
+  /** True to block the agent's turn-end (it keeps going and addresses `reason`). */
+  block: boolean;
+  /** Review feedback surfaced to Claude when blocking. */
+  reason?: string;
 }
 
 /** Callbacks the socket server invokes for inbound messages. */
@@ -58,6 +68,10 @@ export interface BridgeHandlers {
   /** Blocking review session — resolve when the user submits feedback or approves. `signal` aborts
    *  on disconnect so the controller can reset. */
   onReviewAwait(msg: ReviewAwaitRequest, signal: AbortSignal): Promise<ReviewGateResult>;
+  /** Blocking turn-end gate — resolve "allow" immediately unless a review is pending/in-progress for
+   *  this session, in which case it holds until the user resolves the review. `signal` aborts on
+   *  disconnect. */
+  onStopGate(msg: StopGateRequest, signal: AbortSignal): Promise<StopGateResult>;
   /** A held-open liveness connection opened for this agent session (MCP server). */
   onSessionAttached(sessionId: string): void;
   /** A held-open liveness connection dropped. When the last one closes the process has died. */

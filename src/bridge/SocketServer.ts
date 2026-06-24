@@ -166,6 +166,7 @@ export class SocketServer {
             ts: new Date().toISOString(),
             decision: result.decision,
             reason: result.reason,
+            nextMode: result.nextMode,
           });
         } finally {
           inflight.delete(ac);
@@ -184,6 +185,24 @@ export class SocketServer {
             ts: new Date().toISOString(),
             status: result.status,
             feedback: result.feedback,
+          });
+        } finally {
+          inflight.delete(ac);
+        }
+        break;
+      }
+      case "stop.gate.request": {
+        const ac = new AbortController();
+        inflight.add(ac);
+        try {
+          const result = await this.handlers.onStopGate(msg, ac.signal);
+          send({
+            t: "stop.gate.response",
+            v: PROTOCOL_VERSION,
+            id: msg.id,
+            ts: new Date().toISOString(),
+            decision: result.block ? "block" : "allow",
+            reason: result.reason,
           });
         } finally {
           inflight.delete(ac);

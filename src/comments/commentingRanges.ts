@@ -7,13 +7,18 @@
 
 import * as vscode from "vscode";
 
+/** A range spanning the whole document (every line is commentable). */
+export function wholeDocumentRange(doc: vscode.TextDocument): vscode.Range[] {
+  return [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)];
+}
+
 /** Allow commenting on every line of a document, but only for the given URI scheme. */
 export function fullDocumentCommentingRanges(
   doc: vscode.TextDocument,
-  scheme: string
+  scheme: string,
 ): vscode.Range[] | undefined {
   if (doc.uri.scheme !== scheme) {
     return undefined;
   }
-  return [new vscode.Range(0, 0, Math.max(0, doc.lineCount - 1), 0)];
+  return wholeDocumentRange(doc);
 }

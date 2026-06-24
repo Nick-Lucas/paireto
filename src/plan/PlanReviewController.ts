@@ -86,6 +86,7 @@ export class PlanReviewController implements vscode.Disposable {
         kind: "plan",
         approve: () => this.approve(review),
         sendFeedback: () => this.sendFeedback(review),
+        hasFeedback: () => this.collect(review).length > 0,
       },
       foreground: () => this.foreground(review),
       background: () => this.background(review),
@@ -141,7 +142,14 @@ export class PlanReviewController implements vscode.Disposable {
         return;
       }
     }
-    this.registry.fulfill(review.key, { decision: "allow" });
+    // Approving a plan otherwise restores the pre-plan permission mode; default to entering Claude's
+    // auto mode so the agent can proceed without re-prompting. "off" (or an empty setting) leaves the
+    // mode unchanged.
+    const mode = vscode.workspace
+      .getConfiguration("tui-companion")
+      .get<string>("planApprove.mode", "auto");
+    const nextMode = mode && mode !== "off" ? mode : undefined;
+    this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
 
   private sendFeedback(review: PlanReview): void {

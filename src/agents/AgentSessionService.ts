@@ -22,6 +22,14 @@ const SWEEP_INTERVAL_MS = 20_000;
 /** States that represent the agent actively working (and so can go stale after an interrupt). */
 const ACTIVE_STATES: ReadonlySet<AgentState> = new Set<AgentState>(["thinking", "toolRunning"]);
 
+/** Tools that edit files — running one marks the turn as having touched the working tree. */
+const EDIT_TOOLS: ReadonlySet<string> = new Set<string>([
+  "Edit",
+  "Write",
+  "MultiEdit",
+  "NotebookEdit",
+]);
+
 /** States where the agent has paused and wants the user — entering one of these "finishes" a turn. */
 const NEEDS_ATTENTION: ReadonlySet<AgentState> = new Set<AgentState>([
   "stopped",
@@ -91,6 +99,7 @@ export class AgentSessionService implements vscode.Disposable {
         startedAt: now,
         lastEventAt: now,
         needsAttention: false,
+        changedThisTurn: false,
       };
       this.sessions.set(msg.sessionId, session);
     }
@@ -107,6 +116,7 @@ export class AgentSessionService implements vscode.Disposable {
         break;
       case "UserPromptSubmit":
         session.state = "thinking";
+        session.changedThisTurn = false; // a new turn begins — reset the "touched files" flag
         break;
       case "PreToolUse":
         if (isSubagentToolEvent) {
@@ -122,6 +132,9 @@ export class AgentSessionService implements vscode.Disposable {
       case "PostToolUse":
         if (isSubagentToolEvent) {
           break;
+        }
+        if (msg.toolName && EDIT_TOOLS.has(msg.toolName)) {
+          session.changedThisTurn = true;
         }
         session.state = "thinking";
         break;
@@ -141,9 +154,11 @@ export class AgentSessionService implements vscode.Disposable {
         session.state = "ended";
         this.scheduleRemoval(msg.sessionId);
         break;
+      case "FileChanged":
+        session.changedThisTurn = true;
+        break;
       case "CwdChanged":
       case "Notification":
-      case "FileChanged":
       case "WorktreeCreate":
       case "WorktreeRemove":
         break;
@@ -236,6 +251,11 @@ export class AgentSessionService implements vscode.Disposable {
       session.needsAttention = false;
       this.changeEmitter.fire();
     }
+  }
+
+  /** True if the session touched files since its turn began (drives the Stop-gate review). */
+  didChangeThisTurn(sessionId: string | undefined): boolean {
+    return sessionId ? (this.sessions.get(sessionId)?.changedThisTurn ?? false) : false;
   }
 
   /** The most-recently-active non-ended session in a repo (best-effort review attribution). */

@@ -16,6 +16,8 @@ export interface GateSession {
   readonly kind: GateKind;
   approve(): void | Promise<void>;
   sendFeedback(): void | Promise<void>;
+  /** True when there's ≥1 actionable comment queued (drives which gate button shows). */
+  hasFeedback(): boolean;
 }
 
 /** A pending gate: its identity, the agent that owns it, and how to show/hide its UI. */

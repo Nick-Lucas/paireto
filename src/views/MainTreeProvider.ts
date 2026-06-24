@@ -87,6 +87,14 @@ function statusWord(s: ChangedFile["status"]): string {
   return { A: "Added", M: "Modified", D: "Deleted", R: "Renamed", C: "Copied", U: "Untracked" }[s];
 }
 
+/**
+ * A short, stable, per-agent label derived from the real Claude session id. The repo basename was
+ * identical for every agent in a repo; the first 8 chars of the session UUID disambiguate them.
+ */
+export function shortSessionId(sessionId: string): string {
+  return sessionId.slice(0, 8);
+}
+
 export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
@@ -422,8 +430,19 @@ function agentItem(
   s: AgentSession,
   gate?: { kind: "plan" | "review"; foreground: boolean },
 ): vscode.TreeItem {
-  const item = new vscode.TreeItem(path.basename(s.repoRoot), vscode.TreeItemCollapsibleState.None);
+  // Label by short session id — the repo basename was identical for every agent in a repo (and the
+  // Agents section is already repo-scoped, so the repo name belongs in the tooltip, not the label).
+  const item = new vscode.TreeItem(
+    shortSessionId(s.sessionId),
+    vscode.TreeItemCollapsibleState.None,
+  );
   const subs = s.subagentCount > 0 ? ` · ${s.subagentCount} sub` : "";
+  const started = new Date(s.startedAt).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  const toolLine = s.lastTool ? `\nLast tool: ${s.lastTool}` : "";
+  const ctx = `${path.basename(s.repoRoot)}\nSession ${s.sessionId}\nStarted ${started}${toolLine}`;
   if (gate) {
     const role = gate.kind === "plan" ? "plan review" : "code review";
     const slot = gate.foreground ? "active" : "pending";
@@ -431,13 +450,13 @@ function agentItem(
     item.iconPath = new vscode.ThemeIcon(
       gate.foreground ? "circle-large-filled" : "circle-large-outline",
     );
-    item.tooltip = `${s.repoRoot}\nSession ${s.sessionId}\nAwaiting ${role} (${slot}) — click to ${
+    item.tooltip = `${ctx}\nAwaiting ${role} (${slot}) — click to ${
       gate.foreground ? "keep viewing" : "switch to it"
     }`;
   } else {
     item.description = `${STATE_LABEL[s.state]}${subs}`;
     item.iconPath = new vscode.ThemeIcon(STATE_ICON[s.state]);
-    item.tooltip = `${s.repoRoot}\nSession ${s.sessionId}\n${STATE_LABEL[s.state]}`;
+    item.tooltip = `${ctx}\n${STATE_LABEL[s.state]}`;
   }
   // The agent has paused and wants the user (and they haven't looked yet) — flag it prominently.
   if (s.needsAttention && !gate?.foreground) {

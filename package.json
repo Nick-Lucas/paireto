@@ -310,12 +310,12 @@
       "editor/title": [
         {
           "command": "tui-companion.gate.approve",
-          "when": "resourceScheme == tui-plan",
+          "when": "resourceScheme == tui-plan && !tui.gateHasFeedback",
           "group": "navigation@1"
         },
         {
           "command": "tui-companion.gate.sendFeedback",
-          "when": "resourceScheme == tui-plan",
+          "when": "resourceScheme == tui-plan && tui.gateHasFeedback",
           "group": "navigation@2"
         }
       ],
@@ -490,12 +490,12 @@
         },
         {
           "command": "tui-companion.gate.approve",
-          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive)",
+          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive) && !tui.gateHasFeedback",
           "group": "navigation@4"
         },
         {
           "command": "tui-companion.gate.sendFeedback",
-          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive)",
+          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive) && tui.gateHasFeedback",
           "group": "navigation@5"
         }
       ]
@@ -530,6 +530,25 @@
           "type": "string",
           "default": "Ping",
           "description": "Sound played when 'tui-companion.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
+        },
+        "tui-companion.planApprove.mode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "acceptEdits",
+            "default",
+            "plan",
+            "off"
+          ],
+          "enumDescriptions": [
+            "Enter Claude's auto mode after approving a plan (auto-approve with background safety checks).",
+            "Enter accept-edits mode (auto-approve file edits) after approving a plan.",
+            "Restore the standard 'ask for permission' mode after approving a plan.",
+            "Stay in plan mode after approval.",
+            "Leave the permission mode unchanged (Claude's default: restore the pre-plan mode)."
+          ],
+          "default": "auto",
+          "description": "The permission mode the agent enters when you approve its plan."
         },
         "tui-companion.planGate.onUnavailable": {
           "type": "string",
