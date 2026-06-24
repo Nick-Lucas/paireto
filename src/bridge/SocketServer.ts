@@ -74,6 +74,9 @@ export class SocketServer {
     // (hook killed, interrupt, the user resolved ExitPlanMode another way), abort them so the
     // controllers close their UI and reset, rather than hanging open forever.
     const inflight = new Set<AbortController>();
+    // Set when this connection is an MCP server's held-open liveness connection (session.attach).
+    // When it closes, the owning agent process has died — clear its session.
+    let attachedSessionId: string | undefined;
 
     const send = (obj: AnyMessage): void => {
       if (!socket.destroyed) {
@@ -87,6 +90,10 @@ export class SocketServer {
         ac.abort();
       }
       inflight.clear();
+      if (attachedSessionId) {
+        this.handlers.onSessionDetached(attachedSessionId);
+        attachedSessionId = undefined;
+      }
     });
     socket.on("data", (chunk: string) => {
       buffer += chunk;
@@ -125,6 +132,12 @@ export class SocketServer {
             socket.destroy();
             return;
           }
+          continue;
+        }
+        if (msg.t === "session.attach") {
+          // Held-open liveness connection; remember the session so its close clears the agent.
+          attachedSessionId = msg.sessionId;
+          this.handlers.onSessionAttached(attachedSessionId);
           continue;
         }
         void this.route(msg, send, inflight);

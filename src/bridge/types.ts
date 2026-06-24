@@ -58,4 +58,8 @@ export interface BridgeHandlers {
   /** Blocking review session — resolve when the user submits feedback or approves. `signal` aborts
    *  on disconnect so the controller can reset. */
   onReviewAwait(msg: ReviewAwaitRequest, signal: AbortSignal): Promise<ReviewGateResult>;
+  /** A held-open liveness connection opened for this agent session (MCP server). */
+  onSessionAttached(sessionId: string): void;
+  /** A held-open liveness connection dropped. When the last one closes the process has died. */
+  onSessionDetached(sessionId: string): void;
 }

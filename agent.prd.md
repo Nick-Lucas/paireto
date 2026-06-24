@@ -38,7 +38,9 @@ are correlated by repository directory, not terminal.
 - Status bar item showing current repo · branch + agent activity.
 - Clicking an agent row switches its pending plan/review to the foreground (or focuses the terminal
   if it has none); a "Focus Agent" button focuses the terminal directly.
-- Stuck-state safety net: an agent that goes silent after an un-hookable interrupt is auto-cleared.
+- Stuck-state safety net: an agent that goes silent after an un-hookable interrupt is auto-cleared;
+  an agent whose process is killed (no SessionEnd hook fires) is detected via a liveness connection
+  the plugin's MCP server holds open, and dropped from the list immediately.
 
 ### Repo / Worktree Switcher
 - `Cmd/Ctrl+Shift+K` (or status bar click) opens a picker: current window, worktrees, recent repos.
@@ -61,6 +63,7 @@ resolve with the same two actions.
   time; multiple plans can be.
 - **Disconnect resets state:** if the agent side ends another way (interrupt, crash, ExitPlanMode
   resolved in the terminal), the dropped connection auto-closes the plan/review and resets the UI.
+- **Bottom panel:** hidden while any gate (plan or review) is foreground, restored once none is.
 
 ### Plan Review
 - When the agent finishes a plan (ExitPlanMode), the plan opens in VS Code automatically, the bottom

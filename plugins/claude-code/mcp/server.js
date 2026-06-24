@@ -144,7 +144,45 @@ async function handle(msg) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Session liveness: hold a socket open for this session's lifetime. When Claude Code dies (incl.
+// SIGKILL / terminal close, which fire no SessionEnd hook) this MCP server is killed with it, the
+// OS closes the socket, and the extension clears the agent from its panel. Best-effort: needs the
+// session id (CLAUDE_CODE_SESSION_ID) and a listening extension; silently does nothing otherwise.
+// ---------------------------------------------------------------------------
+
+function attachSessionLiveness() {
+  const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+  if (!sessionId) {
+    return; // can't correlate to a session row
+  }
+  const cwd = process.env.CLAUDE_PROJECT_DIR || process.cwd();
+  const target = bridge.resolveTarget(cwd);
+  if (!target) {
+    return;
+  }
+  const key = bridge.repoKey(target.repoRoot);
+  bridge
+    .connectAndHandshake(target.socketPath, key, CONNECT_TIMEOUT_MS)
+    .then((conn) => {
+      conn.sock.on("error", () => {});
+      bridge.sendLine(conn.sock, {
+        t: "session.attach",
+        v: bridge.PROTOCOL_VERSION,
+        ts: bridge.nowIso(),
+        sessionId,
+        repoRoot: target.repoRoot,
+      });
+      // Hold the connection open for the process lifetime — do NOT destroy it. Its eventual close
+      // is the liveness signal.
+    })
+    .catch(() => {
+      /* no extension listening — liveness tracking simply unavailable */
+    });
+}
+
 function main() {
+  attachSessionLiveness();
   let buffer = "";
   process.stdin.setEncoding("utf8");
   process.stdin.on("data", (chunk) => {

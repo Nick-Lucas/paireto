@@ -264,6 +264,7 @@ function strOpt(opts: Opts, key: string): string | undefined {
 // ---------------------------------------------------------------------------
 
 const DEFAULT_SESSION = "emu-" + crypto.randomUUID().slice(0, 8);
+const CONNECT_TIMEOUT_MS = 3000;
 
 interface Target {
   socketPath: string;
@@ -317,15 +318,89 @@ function writeOn(conn: Connection, msg: Envelope): Promise<void> {
   return new Promise((resolve) => conn.sock.write(JSON.stringify(msg) + "\n", () => resolve()));
 }
 
+interface LifecycleStep {
+  event: HookEventName;
+  tool?: string;
+}
+
 /** Emit the hook telemetry that makes a session appear as a connected, working agent. */
 async function announceSession(
   conn: Connection,
   session: string,
   target: Target,
-  events: Array<{ event: HookEventName; tool?: string }>
+  events: LifecycleStep[]
 ): Promise<void> {
   for (const e of events) {
     await writeOn(conn, telemetry(session, target, e.event, e.tool));
+  }
+}
+
+/** Send the held-open liveness attach so quitting the process drops the agent (mirrors the MCP server). */
+function sendAttach(conn: Connection, session: string, target: Target): void {
+  bridge.sendLine(conn.sock, {
+    t: "session.attach",
+    v: bridge.PROTOCOL_VERSION,
+    ts: bridge.nowIso(),
+    sessionId: session,
+    repoRoot: target.repoRoot,
+  });
+}
+
+interface BridgeContext {
+  conn: Connection;
+  target: Target;
+  sessionId?: string;
+}
+
+interface CommandSpec {
+  heading: string;
+  /** Optional pre-connect diagnostics (used by `doctor`); receives the resolved target or null. */
+  report?: (target: Target | null) => void;
+  /** When set, the command represents a live agent: announce its session + hold a liveness attach. */
+  live?: { sessionId: string; lifecycle: LifecycleStep[] };
+}
+
+/**
+ * The golden path every command runs through: resolve the socket, run optional diagnostics, connect
+ * + handshake, (optionally) announce a live session and hold a liveness attach, run the command body,
+ * then tear the connection down. Centralises lifecycle + error handling so commands can't drift (it's
+ * how `plan`/`review` previously forgot the liveness attach).
+ */
+async function withBridge(
+  opts: Opts,
+  spec: CommandSpec,
+  body: (ctx: BridgeContext) => Promise<void>
+): Promise<void> {
+  const target = resolveTarget(opts);
+  heading(spec.heading);
+  spec.report?.(target);
+  if (!target) {
+    noTargetError(opts);
+    return;
+  }
+
+  let conn: Connection;
+  try {
+    conn = await connect(target, CONNECT_TIMEOUT_MS);
+  } catch (err) {
+    banner("CONNECTION FAILED", red);
+    field("error", errMessage(err), red);
+    process.exitCode = 1;
+    return;
+  }
+
+  try {
+    if (spec.live) {
+      await announceSession(conn, spec.live.sessionId, target, spec.live.lifecycle);
+      sendAttach(conn, spec.live.sessionId, target);
+    }
+    await body({ conn, target, sessionId: spec.live?.sessionId });
+  } finally {
+    // Blocking bodies (plan/review) destroy the socket on response; agent never returns (held until
+    // Ctrl+C). For everything else, close cleanly here.
+    if (!conn.sock.destroyed) {
+      conn.sock.end();
+    }
   }
 }
 
@@ -396,53 +471,36 @@ function awaitResponse<T extends Envelope>(
 // ---------------------------------------------------------------------------
 
 async function cmdDoctor(opts: Opts): Promise<void> {
-  const cwdOpt = strOpt(opts, "cwd");
-  const cwd = cwdOpt ? bridge.canonicalize(cwdOpt) : process.cwd();
-  const top = bridge.gitToplevel(cwd);
-
-  heading("Resolution");
-  field("cwd", cwd);
-  field("git toplevel", top || "(not a git repo)", top ? undefined : yellow);
-  field("repo key", top ? bridge.repoKey(top) : "—");
-  field("state dir", bridge.stateDir());
-
-  const target = resolveTarget(opts);
-  if (!target) {
-    field("socket", "(none resolved)", red);
-    console.log("");
-    console.log(yellow("  No socket resolved — the extension is not listening for this repo."));
-    process.exitCode = 1;
-    return;
-  }
-
-  const exists = fs.existsSync(target.socketPath);
-  field("socket path", target.socketPath);
-  field("socket exists", exists ? "yes" : "no", exists ? green : red);
-  field("repo root", target.repoRoot);
-
-  heading("Handshake");
-  let conn: Connection;
-  try {
-    conn = await connect(target, 3000);
-  } catch (err) {
-    banner("HANDSHAKE FAILED", red);
-    field("error", errMessage(err), red);
-    process.exitCode = 1;
-    return;
-  }
-  banner("CONNECTED", green);
-  console.log("");
-  console.log(dim("  The extension accepted the hook handshake. All flows are available."));
-  conn.sock.end();
+  await withBridge(
+    opts,
+    {
+      heading: "Doctor",
+      report: (target) => {
+        const cwdOpt = strOpt(opts, "cwd");
+        const cwd = cwdOpt ? bridge.canonicalize(cwdOpt) : process.cwd();
+        const top = bridge.gitToplevel(cwd);
+        field("cwd", cwd);
+        field("git toplevel", top || "(not a git repo)", top ? undefined : yellow);
+        field("repo key", top ? bridge.repoKey(top) : "—");
+        field("state dir", bridge.stateDir());
+        if (target) {
+          const exists = fs.existsSync(target.socketPath);
+          field("socket path", target.socketPath);
+          field("socket exists", exists ? "yes" : "no", exists ? green : red);
+          field("repo root", target.repoRoot);
+        }
+      },
+    },
+    async () => {
+      banner("CONNECTED", green);
+      console.log("");
+      console.log(dim("  The extension accepted the hook handshake. All flows are available."));
+    }
+  );
 }
 
 async function cmdEvent(opts: Opts, positionals: string[]): Promise<void> {
   const eventName = positionals[0] || "SessionStart";
-  const target = resolveTarget(opts);
-  if (!target) {
-    return noTargetError(opts);
-  }
-
   const tool = strOpt(opts, "tool");
   let toolInput: unknown;
   const inputJson = strOpt(opts, "input");
@@ -458,47 +516,30 @@ async function cmdEvent(opts: Opts, positionals: string[]): Promise<void> {
     toolInput = defaultToolInput(tool);
   }
 
-  const message: HookEventMessage = {
-    t: "hook.event",
-    v: bridge.PROTOCOL_VERSION,
-    ts: bridge.nowIso(),
-    event: eventName,
-    sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
-    agentId: strOpt(opts, "agent"),
-    agentType: strOpt(opts, "agent-type"),
-    cwd: target.cwd,
-    repoRoot: target.repoRoot,
-    permissionMode: strOpt(opts, "mode"),
-    toolName: tool,
-    toolInput,
-  };
-
-  heading(`Telemetry event · ${eventName}`);
-  let conn: Connection;
-  try {
-    conn = await connect(target, 3000);
-  } catch (err) {
-    field("error", errMessage(err), red);
-    process.exitCode = 1;
-    return;
-  }
-  dumpMessage(ARROW_OUT, message);
-  await new Promise<void>((resolve) => {
-    conn.sock.write(JSON.stringify(message) + "\n", () => {
-      conn.sock.end();
-      resolve();
-    });
+  // A raw one-off telemetry probe — no liveness attach (it isn't a held-open agent).
+  await withBridge(opts, { heading: `Telemetry event · ${eventName}` }, async ({ conn, target }) => {
+    const message: HookEventMessage = {
+      t: "hook.event",
+      v: bridge.PROTOCOL_VERSION,
+      ts: bridge.nowIso(),
+      event: eventName,
+      sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
+      agentId: strOpt(opts, "agent"),
+      agentType: strOpt(opts, "agent-type"),
+      cwd: target.cwd,
+      repoRoot: target.repoRoot,
+      permissionMode: strOpt(opts, "mode"),
+      toolName: tool,
+      toolInput,
+    };
+    dumpMessage(ARROW_OUT, message);
+    await writeOn(conn, message);
+    console.log("");
+    console.log(green("  ✓ sent (fire-and-forget — telemetry never gets a reply)"));
   });
-  console.log("");
-  console.log(green("  ✓ sent (fire-and-forget — telemetry never gets a reply)"));
 }
 
 async function cmdPlan(opts: Opts): Promise<void> {
-  const target = resolveTarget(opts);
-  if (!target) {
-    return noTargetError(opts);
-  }
-
   let plan = SAMPLE_PLAN;
   const file = strOpt(opts, "file");
   const inlinePlan = strOpt(opts, "plan");
@@ -510,129 +551,127 @@ async function cmdPlan(opts: Opts): Promise<void> {
 
   const timeoutMs = Number(strOpt(opts, "timeout") || 600) * 1000;
   const id = crypto.randomUUID();
-  const request: PlanReviewRequest = {
-    t: "plan.review.request",
-    v: bridge.PROTOCOL_VERSION,
-    id,
-    ts: bridge.nowIso(),
-    sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
-    agentId: strOpt(opts, "agent"),
-    cwd: target.cwd,
-    repoRoot: target.repoRoot,
-    permissionMode: strOpt(opts, "mode") || "plan",
-    toolName: "ExitPlanMode",
-    plan,
-  };
+  const sessionId = strOpt(opts, "session") || DEFAULT_SESSION;
 
-  heading("Plan gate · ExitPlanMode");
-  let conn: Connection;
-  try {
-    conn = await connect(target, 3000);
-  } catch (err) {
-    field("error", errMessage(err), red);
-    process.exitCode = 1;
-    return;
-  }
+  await withBridge(
+    opts,
+    {
+      heading: "Plan gate · ExitPlanMode",
+      live: {
+        sessionId,
+        lifecycle: [
+          { event: "SessionStart" },
+          { event: "UserPromptSubmit" },
+          { event: "PreToolUse", tool: "ExitPlanMode" },
+        ],
+      },
+    },
+    async ({ conn, target }) => {
+      const request: PlanReviewRequest = {
+        t: "plan.review.request",
+        v: bridge.PROTOCOL_VERSION,
+        id,
+        ts: bridge.nowIso(),
+        sessionId,
+        agentId: strOpt(opts, "agent"),
+        cwd: target.cwd,
+        repoRoot: target.repoRoot,
+        permissionMode: strOpt(opts, "mode") || "plan",
+        toolName: "ExitPlanMode",
+        plan,
+      };
 
-  // Announce a live agent session reaching ExitPlanMode, so it shows in the Agents panel.
-  await announceSession(conn, request.sessionId, target, [
-    { event: "SessionStart" },
-    { event: "UserPromptSubmit" },
-    { event: "PreToolUse", tool: "ExitPlanMode" },
-  ]);
+      dumpMessage(ARROW_OUT, request);
+      console.log("");
+      console.log(
+        yellow(`  ⏳ blocking — approve or send feedback in VS Code (timeout ${timeoutMs / 1000}s)…`)
+      );
 
-  dumpMessage(ARROW_OUT, request);
-  console.log("");
-  console.log(yellow(`  ⏳ blocking — approve or send feedback in VS Code (timeout ${timeoutMs / 1000}s)…`));
+      const pending = awaitResponse<PlanReviewResponse>(conn, id, "plan.review.response", timeoutMs);
+      bridge.sendLine(conn.sock, request);
+      const response = await pending;
+      if (!response) {
+        return;
+      }
+      dumpMessage(ARROW_IN, response);
 
-  const pending = awaitResponse<PlanReviewResponse>(conn, id, "plan.review.response", timeoutMs);
-  bridge.sendLine(conn.sock, request);
-  const response = await pending;
-  if (!response) {
-    return;
-  }
-  dumpMessage(ARROW_IN, response);
-
-  if (response.decision === "allow") {
-    banner("PLAN APPROVED — agent proceeds", green);
-    console.log("");
-    console.log(dim("  Hook would emit: PermissionRequest decision { behavior: 'allow' }"));
-  } else {
-    banner("CHANGES REQUESTED — agent revises", yellow);
-    console.log("");
-    console.log(bold("  Feedback returned to the agent (deny message):"));
-    console.log("");
-    console.log(indent(response.reason || "(none)", "  │ ", blue));
-  }
+      if (response.decision === "allow") {
+        banner("PLAN APPROVED — agent proceeds", green);
+        console.log("");
+        console.log(dim("  Hook would emit: PermissionRequest decision { behavior: 'allow' }"));
+      } else {
+        banner("CHANGES REQUESTED — agent revises", yellow);
+        console.log("");
+        console.log(bold("  Feedback returned to the agent (deny message):"));
+        console.log("");
+        console.log(indent(response.reason || "(none)", "  │ ", blue));
+      }
+    }
+  );
 }
 
 async function cmdReview(opts: Opts): Promise<void> {
-  const target = resolveTarget(opts);
-  if (!target) {
-    return noTargetError(opts);
-  }
-
   const timeoutMs = Number(strOpt(opts, "timeout") || 600) * 1000;
   const id = crypto.randomUUID();
-  const session = strOpt(opts, "session") || DEFAULT_SESSION;
-  const request: ReviewAwaitRequest = {
-    t: "review.await.request",
-    v: bridge.PROTOCOL_VERSION,
-    id,
-    ts: bridge.nowIso(),
-    cwd: target.cwd,
-    repoRoot: target.repoRoot,
-    sessionId: session,
-  };
+  const sessionId = strOpt(opts, "session") || DEFAULT_SESSION;
 
-  heading("Code review · tui_review (MCP)");
-  let conn: Connection;
-  try {
-    conn = await connect(target, 3000);
-  } catch (err) {
-    field("error", errMessage(err), red);
-    process.exitCode = 1;
-    return;
-  }
+  await withBridge(
+    opts,
+    {
+      heading: "Code review · tui_review (MCP)",
+      live: { sessionId, lifecycle: [{ event: "SessionStart" }, { event: "UserPromptSubmit" }] },
+    },
+    async ({ conn, target }) => {
+      const request: ReviewAwaitRequest = {
+        t: "review.await.request",
+        v: bridge.PROTOCOL_VERSION,
+        id,
+        ts: bridge.nowIso(),
+        cwd: target.cwd,
+        repoRoot: target.repoRoot,
+        sessionId,
+      };
 
-  // Announce a live agent session that's asking for a review, so it shows in the Agents panel.
-  await announceSession(conn, session, target, [
-    { event: "SessionStart" },
-    { event: "UserPromptSubmit" },
-  ]);
+      dumpMessage(ARROW_OUT, request);
+      console.log("");
+      console.log(
+        yellow(
+          `  ⏳ blocking — review the diff in VS Code, then Send Feedback / Approve (timeout ${timeoutMs / 1000}s)…`
+        )
+      );
 
-  dumpMessage(ARROW_OUT, request);
-  console.log("");
-  console.log(yellow(`  ⏳ blocking — review the diff in VS Code, then Send Feedback / Approve (timeout ${timeoutMs / 1000}s)…`));
+      const pending = awaitResponse<ReviewAwaitResponse>(
+        conn,
+        id,
+        "review.await.response",
+        timeoutMs
+      );
+      bridge.sendLine(conn.sock, request);
+      const response = await pending;
+      if (!response) {
+        return;
+      }
+      dumpMessage(ARROW_IN, response);
 
-  const pending = awaitResponse<ReviewAwaitResponse>(conn, id, "review.await.response", timeoutMs);
-  bridge.sendLine(conn.sock, request);
-  const response = await pending;
-  if (!response) {
-    return;
-  }
-  dumpMessage(ARROW_IN, response);
-
-  if (response.status === "submitted" && response.feedback) {
-    banner("FEEDBACK SUBMITTED — agent acts on it", green);
-    console.log("");
-    console.log(bold("  Review comments returned as the tool result:"));
-    console.log("");
-    console.log(indent(response.feedback, "  │ ", blue));
-  } else {
-    banner("REVIEW APPROVED — agent proceeds, no changes", yellow);
-  }
+      if (response.status === "submitted" && response.feedback) {
+        banner("FEEDBACK SUBMITTED — agent acts on it", green);
+        console.log("");
+        console.log(bold("  Review comments returned as the tool result:"));
+        console.log("");
+        console.log(indent(response.feedback, "  │ ", blue));
+      } else {
+        banner("REVIEW APPROVED — agent proceeds, no changes", yellow);
+      }
+    }
+  );
 }
 
 async function cmdFlow(opts: Opts): Promise<void> {
-  const target = resolveTarget(opts);
-  if (!target) {
-    return noTargetError(opts);
-  }
   const session = strOpt(opts, "session") || DEFAULT_SESSION;
-
-  // A representative agent session lifecycle, each step a separate connection (as real hooks are).
-  const steps: Array<{ event: HookEventName; tool?: string }> = [
+  // A representative agent session lifecycle. (One connection here vs separate per-event hooks in
+  // reality — equivalent to the extension, which keys sessions by id, not connection.) Ends with
+  // SessionEnd, so no liveness attach.
+  const steps: LifecycleStep[] = [
     { event: "SessionStart" },
     { event: "UserPromptSubmit" },
     { event: "PreToolUse", tool: "Read" },
@@ -643,37 +682,35 @@ async function cmdFlow(opts: Opts): Promise<void> {
     { event: "SessionEnd" },
   ];
 
-  heading(`Simulated session lifecycle · ${session}`);
-  for (const step of steps) {
-    const message: HookEventMessage = {
-      t: "hook.event",
-      v: bridge.PROTOCOL_VERSION,
-      ts: bridge.nowIso(),
-      event: step.event,
-      sessionId: session,
-      cwd: target.cwd,
-      repoRoot: target.repoRoot,
-      toolName: step.tool,
-      toolInput: step.tool ? defaultToolInput(step.tool) : undefined,
-    };
-    let conn: Connection;
-    try {
-      conn = await connect(target, 3000);
-    } catch (err) {
-      console.log(`  ${red("✗")} ${step.event.padEnd(16)} ${dim(errMessage(err))}`);
-      continue;
+  await withBridge(
+    opts,
+    { heading: `Simulated session lifecycle · ${session}` },
+    async ({ conn, target }) => {
+      for (const step of steps) {
+        await writeOn(conn, telemetry(session, target, step.event, step.tool));
+        const label = step.tool ? `${step.event} (${step.tool})` : step.event;
+        console.log(`  ${green("✓")} ${label}`);
+      }
+      console.log("");
+      console.log(dim("  Watch the Agents section + status bar in VS Code update as these arrive."));
     }
-    await new Promise<void>((resolve) => {
-      conn.sock.write(JSON.stringify(message) + "\n", () => {
-        conn.sock.end();
-        resolve();
-      });
-    });
-    const label = step.tool ? `${step.event} (${step.tool})` : step.event;
-    console.log(`  ${green("✓")} ${label}`);
-  }
-  console.log("");
-  console.log(dim("  Watch the Agents section + status bar in VS Code update as these arrive."));
+  );
+}
+
+async function cmdAgent(opts: Opts): Promise<void> {
+  const session = strOpt(opts, "session") || DEFAULT_SESSION;
+  await withBridge(
+    opts,
+    { heading: `Live agent session · ${session}`, live: { sessionId: session, lifecycle: [{ event: "SessionStart" }] } },
+    async () => {
+      banner("AGENT CONNECTED — holding session open", green);
+      console.log("");
+      console.log(dim("  Shows as a connected agent in VS Code. Ctrl+C to simulate killing the"));
+      console.log(dim("  process — the extension should drop it from the Agents panel immediately."));
+      console.log(dim(`  (Run \`plan\`/\`review --session ${session}\` from another terminal to gate it.)`));
+      await new Promise<never>(() => {}); // hold open until Ctrl+C
+    }
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -736,6 +773,8 @@ ${bold("Commands")}
   ${cyan("plan")}                    Send an ExitPlanMode plan gate; blocks for the decision.
   ${cyan("review")}                  Open a tui_review session; blocks for Send Feedback / Cancel.
   ${cyan("flow")}                    Fire a full simulated session lifecycle of events.
+  ${cyan("agent")}                   Hold a live session open (liveness connection). Ctrl+C to
+                          simulate the agent process being killed → the extension drops it.
   ${cyan("help")}                    Show this.
 
 ${bold("Options")}
@@ -782,6 +821,9 @@ async function main(): Promise<void> {
       break;
     case "flow":
       await cmdFlow(opts);
+      break;
+    case "agent":
+      await cmdAgent(opts);
       break;
     case "help":
     case "-h":

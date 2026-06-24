@@ -1,5 +1,24 @@
 # TUI Companion — Key Decisions
 
+- **Agent process-death is detected via an MCP liveness socket, not a PID.** Claude Code exposes no
+  agent PID to hooks/MCP, and `SessionEnd` doesn't fire on SIGKILL/terminal-close. But the plugin's
+  stdio MCP server (`plugins/claude-code/mcp/server.js`) is a session-lifetime process (started at
+  session init for `tools/list`, killed with Claude) and receives `CLAUDE_CODE_SESSION_ID` in its
+  env. So at startup it opens a socket, sends `session.attach` `{sessionId}`, and **holds it open**.
+  `SocketServer.handleConnection` remembers that connection's `sessionId` and calls
+  `onSessionAttached`/`onSessionDetached`; `AgentSessionService` **ref-counts** liveness connections
+  per session and `removeSession`s only when the last one drops (so a second connection — e.g. the
+  emulator alongside the real MCP — doesn't drop the row prematurely). This is OS-level and more
+  reliable than polling a PID (UDS close fires on peer death).
+  Distinguish from a gate *interrupt*: dropping the blocking plan/review connection (Esc) →
+  `markIdleOnDisconnect` (agent still alive); dropping the liveness connection → `removeSession`. If
+  only the MCP server crashes (agent alive), the row is re-created by the next telemetry event. Every
+  emulator command runs through one `withBridge` golden path (resolve → connect → optional session
+  announce + liveness attach → body → teardown), so the lifecycle can't drift per-command (it's how
+  `plan`/`review` once missed the attach). Commands flagged `live` (`agent`/`plan`/`review`) hold the
+  attach, so Ctrl+C (fully quitting any of them) simulates a process kill and drops the agent;
+  `doctor`/`event`/`flow` are probes with no attach.
+
 - **Changed-file status indicators are coloured-letter SVGs (left iconPath), not FileDecorations.**
   We want git's look: a coloured status letter with a *default-coloured* filename. The generic
   `FileDecorationProvider` API (all a custom `TreeView` can use) tints the whole label+badge together
@@ -18,7 +37,7 @@
   shared Approve/Send-Feedback commands). `register` foregrounds only if nothing else is; `switchTo`
   backgrounds the current entry (hides its UI **without resolving** — e.g. closes the plan tab) and
   foregrounds another; `unregister` (on resolve) promotes the most-recent remaining entry. The
-  terminal panel is hidden while the foreground is a plan, restored otherwise (panel hooks are
+  bottom panel is hidden while any gate (plan or review) is foreground, restored when none is (hooks are
   injectable so the coordinator stays unit-testable). **Multiple plans** can be pending (each is its
   own `tui-plan://` doc + URI-anchored threads, so backgrounding just closes the tab and preserves
   comments); **at most one review** is pending (`ReviewController` has an internal queue — a second
@@ -47,9 +66,12 @@
   "close the plan when ExitPlanMode completes in the agent" and "reset on any closed connection." The
   plan tab also auto-closes on a normal decision; our own programmatic closes are tracked in a
   `closingTabs` set so they don't trip the early-close prompt, while a user closing a still-pending
-  plan tab is prompted for Approve / Send Feedback. (The virtual-doc-in-search item is
-  verification-driven — auto-close/reset removes lingering virtual editors; confirm in the dev host
-  before adding any further suppression.)
+  plan tab is prompted for Approve / Send Feedback. The abort also resets the owning **agent session**
+  to idle (`AgentSessionService.markIdleOnDisconnect`, wired on the signal in the `extension.ts`
+  bridge handlers) — there's no Stop hook on an interrupt, so otherwise the Agents indicator stays
+  stuck on "awaiting plan review" (never stale-swept) or "thinking" (until the 120s sweep). (The
+  virtual-doc-in-search item is verification-driven — auto-close/reset removes lingering virtual
+  editors; confirm in the dev host before adding any further suppression.)
 
 - **Plugin TS dev scripts get their own tsconfig.** `plugins/claude-code/scripts/*.ts` (e.g. the
   bridge emulator) run directly on Node's type-stripping and live outside the extension's

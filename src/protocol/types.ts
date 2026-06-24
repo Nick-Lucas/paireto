@@ -27,6 +27,7 @@ export type MessageType =
   | "hello"
   | "hello.ack"
   | "hook.event"
+  | "session.attach"
   | "plan.review.request"
   | "plan.review.response"
   | "review.await.request"
@@ -75,6 +76,18 @@ export interface HookEventMessage extends Envelope {
   toolName?: string;
   toolInput?: unknown;
   transcriptPath?: string;
+}
+
+/**
+ * Sent once by the plugin's MCP server at session start over a connection it then HOLDS OPEN for the
+ * agent's lifetime. When the agent process dies (incl. SIGKILL / terminal close, which fire no
+ * SessionEnd hook), the OS closes this socket and the extension clears the session. Correlated by
+ * `sessionId` (the MCP server reads CLAUDE_CODE_SESSION_ID from its env).
+ */
+export interface SessionAttachMessage extends Envelope {
+  t: "session.attach";
+  sessionId: string;
+  repoRoot: string;
 }
 
 /** Blocking plan-gate request. Carries an `id`; the hook blocks until the matching response. */
@@ -132,6 +145,7 @@ export type AnyMessage =
   | HelloMessage
   | HelloAckMessage
   | HookEventMessage
+  | SessionAttachMessage
   | PlanReviewRequest
   | PlanReviewResponse
   | ReviewAwaitRequest

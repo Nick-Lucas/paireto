@@ -38,7 +38,8 @@ export class GateCoordinator implements vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   /** Fires whenever the set of pending gates or the foreground changes (drives the Agents panel). */
   readonly onDidChange = this.changeEmitter.event;
-  private panelHiddenForPlan = false;
+  /** True while we've hidden the bottom panel for a foreground gate (so we only restore our own). */
+  private panelHidden = false;
 
   constructor(
     // Injectable so unit tests can run without touching the real VS Code panel.
@@ -122,14 +123,16 @@ export class GateCoordinator implements vscode.Disposable {
     }
   }
 
-  /** Hide the terminal panel while a plan is foreground; restore it otherwise. */
+  /** Hide the bottom panel while any gate (plan or review) is foreground; restore it when none is. */
   private async applyPanel(kind: GateKind | undefined): Promise<void> {
     try {
-      if (kind === "plan") {
-        this.panelHiddenForPlan = true;
-        await this.hidePanel();
-      } else if (this.panelHiddenForPlan) {
-        this.panelHiddenForPlan = false;
+      if (kind !== undefined) {
+        if (!this.panelHidden) {
+          this.panelHidden = true;
+          await this.hidePanel();
+        }
+      } else if (this.panelHidden) {
+        this.panelHidden = false;
         await this.showPanel();
       }
     } catch {

@@ -135,13 +135,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         worktrees.invalidate(msg.repoRoot);
       }
     },
-    onPlanReviewRequest: (msg, signal) => planReview.presentPlan(msg, signal),
+    onPlanReviewRequest: (msg, signal) => {
+      // On disconnect (interrupt/crash) there's no Stop hook — return the agent to idle so its
+      // activity indicator doesn't stay stuck on "awaiting plan review".
+      signal.addEventListener("abort", () => agents.markIdleOnDisconnect(msg.sessionId), {
+        once: true,
+      });
+      return planReview.presentPlan(msg, signal);
+    },
     onReviewAwait: (msg, signal) => {
       // Reviews carry no sessionId reliably; attribute to the most-recently-active session in the
       // request's repo so the Agents panel can show "awaiting review" on the right row.
       const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
+      if (sessionId) {
+        // Likewise reset the agent to idle if its review connection drops.
+        signal.addEventListener("abort", () => agents.markIdleOnDisconnect(sessionId), {
+          once: true,
+        });
+      }
       return reviewController.startSession(msg.id, sessionId, signal);
     },
+    // The MCP server holds a liveness connection per session; when the last one drops, the agent
+    // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).
+    onSessionAttached: (sessionId) => agents.attachSession(sessionId),
+    onSessionDetached: (sessionId) => agents.detachSession(sessionId),
   };
   const bridge = new BridgeManager(handlers);
   context.subscriptions.push({ dispose: () => bridge.dispose() });

@@ -21,8 +21,11 @@
 * notification sound / indicator when an agent finishes
 * when staging or unstaging a file which has its tab open, automatically change the tab over to look at the new location
 * Extract a better sessionId for presentation that the project/CWD name - it's the same for every agent right now
+* For claude code when approving a plan there's a way to tell the agent what mode to enter next. Make sure it defaults to auto-mode
 
 # Feature Ideas:
 
 * Replace the Plan view with a proper WYSIWYG Markdown experience similar to Plannotator
 * Show me / Explain to me skill, prints a whole lesson on how something works with a UI to navigate you though
+* a TODOs and task tracker which you can track and dispatch tasks or grouped of tasks with 
+  * with GitHub PR import

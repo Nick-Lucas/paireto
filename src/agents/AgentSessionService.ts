@@ -151,6 +151,51 @@ export class AgentSessionService implements vscode.Disposable {
     return [...this.sessions.values()].sort((a, b) => b.lastEventAt - a.lastEventAt);
   }
 
+  /** Open liveness connections per session (the MCP server holds one; ref-counted so a second
+   *  connection, e.g. an emulator, doesn't drop the row when only one of them closes). */
+  private readonly attachCounts = new Map<string, number>();
+
+  /** A liveness connection for this session opened (session.attach). */
+  attachSession(sessionId: string): void {
+    this.attachCounts.set(sessionId, (this.attachCounts.get(sessionId) ?? 0) + 1);
+  }
+
+  /** A liveness connection closed. When the last one closes, the agent's process is gone — remove it. */
+  detachSession(sessionId: string): void {
+    const next = (this.attachCounts.get(sessionId) ?? 0) - 1;
+    if (next > 0) {
+      this.attachCounts.set(sessionId, next);
+      return;
+    }
+    this.attachCounts.delete(sessionId);
+    this.removeSession(sessionId);
+  }
+
+  /**
+   * Remove a session from the panel immediately (its agent process is gone — incl. SIGKILL /
+   * terminal close, which fire no SessionEnd). If the agent is in fact still alive (e.g. only the MCP
+   * server crashed), its next telemetry event re-creates the row.
+   */
+  removeSession(sessionId: string): void {
+    if (this.sessions.delete(sessionId)) {
+      this.changeEmitter.fire();
+    }
+  }
+
+  /**
+   * A gated session's connection dropped (interrupt/crash) with no Stop hook to clear its state —
+   * return it to idle so the Agents panel doesn't stay stuck on "awaiting plan review"/"thinking".
+   * It self-corrects on the next telemetry event. No-op if the session is gone, ended, or idle.
+   */
+  markIdleOnDisconnect(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    if (session && session.state !== "ended" && session.state !== "idle") {
+      session.state = "idle";
+      session.lastEventAt = Date.now();
+      this.changeEmitter.fire();
+    }
+  }
+
   /** The most-recently-active non-ended session in a repo (best-effort review attribution). */
   mostRecentSessionForRepo(repoRoot: string): string | undefined {
     return this.sessionsForRepo(repoRoot)

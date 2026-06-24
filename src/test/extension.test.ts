@@ -12,7 +12,12 @@ import { renderReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
-import { isStaleActive, STALE_ACTIVE_MS_FOR_TEST } from "../agents/AgentSessionService.js";
+import {
+  AgentSessionService,
+  isStaleActive,
+  STALE_ACTIVE_MS_FOR_TEST,
+} from "../agents/AgentSessionService.js";
+import type { HookEventMessage } from "../protocol/types.js";
 
 suite("repoKey", () => {
   test("is deterministic and 16 hex chars", () => {
@@ -279,7 +284,7 @@ suite("GateCoordinator (foreground registry)", () => {
     assert.strictEqual(c.entriesForRepo("/other").length, 0);
   });
 
-  test("terminal panel hides for a foreground plan and restores when none remain", async () => {
+  test("bottom panel hides for any foreground gate (plan or review), restores only when none remain", async () => {
     const panel: string[] = [];
     const c = new GateCoordinator(
       async () => {
@@ -290,11 +295,36 @@ suite("GateCoordinator (foreground registry)", () => {
       },
     );
     const log: string[] = [];
-    await c.register(makeEntry("a", "plan", log));
+
+    await c.register(makeEntry("p", "plan", log)); // plan foreground → hide
     assert.deepStrictEqual(panel, ["hide"]);
-    await c.unregister("a");
+
+    await c.register(makeEntry("r", "review", log)); // pending behind the plan
+    await c.switchTo("r"); // plan → review: still a gate foreground, panel stays hidden (no flicker)
+    assert.deepStrictEqual(panel, ["hide"], "switching between gates must not re-toggle the panel");
+
+    await c.unregister("r"); // review resolved → promote the plan, still hidden
+    assert.deepStrictEqual(panel, ["hide"]);
+
+    await c.unregister("p"); // nothing left → restore
     assert.deepStrictEqual(panel, ["hide", "show"]);
     assert.strictEqual(c.isActive(), false);
+  });
+
+  test("a review-only foreground also hides the bottom panel", async () => {
+    const panel: string[] = [];
+    const c = new GateCoordinator(
+      async () => {
+        panel.push("hide");
+      },
+      async () => {
+        panel.push("show");
+      },
+    );
+    await c.register(makeEntry("r", "review", []));
+    assert.deepStrictEqual(panel, ["hide"]);
+    await c.unregister("r");
+    assert.deepStrictEqual(panel, ["hide", "show"]);
   });
 });
 
@@ -316,5 +346,133 @@ suite("isStaleActive (interrupt fallback)", () => {
     assert.strictEqual(isStaleActive("stopped", old, now), false);
     assert.strictEqual(isStaleActive("awaitingPlanApproval", old, now), false);
     assert.strictEqual(isStaleActive("awaitingPermission", old, now), false);
+  });
+});
+
+suite("AgentSessionService.markIdleOnDisconnect", () => {
+  const ev = (event: string, toolName?: string): HookEventMessage =>
+    ({
+      t: "hook.event",
+      v: 1,
+      ts: "t",
+      event,
+      sessionId: "s1",
+      cwd: "/repo",
+      repoRoot: "/repo",
+      toolName,
+    }) as HookEventMessage;
+
+  test("resets a gated session (awaiting plan / thinking) back to idle on disconnect", () => {
+    const svc = new AgentSessionService();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit"));
+      svc.ingest(ev("PreToolUse", "ExitPlanMode"));
+      assert.strictEqual(svc.activityForRepo("/repo").state, "awaitingPlanApproval");
+
+      svc.markIdleOnDisconnect("s1");
+      assert.strictEqual(svc.activityForRepo("/repo").state, "idle");
+
+      // A later event still updates the session (it wasn't removed).
+      svc.ingest(ev("UserPromptSubmit"));
+      assert.strictEqual(svc.activityForRepo("/repo").state, "thinking");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("is a no-op for an unknown session", () => {
+    const svc = new AgentSessionService();
+    try {
+      svc.markIdleOnDisconnect("missing"); // must not throw
+      assert.strictEqual(svc.activityForRepo("/repo").state, "idle");
+    } finally {
+      svc.dispose();
+    }
+  });
+});
+
+suite("AgentSessionService.removeSession (agent process died)", () => {
+  const ev = (event: string): HookEventMessage =>
+    ({
+      t: "hook.event",
+      v: 1,
+      ts: "t",
+      event,
+      sessionId: "s1",
+      cwd: "/repo",
+      repoRoot: "/repo",
+    }) as HookEventMessage;
+
+  test("removes the session entirely (liveness connection dropped)", () => {
+    const svc = new AgentSessionService();
+    try {
+      svc.ingest(ev("SessionStart"));
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 1);
+
+      svc.removeSession("s1");
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 0);
+
+      // A still-alive agent (MCP-only crash) is re-created by its next telemetry event.
+      svc.ingest(ev("UserPromptSubmit"));
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 1);
+      assert.strictEqual(svc.activityForRepo("/repo").state, "thinking");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("is a no-op for an unknown session", () => {
+    const svc = new AgentSessionService();
+    try {
+      svc.removeSession("missing"); // must not throw
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 0);
+    } finally {
+      svc.dispose();
+    }
+  });
+});
+
+suite("AgentSessionService liveness ref-counting", () => {
+  const ev = (event: string): HookEventMessage =>
+    ({
+      t: "hook.event",
+      v: 1,
+      ts: "t",
+      event,
+      sessionId: "s1",
+      cwd: "/repo",
+      repoRoot: "/repo",
+    }) as HookEventMessage;
+
+  test("removes only when the LAST liveness connection detaches", () => {
+    const svc = new AgentSessionService();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.attachSession("s1");
+      svc.attachSession("s1"); // e.g. MCP server + an emulator on the same session
+      svc.detachSession("s1");
+      assert.strictEqual(
+        svc.sessionsForRepo("/repo").length,
+        1,
+        "alive while one connection remains",
+      );
+      svc.detachSession("s1");
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 0, "removed when the last drops");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a single attach/detach removes the session", () => {
+    const svc = new AgentSessionService();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.attachSession("s1");
+      svc.detachSession("s1");
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 0);
+    } finally {
+      svc.dispose();
+    }
   });
 });
