@@ -30,9 +30,17 @@
 * When there is feedback queued remove or disable "approve" button, and before feedback is queued remove/disable the Send Feedback button instead
 * support code-reviewing from UI before the agent is in review mode, allow the agent to request a review before finishing, and keep the skill so that a review can be started manually
 
+# WIP 5
+
+* notifications are being sent for subagents, for instance in plan mode. We don't currently care about the status of sub agents at all
+* when prompted for a question I think the notification sound didn't fire, but need to check
+
+
 # Feature Ideas:
 
 * Replace the Plan view with a proper WYSIWYG Markdown experience similar to Plannotator
 * Show me / Explain to me skill, prints a whole lesson on how something works with a UI to navigate you though
 * a TODOs and task tracker which you can track and dispatch tasks or grouped of tasks with 
   * with GitHub PR import
+* when addressing feedback, the agent can send back answers in the same thread, and then the user can continue those threads
+* when receiving a new plan, if there was a previous plan from the same agent, put both states into a diff view
