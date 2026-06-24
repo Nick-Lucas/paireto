@@ -36,6 +36,10 @@
 * when prompted for a question I think the notification sound didn't fire, but need to check
 * Make the user in comments match the VS Code signed in user name, PC login name, or just "Developer" as the fallback
 
+# WIP 6
+
+* ?
+
 # Feature Ideas:
 
 * Replace the Plan view with a proper WYSIWYG Markdown experience similar to Plannotator
@@ -46,3 +50,4 @@
 * when receiving a new plan, if there was a previous plan from the same agent, put both states into a diff view
 * support the plan and review gates automatically forwarding to another agent to propose some comments
 * revisit the currently in-progress plan at any point in the future
+* plugins for Codex, Opencode, Pi
