@@ -33,17 +33,19 @@ are correlated by repository directory, not terminal.
 
 ### Agents
 - Live list of connected Claude sessions **for the current repo/worktree**, with status (idle /
-  thinking / running tool / awaiting plan / awaiting permission) and subagent count. Rows awaiting a
-  gate show which kind (plan/code review) and whether it's foreground (active) or pending.
-- Each row is labelled by its short session id, so agents in one repo are distinguishable; the repo,
-  start time, and current/last tool are in the tooltip.
+  thinking / running tool / awaiting plan / awaiting permission). Rows awaiting a gate show which kind
+  (plan/code review) and whether it's foreground (active) or pending. Subagent activity is not tracked
+  at all — only the top-level agent's status is shown.
+- Each row is labelled by the harness name + short session id (`Claude (a1b2c3d4)`), so agents in one
+  repo are distinguishable; the repo, start time, and current/last tool are in the tooltip.
 - Status bar item showing current repo · branch + agent activity.
 - Clicking an agent row switches its pending plan/review to the foreground (or focuses the terminal
   if it has none); a "Focus Agent" button focuses the terminal directly. Clicking also clears the
   row's "needs you" marker.
 - **Needs-you alert:** when an agent enters a state that wants the user — finished a turn (Stop),
-  awaiting permission, or awaiting plan approval — an orange bell appears on the agent row (and in the
-  status bar + repo switcher), and once per transition a sound plays (`tui-companion.notify.type` =
+  awaiting permission, awaiting plan approval, or a `Notification` (Claude asking a question / waiting
+  for input) — an orange bell appears on the agent row (and in the status bar + repo switcher), and
+  once per transition a sound plays (`tui-companion.notify.type` =
   `sound` (default, sound from `tui-companion.notify.sound`) or `disabled`). Only this window's agents
   alert.
 - Stuck-state safety net: an agent that goes silent after an un-hookable interrupt is auto-cleared;
@@ -67,7 +69,8 @@ resolve with the same two actions.
   Feedback covers it. Only the relevant one shows: **Approve** until any feedback is queued, then
   **Send Feedback**.
 - Line comments tagged Question / Comment / Problem; **comments are editable and deletable** after
-  creation (edit/save/delete on the comment).
+  creation (edit/save/delete on the comment). The author is the VS Code signed-in account, else the OS
+  login name, else "Developer".
 - **Switch between agents:** the Agents section is scoped to the current repo/worktree and shows
   which agents are awaiting which gate (plan vs review) and which is foreground vs pending. Clicking
   an agent brings its gate to the foreground (backgrounding the current one without resolving it), so

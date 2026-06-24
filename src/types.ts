@@ -29,7 +29,6 @@ export interface AgentSession {
   sessionId: string;
   repoRoot: string;
   state: AgentState;
-  subagentCount: number;
   lastTool?: string;
   startedAt: number;
   lastEventAt: number;

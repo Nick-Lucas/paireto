@@ -57,20 +57,19 @@ function activityGlyph(activity: RepoActivity): string {
     return "";
   }
   const agents = activity.sessionCount > 1 ? ` ${activity.sessionCount} agents` : "";
-  const subs = activity.subagentCount > 0 ? ` (${activity.subagentCount} sub)` : "";
   // Waiting-for-you trumps the underlying state — make it unmissable.
   if (activity.needsAttention) {
-    return ` $(bell-dot) needs you${subs}`;
+    return ` $(bell-dot) needs you`;
   }
   switch (activity.state) {
     case "awaitingPlanApproval":
-      return ` $(comment-discussion) plan review${subs}`;
+      return ` $(comment-discussion) plan review`;
     case "awaitingPermission":
-      return ` $(warning) waiting${subs}`;
+      return ` $(warning) waiting`;
     case "toolRunning":
-      return ` $(tools)${agents}${subs}`;
+      return ` $(tools)${agents}`;
     case "thinking":
-      return ` $(loading~spin)${agents}${subs}`;
+      return ` $(loading~spin)${agents}`;
     default:
       return agents ? ` $(circle-outline)${agents}` : "";
   }
@@ -89,11 +88,7 @@ function buildTooltip(root: string, branch: string, activity: RepoActivity): vsc
   md.appendMarkdown(`**Path:** \`${root}\`\n\n`);
   md.appendMarkdown(`**Branch:** ${branch}\n\n`);
   if (activity.sessionCount > 0) {
-    md.appendMarkdown(
-      `**Claude:** ${activity.state} · ${activity.sessionCount} session(s)` +
-        (activity.subagentCount > 0 ? ` · ${activity.subagentCount} subagent(s)` : "") +
-        "\n\n",
-    );
+    md.appendMarkdown(`**Claude:** ${activity.state} · ${activity.sessionCount} session(s)\n\n`);
   } else {
     md.appendMarkdown(`**Claude:** idle\n\n`);
   }

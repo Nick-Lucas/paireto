@@ -15,18 +15,17 @@ export function summarizeActivity(
     return "idle";
   }
   const agents = activity.sessionCount > 1 ? ` · ${activity.sessionCount} agents` : "";
-  const subs = activity.subagentCount > 0 ? ` · ${activity.subagentCount} sub` : "";
   switch (activity.state) {
     case "awaitingPlanApproval":
-      return `$(comment-discussion) plan review${subs}`;
+      return `$(comment-discussion) plan review`;
     case "awaitingPermission":
-      return `$(warning) awaiting permission${subs}`;
+      return `$(warning) awaiting permission`;
     case "stopped":
-      return `$(primitive-square) finished${subs}`;
+      return `$(primitive-square) finished`;
     case "toolRunning":
-      return `$(tools) running tool${agents}${subs}`;
+      return `$(tools) running tool${agents}`;
     case "thinking":
-      return `$(loading~spin) thinking${agents}${subs}`;
+      return `$(loading~spin) thinking${agents}`;
     default:
       return `$(circle-outline) idle${agents}`;
   }

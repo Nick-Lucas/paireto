@@ -1,6 +1,6 @@
-// Tracks Claude sessions keyed by session_id, driven purely by hook telemetry from the bridge.
-// Exposes per-repo aggregate activity for the status bar. The state machine follows the real
-// hook events; subagent counts move independently of the headline state.
+// Tracks the top-level Claude session keyed by session_id, driven purely by hook telemetry from the
+// bridge. Exposes per-repo aggregate activity for the status bar. The state machine follows the real
+// hook events; subagent activity is ignored entirely (we only observe the top-level agent).
 
 import * as vscode from "vscode";
 
@@ -47,7 +47,6 @@ export const STALE_ACTIVE_MS_FOR_TEST = STALE_ACTIVE_MS;
 
 export interface RepoActivity {
   sessionCount: number;
-  subagentCount: number;
   state: AgentState;
   /** True if any session in the repo is waiting for the user (drives the orange "needs you" cue). */
   needsAttention: boolean;
@@ -88,6 +87,12 @@ export class AgentSessionService implements vscode.Disposable {
   }
 
   ingest(msg: HookEventMessage): void {
+    // We only observe the top-level agent session. A subagent's own events (they carry an agentId)
+    // are ignored outright — they must never create, touch, change the state of, or ping for the
+    // parent row.
+    if (msg.agentId) {
+      return;
+    }
     const now = Date.now();
     let session = this.sessions.get(msg.sessionId);
     if (!session) {
@@ -95,7 +100,6 @@ export class AgentSessionService implements vscode.Disposable {
         sessionId: msg.sessionId,
         repoRoot: msg.repoRoot,
         state: "idle",
-        subagentCount: 0,
         startedAt: now,
         lastEventAt: now,
         needsAttention: false,
@@ -107,9 +111,6 @@ export class AgentSessionService implements vscode.Disposable {
     session.repoRoot = msg.repoRoot || session.repoRoot;
     const prevState = session.state;
 
-    const isSubagentToolEvent =
-      !!msg.agentId && (msg.event === "PreToolUse" || msg.event === "PostToolUse");
-
     switch (msg.event) {
       case "SessionStart":
         session.state = "idle";
@@ -119,9 +120,6 @@ export class AgentSessionService implements vscode.Disposable {
         session.changedThisTurn = false; // a new turn begins — reset the "touched files" flag
         break;
       case "PreToolUse":
-        if (isSubagentToolEvent) {
-          break;
-        }
         if (msg.toolName === "ExitPlanMode") {
           session.state = "awaitingPlanApproval";
         } else {
@@ -130,9 +128,6 @@ export class AgentSessionService implements vscode.Disposable {
         }
         break;
       case "PostToolUse":
-        if (isSubagentToolEvent) {
-          break;
-        }
         if (msg.toolName && EDIT_TOOLS.has(msg.toolName)) {
           session.changedThisTurn = true;
         }
@@ -143,12 +138,6 @@ export class AgentSessionService implements vscode.Disposable {
         break;
       case "Stop":
         session.state = "stopped";
-        break;
-      case "SubagentStart":
-        session.subagentCount += 1;
-        break;
-      case "SubagentStop":
-        session.subagentCount = Math.max(0, session.subagentCount - 1);
         break;
       case "SessionEnd":
         session.state = "ended";
@@ -164,17 +153,24 @@ export class AgentSessionService implements vscode.Disposable {
         break;
     }
 
-    // "Finishes" = entering a needs-you state from one that isn't. Fire once on the edge (so
-    // stopped→awaitingPermission doesn't re-notify); re-arm when the agent goes busy/idle again — so
-    // a new turn (UserPromptSubmit → thinking) clears the marker. But if the user is already looking
-    // at this window, don't mark or ping at all (the bell/sound would just be noise).
+    // Two things "finish" a turn (= want the user): entering a needs-you state (stopped / awaiting
+    // plan / awaiting permission), and a `Notification` — Claude's own "I'm waiting for your input"
+    // signal, which fires for question prompts that never reach a needs-you state (the agent just
+    // parks in a tool call). Fire once on the edge: a state edge is a non-needs→needs transition; a
+    // Notification edge is one that arrives while we're not already flagged (so the notification that
+    // accompanies a permission prompt doesn't double-ping). Re-arm when the agent goes busy/idle
+    // again so a new turn clears the marker. If the user is already looking at this window, don't
+    // mark or ping at all (the bell/sound would just be noise).
     const nowNeeds = NEEDS_ATTENTION.has(session.state);
-    if (nowNeeds && !NEEDS_ATTENTION.has(prevState)) {
+    const stateEdge = nowNeeds && !NEEDS_ATTENTION.has(prevState);
+    const notificationEdge = msg.event === "Notification" && !session.needsAttention;
+    if (stateEdge || notificationEdge) {
       if (!this.isWindowFocused()) {
         session.needsAttention = true;
         this.finishEmitter.fire(session);
       }
-    } else if (!nowNeeds) {
+    } else if (!nowNeeds && msg.event !== "Notification") {
+      // A Notification doesn't change the headline state, so don't let it clear a marker we just set.
       session.needsAttention = false;
     }
 
@@ -268,10 +264,9 @@ export class AgentSessionService implements vscode.Disposable {
   /** Aggregate the busiest state for a repo (for the status-bar glyph). */
   activityForRepo(repoRoot: string): RepoActivity {
     const sessions = this.sessionsForRepo(repoRoot).filter((s) => s.state !== "ended");
-    const subagentCount = sessions.reduce((n, s) => n + s.subagentCount, 0);
     const state = sessions.map((s) => s.state).sort(byPriority)[0] ?? "idle";
     const needsAttention = sessions.some((s) => s.needsAttention);
-    return { sessionCount: sessions.length, subagentCount, state, needsAttention };
+    return { sessionCount: sessions.length, state, needsAttention };
   }
 
   dispose(): void {

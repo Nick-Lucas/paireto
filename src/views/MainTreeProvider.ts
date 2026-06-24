@@ -95,6 +95,11 @@ export function shortSessionId(sessionId: string): string {
   return sessionId.slice(0, 8);
 }
 
+/** The Agents-row label: the harness name + short session id, e.g. `Claude (a1b2c3d4)`. */
+export function agentLabel(sessionId: string): string {
+  return `Claude (${shortSessionId(sessionId)})`;
+}
+
 export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
@@ -430,13 +435,9 @@ function agentItem(
   s: AgentSession,
   gate?: { kind: "plan" | "review"; foreground: boolean },
 ): vscode.TreeItem {
-  // Label by short session id — the repo basename was identical for every agent in a repo (and the
-  // Agents section is already repo-scoped, so the repo name belongs in the tooltip, not the label).
-  const item = new vscode.TreeItem(
-    shortSessionId(s.sessionId),
-    vscode.TreeItemCollapsibleState.None,
-  );
-  const subs = s.subagentCount > 0 ? ` · ${s.subagentCount} sub` : "";
+  // Label by harness name + short session id — the repo basename was identical for every agent in a
+  // repo (and the Agents section is already repo-scoped, so the repo name belongs in the tooltip).
+  const item = new vscode.TreeItem(agentLabel(s.sessionId), vscode.TreeItemCollapsibleState.None);
   const started = new Date(s.startedAt).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -446,7 +447,7 @@ function agentItem(
   if (gate) {
     const role = gate.kind === "plan" ? "plan review" : "code review";
     const slot = gate.foreground ? "active" : "pending";
-    item.description = `awaiting ${role} · ${slot}${subs}`;
+    item.description = `awaiting ${role} · ${slot}`;
     item.iconPath = new vscode.ThemeIcon(
       gate.foreground ? "circle-large-filled" : "circle-large-outline",
     );
@@ -454,7 +455,7 @@ function agentItem(
       gate.foreground ? "keep viewing" : "switch to it"
     }`;
   } else {
-    item.description = `${STATE_LABEL[s.state]}${subs}`;
+    item.description = STATE_LABEL[s.state];
     item.iconPath = new vscode.ThemeIcon(STATE_ICON[s.state]);
     item.tooltip = `${ctx}\n${STATE_LABEL[s.state]}`;
   }

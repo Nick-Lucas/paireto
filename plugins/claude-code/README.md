@@ -5,7 +5,7 @@ zero-dependency Node hook scripts that talk to the extension over a per-repo Uni
 
 It does two things:
 
-1. **Lifecycle telemetry** (`on-event.js`) — forwards session/tool/subagent/worktree events so the
+1. **Lifecycle telemetry** (`on-event.js`) — forwards session/tool/worktree events so the
    extension can show repo + agent activity in the status bar. Fire-and-forget; never blocks the agent.
 2. **Plan-approval gate** (`on-plan-gate.js`) — on `PermissionRequest`/`ExitPlanMode` it sends the plan
    markdown to VS Code and blocks until you Approve or Send Feedback in the editor. Feedback comes back

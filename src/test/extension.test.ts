@@ -21,7 +21,8 @@ import {
   STALE_ACTIVE_MS_FOR_TEST,
 } from "../agents/AgentSessionService.js";
 import type { HookEventMessage } from "../protocol/types.js";
-import { shortSessionId } from "../views/MainTreeProvider.js";
+import { agentLabel, shortSessionId } from "../views/MainTreeProvider.js";
+import { pickAuthorName } from "../comments/author.js";
 import { isFileEditable, reconcileDiffTarget, stopGateAction } from "../review/ReviewController.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
@@ -583,6 +584,78 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     }
   });
 
+  const subEv = (event: string, toolName?: string): HookEventMessage =>
+    ({
+      t: "hook.event",
+      v: 1,
+      ts: "t",
+      event,
+      sessionId: "s1",
+      agentId: "sub-1",
+      cwd: "/repo",
+      repoRoot: "/repo",
+      toolName,
+    }) as HookEventMessage;
+
+  test("subagent events never change headline state or notify", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit")); // thinking
+      // A subagent (e.g. spawned during plan mode) hits a permission prompt / stop / question.
+      svc.ingest(subEv("PermissionRequest"));
+      svc.ingest(subEv("Stop"));
+      svc.ingest(subEv("PreToolUse", "ExitPlanMode"));
+      svc.ingest(subEv("Notification"));
+      assert.deepStrictEqual(fired, [], "no notifications for subagent activity");
+      assert.strictEqual(session(svc).needsAttention, false);
+      assert.strictEqual(session(svc).state, "thinking", "headline state untouched by subagents");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a subagent event never even creates a parent row", () => {
+    const svc = mkSvc();
+    try {
+      svc.ingest(subEv("PreToolUse", "Read")); // no top-level session has been seen yet
+      assert.deepStrictEqual(svc.allSessions(), [], "subagent events are ignored outright");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a Notification (e.g. a question prompt) fires the needs-you ping", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit")); // thinking — not itself a needs-you state
+      svc.ingest(ev("Notification")); // Claude is waiting for the user's input
+      assert.strictEqual(fired.length, 1, "the question prompt pings once");
+      assert.strictEqual(session(svc).needsAttention, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a Notification does not double-fire when already awaiting the user", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("PermissionRequest")); // awaitingPermission — fires once
+      svc.ingest(ev("Notification")); // the matching notification — must not re-ping
+      assert.strictEqual(fired.length, 1);
+    } finally {
+      svc.dispose();
+    }
+  });
+
   test("clearAttention drops the marker without a state change", () => {
     const svc = mkSvc();
     try {
@@ -614,17 +687,13 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
 
 suite("summarizeActivity", () => {
   test("needsAttention wins over state", () => {
-    const s = summarizeActivity(
-      { sessionCount: 1, subagentCount: 0, state: "thinking", needsAttention: true },
-      true,
-    );
+    const s = summarizeActivity({ sessionCount: 1, state: "thinking", needsAttention: true }, true);
     assert.match(s, /needs you/);
   });
   test("no sessions → idle", () => {
     assert.strictEqual(
       summarizeActivity({
         sessionCount: 0,
-        subagentCount: 0,
         state: "idle",
         needsAttention: false,
       }),
@@ -634,13 +703,11 @@ suite("summarizeActivity", () => {
   test("renders the busy state with a codicon and agent count", () => {
     const s = summarizeActivity({
       sessionCount: 2,
-      subagentCount: 1,
       state: "thinking",
       needsAttention: false,
     });
     assert.match(s, /thinking/);
     assert.match(s, /2 agents/);
-    assert.match(s, /1 sub/);
   });
 });
 
@@ -691,7 +758,7 @@ suite("repoSnapshots (cross-repo switcher activity)", () => {
       repoKey: repoKey(root),
       pid: process.pid,
       updatedAt: "t",
-      activity: { sessionCount: 1, subagentCount: 0, state: "thinking" },
+      activity: { sessionCount: 1, state: "thinking" },
       needsAttention: true,
     });
 
@@ -926,5 +993,29 @@ suite("shortSessionId (agent label)", () => {
 
   test("returns short ids unchanged", () => {
     assert.strictEqual(shortSessionId("abc"), "abc");
+  });
+});
+
+suite("agentLabel (harness name + short id)", () => {
+  test("prefixes the harness name", () => {
+    assert.strictEqual(agentLabel("a1b2c3d4-e5f6-7890"), "Claude (a1b2c3d4)");
+  });
+});
+
+suite("pickAuthorName (comment author fallback chain)", () => {
+  test("prefers the VS Code signed-in account label", () => {
+    assert.strictEqual(pickAuthorName("Ada Lovelace", "ada"), "Ada Lovelace");
+  });
+
+  test("falls back to the OS username when not signed in", () => {
+    assert.strictEqual(pickAuthorName(undefined, "ada"), "ada");
+  });
+
+  test("falls back to Developer when nothing is available", () => {
+    assert.strictEqual(pickAuthorName(undefined, undefined), "Developer");
+  });
+
+  test("ignores blank values", () => {
+    assert.strictEqual(pickAuthorName("   ", "  "), "Developer");
   });
 });

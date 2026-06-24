@@ -3,7 +3,7 @@
 // (stage/unstage/discard), hosts inline comments, and ships feedback to the waiting agent.
 
 import * as crypto from "node:crypto";
-import { isAbsolute, join, relative } from "node:path";
+import { basename, isAbsolute, join, relative } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -716,10 +716,10 @@ export class ReviewController implements vscode.Disposable {
         );
 
     // Editable diffs always compare against the live working tree and the base may demote to the
-    // index mid-edit, so a fixed group label would lie — title them neutrally.
-    const title = editable
-      ? `${file.path} (Working Tree)`
-      : `${file.path} (${GROUP_LABEL[file.group]})`;
+    // index mid-edit, so a fixed group label would lie — title them neutrally. Use just the filename
+    // (not the whole relative path) so the tab label stays short.
+    const name = basename(file.path);
+    const title = editable ? `${name} (Working Tree)` : `${name} (${GROUP_LABEL[file.group]})`;
     if (editable) {
       // Open the real working-tree file as a normal document first so the TypeScript server attaches
       // it to the workspace's configured project. Opening it only as a diff's modified side can leave

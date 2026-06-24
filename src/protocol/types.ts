@@ -13,8 +13,6 @@ export type HookEventName =
   | "PreToolUse"
   | "PostToolUse"
   | "Stop"
-  | "SubagentStart"
-  | "SubagentStop"
   | "Notification"
   | "PermissionRequest"
   | "CwdChanged"

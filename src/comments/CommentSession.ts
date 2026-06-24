@@ -7,13 +7,14 @@
 import * as vscode from "vscode";
 
 import { Commands } from "../config.js";
+import { commentAuthorName } from "./author.js";
 import { wholeDocumentRange } from "./commentingRanges.js";
 import { kindLabel, type CommentKind } from "./kinds.js";
 
 /** A reviewer comment shared across both flows. The owner attaches onSaved/onDeleted to sync state. */
 export class GateComment implements vscode.Comment {
   mode = vscode.CommentMode.Preview;
-  author: vscode.CommentAuthorInformation = { name: "Reviewer" };
+  author: vscode.CommentAuthorInformation = { name: commentAuthorName() };
   /** "preview" | "editing" — drives the edit/save menu `when` clauses (see package.json). */
   contextValue = "preview";
   label: string;

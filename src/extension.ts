@@ -12,6 +12,7 @@ import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
 import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
 import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
 import { registerCommentEditingCommands } from "./comments/CommentSession.js";
+import { resolveCommentAuthor } from "./comments/author.js";
 import { Commands, ContextKeys, Schemes } from "./config.js";
 import { GateCoordinator } from "./gate/GateCoordinator.js";
 import { DiffService } from "./git/DiffService.js";
@@ -30,6 +31,9 @@ import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  // Warm the comment-author cache (signed-in account → OS user → "Developer"); fire-and-forget.
+  void resolveCommentAuthor();
+
   // 1. Mirror fail-mode config for the (settings-blind) hook scripts.
   const config = readConfig();
   try {

@@ -5,9 +5,16 @@
   `removeSession` (ref-counted so layered connections don't drop the row early). A gate interrupt
   (Esc) drops a different connection → `markIdleOnDisconnect`.
 
-- **"Agent finished" = entering a needs-you state** (stopped / awaiting permission / awaiting plan),
-  detected on the edge in `AgentSessionService.ingest` → `onDidFinish`. Suppressed when this window
-  is focused (no point nagging); cleared when a new turn starts. Drives `needsAttention`.
+- **"Agent finished" = entering a needs-you state** (stopped / awaiting permission / awaiting plan)
+  **or a `Notification`** (Claude's "waiting for input" — covers question prompts that never reach a
+  needs-you state), detected on the edge in `AgentSessionService.ingest` → `onDidFinish`. Suppressed
+  when this window is focused (no point nagging); cleared when a new turn starts. Drives
+  `needsAttention`.
+
+- **Subagent status is never tracked — global bailout at the top of `ingest`.** Any hook event
+  carrying an `agentId` returns immediately (never creates/touches/states/pings the parent row). There
+  is no subagent counter: the `Subagent*` hooks are unsubscribed and surfaces show only the top-level
+  agent's general state.
 
 - **The needs-you cue is visual + optional sound, never an OS push notification.** osascript banners
   are silently dropped and `alerter`/AXRaise needed extra installs + Accessibility — not worth it. So
@@ -63,8 +70,12 @@
 - **Folder rows reuse the file stage/unstage/discard commands** — a folder's `contextValue` is
   `folder:<group>` and handlers flatten it to descendant files. Committed rows are read-only.
 
-- **Agent rows are labelled by short session id** (`sessionId.slice(0,8)`), not the repo basename —
-  the basename was identical for every agent in a repo; repo/start-time/tool live in the tooltip.
+- **Agent rows are labelled `Claude (<short id>)`** (harness name + `sessionId.slice(0,8)`), not the
+  repo basename — the basename was identical for every agent in a repo; repo/start-time/tool live in
+  the tooltip.
+
+- **Comment author = signed-in account → OS user → "Developer"** (`comments/author.ts`, cached; the VS
+  Code `authentication.getSession` lookup is async+silent so it's resolved once at activation).
 
 - **Approving a plan defaults the agent into `auto` mode** via the PermissionRequest decision's
   `updatedPermissions: [{type:"setMode", mode}]` (Claude otherwise restores the pre-plan mode).
