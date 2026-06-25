@@ -7,6 +7,7 @@
 !media/**
 
 # Marketplace metadata
+!README.md
 !LICENSE.md
 !CHANGELOG.md
 

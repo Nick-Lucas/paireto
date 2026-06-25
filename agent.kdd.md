@@ -5,7 +5,7 @@
   fails anyway under pnpm.
 
 - **`.vscodeignore` is an allowlist (`**` then `!`-include).** Ships only `dist/extension.js`,
-  `media/**`, `package.json`, `LICENSE`/`CHANGELOG`, and the whole `plugins/**` tree. Re-includes are
+  `media/**`, `package.json`, `README`/`LICENSE`/`CHANGELOG`, and the whole `plugins/**` tree. Re-includes are
   case-sensitive (`CHANGELOG.md`, not `changelog.md`) and name `dist/extension.js` exactly so stray
   dist artifacts never ship. vsce applies `!` negations LAST as a global override — you can't
   re-exclude a subset of a negated tree, so `plugins/` must contain only shippable files.
@@ -109,6 +109,11 @@
 - **Editability is purely structural and session-independent** (`isFileEditable`): editable iff the
   file isn't deleted and has no change at a lower git layer. A review never forces a diff read-only;
   reconcile/stage-unstage leaves a file alone once it has a comment (`hasCommentOnPath`).
+
+- **The activity-bar badge is the changed-file count only.** VS Code's `ViewBadge` is numeric and
+  theme-coloured — no per-view colour or icon API — so it can't carry a distinct "bell". The badge is
+  just the count (like the Git tab; partially-staged files counted per-section, not deduped); agent
+  needs-you cues live on the colourable surfaces (status bar, agent rows, switcher).
 
 - **A blocking `Stop` hook delivers deferred-review feedback at turn-end** (`on-review-gate.js` +
   `awaitStopOutcome`). It only enters review mode when the turn touched files (edit-class PostToolUse /

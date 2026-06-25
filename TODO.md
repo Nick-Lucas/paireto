@@ -1,3 +1,5 @@
+Do not ever edit this, this is for humans only to edit!
+
 # WIP 1
 
 * When the user causes ExitPlan to complete by approving or otherwise in the agent itself, close plan mode in the editor. Detect any closed connection for any reason and reset the extension state.
@@ -39,6 +41,8 @@
 # WIP 6
 
 * Notification ticker on extension, ideally a blue count for changes and a yellow Bell for agent notifications
+* Update readme with docs
+* ensure that 
 
 # Feature Ideas:
 

@@ -21,7 +21,12 @@ import {
   STALE_ACTIVE_MS_FOR_TEST,
 } from "../agents/AgentSessionService.js";
 import type { HookEventMessage } from "../protocol/types.js";
-import { agentLabel, shortSessionId } from "../views/MainTreeProvider.js";
+import {
+  agentLabel,
+  changedFileCount,
+  computeViewBadge,
+  shortSessionId,
+} from "../views/MainTreeProvider.js";
 import { pickAuthorName } from "../comments/author.js";
 import { isFileEditable, reconcileDiffTarget, stopGateAction } from "../review/ReviewController.js";
 import type { ChangesModel } from "../git/DiffService.js";
@@ -999,6 +1004,35 @@ suite("shortSessionId (agent label)", () => {
 suite("agentLabel (harness name + short id)", () => {
   test("prefixes the harness name", () => {
     assert.strictEqual(agentLabel("a1b2c3d4-e5f6-7890"), "Claude (a1b2c3d4)");
+  });
+});
+
+suite("computeViewBadge (activity-bar ticker)", () => {
+  test("shows the changed-file count", () => {
+    const badge = computeViewBadge(3);
+    assert.strictEqual(badge?.value, 3);
+    assert.strictEqual(badge!.tooltip, "3 changed files");
+  });
+
+  test("singular file wording", () => {
+    assert.strictEqual(computeViewBadge(1)?.tooltip, "1 changed file");
+  });
+
+  test("no badge when there are no changes", () => {
+    assert.strictEqual(computeViewBadge(0), undefined);
+  });
+});
+
+suite("changedFileCount (matches the Git panel)", () => {
+  test("counts a partially-staged file in both sections (no dedup)", () => {
+    // src/a.ts is staged AND has further unstaged edits — the Git panel shows it in both groups.
+    const staged = [{ path: "src/a.ts" }, { path: "src/b.ts" }];
+    const unstaged = [{ path: "src/a.ts" }];
+    assert.strictEqual(changedFileCount(staged, unstaged), 3);
+  });
+
+  test("sums the two sections", () => {
+    assert.strictEqual(changedFileCount([{ path: "x" }], [{ path: "y" }, { path: "z" }]), 3);
   });
 });
 

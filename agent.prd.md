@@ -39,6 +39,9 @@ are correlated by repository directory, not terminal.
 - Each row is labelled by the harness name + short session id (`Claude (a1b2c3d4)`), so agents in one
   repo are distinguishable; the repo, start time, and current/last tool are in the tooltip.
 - Status bar item showing current repo · branch + agent activity.
+- Activity-bar **badge** ("ticker") on the Paireto icon: a count of changed files (like the Git tab).
+  Agent "needs you" cues are not in the badge — VS Code's badge is numeric/theme-coloured only — they
+  stay on the colourable surfaces (status bar, agent rows, switcher).
 - Clicking an agent row switches its pending plan/review to the foreground (or focuses the terminal
   if it has none); a "Focus Agent" button focuses the terminal directly. Clicking also clears the
   row's "needs you" marker.

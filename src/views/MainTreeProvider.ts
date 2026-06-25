@@ -100,6 +100,29 @@ export function agentLabel(sessionId: string): string {
   return `Claude (${shortSessionId(sessionId)})`;
 }
 
+/**
+ * The badge's changed-file count. A partially-staged file appears in BOTH staged and unstaged, and
+ * the native Git panel counts it once per section — so we sum the section lengths rather than dedup
+ * by path, matching that behaviour.
+ */
+export function changedFileCount(staged: { length: number }, unstaged: { length: number }): number {
+  return staged.length + unstaged.length;
+}
+
+/**
+ * The activity-bar view badge ("ticker") — the changed-file count, like the Git tab. VS Code's
+ * ViewBadge is numeric only (no colour/icon API), so this is purely the count; agent "needs you" cues
+ * live on the surfaces that can actually carry colour (status bar, agent rows, switcher). Returns
+ * undefined to clear the badge when there's nothing to count.
+ */
+export function computeViewBadge(changedFiles: number): vscode.ViewBadge | undefined {
+  if (changedFiles > 0) {
+    const s = changedFiles === 1 ? "" : "s";
+    return { value: changedFiles, tooltip: `${changedFiles} changed file${s}` };
+  }
+  return undefined;
+}
+
 export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
@@ -116,11 +139,15 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     private readonly coordinator: GateCoordinator,
     private readonly extensionUri: vscode.Uri,
   ) {
-    const fire = (): void => this.emitter.fire();
+    const fire = (): void => {
+      this.emitter.fire();
+      this.updateBadge();
+    };
     this.subs.push(
       this.agents.onDidChange(fire),
       this.review.onDidChangeState(() => {
         this.emitter.fire();
+        this.updateBadge();
         this.maybeRevealPending();
       }),
       this.plan.onDidChange(fire),
@@ -151,7 +178,17 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   register(): vscode.TreeView<Node> {
     this.view = vscode.window.createTreeView(Views.main, { treeDataProvider: this });
     this.subs.push(this.view);
+    this.updateBadge();
     return this.view;
+  }
+
+  /** Refresh the activity-bar badge: the changed-file count, like the Git tab. */
+  private updateBadge(): void {
+    if (!this.view) {
+      return;
+    }
+    const { staged, unstaged } = this.review.getState().changes;
+    this.view.badge = computeViewBadge(changedFileCount(staged, unstaged));
   }
 
   // ── Selection sync: keep the highlighted row pointed at the diff the editor is showing ──
