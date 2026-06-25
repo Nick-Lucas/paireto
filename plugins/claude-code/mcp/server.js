@@ -1,23 +1,23 @@
 #!/usr/bin/env node
 "use strict";
 
-// Minimal zero-dependency MCP stdio server bundled with the tui-companion plugin.
+// Minimal zero-dependency MCP stdio server bundled with the paireto plugin.
 //
-// Exposes one tool, `tui_review`: it opens a blocking code-review session in the connected VS Code
+// Exposes one tool, `paireto_review`: it opens a blocking code-review session in the connected VS Code
 // window (over the same per-repo Unix socket the hooks use) and BLOCKS until the user clicks Send
 // Feedback or Cancel, then returns the gathered review comments as the tool result. This is what
-// lets `/tui-review` hand control to VS Code and resume the agent with real feedback.
+// lets `/paireto-review` hand control to VS Code and resume the agent with real feedback.
 //
 // MCP stdio transport = newline-delimited JSON-RPC 2.0 (no embedded newlines in a message).
 
 const crypto = require("node:crypto");
 const bridge = require("../scripts/bridge.js");
 
-const SERVER_INFO = { name: "tui-companion", version: "0.2.0" };
+const SERVER_INFO = { name: "paireto", version: "0.2.0" };
 const CONNECT_TIMEOUT_MS = 3000;
 
 const TOOL = {
-  name: "tui_review",
+  name: "paireto_review",
   description:
     "Open an interactive code review in the connected VS Code window and wait for the user to " +
     "submit feedback. Blocks until the user clicks Send Feedback or Cancel, then returns the " +
@@ -54,8 +54,8 @@ async function runReview() {
   const target = bridge.resolveTarget(cwd);
   if (!target) {
     return textResult(
-      "No VS Code TUI Companion is listening for this repository. Open the project in VS Code " +
-        "(with the TUI Companion extension active) and try again.",
+      "No VS Code Paireto is listening for this repository. Open the project in VS Code " +
+        "(with the Paireto extension active) and try again.",
       true
     );
   }
@@ -65,7 +65,7 @@ async function runReview() {
     const key = bridge.repoKey(target.repoRoot);
     conn = await bridge.connectAndHandshake(target.socketPath, key, CONNECT_TIMEOUT_MS);
   } catch {
-    return textResult("Could not connect to the VS Code TUI Companion bridge.", true);
+    return textResult("Could not connect to the VS Code Paireto bridge.", true);
   }
 
   const id = crypto.randomUUID();

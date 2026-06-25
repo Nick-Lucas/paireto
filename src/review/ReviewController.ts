@@ -85,7 +85,7 @@ export class ReviewController implements vscode.Disposable {
   private reviewBusy = false;
   private readonly reviewWaiters: Array<() => void> = [];
   /** True when the active review is "deferred" (user/Stop-gate driven) rather than a blocking
-   *  /tui-review tool call — its outcome is delivered to the Stop gate / queue, not a socket reply. */
+   *  /paireto-review tool call — its outcome is delivered to the Stop gate / queue, not a socket reply. */
   private activeIsDeferred = false;
   /** A turn-end Stop gate currently waiting for the user to resolve the deferred review. */
   private stopWaiter?: { resolve: (outcome: StopGateResult) => void };
@@ -103,9 +103,9 @@ export class ReviewController implements vscode.Disposable {
   private readonly openDiffs = new Map<string, { group: FileGroup; path: string }>();
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private refreshSeq = 0;
-  private readonly log = vscode.window.createOutputChannel("TUI Companion");
+  private readonly log = vscode.window.createOutputChannel("Paireto");
   private debugEnabled = vscode.workspace
-    .getConfiguration("tui-companion")
+    .getConfiguration("paireto")
     .get<boolean>("debug", false);
 
   constructor(
@@ -121,7 +121,7 @@ export class ReviewController implements vscode.Disposable {
     // diff AND on the editable working-tree (file:) side of an editable one, so it works regardless
     // of whether the file can be edited. The first comment auto-starts a "deferred" review.
     this.commentSession = new CommentSession(
-      "tui.review",
+      "paireto.review",
       "Code Review",
       Schemes.review,
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
@@ -158,9 +158,9 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewDeleteComment, (c: ReviewComment) => this.deleteComment(c)),
       this.log,
       vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration("tui-companion.debug")) {
+        if (e.affectsConfiguration("paireto.debug")) {
           this.debugEnabled = vscode.workspace
-            .getConfiguration("tui-companion")
+            .getConfiguration("paireto")
             .get<boolean>("debug", false);
         }
       }),
@@ -183,7 +183,7 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  /** Begin a blocking review session (invoked by the MCP tui_review tool via the bridge). At most
+  /** Begin a blocking review session (invoked by the MCP paireto_review tool via the bridge). At most
    *  one review is pending at a time; a second waits until the first resolves. */
   async startSession(
     requestId: string,
@@ -210,7 +210,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /** Register a review gate (foregrounded if nothing else is) and mark it active. Shared by the
-   *  blocking /tui-review path and the deferred (user/Stop-gate) path. Caller owns the review slot. */
+   *  blocking /paireto-review path and the deferred (user/Stop-gate) path. Caller owns the review slot. */
   private async registerReviewGate(
     requestId: string,
     sessionId: string | undefined,
@@ -291,7 +291,7 @@ export class ReviewController implements vscode.Disposable {
       this.pendingFeedback.delete(key);
       return { block: true, reason: queued };
     }
-    // Allow immediately: nothing changed, busy, or a blocking /tui-review collects its own result.
+    // Allow immediately: nothing changed, busy, or a blocking /paireto-review collects its own result.
     if (action === "allow") {
       return { block: false };
     }
@@ -619,7 +619,7 @@ export class ReviewController implements vscode.Disposable {
     if (join(this.repoRoot, open.path) !== uri.fsPath) {
       return; // not the file shown in the tracked diff
     }
-    // Only act when the edit is in OUR active higher-level diff (base = tui-review, right = the file),
+    // Only act when the edit is in OUR active higher-level diff (base = paireto-review, right = the file),
     // never a plain editor on the same path.
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
     const isOurDiff =
@@ -702,7 +702,7 @@ export class ReviewController implements vscode.Disposable {
 
     // When editable, the modified side is the real working-tree file: it gets LSP + editing, and
     // edits land in the lowest (unstaged) level. Otherwise it's a read-only virtual document (the
-    // tui-review FileSystemProvider is registered read-only, so it genuinely can't be typed into).
+    // paireto-review FileSystemProvider is registered read-only, so it genuinely can't be typed into).
     const editable = this.isEditable(file);
     this.debug(`openDiff: ${file.path} group=${file.group} editable=${editable}`);
     const modUri = editable
@@ -817,7 +817,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
-   * Map a comment thread's URI to (side, relPath). The thread sits on either a `tui-review://` diff
+   * Map a comment thread's URI to (side, relPath). The thread sits on either a `paireto-review://` diff
    * side (`/base/<path>` or `/modified/<path>`) or the editable working-tree file (its modified side).
    */
   private resolveCommentAnchor(
@@ -1017,7 +1017,7 @@ export function stopGateAction(opts: {
   if (opts.hasPendingFeedback) {
     return "deliver-pending";
   }
-  // A blocking /tui-review owns its own delivery; the agent can't reach Stop while parked in it.
+  // A blocking /paireto-review owns its own delivery; the agent can't reach Stop while parked in it.
   if (opts.reviewActive && !opts.reviewIsDeferred) {
     return "allow";
   }

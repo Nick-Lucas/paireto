@@ -17,8 +17,8 @@ export class StatusBarController implements vscode.Disposable {
     private readonly repoService: RepoService,
     private readonly agents: AgentSessionService,
   ) {
-    this.item = vscode.window.createStatusBarItem("tui.repo", vscode.StatusBarAlignment.Left, 100);
-    this.item.name = "TUI Companion";
+    this.item = vscode.window.createStatusBarItem("paireto.repo", vscode.StatusBarAlignment.Left, 100);
+    this.item.name = "Paireto";
     this.item.command = Commands.openSwitcher;
     this.disposables.push(
       this.item,

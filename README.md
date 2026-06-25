@@ -38,7 +38,7 @@
 
 # WIP 6
 
-* ?
+* Notification ticker on extension, ideally a blue count for changes and a yellow Bell for agent notifications
 
 # Feature Ideas:
 
@@ -51,3 +51,4 @@
 * support the plan and review gates automatically forwarding to another agent to propose some comments
 * revisit the currently in-progress plan at any point in the future
 * plugins for Codex, Opencode, Pi
+ 

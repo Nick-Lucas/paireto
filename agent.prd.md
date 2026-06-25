@@ -1,4 +1,4 @@
-# TUI Companion — Product Requirements
+# Paireto — Product Requirements
 
 ## What it is
 
@@ -45,8 +45,8 @@ are correlated by repository directory, not terminal.
 - **Needs-you alert:** when an agent enters a state that wants the user — finished a turn (Stop),
   awaiting permission, awaiting plan approval, or a `Notification` (Claude asking a question / waiting
   for input) — an orange bell appears on the agent row (and in the status bar + repo switcher), and
-  once per transition a sound plays (`tui-companion.notify.type` =
-  `sound` (default, sound from `tui-companion.notify.sound`) or `disabled`). Only this window's agents
+  once per transition a sound plays (`paireto.notify.type` =
+  `sound` (default, sound from `paireto.notify.sound`) or `disabled`). Only this window's agents
   alert.
 - Stuck-state safety net: an agent that goes silent after an un-hookable interrupt is auto-cleared;
   an agent whose process is killed (no SessionEnd hook fires) is detected via a liveness connection
@@ -87,7 +87,7 @@ resolve with the same two actions.
 - Closing the plan tab while it's still pending prompts you to Approve or Send Feedback (dismiss to
   keep reviewing).
 - Approving puts the agent into **auto** mode by default so it proceeds without re-prompting
-  (`tui-companion.planApprove.mode` — `auto` / `acceptEdits` / `default` / `plan` / `off`).
+  (`paireto.planApprove.mode` — `auto` / `acceptEdits` / `default` / `plan` / `off`).
 
 ### Code Review
 - **Comment any time:** open any Changes-section diff and add inline comments (Question / Comment /
@@ -98,7 +98,7 @@ resolve with the same two actions.
   uncommitted changes), it parks in review mode until you act — **Send Feedback** delivers your
   comments, **Approve** lets it finish with nothing sent. Nothing is ever sent without an explicit
   Send Feedback; a turn that changed nothing is never delayed.
-- **Manual `/tui-review`:** still available — opens a blocking review session in VS Code and waits;
+- **Manual `/paireto-review`:** still available — opens a blocking review session in VS Code and waits;
   Send Feedback returns the comments, Approve proceeds with no changes (`Cmd+Enter` submits).
 
 ### Changes View (always available)
@@ -115,7 +115,7 @@ resolve with the same two actions.
   (committed > staged > unstaged): the modified side is the real working-tree file, so edits land in
   the unstaged level and the view refreshes on save. The first edit to a staged/committed file's
   diff re-targets it in place to the unstaged diff (index → live working tree) — same tab, no save
-  prompt, caret + focus preserved. Diffs stay read-only during a `/tui-review`
+  prompt, caret + focus preserved. Diffs stay read-only during a `/paireto-review`
   session (so inline comments work) and for deleted files.
 - Per-folder (tree layout): stage / unstage / discard every change under the folder, via the same
   inline buttons — matching the native git panel.
@@ -126,7 +126,7 @@ resolve with the same two actions.
 - Git controls apply to Staged/Unstaged; the Committed group is read-only.
 
 ### Sidebar
-- One "TUI Companion" view with collapsible sections: Agents, Changed Files (always), Plan Review
+- One "Paireto" view with collapsible sections: Agents, Changed Files (always), Plan Review
   (while a plan is pending), Feedback (during a review session). Section controls live on their
   section rows / the title bar; the shared gate actions use colored icons whenever a plan or review is
   active — **Approve** (green) until feedback is queued, then **Send Feedback** (amber).
@@ -142,7 +142,7 @@ resolve with the same two actions.
    auto-closes and the terminal returns.
 
 **Code review**
-1. Comment on the diffs whenever you like (the first comment starts a review), or run `/tui-review`
+1. Comment on the diffs whenever you like (the first comment starts a review), or run `/paireto-review`
    for a blocking session on demand.
 2. When the agent finishes a turn that changed files, it parks in review mode until you act.
 3. Send Feedback (agent applies the comments) or Approve (agent proceeds with no changes).

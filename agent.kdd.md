@@ -1,4 +1,4 @@
-# TUI Companion — Key Decisions
+# Paireto — Key Decisions
 
 - **Agent process-death is detected via an MCP liveness socket, not a PID.** Claude exposes no agent
   PID and `SessionEnd` doesn't fire on kill, so the MCP server holds a socket open; its drop →
@@ -34,7 +34,7 @@
 
 - **Plan/Review gates are a foreground registry (`GateCoordinator`), not a hard one-at-a-time lock.**
   Many gates pending, one foreground (owns the editor/comment surfaces); clicking an agent `switchTo`s
-  its gate. Multiple plans can pend; at most one review (avoids `tui-review://` URI collisions).
+  its gate. Multiple plans can pend; at most one review (avoids `paireto-review://` URI collisions).
 
 - **Plan and Review share one gate model** — each registers a `GateEntry`/`GateSession`; shared
   `gate.approve`/`gate.sendFeedback` dispatch to the foreground. No Reject (Send Feedback covers it);
@@ -55,7 +55,7 @@
   free and routes edits to the unstaged level. Editable only when there's no change at a lower layer
   (committed > staged > unstaged) and the file isn't deleted.
 
-- **The `tui-review` virtual scheme is a READ-ONLY `FileSystemProvider`, not a
+- **The `paireto-review` virtual scheme is a READ-ONLY `FileSystemProvider`, not a
   `TextDocumentContentProvider`** — a content-provider doc on a diff's modified side stays
   editable-in-buffer (Save → "Save As"), so it wasn't actually read-only.
 
@@ -65,7 +65,7 @@
 
 - **Diffs sync with git via one funnel: `refresh()` → `ReviewContentProvider.refreshAllOpen()`.** Do
   NOT add a custom `**/*` FileSystemWatcher (an earlier one pinned the CPU on autosave churn) — the
-  VS Code git extension's `onDidChange` is the sole sync trigger. `tui-companion.debug` logs decisions.
+  VS Code git extension's `onDidChange` is the sole sync trigger. `paireto.debug` logs decisions.
 
 - **Folder rows reuse the file stage/unstage/discard commands** — a folder's `contextValue` is
   `folder:<group>` and handlers flatten it to descendant files. Committed rows are read-only.
@@ -79,12 +79,12 @@
 
 - **Approving a plan defaults the agent into `auto` mode** via the PermissionRequest decision's
   `updatedPermissions: [{type:"setMode", mode}]` (Claude otherwise restores the pre-plan mode).
-  Overridable by `tui-companion.planApprove.mode` (`off` = leave unchanged).
+  Overridable by `paireto.planApprove.mode` (`off` = leave unchanged).
 
 - **Staging/unstaging/discarding re-points an open diff tab** to the file's new git layer
   (`reconcileOpenDiffsAfterWrite`: close+reopen at the new group, or close if the change is gone).
 
-- **One gate button shows at a time, via `tui.gateHasFeedback`** — set from the foreground gate's
+- **One gate button shows at a time, via `paireto.gateHasFeedback`** — set from the foreground gate's
   `hasFeedback()`; `when` clauses show Approve before any feedback, Send Feedback once there is some.
 
 - **Commenting on Changes diffs is always on; the first comment auto-starts a "deferred" review.**

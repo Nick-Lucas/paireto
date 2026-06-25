@@ -1,6 +1,6 @@
 "use strict";
 
-// Shared helpers for the tui-companion Claude Code hook scripts.
+// Shared helpers for the paireto Claude Code hook scripts.
 //
 // This file is a plain-JS, zero-dependency mirror of src/protocol/{paths,types}.ts. It runs
 // under Claude Code's node, NOT inside the extension bundle. The repoKey + state-dir logic here
@@ -15,7 +15,7 @@ const { execFileSync } = require("node:child_process");
 
 const PROTOCOL_VERSION = 1;
 const PLUGIN_VERSION = "0.1.0";
-const APP_DIR = "tui-companion";
+const APP_DIR = "paireto";
 
 // ---------------------------------------------------------------------------
 // Paths + key (mirror of src/protocol/paths.ts)

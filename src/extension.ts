@@ -39,21 +39,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   try {
     writeConfigMirror(config);
   } catch (err) {
-    console.error("tui-companion: failed to write config mirror", err);
+    console.error("paireto: failed to write config mirror", err);
   }
 
   // 2. Best-effort plugin install/registration via the claude CLI (once per version, non-blocking).
-  if (vscode.workspace.getConfiguration("tui-companion").get<boolean>("plugin.autoInstall", true)) {
-    const marker = "tui.pluginInstalledVersion";
+  if (vscode.workspace.getConfiguration("paireto").get<boolean>("plugin.autoInstall", true)) {
+    const marker = "paireto.pluginInstalledVersion";
     if (context.globalState.get<string>(marker) !== PLUGIN_VERSION) {
       const pluginsRoot = vscode.Uri.joinPath(context.extensionUri, "plugins").fsPath;
       void installPlugin(pluginsRoot).then(async (result) => {
-        console.log(`tui-companion: plugin install — ${result.detail}`);
+        console.log(`paireto: plugin install — ${result.detail}`);
         if (result.ok) {
           await context.globalState.update(marker, PLUGIN_VERSION);
         } else if (result.manualCommand) {
           const choice = await vscode.window.showWarningMessage(
-            "TUI Companion couldn't auto-install its Claude Code plugin. Register it manually?",
+            "Paireto couldn't auto-install its Claude Code plugin. Register it manually?",
             "Copy Command",
           );
           if (choice === "Copy Command") {
@@ -231,7 +231,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // (The repo switcher registers its own commands; see RepoSwitcher.)
 
-  console.log("tui-companion active:", path.basename(context.extensionUri.fsPath));
+  console.log("paireto active:", path.basename(context.extensionUri.fsPath));
 }
 
 export function deactivate(): void {
@@ -239,7 +239,7 @@ export function deactivate(): void {
 }
 
 function readConfig(): BridgeConfig {
-  const cfg = vscode.workspace.getConfiguration("tui-companion");
+  const cfg = vscode.workspace.getConfiguration("paireto");
   const gate = DEFAULT_CONFIG.planGate;
   return {
     planGate: {

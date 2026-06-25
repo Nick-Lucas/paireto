@@ -1,4 +1,4 @@
-// The single TUI Companion sidebar view. Top-level rows are collapsible section headers — Agents,
+// The single Paireto sidebar view. Top-level rows are collapsible section headers — Agents,
 // Plan Review, Changed Files, Feedback. The Changed Files section nests group headers (Staged /
 // Unstaged / Committed), each laid out flat or as a compressed folder tree. Section/group/file
 // actions are inline buttons (see package.json view/item/context, keyed on contextValue).

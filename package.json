@@ -1,15 +1,15 @@
 {
-  "name": "tui-companion",
-  "displayName": "tui-companion",
+  "name": "paireto",
+  "displayName": "Paireto",
   "version": "0.0.1",
-  "description": "Companion for TUI AI Harnesses",
+  "description": "Paireto — VS Code companion for terminal-first AI coding agents.",
   "categories": [
     "Other"
   ],
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Nick-Lucas/vscode-tui-companion"
+    "url": "https://github.com/Nick-Lucas/vscode-paireto"
   },
   "main": "./dist/extension.js",
   "scripts": {
@@ -19,12 +19,12 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "prepackage": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
-    "package": "vsce package --out dist/tui-companion.vsix",
+    "package": "vsce package --out dist/paireto.vsix",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit && tsc -p plugins/claude-code",
-    "dogfood": "pnpm package && code --install-extension dist/tui-companion.vsix --force",
+    "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
@@ -47,163 +47,163 @@
   "contributes": {
     "commands": [
       {
-        "command": "tui-companion.openSwitcher",
-        "title": "TUI Companion: Switch Repository / Worktree",
+        "command": "paireto.openSwitcher",
+        "title": "Paireto: Switch Repository / Worktree",
         "icon": "$(repo)"
       },
       {
-        "command": "tui-companion.switcher.acceptThisWindow",
-        "title": "TUI Companion: Open Selected in This Window"
+        "command": "paireto.switcher.acceptThisWindow",
+        "title": "Paireto: Open Selected in This Window"
       },
       {
-        "command": "tui-companion.gate.approve",
+        "command": "paireto.gate.approve",
         "title": "Approve",
         "icon": "media/approve.svg"
       },
       {
-        "command": "tui-companion.gate.sendFeedback",
+        "command": "paireto.gate.sendFeedback",
         "title": "Send Feedback",
         "icon": "media/send-feedback.svg"
       },
       {
-        "command": "tui-companion.comment.edit",
+        "command": "paireto.comment.edit",
         "title": "Edit Comment",
         "icon": "$(edit)"
       },
       {
-        "command": "tui-companion.comment.save",
+        "command": "paireto.comment.save",
         "title": "Save Comment",
         "icon": "$(check)"
       },
       {
-        "command": "tui-companion.comment.delete",
+        "command": "paireto.comment.delete",
         "title": "Delete Comment",
         "icon": "$(trash)"
       },
       {
-        "command": "tui-companion.plan.addComment",
+        "command": "paireto.plan.addComment",
         "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.plan.addQuestion",
+        "command": "paireto.plan.addQuestion",
         "title": "Question",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.plan.addProblem",
+        "command": "paireto.plan.addProblem",
         "title": "Problem",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.review.refresh",
+        "command": "paireto.review.refresh",
         "title": "Refresh",
         "icon": "$(refresh)"
       },
       {
-        "command": "tui-companion.review.pickCompareTo",
+        "command": "paireto.review.pickCompareTo",
         "title": "Compare To…",
         "icon": "$(git-compare)"
       },
       {
-        "command": "tui-companion.review.toggleLayout",
+        "command": "paireto.review.toggleLayout",
         "title": "Toggle Flat / Tree View",
         "icon": "$(list-tree)"
       },
       {
-        "command": "tui-companion.review.openDiff",
+        "command": "paireto.review.openDiff",
         "title": "Open Changes"
       },
       {
-        "command": "tui-companion.review.openFile",
+        "command": "paireto.review.openFile",
         "title": "Open File",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "tui-companion.review.stage",
+        "command": "paireto.review.stage",
         "title": "Stage Changes",
         "icon": "$(add)"
       },
       {
-        "command": "tui-companion.review.unstage",
+        "command": "paireto.review.unstage",
         "title": "Unstage Changes",
         "icon": "$(remove)"
       },
       {
-        "command": "tui-companion.review.stageAll",
+        "command": "paireto.review.stageAll",
         "title": "Stage All Changes",
         "icon": "$(add)"
       },
       {
-        "command": "tui-companion.review.unstageAll",
+        "command": "paireto.review.unstageAll",
         "title": "Unstage All Changes",
         "icon": "$(remove)"
       },
       {
-        "command": "tui-companion.review.discard",
+        "command": "paireto.review.discard",
         "title": "Discard Changes",
         "icon": "$(discard)"
       },
       {
-        "command": "tui-companion.review.discardAll",
+        "command": "paireto.review.discardAll",
         "title": "Discard All Changes",
         "icon": "$(discard)"
       },
       {
-        "command": "tui-companion.review.addComment",
+        "command": "paireto.review.addComment",
         "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.review.addQuestion",
+        "command": "paireto.review.addQuestion",
         "title": "Question",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.review.addProblem",
+        "command": "paireto.review.addProblem",
         "title": "Problem",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "tui-companion.review.revealComment",
+        "command": "paireto.review.revealComment",
         "title": "Reveal Comment"
       },
       {
-        "command": "tui-companion.review.deleteComment",
+        "command": "paireto.review.deleteComment",
         "title": "Delete Comment",
         "icon": "$(trash)"
       },
       {
-        "command": "tui-companion.focusAgent",
+        "command": "paireto.focusAgent",
         "title": "Focus Agent",
         "icon": "$(terminal)"
       },
       {
-        "command": "tui-companion.agent.switch",
+        "command": "paireto.agent.switch",
         "title": "Switch to Agent"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "tui-companion",
-          "title": "TUI Companion",
-          "icon": "media/tui-companion.svg"
+          "id": "paireto",
+          "title": "Paireto",
+          "icon": "media/paireto.svg"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "tui-companion.openSwitcher",
+        "command": "paireto.openSwitcher",
         "key": "cmd+shift+k",
         "mac": "cmd+shift+k",
         "win": "ctrl+shift+k",
         "linux": "ctrl+shift+k"
       },
       {
-        "command": "tui-companion.switcher.acceptThisWindow",
+        "command": "paireto.switcher.acceptThisWindow",
         "key": "shift+enter",
-        "when": "tui.switcherVisible"
+        "when": "paireto.switcherVisible"
       },
       {
         "command": "editor.action.submitComment",
@@ -211,309 +211,309 @@
         "mac": "cmd+enter",
         "win": "ctrl+enter",
         "linux": "ctrl+enter",
-        "when": "commentEditorFocused && (commentController == tui.plan || commentController == tui.review)"
+        "when": "commentEditorFocused && (commentController == paireto.plan || commentController == paireto.review)"
       }
     ],
     "views": {
-      "tui-companion": [
+      "paireto": [
         {
-          "id": "tui.main",
-          "name": "TUI Companion",
+          "id": "paireto.main",
+          "name": "Paireto",
           "type": "tree",
-          "icon": "media/tui-companion.svg"
+          "icon": "media/paireto.svg"
         }
       ]
     },
     "menus": {
       "commandPalette": [
         {
-          "command": "tui-companion.switcher.acceptThisWindow",
+          "command": "paireto.switcher.acceptThisWindow",
           "when": "false"
         },
         {
-          "command": "tui-companion.plan.addQuestion",
+          "command": "paireto.plan.addQuestion",
           "when": "false"
         },
         {
-          "command": "tui-companion.plan.addComment",
+          "command": "paireto.plan.addComment",
           "when": "false"
         },
         {
-          "command": "tui-companion.plan.addProblem",
+          "command": "paireto.plan.addProblem",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.addQuestion",
+          "command": "paireto.review.addQuestion",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.addComment",
+          "command": "paireto.review.addComment",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.addProblem",
+          "command": "paireto.review.addProblem",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.openDiff",
+          "command": "paireto.review.openDiff",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.openFile",
+          "command": "paireto.review.openFile",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.stage",
+          "command": "paireto.review.stage",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.unstage",
+          "command": "paireto.review.unstage",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.discard",
+          "command": "paireto.review.discard",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.revealComment",
+          "command": "paireto.review.revealComment",
           "when": "false"
         },
         {
-          "command": "tui-companion.review.deleteComment",
+          "command": "paireto.review.deleteComment",
           "when": "false"
         },
         {
-          "command": "tui-companion.gate.approve",
+          "command": "paireto.gate.approve",
           "when": "false"
         },
         {
-          "command": "tui-companion.gate.sendFeedback",
+          "command": "paireto.gate.sendFeedback",
           "when": "false"
         },
         {
-          "command": "tui-companion.comment.edit",
+          "command": "paireto.comment.edit",
           "when": "false"
         },
         {
-          "command": "tui-companion.comment.save",
+          "command": "paireto.comment.save",
           "when": "false"
         },
         {
-          "command": "tui-companion.comment.delete",
+          "command": "paireto.comment.delete",
           "when": "false"
         },
         {
-          "command": "tui-companion.agent.switch",
+          "command": "paireto.agent.switch",
           "when": "false"
         }
       ],
       "editor/title": [
         {
-          "command": "tui-companion.gate.approve",
-          "when": "resourceScheme == tui-plan && !tui.gateHasFeedback",
+          "command": "paireto.gate.approve",
+          "when": "resourceScheme == paireto-plan && !paireto.gateHasFeedback",
           "group": "navigation@1"
         },
         {
-          "command": "tui-companion.gate.sendFeedback",
-          "when": "resourceScheme == tui-plan && tui.gateHasFeedback",
+          "command": "paireto.gate.sendFeedback",
+          "when": "resourceScheme == paireto-plan && paireto.gateHasFeedback",
           "group": "navigation@2"
         }
       ],
       "comments/commentThread/context": [
         {
-          "command": "tui-companion.plan.addComment",
-          "when": "commentController == tui.plan",
+          "command": "paireto.plan.addComment",
+          "when": "commentController == paireto.plan",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.plan.addQuestion",
-          "when": "commentController == tui.plan",
+          "command": "paireto.plan.addQuestion",
+          "when": "commentController == paireto.plan",
           "group": "inline@2"
         },
         {
-          "command": "tui-companion.plan.addProblem",
-          "when": "commentController == tui.plan",
+          "command": "paireto.plan.addProblem",
+          "when": "commentController == paireto.plan",
           "group": "inline@3"
         },
         {
-          "command": "tui-companion.review.addComment",
-          "when": "commentController == tui.review",
+          "command": "paireto.review.addComment",
+          "when": "commentController == paireto.review",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.addQuestion",
-          "when": "commentController == tui.review",
+          "command": "paireto.review.addQuestion",
+          "when": "commentController == paireto.review",
           "group": "inline@2"
         },
         {
-          "command": "tui-companion.review.addProblem",
-          "when": "commentController == tui.review",
+          "command": "paireto.review.addProblem",
+          "when": "commentController == paireto.review",
           "group": "inline@3"
         }
       ],
       "comments/comment/title": [
         {
-          "command": "tui-companion.comment.edit",
-          "when": "(commentController == tui.plan || commentController == tui.review) && comment == preview",
+          "command": "paireto.comment.edit",
+          "when": "(commentController == paireto.plan || commentController == paireto.review) && comment == preview",
           "group": "group@1"
         },
         {
-          "command": "tui-companion.comment.delete",
-          "when": "(commentController == tui.plan || commentController == tui.review) && comment == preview",
+          "command": "paireto.comment.delete",
+          "when": "(commentController == paireto.plan || commentController == paireto.review) && comment == preview",
           "group": "group@2"
         }
       ],
       "comments/comment/context": [
         {
-          "command": "tui-companion.comment.save",
-          "when": "(commentController == tui.plan || commentController == tui.review) && comment == editing",
+          "command": "paireto.comment.save",
+          "when": "(commentController == paireto.plan || commentController == paireto.review) && comment == editing",
           "group": "inline@1"
         }
       ],
       "view/item/context": [
         {
-          "command": "tui-companion.review.pickCompareTo",
-          "when": "view == tui.main && viewItem == section:files",
+          "command": "paireto.review.pickCompareTo",
+          "when": "view == paireto.main && viewItem == section:files",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.toggleLayout",
-          "when": "view == tui.main && viewItem == section:files",
+          "command": "paireto.review.toggleLayout",
+          "when": "view == paireto.main && viewItem == section:files",
           "group": "inline@2"
         },
         {
-          "command": "tui-companion.focusAgent",
-          "when": "view == tui.main && viewItem == agentSession",
+          "command": "paireto.focusAgent",
+          "when": "view == paireto.main && viewItem == agentSession",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.deleteComment",
-          "when": "view == tui.main && viewItem == reviewComment",
+          "command": "paireto.review.deleteComment",
+          "when": "view == paireto.main && viewItem == reviewComment",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.discardAll",
-          "when": "view == tui.main && viewItem == group:unstaged",
+          "command": "paireto.review.discardAll",
+          "when": "view == paireto.main && viewItem == group:unstaged",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.stageAll",
-          "when": "view == tui.main && viewItem == group:unstaged",
+          "command": "paireto.review.stageAll",
+          "when": "view == paireto.main && viewItem == group:unstaged",
           "group": "inline@2"
         },
         {
-          "command": "tui-companion.review.unstageAll",
-          "when": "view == tui.main && viewItem == group:staged",
+          "command": "paireto.review.unstageAll",
+          "when": "view == paireto.main && viewItem == group:staged",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.openFile",
-          "when": "view == tui.main && viewItem =~ /^changedFile:/",
+          "command": "paireto.review.openFile",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.discard",
-          "when": "view == tui.main && viewItem == changedFile:unstaged",
+          "command": "paireto.review.discard",
+          "when": "view == paireto.main && viewItem == changedFile:unstaged",
           "group": "inline@2"
         },
         {
-          "command": "tui-companion.review.stage",
-          "when": "view == tui.main && viewItem == changedFile:unstaged",
+          "command": "paireto.review.stage",
+          "when": "view == paireto.main && viewItem == changedFile:unstaged",
           "group": "inline@3"
         },
         {
-          "command": "tui-companion.review.unstage",
-          "when": "view == tui.main && viewItem == changedFile:staged",
+          "command": "paireto.review.unstage",
+          "when": "view == paireto.main && viewItem == changedFile:staged",
           "group": "inline@2"
         },
         {
-          "command": "tui-companion.review.openFile",
-          "when": "view == tui.main && viewItem =~ /^changedFile:/",
+          "command": "paireto.review.openFile",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
           "group": "1_open@1"
         },
         {
-          "command": "tui-companion.review.openDiff",
-          "when": "view == tui.main && viewItem =~ /^changedFile:/",
+          "command": "paireto.review.openDiff",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
           "group": "1_open@2"
         },
         {
-          "command": "tui-companion.review.stage",
-          "when": "view == tui.main && viewItem == changedFile:unstaged",
+          "command": "paireto.review.stage",
+          "when": "view == paireto.main && viewItem == changedFile:unstaged",
           "group": "2_git@1"
         },
         {
-          "command": "tui-companion.review.discard",
-          "when": "view == tui.main && viewItem == changedFile:unstaged",
+          "command": "paireto.review.discard",
+          "when": "view == paireto.main && viewItem == changedFile:unstaged",
           "group": "2_git@2"
         },
         {
-          "command": "tui-companion.review.unstage",
-          "when": "view == tui.main && viewItem == changedFile:staged",
+          "command": "paireto.review.unstage",
+          "when": "view == paireto.main && viewItem == changedFile:staged",
           "group": "2_git@1"
         },
         {
-          "command": "tui-companion.review.stage",
-          "when": "view == tui.main && viewItem == folder:unstaged",
+          "command": "paireto.review.stage",
+          "when": "view == paireto.main && viewItem == folder:unstaged",
           "group": "inline@2"
         },
         {
-          "command": "tui-companion.review.discard",
-          "when": "view == tui.main && viewItem == folder:unstaged",
+          "command": "paireto.review.discard",
+          "when": "view == paireto.main && viewItem == folder:unstaged",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.unstage",
-          "when": "view == tui.main && viewItem == folder:staged",
+          "command": "paireto.review.unstage",
+          "when": "view == paireto.main && viewItem == folder:staged",
           "group": "inline@1"
         },
         {
-          "command": "tui-companion.review.stage",
-          "when": "view == tui.main && viewItem == folder:unstaged",
+          "command": "paireto.review.stage",
+          "when": "view == paireto.main && viewItem == folder:unstaged",
           "group": "2_git@1"
         },
         {
-          "command": "tui-companion.review.discard",
-          "when": "view == tui.main && viewItem == folder:unstaged",
+          "command": "paireto.review.discard",
+          "when": "view == paireto.main && viewItem == folder:unstaged",
           "group": "2_git@2"
         },
         {
-          "command": "tui-companion.review.unstage",
-          "when": "view == tui.main && viewItem == folder:staged",
+          "command": "paireto.review.unstage",
+          "when": "view == paireto.main && viewItem == folder:staged",
           "group": "2_git@1"
         }
       ],
       "view/title": [
         {
-          "command": "tui-companion.review.refresh",
-          "when": "view == tui.main",
+          "command": "paireto.review.refresh",
+          "when": "view == paireto.main",
           "group": "navigation@3"
         },
         {
-          "command": "tui-companion.gate.approve",
-          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive) && !tui.gateHasFeedback",
+          "command": "paireto.gate.approve",
+          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && !paireto.gateHasFeedback",
           "group": "navigation@4"
         },
         {
-          "command": "tui-companion.gate.sendFeedback",
-          "when": "view == tui.main && (tui.planPending || tui.reviewSessionActive) && tui.gateHasFeedback",
+          "command": "paireto.gate.sendFeedback",
+          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && paireto.gateHasFeedback",
           "group": "navigation@5"
         }
       ]
     },
     "configuration": {
-      "title": "TUI Companion",
+      "title": "Paireto",
       "properties": {
-        "tui-companion.plugin.autoInstall": {
+        "paireto.plugin.autoInstall": {
           "type": "boolean",
           "default": true,
           "description": "Automatically register the bundled Claude Code plugin on activation."
         },
-        "tui-companion.debug": {
+        "paireto.debug": {
           "type": "boolean",
           "default": false,
-          "description": "Log TUI Companion diagnostics (refreshes, diff open decisions) to the 'TUI Companion' output channel."
+          "description": "Log Paireto diagnostics (refreshes, diff open decisions) to the 'Paireto' output channel."
         },
-        "tui-companion.notify.type": {
+        "paireto.notify.type": {
           "type": "string",
           "enum": [
             "sound",
@@ -526,12 +526,12 @@
           "default": "sound",
           "description": "How to alert you when one of this window's agents finishes a turn or needs input (stopped / awaiting plan / awaiting permission)."
         },
-        "tui-companion.notify.sound": {
+        "paireto.notify.sound": {
           "type": "string",
           "default": "Ping",
-          "description": "Sound played when 'tui-companion.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
+          "description": "Sound played when 'paireto.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
         },
-        "tui-companion.planApprove.mode": {
+        "paireto.planApprove.mode": {
           "type": "string",
           "enum": [
             "auto",
@@ -550,7 +550,7 @@
           "default": "auto",
           "description": "The permission mode the agent enters when you approve its plan."
         },
-        "tui-companion.planGate.onUnavailable": {
+        "paireto.planGate.onUnavailable": {
           "type": "string",
           "enum": [
             "fail-open",
@@ -560,7 +560,7 @@
           "default": "fail-open",
           "description": "Plan-gate behavior when no VS Code window is listening for this repo."
         },
-        "tui-companion.planGate.onTimeout": {
+        "paireto.planGate.onTimeout": {
           "type": "string",
           "enum": [
             "fail-open",
@@ -570,7 +570,7 @@
           "default": "fail-visible",
           "description": "Plan-gate behavior when the review times out."
         },
-        "tui-companion.planGate.onMalformed": {
+        "paireto.planGate.onMalformed": {
           "type": "string",
           "enum": [
             "fail-open",
@@ -580,7 +580,7 @@
           "default": "fail-visible",
           "description": "Plan-gate behavior on a malformed response."
         },
-        "tui-companion.planGate.timeoutSeconds": {
+        "paireto.planGate.timeoutSeconds": {
           "type": "number",
           "default": 345600,
           "description": "Maximum seconds the plan gate blocks waiting for a review decision."

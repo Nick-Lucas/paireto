@@ -1,6 +1,6 @@
-# tui-companion — Claude Code plugin
+# paireto — Claude Code plugin
 
-This plugin bridges Claude Code to the **TUI Companion** VS Code extension. It runs small,
+This plugin bridges Claude Code to the **Paireto** VS Code extension. It runs small,
 zero-dependency Node hook scripts that talk to the extension over a per-repo Unix domain socket.
 
 It does two things:
@@ -11,7 +11,7 @@ It does two things:
    markdown to VS Code and blocks until you Approve or Send Feedback in the editor. Feedback comes back
    as a `deny` so Claude revises the plan.
 
-The socket lives under `${XDG_STATE_HOME:-~/.local/state}/tui-companion/s/<repo-key>.sock`, where
+The socket lives under `${XDG_STATE_HOME:-~/.local/state}/paireto/s/<repo-key>.sock`, where
 `<repo-key>` is `sha256(realpath(git-toplevel))[:8]`. The extension creates one socket per open repo;
 the hook scripts resolve which socket to use from the agent's `cwd`.
 
@@ -26,7 +26,7 @@ If you prefer not to use the extension's installer, register this directory as a
 
 ```
 /plugin marketplace add /absolute/path/to/plugins        # the dir containing .claude-plugin/marketplace.json
-/plugin install tui-companion@tui-companion
+/plugin install paireto@paireto
 ```
 
 Then restart Claude Code so the hooks take effect.
@@ -46,7 +46,7 @@ compile step). Run it from inside a repo you've opened in VS Code:
 node scripts/emulator.ts doctor                  # resolve the socket + handshake — start here
 node scripts/emulator.ts event PreToolUse --tool Bash   # one fire-and-forget telemetry event
 node scripts/emulator.ts plan                    # ExitPlanMode gate; blocks for Approve/Send Feedback
-node scripts/emulator.ts review                  # tui_review session; blocks for Send Feedback/Cancel
+node scripts/emulator.ts review                  # paireto_review session; blocks for Send Feedback/Cancel
 node scripts/emulator.ts flow                    # a full simulated session lifecycle of events
 node scripts/emulator.ts help                    # all commands + options
 ```
@@ -56,7 +56,7 @@ to target a specific repo or socket, and `--file` to feed real plan markdown int
 
 ## Failure behavior
 
-The plan gate reads its policy from `${XDG_STATE_HOME:-~/.local/state}/tui-companion/config.json`
+The plan gate reads its policy from `${XDG_STATE_HOME:-~/.local/state}/paireto/config.json`
 (written by the extension). Defaults: if no extension is listening it **allows** the plan (so a
 terminal-only workflow isn't blocked); on timeout or a malformed response it **defers to Claude
 Code's native plan-approval prompt**. Telemetry hooks always exit 0.

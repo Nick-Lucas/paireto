@@ -1,7 +1,7 @@
 // Plays a sound when one of THIS window's agents enters a "needs you" state (the
-// AgentSessionService.onDidFinish edge). Gated on `tui-companion.notify.type` (`sound` | `disabled`).
+// AgentSessionService.onDidFinish edge). Gated on `paireto.notify.type` (`sound` | `disabled`).
 // We shell out to the platform sound player (like the rest of the repo shells out to git); it's
-// best-effort and non-blocking — failures are logged to a lazily-created "TUI Companion" channel.
+// best-effort and non-blocking — failures are logged to a lazily-created "Paireto" channel.
 // (The visible "needs you" cue lives in the sidebar, status bar, and repo switcher.)
 
 import { spawn } from "node:child_process";
@@ -24,7 +24,7 @@ export class NotificationController implements vscode.Disposable {
   }
 
   private config<T>(key: string, fallback: T): T {
-    return vscode.workspace.getConfiguration("tui-companion").get<T>(key, fallback);
+    return vscode.workspace.getConfiguration("paireto").get<T>(key, fallback);
   }
 
   private notify(_session: AgentSession): void {
@@ -74,7 +74,7 @@ export class NotificationController implements vscode.Disposable {
 
   private logFailure(context: string, err: unknown): void {
     if (!this.log) {
-      this.log = vscode.window.createOutputChannel("TUI Companion");
+      this.log = vscode.window.createOutputChannel("Paireto");
     }
     const detail = err instanceof Error ? err.message : String(err);
     this.log.appendLine(`[${new Date().toISOString()}] notify ${context} failed: ${detail}`);

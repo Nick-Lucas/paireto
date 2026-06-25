@@ -44,7 +44,7 @@ suite("repoKey", () => {
   });
 
   test("resolves symlinks identically (the /var trap)", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "tui-key-"));
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-key-"));
     const real = path.join(base, "real-repo");
     const link = path.join(base, "link-repo");
     fs.mkdirSync(real);
@@ -727,7 +727,7 @@ suite("repoSnapshots (cross-repo switcher activity)", () => {
 
   setup(() => {
     prevXdg = process.env.XDG_STATE_HOME;
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "tui-activity-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-activity-"));
     process.env.XDG_STATE_HOME = dir;
   });
   teardown(() => {
@@ -892,7 +892,7 @@ suite("stopGateAction (turn-end review gate)", () => {
       "review",
     );
   });
-  test("stays out of the way of a blocking /tui-review session", () => {
+  test("stays out of the way of a blocking /paireto-review session", () => {
     assert.strictEqual(
       stopGateAction({
         ...base,

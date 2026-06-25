@@ -8,8 +8,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-const MARKETPLACE_NAME = "tui-companion";
-const PLUGIN_NAME = "tui-companion";
+const MARKETPLACE_NAME = "paireto";
+const PLUGIN_NAME = "paireto";
 export const PLUGIN_VERSION = "0.2.0";
 
 export interface InstallResult {
@@ -35,7 +35,7 @@ function resolveClaudeBin(): string | undefined {
     path.join(home, ".local", "bin", "claude"),
     "/opt/homebrew/bin/claude",
     "/usr/local/bin/claude",
-    "/usr/bin/claude"
+    "/usr/bin/claude",
   );
   for (const c of candidates) {
     try {
@@ -58,7 +58,7 @@ interface RunResult {
 function run(bin: string, args: string[]): Promise<RunResult> {
   return new Promise((resolve) => {
     execFile(bin, args, { timeout: 60000, encoding: "utf8" }, (err, stdout, stderr) => {
-      const code = err ? ((err as NodeJS.ErrnoException).code as unknown as number) ?? 1 : 0;
+      const code = err ? (((err as NodeJS.ErrnoException).code as unknown as number) ?? 1) : 0;
       resolve({ code: typeof code === "number" ? code : err ? 1 : 0, stdout, stderr });
     });
   });
@@ -116,5 +116,8 @@ export async function installPlugin(pluginsRoot: string): Promise<InstallResult>
     };
   }
 
-  return { ok: true, detail: "registered + installed via claude CLI (restart Claude Code to load hooks)" };
+  return {
+    ok: true,
+    detail: "registered + installed via claude CLI (restart Claude Code to load hooks)",
+  };
 }

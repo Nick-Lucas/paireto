@@ -1,13 +1,13 @@
 {
-  "name": "tui-companion",
+  "name": "paireto",
   "owner": {
-    "name": "tui-companion"
+    "name": "paireto"
   },
   "plugins": [
     {
-      "name": "tui-companion",
+      "name": "paireto",
       "source": "./claude-code",
-      "description": "Bridges Claude Code to the VS Code TUI Companion extension (lifecycle telemetry + plan-approval gating)."
+      "description": "Bridges Claude Code to the VS Code Paireto extension"
     }
   ]
 }

@@ -14,7 +14,7 @@ import {
   deleteComment,
 } from "../comments/CommentSession.js";
 
-const SCHEME = "tui-test-doc";
+const SCHEME = "paireto-test-doc";
 
 suite("commenting integration", () => {
   const contents = new Map<string, string>();
@@ -53,7 +53,7 @@ suite("commenting integration", () => {
   });
 
   test("a CommentController with this provider accepts a thread on the virtual doc", async () => {
-    const controller = vscode.comments.createCommentController("tui-test", "Test");
+    const controller = vscode.comments.createCommentController("paireto-test", "Test");
     controller.commentingRangeProvider = {
       provideCommentingRanges: (doc) => fullDocumentCommentingRanges(doc, SCHEME),
     };
@@ -71,7 +71,7 @@ suite("commenting integration", () => {
   });
 
   test("editComment/saveComment toggle mode + contextValue and sync the edited body", async () => {
-    const controller = vscode.comments.createCommentController("tui-test-edit", "Test");
+    const controller = vscode.comments.createCommentController("paireto-test-edit", "Test");
     try {
       const doc = await openDoc(4);
       const thread = controller.createCommentThread(doc.uri, new vscode.Range(1, 0, 1, 0), []);
@@ -100,7 +100,7 @@ suite("commenting integration", () => {
   });
 
   test("deleteComment removes the comment from its thread and fires onDeleted", async () => {
-    const controller = vscode.comments.createCommentController("tui-test-del", "Test");
+    const controller = vscode.comments.createCommentController("paireto-test-del", "Test");
     try {
       const doc = await openDoc(4);
       const thread = controller.createCommentThread(doc.uri, new vscode.Range(1, 0, 1, 0), []);

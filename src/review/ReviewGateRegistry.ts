@@ -1,5 +1,5 @@
 // Bridges the async gap between an inbound review.await.request (held open on the socket by the
-// MCP tui_review tool) and the user's eventual Send-Feedback / Cancel click. The bridge handler
+// MCP paireto_review tool) and the user's eventual Send-Feedback / Cancel click. The bridge handler
 // awaits here; the review UI fulfills it. Keyed by request id; a newer request supersedes an older.
 
 import type { ReviewGateResult } from "../bridge/types.js";

@@ -1,4 +1,4 @@
-// Serves plan markdown as a read-only virtual document under the tui-plan:// scheme. A stable URI
+// Serves plan markdown as a read-only virtual document under the paireto-plan:// scheme. A stable URI
 // (keyed by planId) is what lets the Comments API anchor threads reliably; there's no write path,
 // so VS Code treats it as read-only — no disk, no save prompts.
 

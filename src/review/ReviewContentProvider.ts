@@ -1,10 +1,10 @@
-// Serves base/modified file content for review diffs under the tui-review:// scheme as a READ-ONLY
+// Serves base/modified file content for review diffs under the paireto-review:// scheme as a READ-ONLY
 // FileSystemProvider. A read-only FS provider is what actually makes the virtual sides non-editable
 // — a TextDocumentContentProvider doc placed on a diff's *modified* side stays editable-in-buffer
 // (you can type; Save just prompts "Save As"). The URI carries the repo root, side, path, and a
 // `ref` token resolved here to the right git blob, the index, the working-tree file, or empty.
 //
-//   tui-review://<reviewId>/<side>/<relPath>?ref=<EMPTY|WORKING|INDEX|gitref>&repo=<encodedRoot>
+//   paireto-review://<reviewId>/<side>/<relPath>?ref=<EMPTY|WORKING|INDEX|gitref>&repo=<encodedRoot>
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -83,7 +83,7 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
     this.emitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
   }
 
-  /** Walk open tabs, invoking `cb` for each tui-review virtual URI (both sides of any diff). */
+  /** Walk open tabs, invoking `cb` for each paireto-review virtual URI (both sides of any diff). */
   private forEachOpenReviewUri(cb: (uri: vscode.Uri) => void): void {
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {

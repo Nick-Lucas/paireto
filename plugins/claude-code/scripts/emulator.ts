@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// TUI Companion bridge emulator — a manual stand-in for Claude Code's hooks + MCP tool.
+// Paireto bridge emulator — a manual stand-in for Claude Code's hooks + MCP tool.
 //
 // It speaks the exact same wire protocol as the real plugin (it reuses bridge.js for socket
 // resolution + handshake), so you can drive every VS Code flow — telemetry, the plan gate, the
@@ -11,7 +11,7 @@
 //   node emulator.ts doctor            # resolve + handshake; is the extension listening?
 //   node emulator.ts event <Name>      # fire one telemetry hook.event (fire-and-forget)
 //   node emulator.ts plan [--file p]   # ExitPlanMode plan gate; blocks for Approve/Send Feedback
-//   node emulator.ts review            # /tui-review session; blocks for Send Feedback/Cancel
+//   node emulator.ts review            # /paireto-review session; blocks for Send Feedback/Cancel
 //   node emulator.ts flow              # simulate a whole agent session lifecycle
 //   node emulator.ts help
 //
@@ -407,7 +407,7 @@ async function withBridge(
 function noTargetError(opts: Opts): void {
   banner("NO BRIDGE FOUND", red);
   console.log("");
-  console.log("  No VS Code TUI Companion socket resolved for this directory.");
+  console.log("  No VS Code Paireto socket resolved for this directory.");
   console.log("  Make sure the repo is open in VS Code with the extension active, then retry.");
   console.log("");
   const cwdOpt = strOpt(opts, "cwd");
@@ -618,7 +618,7 @@ async function cmdReview(opts: Opts): Promise<void> {
   await withBridge(
     opts,
     {
-      heading: "Code review · tui_review (MCP)",
+      heading: "Code review · paireto_review (MCP)",
       live: { sessionId, lifecycle: [{ event: "SessionStart" }, { event: "UserPromptSubmit" }] },
     },
     async ({ conn, target }) => {
@@ -760,7 +760,7 @@ function errMessage(err: unknown): string {
 // ---------------------------------------------------------------------------
 
 function usage(): void {
-  console.log(`${bold("TUI Companion bridge emulator")}
+  console.log(`${bold("Paireto bridge emulator")}
 
 Drives the VS Code extension's flows over the per-repo socket — no agent TUI needed.
 Run from inside the repo you've opened in VS Code.
@@ -771,7 +771,7 @@ ${bold("Commands")}
                           Names: SessionStart UserPromptSubmit PreToolUse PostToolUse
                           Stop SubagentStart SubagentStop Notification SessionEnd …
   ${cyan("plan")}                    Send an ExitPlanMode plan gate; blocks for the decision.
-  ${cyan("review")}                  Open a tui_review session; blocks for Send Feedback / Cancel.
+  ${cyan("review")}                  Open a paireto_review session; blocks for Send Feedback / Cancel.
   ${cyan("flow")}                    Fire a full simulated session lifecycle of events.
   ${cyan("agent")}                   Hold a live session open (liveness connection). Ctrl+C to
                           simulate the agent process being killed → the extension drops it.

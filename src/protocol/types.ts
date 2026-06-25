@@ -119,7 +119,7 @@ export interface PlanReviewResponse extends Envelope {
 }
 
 /**
- * Blocking code-review session. Sent by the MCP `tui_review` tool when the agent starts a review;
+ * Blocking code-review session. Sent by the MCP `paireto_review` tool when the agent starts a review;
  * the extension reveals the review panels and holds this open until the user submits or cancels.
  */
 export interface ReviewAwaitRequest extends Envelope {

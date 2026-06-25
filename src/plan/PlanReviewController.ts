@@ -1,4 +1,4 @@
-// Owns the plan-review UX. Several plans can be PENDING at once (one tui-plan:// doc each); the
+// Owns the plan-review UX. Several plans can be PENDING at once (one paireto-plan:// doc each); the
 // GateCoordinator decides which is foreground (its tab open). Backgrounding a plan closes its tab
 // without resolving it, so it can be returned to. Resolution goes through the shared Approve /
 // Send-Feedback commands (dispatched to the foreground plan's GateSession). A dropped connection
@@ -47,7 +47,7 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly registry: PlanGateRegistry,
     private readonly coordinator: GateCoordinator,
   ) {
-    this.comments = new CommentSession("tui.plan", "Plan Review", Schemes.plan, {
+    this.comments = new CommentSession("paireto.plan", "Plan Review", Schemes.plan, {
       prompt: "Add plan feedback",
       placeHolder: "Comment on this line of the plan",
     });
@@ -146,7 +146,7 @@ export class PlanReviewController implements vscode.Disposable {
     // auto mode so the agent can proceed without re-prompting. "off" (or an empty setting) leaves the
     // mode unchanged.
     const mode = vscode.workspace
-      .getConfiguration("tui-companion")
+      .getConfiguration("paireto")
       .get<string>("planApprove.mode", "auto");
     const nextMode = mode && mode !== "off" ? mode : undefined;
     this.registry.fulfill(review.key, { decision: "allow", nextMode });

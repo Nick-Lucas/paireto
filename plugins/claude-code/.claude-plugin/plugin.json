@@ -1,9 +1,9 @@
 {
-  "name": "tui-companion",
-  "description": "Bridges Claude Code to the VS Code TUI Companion extension over a per-repo Unix socket: lifecycle telemetry + plan-approval gating.",
+  "name": "paireto",
+  "description": "Bridges Claude Code to the VS Code Paireto extension",
   "version": "0.2.0",
   "author": {
-    "name": "tui-companion"
+    "name": "paireto"
   },
   "keywords": ["vscode", "plan-review", "hooks", "ExitPlanMode"]
 }
