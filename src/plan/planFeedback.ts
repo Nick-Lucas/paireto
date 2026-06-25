@@ -1,7 +1,9 @@
-// Renders plan review comments into the deny message Claude receives. Modeled on plannotator's
-// planDenyFeedback wrapper: a firm directive plus the itemized feedback. Problems first, then
-// questions, then plain comments — all kinds are included.
+// Renders plan review comments into the deny message Claude receives when the user sends feedback
+// on a plan. Mirrors the in-house voice of renderReviewFeedback (a short directive line followed by
+// itemized [KIND] entries) so plan and code-review feedback read as one system. Problems first,
+// then questions, then plain comments — every kind is included.
 
+import dedent from "dedent";
 import { KIND_RANK, type CommentKind } from "../comments/kinds.js";
 
 export interface PlanCommentData {
@@ -14,20 +16,20 @@ export interface PlanCommentData {
 /** "Send Feedback": deny + a directive to revise the plan to address the feedback. */
 export function renderPlanFeedback(comments: PlanCommentData[], toolName = "ExitPlanMode"): string {
   const sorted = sortComments(comments);
-  return [
-    "YOUR PLAN HAS FEEDBACK PROVIDED BY THE USER.",
-    "",
-    `Revise the plan to address the feedback below before calling ${toolName} again.`,
-    "",
-    "Rules:",
-    "- Do not resubmit the same plan unchanged.",
-    "- Do NOT change the plan title (first # heading) unless explicitly asked.",
-    "- Keep the existing plan structure unless the user asks for a rewrite.",
-    "",
-    itemize(sorted),
-    "",
-    summarize(sorted),
-  ].join("\n");
+  return dedent`
+    "Your plan has feedback provided by the user."
+
+    Revise the plan to address the feedback below before calling ${toolName} again.
+
+    Rules:
+    - Do not resubmit the same plan unchanged.
+    - Do NOT change the plan title (first # heading) unless explicitly asked.
+    - Keep the existing plan structure unless the user asks for a rewrite.
+
+    ${itemize(sorted)}
+
+    ${summarize(sorted)}
+  `;
 }
 
 function sortComments(comments: PlanCommentData[]): PlanCommentData[] {

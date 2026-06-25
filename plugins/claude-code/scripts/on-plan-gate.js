@@ -5,7 +5,7 @@
 // Sends the plan markdown to the extension and BLOCKS until the user approves or requests
 // changes, then emits the PermissionRequest decision. Falls back per config on any failure.
 //
-// PermissionRequest decision shape (confirmed against the plannotator plugin):
+// PermissionRequest decision shape, per the Claude Code hooks API:
 //   allow: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}
 //   deny:  {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"..."}}}
 //   ask:   emit nothing (exit 0) -> defers to Claude Code's native plan-approval prompt.

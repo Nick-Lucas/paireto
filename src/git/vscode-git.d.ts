@@ -1,5 +1,6 @@
-// Minimal subset of the built-in `vscode.git` extension API (extensions/git/src/api/git.d.ts).
-// We vendor only the members we consume rather than the full ~1k-line surface.
+// Hand-authored, minimal subset of the built-in `vscode.git` extension's public API. These are the
+// only members we consume; we declare them ourselves rather than depending on the full ~1k-line
+// published surface. Structural typing means the real extension object satisfies these at runtime.
 
 import type { Uri, Event } from "vscode";
 

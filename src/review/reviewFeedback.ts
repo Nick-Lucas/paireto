@@ -2,6 +2,7 @@
 // on the next prompt). All unresolved comments are included; problems first, then questions, then
 // plain comments.
 
+import dedent from "dedent";
 import { KIND_RANK } from "../comments/kinds.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
@@ -12,7 +13,7 @@ export function renderReviewFeedback(comments: ReviewComment[]): string {
       (a, b) =>
         KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
         a.filePath.localeCompare(b.filePath) ||
-        a.line - b.line
+        a.line - b.line,
     );
 
   if (actionable.length === 0) {
@@ -27,11 +28,11 @@ export function renderReviewFeedback(comments: ReviewComment[]): string {
     })
     .join("\n\n");
 
-  return [
-    `Code review feedback (${actionable.length} item${actionable.length === 1 ? "" : "s"}):`,
-    "",
-    "Address these review comments. Each item is file:line and its kind, the quoted line, and the note.",
-    "",
-    items,
-  ].join("\n");
+  return dedent`
+    Code review feedback received from the user:
+
+    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+
+    ${items}
+  `;
 }

@@ -593,5 +593,8 @@
   ],
   "engines": {
     "vscode": "^1.120.0"
+  },
+  "dependencies": {
+    "dedent": "^1.7.2"
   }
 }
