@@ -1,17 +1,16 @@
-.vscode/**
-.vscode-test/**
-out/**
-node_modules/**
-src/**
-.gitignore
-.yarnrc
-esbuild.js
-vsc-extension-quickstart.md
-**/tsconfig.json
-**/eslint.config.mjs
-**/*.map
-**/*.ts
-**/.vscode-test.*
+# Allowlist: ignore everything, then re-include ONLY what ships in the .vsix.
+**
 
-# Ship the bundled Claude Code plugin (hook scripts + manifest) in the .vsix.
+# Extension runtime
+!package.json
+!dist/extension.js
+!media/**
+
+# Marketplace metadata
+!LICENSE.md
+!CHANGELOG.md
+
+# Bundled Claude Code plugin: ship the whole folder verbatim — it IS the
+# distributed artifact the installer points Claude at. Dev tooling (the
+# emulator + its tsconfig) lives in repo-root scripts/, outside this tree.
 !plugins/**

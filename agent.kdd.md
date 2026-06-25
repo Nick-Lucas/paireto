@@ -1,5 +1,19 @@
 # Paireto — Key Decisions
 
+- **`vsce package` runs with `--no-dependencies`.** esbuild bundles all runtime deps (e.g. `dedent`)
+  into `dist/extension.js`, so there's nothing to enumerate — and vsce's default `npm list` step
+  fails anyway under pnpm.
+
+- **`.vscodeignore` is an allowlist (`**` then `!`-include).** Ships only `dist/extension.js`,
+  `media/**`, `package.json`, `LICENSE`/`CHANGELOG`, and the whole `plugins/**` tree. Re-includes are
+  case-sensitive (`CHANGELOG.md`, not `changelog.md`) and name `dist/extension.js` exactly so stray
+  dist artifacts never ship. vsce applies `!` negations LAST as a global override — you can't
+  re-exclude a subset of a negated tree, so `plugins/` must contain only shippable files.
+
+- **`plugins/` contains ONLY the distributed plugin artifact; dev tooling lives in repo-root
+  `scripts/`.** So `!plugins/**` ships the folder verbatim with no per-file filtering. The emulator
+  (`scripts/emulator.ts`) `require()`s the plugin's `bridge.js` across the tree.
+
 - **Agent process-death is detected via an MCP liveness socket, not a PID.** Claude exposes no agent
   PID and `SessionEnd` doesn't fire on kill, so the MCP server holds a socket open; its drop →
   `removeSession` (ref-counted so layered connections don't drop the row early). A gate interrupt
@@ -47,9 +61,10 @@
 - **The bottom panel is hidden while any gate is foreground, restored when none is** (in
   `GateCoordinator`; panel hooks injectable so it stays unit-testable).
 
-- **Plugin TS dev scripts get their own tsconfig** (`plugins/claude-code/tsconfig.json`) — they run
-  on Node type-stripping outside `rootDir: src`. Don't add `plugins` to the root tsconfig; it breaks
-  the test runner's `out/` layout.
+- **TS dev scripts get their own tsconfig** (`scripts/tsconfig.json`) — they run on Node
+  type-stripping outside `rootDir: src`. Don't add `scripts`/`plugins` to the root tsconfig
+  (`include: ["src"]`); it breaks the test runner's `out/` layout. `check-types` runs `tsc -p scripts`
+  alongside the root.
 
 - **Editable diffs use the real working-tree file as the modified side** — gives LSP + editing for
   free and routes edits to the unstaged level. Editable only when there's no change at a lower layer

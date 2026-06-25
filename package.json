@@ -19,17 +19,17 @@
     "watch:esbuild": "node esbuild.js --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "prepackage": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
-    "package": "vsce package --out dist/paireto.vsix",
+    "package": "vsce package --no-dependencies --out dist/paireto.vsix",
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
-    "check-types": "tsc --noEmit && tsc -p plugins/claude-code",
+    "check-types": "tsc --noEmit && tsc -p scripts",
     "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
-    "emulator": "node plugins/claude-code/scripts/emulator.ts"
+    "emulator": "node scripts/emulator.ts"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",

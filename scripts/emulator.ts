@@ -8,12 +8,12 @@
 // code-review round-trip — from a terminal WITHOUT a running agent, and watch the messages and
 // responses pretty-printed.
 //
-//   node emulator.ts doctor            # resolve + handshake; is the extension listening?
-//   node emulator.ts event <Name>      # fire one telemetry hook.event (fire-and-forget)
-//   node emulator.ts plan [--file p]   # ExitPlanMode plan gate; blocks for Approve/Send Feedback
-//   node emulator.ts review            # /paireto-review session; blocks for Send Feedback/Cancel
-//   node emulator.ts flow              # simulate a whole agent session lifecycle
-//   node emulator.ts help
+//   node scripts/emulator.ts doctor            # resolve + handshake; is the extension listening?
+//   node scripts/emulator.ts event <Name>      # fire one telemetry hook.event (fire-and-forget)
+//   node scripts/emulator.ts plan [--file p]   # ExitPlanMode plan gate; blocks for Approve/Send Feedback
+//   node scripts/emulator.ts review            # /paireto-review session; blocks for Send Feedback/Cancel
+//   node scripts/emulator.ts flow              # simulate a whole agent session lifecycle
+//   node scripts/emulator.ts help
 //
 // Runs directly on Node's TypeScript type-stripping (Node >= 22.18 / 23.6). CommonJS module:
 // runtime values come in via require(); type-only imports are erased. Zero dependencies.
@@ -142,7 +142,7 @@ interface Bridge {
   nowIso(): string;
 }
 
-const bridge = require("./bridge.js") as Bridge;
+const bridge = require("../plugins/claude-code/scripts/bridge.js") as Bridge;
 
 // ---------------------------------------------------------------------------
 // Pretty-printing
