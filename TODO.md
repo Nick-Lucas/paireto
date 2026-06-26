@@ -45,7 +45,10 @@ Do not ever edit this, this is for humans only to edit!
 
 # WIP 7
 
-* I noticed a subagent triggered the Review mode on Stop - this must never happen
+* Whenever I send a message with changes already made, the review workflow starts.
+* Onboarding flow with setup for recommended keyboard shortcuts?
+* Add a command for each supported agent to auto-setup Paireto
+* Make the Staged, Unstaged, Committed, sections much clearer with some icons/colours for easy scannability
 
 # Feature Ideas:
 

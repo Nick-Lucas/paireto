@@ -1,87 +1,96 @@
-# Paireto
+<p align="center">
+  <img src="media/Paireto%20Header@2x.png" alt="Paireto" width="420" />
+</p>
 
-**A VS Code companion for terminal-first AI coding agents.**
+> When agents write 80% of your code in 20% of the time, engineering becomes 80% judgment.
 
-Paireto brings a terminal-driven AI coding agent (today: [Claude Code](https://claude.com/claude-code))
-into the VS Code UI — *without* replacing the terminal. You keep driving the agent in the terminal;
-VS Code gives you the visibility and PR-style review surfaces a terminal can't:
+Paireto brings pair-programing to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
 
-- **See connected agents** and what each is doing at a glance.
-- **Review and approve/redirect plans** in the editor instead of the terminal.
-- **Review code changes PR-style** — diffs + inline comments — and send that feedback straight back
-  to the agent.
-- **Browse working changes** with native-git-panel ergonomics, any time.
-- **Switch repos/worktrees** quickly.
+# Why I Built Paireto
 
-It is *not* a replacement for the agent's TUI, a full Git client, or a GitHub PR replacement. It
-captures no telemetry or transcripts and never scrapes the terminal.
+Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening.
 
----
+I’m an engineer working with engineers. My code still has to meet a human standard. I don’t need a vibe-coding tool.
 
-## Requirements
+I tried the Conductor immitators, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of feature my editor already had.
 
-- **VS Code** 1.120 or newer
-- **git**
-- A supported terminal agent — see [Agent support](#agent-support)
+I tried GUI agents, but they pulled me toward more mouse-driven workflows or a new editor ecosystem.
 
----
+I tried TUI agents, and loved the ease they integrated with my editor workflows, but they struggle with structured planning, review, editor integration, and human reading comprehension.
 
-## Installation
+I increasingly found myself editing code from Git Diff tabs, so I can track what the agent has changed and refine it. But had no way to prepare agent feedback easily.
 
-Paireto is two halves that talk over a per-repo Unix domain socket:
+I tried Plannotator, and it clicked: planning and review are the missing pieces in my workflow. But I still had to jump between windows, and work outside my editor during code review and editing.
 
-1. The **VS Code extension** — the UI you interact with.
-2. A small **agent-side plugin** — hooks + an MCP server that report the agent's activity and block
-   on plan/review gates.
+I didn't need a second app, I needed a tighter integration between my TUI and editor. So I built this...
 
-### 1. Install the VS Code extension
+# Installation
+
+Paireto comes in two parts:
+
+1. The **VS Code extension**
+2. An agent-harness integration
+
+## 1. Install the VS Code extension
+
+### From VS Code Marketplace
+
+> TODO: add marketplace link
+
+### From a Release / Source
 
 Install `paireto.vsix` (from a release or `pnpm package`):
 
 ```sh
+# 1. Download from GitHub Releases and install
+# 2. VS Code: Extensions → … → Install from VSIX
+
+# OR
+
+# 1. Download from GitHub Releases
+# 2. From CLI:
 code --install-extension paireto.vsix
 ```
 
-Or use **Extensions → … → Install from VSIX** in VS Code.
 
-### 2. Register the agent-side plugin
+## 2. Install the agent plugin
 
-On first activation the extension **auto-registers** the bundled plugin for you (controlled by
+### Automatic Agent setup
+
+On first activation the Paireto **auto-registers** the bundled plugin for you (controlled by
 `paireto.plugin.autoInstall`, default on). If auto-registration fails, VS Code shows a prompt with a
 **Copy Command** button — run the copied command in a terminal.
 
-The manual fallback for Claude Code is:
+### Manual setup for Claude Code:
 
 ```sh
 claude plugin marketplace add "<extension>/plugins" --scope user && \
 claude plugin install paireto@paireto --scope user
 ```
 
-### 3. Restart the agent
+## 3. Restart the agent
 
-**Restart Claude Code** so the new hooks and MCP tool load. That's it — open a repo in VS Code, start
+**Restart your agent** to load the Paireto integration. That's it — open a repo in VS Code, start
 the agent in its terminal, and the agent appears in the Paireto sidebar.
 
 ---
 
-## Agent support
+# Agent support
 
-Paireto's architecture is agent-agnostic: sessions are correlated by **repository directory**, and the
-extension talks to a per-repo socket. Any agent can integrate by shipping a plugin that speaks the
-bridge protocol (activity hooks + plan/review gates over the socket).
+Paireto's architecture is agent-agnostic, but still in development. We currently support
 
 | Agent | Status |
 | --- | --- |
-| **Claude Code** | ✅ Supported (bundled plugin, auto-registered) |
-| Others (e.g. Codex, OpenCode) | 🔜 Planned |
+| **Claude Code** | ✅ Supported (bundled plugin, auto-installed) |
+| Codex TUI | 🔜 Planned |
+| OpenCode TUI | 🔜 Planned |
+| Pi TUI | 🔜 Planned |
+| Others? | ＃ Open an Issue |
 
-> **Note:** Claude Code is currently the only supported agent, so this guide uses its terminology
-> (plans via ExitPlanMode, permission prompts, the `/paireto-review` command). As more agents are
-> added, each will get its own setup section here; the in-app workflows below stay the same.
 
 ---
 
-## The sidebar at a glance
+# The sidebar at a glance
 
 Open the **Paireto** view from the activity bar. It has collapsible sections:
 
@@ -101,9 +110,9 @@ You'll also get:
 
 ---
 
-## Workflows
+# Workflows
 
-### Get notified when an agent needs you
+## Get notified when an agent needs you
 
 When one of *this window's* agents finishes a turn, asks a question, or hits a permission/plan prompt,
 Paireto flags it: an **orange bell** appears on the agent row, the status bar, the activity-bar badge,
@@ -111,7 +120,7 @@ and the repo switcher, and a sound plays once per transition. Clicking the agent
 
 Configure with `paireto.notify.type` (`sound` / `disabled`) and `paireto.notify.sound`.
 
-### Approve or redirect a plan
+## Approve or redirect a plan
 
 1. The agent presents a plan → it **opens in VS Code automatically**, the terminal panel hides, and the
    agent blocks waiting for you.
@@ -125,7 +134,7 @@ Configure with `paireto.notify.type` (`sound` / `disabled`) and `paireto.notify.
 
 Closing the plan tab while it's still pending prompts you to Approve or Send Feedback.
 
-### Review code, PR-style
+## Review code, PR-style
 
 - **Comment any time.** Open any diff in the Changed Files section and add an inline comment. The first
   comment auto-starts a review and reveals the **Feedback** section. No need to wait for the agent.
@@ -142,7 +151,7 @@ Closing the plan tab while it's still pending prompts you to Approve or Send Fee
 > one is foreground (occupying the editor) at a time — click an agent in the **Agents** section to flip
 > between them.
 
-### Browse and stage changes
+## Browse and stage changes
 
 The **Changed Files** section works like the native git panel, grouped top-down: **Committed → Staged →
 Working Tree**.
@@ -154,7 +163,7 @@ Working Tree**.
 - Diffs are **editable with full LSP** when the file has no change at a lower git layer — your edits
   land in the working tree and the view refreshes on save.
 
-### Switch repo or worktree
+## Switch repo or worktree
 
 Press **`Cmd/Ctrl+Shift+K`** (or click the status bar item) to open the switcher: current window,
 worktrees, and recent repos. Each row summarizes that location's agent activity and whether it has an
@@ -165,7 +174,7 @@ open window.
 
 ---
 
-## Keyboard shortcuts
+# Keyboard shortcuts
 
 | Shortcut | Action |
 | --- | --- |
@@ -175,25 +184,7 @@ open window.
 
 ---
 
-## Settings
-
-All settings live under `paireto.*`:
-
-| Setting | Default | What it does |
-| --- | --- | --- |
-| `paireto.plugin.autoInstall` | `true` | Auto-register the bundled agent plugin on activation. |
-| `paireto.notify.type` | `sound` | How to alert when an agent needs you (`sound` / `disabled`). |
-| `paireto.notify.sound` | `Ping` | System-sound name or absolute path, when `notify.type` is `sound`. |
-| `paireto.planApprove.mode` | `auto` | Mode the agent enters when you approve a plan (`auto` / `acceptEdits` / `default` / `plan` / `off`). |
-| `paireto.debug` | `false` | Log diagnostics to the *Paireto* output channel. |
-| `paireto.planGate.onUnavailable` | `fail-open` | Plan-gate behavior when no window is listening. |
-| `paireto.planGate.onTimeout` | `fail-visible` | Plan-gate behavior on timeout. |
-| `paireto.planGate.onMalformed` | `fail-visible` | Plan-gate behavior on a malformed response. |
-| `paireto.planGate.timeoutSeconds` | `345600` | Max seconds the plan gate blocks for a decision. |
-
----
-
-## Troubleshooting
+# Troubleshooting
 
 - **Agent doesn't appear in the sidebar.** Make sure you restarted the agent after installing, and that
   the repo is open in VS Code. Enable `paireto.debug` and check the *Paireto* output channel.
