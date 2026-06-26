@@ -3,6 +3,7 @@
 // (stage/unstage/discard), hosts inline comments, and ships feedback to the waiting agent.
 
 import * as crypto from "node:crypto";
+import * as fs from "node:fs/promises";
 import { basename, isAbsolute, join, relative } from "node:path";
 
 import * as vscode from "vscode";
@@ -14,7 +15,12 @@ import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { closeTabsWhere } from "../gate/tabs.js";
-import { DiffService, type ChangedFile, type ChangesModel } from "../git/DiffService.js";
+import {
+  DiffService,
+  singlePaneSide,
+  type ChangedFile,
+  type ChangesModel,
+} from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
@@ -674,7 +680,12 @@ export class ReviewController implements vscode.Disposable {
     if (!this.repoRoot || !file) {
       return;
     }
-    await vscode.window.showTextDocument(vscode.Uri.file(join(this.repoRoot, file.path)));
+    // `vscode.open` (not showTextDocument) lets VS Code pick the editor for the file type — image
+    // preview, etc. — instead of forcing a text editor, matching the native git panel's "Open File".
+    await vscode.commands.executeCommand(
+      "vscode.open",
+      vscode.Uri.file(join(this.repoRoot, file.path)),
+    );
   }
 
   private async openDiff(
@@ -720,11 +731,29 @@ export class ReviewController implements vscode.Disposable {
     // (not the whole relative path) so the tab label stays short.
     const name = basename(file.path);
     const title = editable ? `${name} (Working Tree)` : `${name} (${GROUP_LABEL[file.group]})`;
-    if (editable) {
+
+    // An add (no base) or delete (no modified) has nothing to diff against — a two-pane diff would
+    // show a broken/empty side (an image viewer can't render the 0-byte side at all). Open the one
+    // real side in a single editor, like the native git panel. The doc is still commentable: the
+    // working-tree file: side and the paireto-review virtual side both match the comment controller.
+    const singleSide = singlePaneSide(sides);
+    if (singleSide) {
+      const paneUri = singleSide === "base" ? baseUri : modUri;
+      await vscode.commands.executeCommand("vscode.open", paneUri, {
+        preview: !editable,
+        viewColumn: show?.viewColumn,
+        preserveFocus: show?.preserveFocus,
+      });
+      void ensureCommentingVisible();
+      return;
+    }
+
+    if (editable && (await isTextFile(join(this.repoRoot, file.path)))) {
       // Open the real working-tree file as a normal document first so the TypeScript server attaches
       // it to the workspace's configured project. Opening it only as a diff's modified side can leave
       // it in an inferred single-file project, so imported types resolve to `any`. Non-preview so the
-      // editable tab isn't recycled out from under an edit.
+      // editable tab isn't recycled out from under an edit. Skipped for binary files (images, etc.) —
+      // pre-opening them as text would force a text model and defeat VS Code's image diff.
       await vscode.workspace.openTextDocument(modUri);
     }
     await vscode.commands.executeCommand("vscode.diff", baseUri, modUri, title, {
@@ -1035,6 +1064,26 @@ export function stopGateAction(opts: {
 function isInside(root: string, child: string): boolean {
   const rel = relative(root, child);
   return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/**
+ * Best-effort "is this a text file" check: a NUL byte in the first chunk means binary (the same
+ * heuristic git uses). Used to decide whether to pre-open a file as a TextDocument. Fails open to
+ * `true` if the file can't be read, so the text path (the common case) isn't skipped on a transient
+ * error.
+ */
+async function isTextFile(absPath: string): Promise<boolean> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(absPath, "r");
+    const buf = Buffer.alloc(8000);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    return !buf.subarray(0, bytesRead).includes(0);
+  } catch {
+    return true;
+  } finally {
+    await handle?.close();
+  }
 }
 
 /** Structural equality of the Changes model, so a no-op refresh doesn't re-render the tree. */

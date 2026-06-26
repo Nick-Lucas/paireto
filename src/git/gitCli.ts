@@ -32,6 +32,22 @@ export async function gitSafe(repoRoot: string, args: string[]): Promise<string>
   }
 }
 
+/**
+ * Like {@link gitSafe} but returns the raw stdout bytes (no UTF-8 decode), so binary blobs such as
+ * images survive a `git show` intact. Resolves to an empty buffer instead of throwing.
+ */
+export async function gitSafeBytes(repoRoot: string, args: string[]): Promise<Buffer> {
+  try {
+    const { stdout } = await execFileAsync("git", ["-C", repoRoot, ...args], {
+      maxBuffer: MAX_BUFFER,
+      encoding: "buffer",
+    });
+    return stdout;
+  } catch {
+    return Buffer.alloc(0);
+  }
+}
+
 /** Split NUL-separated git porcelain output, dropping a trailing empty token. */
 export function splitNul(output: string): string[] {
   const parts = output.split("\0");

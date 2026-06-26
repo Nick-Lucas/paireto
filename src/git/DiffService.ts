@@ -41,6 +41,22 @@ export interface FileSides {
   modified: ContentRef;
 }
 
+/**
+ * Which side to show in a SINGLE editor (no diff) for an add or delete — there's nothing to diff
+ * against the empty side, and a two-pane diff would render a broken/empty pane (fatal for an image
+ * viewer). A delete (no modified) shows the `base`; an add (no base) shows the `modified`. Returns
+ * `null` when both sides have content, i.e. a real modification → keep the two-pane diff.
+ */
+export function singlePaneSide(sides: FileSides): "base" | "modified" | null {
+  if (sides.modified.kind === "empty") {
+    return "base";
+  }
+  if (sides.base.kind === "empty") {
+    return "modified";
+  }
+  return null;
+}
+
 type Counts = Map<string, { additions: number; deletions: number }>;
 
 export class DiffService {

@@ -42,7 +42,10 @@ Do not ever edit this, this is for humans only to edit!
 
 * Notification ticker on extension, ideally a blue count for changes and a yellow Bell for agent notifications
 * Update readme with docs
-* ensure that 
+
+# WIP 7
+
+* I noticed a subagent triggered the Review mode on Stop - this must never happen
 
 # Feature Ideas:
 

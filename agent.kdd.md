@@ -74,6 +74,17 @@
   `TextDocumentContentProvider`** — a content-provider doc on a diff's modified side stays
   editable-in-buffer (Save → "Save As"), so it wasn't actually read-only.
 
+- **Diffs/Open File support ANY file type (images, etc.), like the git panel.** The review provider
+  serves raw bytes (`gitSafeBytes` + binary `fs.readFile`, never a UTF-8 round-trip that mangles
+  binary blobs); "Open File" uses `vscode.open` (not `showTextDocument`) so VS Code picks the editor;
+  the editable-diff TextDocument pre-open (for TS LSP) is skipped for binary files (`isTextFile`
+  NUL-byte check) so it doesn't defeat the image diff.
+
+- **Adds/deletes open a SINGLE editor, not a two-pane diff** (`singlePaneSide`): one side is empty, so
+  a diff would render a broken/empty pane (an image viewer can't show the 0-byte side). Add → show the
+  modified side; delete → show the base. Both panes still match the comment controller (file: side or
+  paireto-review side), so they stay commentable.
+
 - **A staged/committed diff's first edit "demotes" its base to the index in place** — fire
   `onDidChange` on the open base URI rather than reopening, so there's no save prompt and caret/focus
   survive. Demotions clear on re-open, Compare-To change, repo switch, and tab close.

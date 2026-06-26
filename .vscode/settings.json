@@ -28,5 +28,6 @@
   },
   "[jsonc]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
-  }
+  },
+  "paireto.debug": true
 }

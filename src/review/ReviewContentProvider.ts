@@ -11,8 +11,10 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { gitSafe } from "../git/gitCli.js";
+import { gitSafeBytes } from "../git/gitCli.js";
 import { Schemes } from "../config.js";
+
+const EMPTY = new Uint8Array(0);
 
 export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
@@ -26,7 +28,7 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
   private readonly demoted = new Set<string>();
 
   /** Last-resolved content per URI, so stat() + readFile() share one git call; cleared on change. */
-  private readonly cache = new Map<string, string>();
+  private readonly cache = new Map<string, Uint8Array>();
 
   // ── Refresh / demotion API (fires FileChangeEvents so open diffs re-read) ──────────────────────
   /** Force a refresh of any open diff editors backed by this URI. */
@@ -114,13 +116,13 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
       type: vscode.FileType.File,
       ctime: 0,
       mtime: 0,
-      size: Buffer.byteLength(content, "utf8"),
+      size: content.byteLength,
       permissions: vscode.FilePermission.Readonly,
     };
   }
 
   async readFile(uri: vscode.Uri): Promise<Uint8Array> {
-    return Buffer.from(await this.resolve(uri), "utf8");
+    return this.resolve(uri);
   }
 
   readDirectory(): [string, vscode.FileType][] {
@@ -143,19 +145,19 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
     throw vscode.FileSystemError.NoPermissions();
   }
 
-  /** Resolve a URI to its text content, caching so a stat()+readFile() pair runs git only once. */
-  private async resolve(uri: vscode.Uri): Promise<string> {
+  /** Resolve a URI to its raw bytes, caching so a stat()+readFile() pair runs git only once. */
+  private async resolve(uri: vscode.Uri): Promise<Uint8Array> {
     const key = uri.toString();
     const cached = this.cache.get(key);
     if (cached !== undefined) {
       return cached;
     }
-    const text = await this.resolveContent(uri);
-    this.cache.set(key, text);
-    return text;
+    const bytes = await this.resolveContent(uri);
+    this.cache.set(key, bytes);
+    return bytes;
   }
 
-  private async resolveContent(uri: vscode.Uri): Promise<string> {
+  private async resolveContent(uri: vscode.Uri): Promise<Uint8Array> {
     const params = new URLSearchParams(uri.query);
     let ref = params.get("ref") ?? "EMPTY";
     const repoRoot = params.get("repo") ? decodeURIComponent(params.get("repo")!) : "";
@@ -169,19 +171,19 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
     }
 
     if (ref === "EMPTY" || !repoRoot || !relPath) {
-      return "";
+      return EMPTY;
     }
     if (ref === "WORKING") {
       try {
-        return await fs.readFile(path.join(repoRoot, relPath), "utf8");
+        return await fs.readFile(path.join(repoRoot, relPath));
       } catch {
-        return "";
+        return EMPTY;
       }
     }
     if (ref === "INDEX") {
-      return gitSafe(repoRoot, ["show", `:${relPath}`]);
+      return gitSafeBytes(repoRoot, ["show", `:${relPath}`]);
     }
-    return gitSafe(repoRoot, ["show", `${ref}:${relPath}`]);
+    return gitSafeBytes(repoRoot, ["show", `${ref}:${relPath}`]);
   }
 
   /** Build a content URI for one side of a file diff. */
