@@ -6,6 +6,24 @@
 
 Paireto brings pair-programing to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
 
+# Contents
+
+- [Why I Built Paireto](#why-i-built-paireto)
+- [Installation](#installation)
+  - [1. Install the VS Code extension](#1-install-the-vs-code-extension)
+  - [2. Install the agent plugin](#2-install-the-agent-plugin)
+  - [3. Restart the agent](#3-restart-the-agent)
+- [Agent support](#agent-support)
+- [The sidebar at a glance](#the-sidebar-at-a-glance)
+- [Workflows](#workflows)
+  - [Get notified when an agent needs you](#get-notified-when-an-agent-needs-you)
+  - [Approve or redirect a plan](#approve-or-redirect-a-plan)
+  - [Review code, PR-style](#review-code-pr-style)
+  - [Browse and stage changes](#browse-and-stage-changes)
+  - [Switch repo or worktree](#switch-repo-or-worktree)
+- [Keyboard shortcuts](#keyboard-shortcuts)
+- [Troubleshooting](#troubleshooting)
+
 # Why I Built Paireto
 
 Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening.
