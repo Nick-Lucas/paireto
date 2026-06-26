@@ -3,7 +3,6 @@
   "displayName": "Paireto",
   "version": "0.0.1",
   "description": "Paireto — VS Code companion for terminal-first AI coding agents.",
-  "icon": "media/icon.png",
   "categories": [
     "Other"
   ],
@@ -26,11 +25,15 @@
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit && tsc -p scripts",
     "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
+    "publish": "vsce publish --no-dependencies",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
     "emulator": "node scripts/emulator.ts"
+  },
+  "dependencies": {
+    "dedent": "^1.7.2"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -592,10 +595,8 @@
   "activationEvents": [
     "onStartupFinished"
   ],
+  "icon": "media/icon.png",
   "engines": {
     "vscode": "^1.120.0"
-  },
-  "dependencies": {
-    "dedent": "^1.7.2"
   }
 }
