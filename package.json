@@ -9,7 +9,7 @@
   "license": "UNLICENSED",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Nick-Lucas/vscode-paireto"
+    "url": "https://github.com/Nick-Lucas/paireto"
   },
   "publisher": "Paireto",
   "main": "./dist/extension.js",

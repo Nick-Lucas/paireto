@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./media/PairetoHeader2x.png" alt="Paireto" width="420" />
+  <img src="https://github.com/Nick-Lucas/paireto/raw/main/media/PairetoHeader2x.png" alt="Paireto" width="420" />
 </p>
 
 > When agents write 80% of your code in 20% of the time, engineering becomes 80% judgment.
