@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="media/Paireto%20Header@2x.png" alt="Paireto" width="420" />
+  <img src="./media/PairetoHeader2x.png" alt="Paireto" width="420" />
 </p>
 
 > When agents write 80% of your code in 20% of the time, engineering becomes 80% judgment.
@@ -8,10 +8,15 @@ Paireto brings pair-programing to your TUI coding agents in VS Code: planning, r
 
 # Contents
 
+- [Contents](#contents)
 - [Why I Built Paireto](#why-i-built-paireto)
 - [Installation](#installation)
   - [1. Install the VS Code extension](#1-install-the-vs-code-extension)
+    - [From VS Code Marketplace](#from-vs-code-marketplace)
+    - [From a Release / Source](#from-a-release--source)
   - [2. Install the agent plugin](#2-install-the-agent-plugin)
+    - [Automatic Agent setup](#automatic-agent-setup)
+    - [Manual setup for Claude Code:](#manual-setup-for-claude-code)
   - [3. Restart the agent](#3-restart-the-agent)
 - [Agent support](#agent-support)
 - [The sidebar at a glance](#the-sidebar-at-a-glance)
