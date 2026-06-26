@@ -11,6 +11,7 @@
     "type": "git",
     "url": "https://github.com/Nick-Lucas/vscode-paireto"
   },
+  "publisher": "Paireto",
   "main": "./dist/extension.js",
   "scripts": {
     "vscode:prepublish": "pnpm run prepackage",
@@ -595,7 +596,7 @@
   "activationEvents": [
     "onStartupFinished"
   ],
-  "icon": "media/icon.png",
+  "icon": "media/PairetoAppIcon@2x.png",
   "engines": {
     "vscode": "^1.120.0"
   }
