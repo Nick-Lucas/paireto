@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="https://github.com/Nick-Lucas/paireto/raw/main/media/PairetoHeader2x.png" alt="Paireto" width="420" />
+  <img src="media/PairetoHeader2x.png" alt="Paireto" width="420" />
 </p>
 
-> When agents write 80% of your code in 20% of the time, engineering becomes 80% judgment.
+> "When agents write 80% of your code in 20% of the time, engineering is 80% judgment" - Paireto (the Parrot)
 
 Paireto brings pair-programing to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
 
