@@ -59,13 +59,12 @@ Do not ever edit this, this is for humans only to edit!
 
 # WIP 8
 
-* A shortcut to open Paireto tab
-* Whenever I send a message with changes already made, the review workflow starts.
-* Add a command for each supported agent to auto-setup Paireto
-* Make the Staged, Unstaged, Committed, sections much clearer with some icons/colours for easy scannability
-* When a Plan or Review is automatically started, pop up a VS Code notification explaining this, with the option to "Approve Immediately" "Dismiss Notification" or (for Review only) "Disable Automatic Reviewing" - disabling sets a setting which makes the review skill the way to trigger a review from the agent
 * When starting a review in the editor and then calling the agent skill to adopt the review, a new review is queued instead and only after submitting the first and "approving" the second does the agent get its comments
 * Trim down settings, most of them seem nonsensical and we're missing important ones like the ability to disable automatic Review mode
+* A shortcut to open Paireto tab (Cmd+Shift+C)
+* Whenever I send a message to the agent with changes already made, but none made by the agent, the review workflow starts.
+* Make the Staged, Unstaged, Committed, sections much clearer with some icons/colours for easy scannability (probably just copy how the native git panel does it with a blue notification circle and files count on the far right of each)
+* When a Plan or Review is automatically started, pop up a VS Code notification explaining this, with the option to "Approve Immediately" or (for plan only) "View Plan" (which focuses the plan tab and changes list in sidebar) or (for Review only) "Start Reviewing" (which just opens the changes list/sidebar) - disabling sets a setting which makes the review skill the way to trigger a review from the agent
 
 # Feature Ideas:
 
