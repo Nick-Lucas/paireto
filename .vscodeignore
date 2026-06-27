@@ -4,6 +4,8 @@
 # Extension runtime
 !package.json
 !dist/extension.js
+!dist/welcome.js
+!dist/welcome.css
 !media/**
 
 # Marketplace metadata

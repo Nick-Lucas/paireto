@@ -24,7 +24,7 @@
     "compile-tests": "tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
-    "check-types": "tsc --noEmit && tsc -p scripts",
+    "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview",
     "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
     "publish:minor": "vsce publish minor --no-dependencies",
     "lint": "oxlint src",
@@ -34,11 +34,16 @@
     "emulator": "node scripts/emulator.ts"
   },
   "dependencies": {
-    "dedent": "^1.7.2"
+    "dedent": "^1.7.2",
+    "jsonc-parser": "^3.3.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@types/vscode": "^1.120.0",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2",
@@ -59,6 +64,10 @@
       {
         "command": "paireto.switcher.acceptThisWindow",
         "title": "Paireto: Open Selected in This Window"
+      },
+      {
+        "command": "paireto.openWelcome",
+        "title": "Paireto: Open Welcome"
       },
       {
         "command": "paireto.gate.approve",
@@ -508,11 +517,6 @@
     "configuration": {
       "title": "Paireto",
       "properties": {
-        "paireto.plugin.autoInstall": {
-          "type": "boolean",
-          "default": true,
-          "description": "Automatically register the bundled Claude Code plugin on activation."
-        },
         "paireto.debug": {
           "type": "boolean",
           "default": false,

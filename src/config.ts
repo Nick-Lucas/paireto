@@ -6,6 +6,8 @@ export const EXT_ID = "paireto";
 export const Commands = {
   openSwitcher: "paireto.openSwitcher",
   switcherAcceptThisWindow: "paireto.switcher.acceptThisWindow",
+  /** Open the Welcome / onboarding webview (also shown once automatically on first install). */
+  openWelcome: "paireto.openWelcome",
   // Shared gate outcomes (dispatch to the active Plan or Review flow via the coordinator).
   gateApprove: "paireto.gate.approve",
   gateSendFeedback: "paireto.gate.sendFeedback",

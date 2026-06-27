@@ -45,7 +45,6 @@ Do not ever edit this, this is for humans only to edit!
 
 # WIP 7
 
-* Whenever I send a message with changes already made, the review workflow starts.
 * Onboarding flow with setup for recommended keyboard shortcuts?
   * Onboarding screen on install (and command to open it in the future)
     * Setup buttons for each agent
@@ -57,8 +56,11 @@ Do not ever edit this, this is for humans only to edit!
       * Ctrl+Shift+` to quick-launch a TUI agent (also include setup for each agent in this menu)
       * Plan, Feedback and Approve
       * Review on stop, Feedback and Approve
+* A shortcut to open Paireto tab
+* Whenever I send a message with changes already made, the review workflow starts.
 * Add a command for each supported agent to auto-setup Paireto
 * Make the Staged, Unstaged, Committed, sections much clearer with some icons/colours for easy scannability
+* When a Plan or Review is automatically started, pop up a VS Code notification explaining this, with the option to "Approve Immediately" "Dismiss Notification" or (for Review only) "Disable Automatic Reviewing" - disabling sets a setting which makes the review skill the way to trigger a review from the agent
 
 # Feature Ideas:
 
@@ -71,4 +73,5 @@ Do not ever edit this, this is for humans only to edit!
 * support the plan and review gates automatically forwarding to another agent to propose some comments
 * revisit the currently in-progress plan at any point in the future
 * plugins for Codex, Opencode, Pi
- 
+* Support feedback on UIs in in-editor browser
+* Look at the agent providing review feedback to the user during coding, reacting to user interactions, reacting to compile and lint errors with quick fixes, etc.

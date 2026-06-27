@@ -134,6 +134,20 @@ resolve with the same two actions.
   section rows / the title bar; the shared gate actions use colored icons whenever a plan or review is
   active — **Approve** (green) until feedback is queued, then **Send Feedback** (amber).
 
+### Welcome / Onboarding
+- A Welcome webview opens **once on first install** (and via **Paireto: Open Welcome**). Two sections:
+  - **Set up your agent:** each agent is a card with stacked setup steps, each with its own status +
+    action — **Bridge plugin** (Set up / ✓ Installed; Claude Code installs the bundled plugin, others
+    tagged "Planned") and **Terminal profile** (Configure / ✓ Configured), which adds the agent's
+    profile (e.g. `claudecode`) to User settings to power the quick-launch new-terminal-with-profile
+    picker.
+  - **The Paireto way:** recommended keyboard shortcuts for the terminal-first workflow (focus
+    terminal, toggle bottom bar, fullscreen terminal, switch terminal tabs, quick-launch a TUI agent
+    via `newWithProfile`). These are all **built-in VS Code commands**; each row shows its command id
+    (click to view it in Keyboard Shortcuts) and a **Set** button (or **Set all**) that writes the
+    recommended key — and any required default removals — to the user's `keybindings.json`. An **Edit
+    Keybindings** button opens the Keyboard Shortcuts UI.
+
 ---
 
 ## Core workflows
@@ -163,7 +177,7 @@ resolve with the same two actions.
 
 ## Setup
 
-- Install the VS Code extension; it auto-registers the bundled Claude Code plugin (manual fallback
-  available).
+- Install the VS Code extension; it opens the Welcome screen once, where you set up the bundled
+  Claude Code plugin per agent (manual fallback available) and apply recommended keybindings.
 - Restart Claude Code so hooks + the MCP tool load.
 - Requires: VS Code, Claude Code, git.

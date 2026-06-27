@@ -9,7 +9,6 @@ import { AgentSessionService } from "./agents/AgentSessionService.js";
 import { ActivityPublisher } from "./bridge/ActivityPublisher.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
 import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
-import { installPlugin, PLUGIN_VERSION } from "./bridge/PluginInstaller.js";
 import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
 import { registerCommentEditingCommands } from "./comments/CommentSession.js";
 import { resolveCommentAuthor } from "./comments/author.js";
@@ -29,6 +28,7 @@ import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
+import { WelcomePanel } from "./welcome/WelcomePanel.js";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Warm the comment-author cache (signed-in account → OS user → "Developer"); fire-and-forget.
@@ -42,29 +42,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     console.error("paireto: failed to write config mirror", err);
   }
 
-  // 2. Best-effort plugin install/registration via the claude CLI (once per version, non-blocking).
-  if (vscode.workspace.getConfiguration("paireto").get<boolean>("plugin.autoInstall", true)) {
-    const marker = "paireto.pluginInstalledVersion";
-    if (context.globalState.get<string>(marker) !== PLUGIN_VERSION) {
-      const pluginsRoot = vscode.Uri.joinPath(context.extensionUri, "plugins").fsPath;
-      void installPlugin(pluginsRoot).then(async (result) => {
-        console.log(`paireto: plugin install — ${result.detail}`);
-        if (result.ok) {
-          await context.globalState.update(marker, PLUGIN_VERSION);
-        } else if (result.manualCommand) {
-          const choice = await vscode.window.showWarningMessage(
-            "Paireto couldn't auto-install its Claude Code plugin. Register it manually?",
-            "Copy Command",
-          );
-          if (choice === "Copy Command") {
-            await vscode.env.clipboard.writeText(result.manualCommand);
-            void vscode.window.showInformationMessage(
-              "Command copied. Run it in a terminal, then restart Claude Code.",
-            );
-          }
-        }
-      });
-    }
+  // 2. Show the Welcome / onboarding webview once, on first install — the user sets up their agent
+  // (installs the bundled plugin) from there. A version string lets a future bump re-show it as a
+  // "what's new". Reopenable any time via paireto.openWelcome.
+  const WELCOME_VERSION = "1";
+  const welcomeMarker = "paireto.welcomeShownVersion";
+  if (context.globalState.get<string>(welcomeMarker) !== WELCOME_VERSION) {
+    void context.globalState.update(welcomeMarker, WELCOME_VERSION);
+    WelcomePanel.show(context);
   }
 
   // Session-scoped panels start hidden; their context keys gate visibility (see package.json `when`).
@@ -146,6 +131,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(Commands.focusAgent, () =>
       vscode.commands.executeCommand("workbench.action.terminal.focus"),
     ),
+    vscode.commands.registerCommand(Commands.openWelcome, () => WelcomePanel.show(context)),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
     vscode.commands.registerCommand(Commands.gateApprove, () => coordinator.current?.approve()),
     vscode.commands.registerCommand(Commands.gateSendFeedback, () =>

@@ -3,7 +3,8 @@
   "plugins": [
     "typescript",
     "unicorn",
-    "oxc"
+    "oxc",
+    "react"
   ],
   "categories": {
     "correctness": "error"
@@ -15,6 +16,7 @@
   },
   "env": {
     "builtin": true,
-    "node": true
+    "node": true,
+    "browser": true
   }
 }

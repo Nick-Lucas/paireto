@@ -15,7 +15,6 @@ Paireto brings pair-programing to your TUI coding agents in VS Code: planning, r
     - [From VS Code Marketplace](#from-vs-code-marketplace)
     - [From a Release / Source](#from-a-release--source)
   - [2. Install the agent plugin](#2-install-the-agent-plugin)
-    - [Automatic Agent setup](#automatic-agent-setup)
     - [Manual setup for Claude Code:](#manual-setup-for-claude-code)
   - [3. Restart the agent](#3-restart-the-agent)
 - [Agent support](#agent-support)
@@ -78,11 +77,13 @@ code --install-extension paireto.vsix
 
 ## 2. Install the agent plugin
 
-### Automatic Agent setup
+### Set up from the Welcome screen
 
-On first activation the Paireto **auto-registers** the bundled plugin for you (controlled by
-`paireto.plugin.autoInstall`, default on). If auto-registration fails, VS Code shows a prompt with a
-**Copy Command** button — run the copied command in a terminal.
+On first install a **Welcome** screen opens with a **Set up** button per agent — click it to register
+the bundled plugin (for Claude Code this runs the `claude` CLI for you). If that can't complete, you
+get a **Copy Command** button to run the registration manually. The Welcome screen also offers a
+shortlist of recommended keyboard shortcuts ("the Paireto way") you can apply with one click. Reopen
+it any time via **Paireto: Open Welcome** in the Command Palette.
 
 ### Manual setup for Claude Code:
 
@@ -104,7 +105,7 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 
 | Agent | Status |
 | --- | --- |
-| **Claude Code** | ✅ Supported (bundled plugin, auto-installed) |
+| **Claude Code** | ✅ Supported (bundled plugin, set up from the Welcome screen) |
 | Codex TUI | 🔜 Planned |
 | OpenCode TUI | 🔜 Planned |
 | Pi TUI | 🔜 Planned |

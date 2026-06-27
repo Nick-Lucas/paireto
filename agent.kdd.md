@@ -1,5 +1,42 @@
 # Paireto — Key Decisions
 
+- **The Welcome screen is the only webview** (everything else is tree/virtual-doc/comments). Shown
+  once on first install via the `paireto.welcomeShownVersion` globalState marker (a version string, so
+  a bump can re-show), reopenable via `paireto.openWelcome`. **Setup is now Welcome-only — there is no
+  activation-time plugin auto-install** (removed with the `paireto.plugin.autoInstall` setting).
+
+- **The Welcome webview is React/TSX**, bundled by a second esbuild build (browser/iife →
+  `dist/welcome.js`, shipped via a `!dist/welcome.js` line in `.vscodeignore`). It has its own
+  `src/welcome/webview/tsconfig.json` (DOM lib + `jsx`), excluded from the root tsconfig so DOM globals
+  don't leak into the node host; `check-types` runs it as a third project. Styles live in a colocated
+  `welcome.css` imported from the entry — esbuild emits a sibling `dist/welcome.css` (also `!`-listed)
+  loaded via `<link>` (CSP `style-src` is just `cspSource`, scripts stay nonce-locked). Host↔webview
+  share type-only contracts in `src/welcome/protocol.ts`. oxlint gains the `react` plugin.
+
+- **Never force-show logs; `paireto.debug` must not change app behaviour.** Debug being on is a normal
+  user state — it only controls whether lines are *written* to the "Paireto" output channel. Never call
+  `OutputChannel.show()` (it force-reveals the Output panel / "bottom bar") and never gate UI/layout/flow
+  on the debug flag. (This is why Welcome no longer reveals the channel on open.)
+
+- **Terminal-profile setup is a separate per-agent action** (its own nested row + **Configure** button
+  with ✓ Configured / Not configured status), decoupled from plugin install. Writes
+  `terminal.integrated.profiles.<osx|linux|windows>` (e.g. `claudecode` → `<vscode.env.shell> -l -c
+  claude`) to global settings; leaves an existing profile of the same name untouched. Powers the
+  quick-launch `newWithProfile` keybinding.
+
+- **The Welcome "Paireto way" section manages built-in VS Code keybindings by editing the user's
+  `keybindings.json`** — VS Code exposes no read/write API (no lookup-by-command-id), so we read user
+  overrides from the file and fall back to a small hardcoded **known-defaults table** for the commands
+  we manage (that's how `cmd+shift+[`/`]` terminal-tab defaults register as already-set). Located via
+  `globalStorageUri` two dirs up (`<userData>/User/keybindings.json`); written with `jsonc-parser` so
+  comments survive. No gate Approve/Feedback bindings.
+
+- **Applying a shortcut can also write `-command` removals** (`ManagedShortcut.removeDefaults` →
+  `applyShortcut`): some keys carry a conflicting default that must be cleared (quick-launch =
+  `terminal.newWithProfile` removes the default `terminal.new` off `ctrl+shift+\``; fullscreen removes
+  `zoomIn` off `shift+cmd+=`). `isApplied` requires the positive binding *and* every removal, so a
+  half-applied state still shows "Set".
+
 - **`vsce package` runs with `--no-dependencies`.** esbuild bundles all runtime deps (e.g. `dedent`)
   into `dist/extension.js`, so there's nothing to enumerate — and vsce's default `npm list` step
   fails anyway under pnpm.

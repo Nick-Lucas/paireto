@@ -1,0 +1,16 @@
+{
+  // Type-check config for the React webview (esbuild does the actual bundling). Browser + JSX, kept
+  // separate from the node extension-host tsconfig so DOM globals don't leak into the host code.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "types": []
+  },
+  "include": ["."]
+}
