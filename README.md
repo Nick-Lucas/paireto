@@ -27,15 +27,15 @@ Agentic coding changed software over-night. But for high-craft engineering, the 
 
 I’m an engineer working with engineers. My code still has to meet a human standard. I don’t need a vibe-coding tool.
 
-I tried the Conductor immitators, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of feature my editor already had.
+I tried the Conductor immitators, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of features my editor already had.
 
 I tried GUI agents, but they pulled me toward more mouse-driven workflows or a new editor ecosystem.
 
 I tried TUI agents, and loved the ease they integrated with my editor workflows, but they struggle with structured planning, review, editor integration, and human reading comprehension.
 
-I increasingly found myself editing code from Git Diff tabs, so I can track what the agent has changed and refine it. But had no way to prepare agent feedback easily.
+I increasingly found myself editing code from Git Diff tabs, so I could track what the agent had changed and refine. But had no way to prepare agent feedback easily.
 
-I tried Plannotator, and it clicked: planning and review are the missing pieces in my workflow. But I still had to jump between windows, and work outside my editor during code review and editing.
+I tried Plannotator, and it clicked: planning and review are two missing pieces in my workflow. But I still had to jump between apps, and work outside my editor during code review, losing LSP features which I depend on to understand code.
 
 I didn't need a second app, I needed a tighter integration between my TUI and editor. So I built this...
 
