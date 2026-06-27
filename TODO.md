@@ -56,11 +56,16 @@ Do not ever edit this, this is for humans only to edit!
       * Ctrl+Shift+` to quick-launch a TUI agent (also include setup for each agent in this menu)
       * Plan, Feedback and Approve
       * Review on stop, Feedback and Approve
+
+# WIP 8
+
 * A shortcut to open Paireto tab
 * Whenever I send a message with changes already made, the review workflow starts.
 * Add a command for each supported agent to auto-setup Paireto
 * Make the Staged, Unstaged, Committed, sections much clearer with some icons/colours for easy scannability
 * When a Plan or Review is automatically started, pop up a VS Code notification explaining this, with the option to "Approve Immediately" "Dismiss Notification" or (for Review only) "Disable Automatic Reviewing" - disabling sets a setting which makes the review skill the way to trigger a review from the agent
+* When starting a review in the editor and then calling the agent skill to adopt the review, a new review is queued instead and only after submitting the first and "approving" the second does the agent get its comments
+* Trim down settings, most of them seem nonsensical and we're missing important ones like the ability to disable automatic Review mode
 
 # Feature Ideas:
 
