@@ -47,6 +47,16 @@ Do not ever edit this, this is for humans only to edit!
 
 * Whenever I send a message with changes already made, the review workflow starts.
 * Onboarding flow with setup for recommended keyboard shortcuts?
+  * Onboarding screen on install (and command to open it in the future)
+    * Setup buttons for each agent
+    * "The Paireto way" with each keyboard shortcut's current binding, a button to set the recommended binding
+      * Cmd+' to focus terminal
+      * Cmd+J to toggle bottom bar
+      * Cmd+Shift+= to toggle fullscreen terminal
+      * Cmd+Shift+[ and ] to switch terminal tabs
+      * Ctrl+Shift+` to quick-launch a TUI agent (also include setup for each agent in this menu)
+      * Plan, Feedback and Approve
+      * Review on stop, Feedback and Approve
 * Add a command for each supported agent to auto-setup Paireto
 * Make the Staged, Unstaged, Committed, sections much clearer with some icons/colours for easy scannability
 
