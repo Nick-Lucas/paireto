@@ -1,20 +1,17 @@
 // Renders code-review comments into the feedback block delivered to Claude (via additionalContext
-// on the next prompt). All unresolved comments are included; problems first, then questions, then
-// plain comments.
+// on the next prompt). All comments are included; problems first, then questions, then plain comments.
 
 import dedent from "dedent";
 import { KIND_RANK } from "../comments/kinds.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
 export function renderReviewFeedback(comments: ReviewComment[]): string {
-  const actionable = comments
-    .filter((c) => !c.resolved)
-    .sort(
-      (a, b) =>
-        KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
-        a.filePath.localeCompare(b.filePath) ||
-        a.line - b.line,
-    );
+  const actionable = [...comments].sort(
+    (a, b) =>
+      KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
+      a.filePath.localeCompare(b.filePath) ||
+      a.line - b.line,
+  );
 
   if (actionable.length === 0) {
     return "";

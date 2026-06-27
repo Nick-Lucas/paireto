@@ -348,7 +348,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (this.plan.hasPendingPlan()) {
       out.push({ kind: "section", id: "plan", label: "Plan Review" });
     }
-    if (this.review.isSessionActive()) {
+    // The Feedback section appears once the user has left comments (the unclaimed bucket) or a review
+    // is in progress — so commenting before any review still surfaces the comments.
+    if (this.review.isSessionActive() || this.review.hasComments()) {
       out.push({
         kind: "section",
         id: "feedback",

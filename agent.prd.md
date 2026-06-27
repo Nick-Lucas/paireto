@@ -94,13 +94,15 @@ resolve with the same two actions.
 
 ### Code Review
 - **Comment any time:** open any Changes-section diff and add inline comments (Question / Comment /
-  Problem) without starting anything — the first comment auto-starts a review and reveals the Feedback
-  section. Commenting works whether or not the diff is editable; editability is purely structural
-  (editable when the file has no lower-level change, locked otherwise) and a review never changes it.
-- **Resolved at turn-end:** when the agent finishes a turn in which it changed files (or there are
-  uncommitted changes), it parks in review mode until you act — **Send Feedback** delivers your
-  comments, **Approve** lets it finish with nothing sent. Nothing is ever sent without an explicit
-  Send Feedback; a turn that changed nothing is never delayed.
+  Problem) without starting anything — comments collect in an unclaimed bucket and reveal the Feedback
+  section. They don't start a review; the next review (turn-end or `/paireto-review`) consumes them.
+  Commenting works whether or not the diff is editable; editability is purely structural (editable
+  when the file has no lower-level change, locked otherwise) and a review never changes it.
+- **Resolved at turn-end:** when the agent finishes a turn in which it edited files (detected via the
+  `PostToolUse` edit-tool hook), or you've left comments, it parks in review mode until you act —
+  **Send Feedback** delivers your comments, **Approve** lets it finish with nothing sent. Nothing is
+  ever sent without an explicit Send Feedback; a turn that edited nothing (and has no comments) is
+  never delayed.
 - **Manual `/paireto-review`:** still available — opens a blocking review session in VS Code and waits;
   Send Feedback returns the comments, Approve proceeds with no changes (`Cmd+Enter` submits).
 

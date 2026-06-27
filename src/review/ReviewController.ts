@@ -87,21 +87,10 @@ export class ReviewController implements vscode.Disposable {
   private activeRequestId?: string;
   /** Owning agent session of the active review (best-effort; drives the Agents panel). */
   private activeSessionId?: string;
-  /** Only one review may be pending at a time; a second startSession waits here. */
+  /** The review slot: held while a review is in progress. A second agent review waits in
+   *  `reviewWaiters` until the one ahead resolves (at most one review pending at a time). */
   private reviewBusy = false;
   private readonly reviewWaiters: Array<() => void> = [];
-  /** True when the active review is "deferred" (user/Stop-gate driven) rather than a blocking
-   *  /paireto-review tool call — its outcome is delivered to the Stop gate / queue, not a socket reply. */
-  private activeIsDeferred = false;
-  /** A turn-end Stop gate currently waiting for the user to resolve the deferred review. */
-  private stopWaiter?: { resolve: (outcome: StopGateResult) => void };
-  /** Feedback the user submitted on a deferred review while no Stop gate was waiting — delivered at
-   *  the next turn-end. Keyed by repoRoot (the Stop gate and the comment that started the review both
-   *  know the repo, whereas sessionId attribution is best-effort). */
-  private readonly pendingFeedback = new Map<string, string>();
-  /** Best-effort owning-session resolver for a comment-started deferred review (set by extension.ts
-   *  so the Agents panel can show "awaiting code review" on the right row). */
-  resolveActiveSession?: () => string | undefined;
   /** The file currently shown in the diff editor, so an edit can re-target its compare base. */
   private openDiffFile?: { path: string; group: FileGroup };
   /** Each open diff's (group, path), keyed by its base URI (stable across demotion) — lets a tab
@@ -110,9 +99,7 @@ export class ReviewController implements vscode.Disposable {
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private refreshSeq = 0;
   private readonly log = vscode.window.createOutputChannel("Paireto");
-  private debugEnabled = vscode.workspace
-    .getConfiguration("paireto")
-    .get<boolean>("debug", false);
+  private debugEnabled = vscode.workspace.getConfiguration("paireto").get<boolean>("debug", false);
 
   constructor(
     private readonly repoService: RepoService,
@@ -189,8 +176,11 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  /** Begin a blocking review session (invoked by the MCP paireto_review tool via the bridge). At most
-   *  one review is pending at a time; a second waits until the first resolves. */
+  /**
+   * Begin a blocking review (invoked by the MCP paireto_review tool via the bridge). Waits for any
+   * in-progress review to finish (at most one at a time), then opens a review — which automatically
+   * consumes the bucket of unclaimed comments the user already left — and blocks until they resolve it.
+   */
   async startSession(
     requestId: string,
     sessionId: string | undefined,
@@ -199,32 +189,68 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
-    await this.registerReviewGate(requestId, sessionId, false);
+    return this.runReview(requestId, sessionId, signal, (result) => result);
+  }
 
-    // A dropped connection ends the session (resolve the gate so this unblocks, then reset).
+  /**
+   * The turn-end gate. Allows the agent to stop immediately unless there's something to review —
+   * the turn touched files, there are uncommitted changes, or the user has left comments — in which
+   * case it opens a review (consuming any unclaimed comments) and blocks until the user resolves it.
+   * Never auto-submits: feedback reaches the agent only via an explicit Send Feedback.
+   */
+  async awaitStopOutcome(
+    sessionId: string | undefined,
+    changedThisTurn: boolean,
+    signal: AbortSignal,
+  ): Promise<StopGateResult> {
+    // Only park if there's something to review: this agent's turn edited files (per the PostToolUse
+    // hook) or the user has comments to deliver — and no review already owns the surface.
+    const open = shouldOpenTurnEndReview({
+      reviewInProgress: this.reviewBusy,
+      changedThisTurn,
+      hasComments: this.hasComments(),
+    });
+    if (!open) {
+      return { block: false };
+    }
+    this.reviewBusy = true;
+    return this.runReview(newReviewId(), sessionId, signal, (r) =>
+      r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false },
+    );
+  }
+
+  /**
+   * Register a review gate, block until the user resolves it (or the connection drops), tear it down,
+   * and map the gate result to the caller's reply type. Shared by /paireto-review and the turn-end
+   * gate. The caller must already hold the review slot.
+   */
+  private async runReview<T>(
+    requestId: string,
+    sessionId: string | undefined,
+    signal: AbortSignal,
+    map: (result: ReviewGateResult) => T,
+  ): Promise<T> {
+    await this.registerReviewGate(requestId, sessionId);
+    // A dropped connection ends the review (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
       this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
     };
     signal.addEventListener("abort", onAbort, { once: true });
-
     const result = await this.gate.awaitDecision(requestId);
     signal.removeEventListener("abort", onAbort);
     if (this.activeRequestId === requestId) {
       await this.cleanupReview(requestId);
     }
-    return result;
+    return map(result);
   }
 
-  /** Register a review gate (foregrounded if nothing else is) and mark it active. Shared by the
-   *  blocking /paireto-review path and the deferred (user/Stop-gate) path. Caller owns the review slot. */
+  /** Register a review gate (foregrounded if nothing else is) and mark it active. Caller owns the slot. */
   private async registerReviewGate(
     requestId: string,
     sessionId: string | undefined,
-    deferred: boolean,
   ): Promise<void> {
     this.activeRequestId = requestId;
     this.activeSessionId = sessionId;
-    this.activeIsDeferred = deferred;
     await this.refresh();
     const entry: GateEntry = {
       id: requestId,
@@ -250,104 +276,11 @@ export class ReviewController implements vscode.Disposable {
     }
     this.activeRequestId = undefined;
     this.activeSessionId = undefined;
-    this.activeIsDeferred = false;
     await this.setReviewContext(false);
     this.resetComments();
     await this.coordinator.unregister(requestId);
     this.releaseReviewSlot();
     this.changeEmitter.fire();
-  }
-
-  /**
-   * Open a non-blocking "deferred" review (the user started commenting, or the Stop gate is opening
-   * review mode at turn-end). No-op if a review is already active. Returns the new request id.
-   */
-  async requestDeferredReview(sessionId: string | undefined): Promise<string | undefined> {
-    if (this.reviewBusy || this.isSessionActive()) {
-      return this.activeRequestId; // a review is already in progress
-    }
-    this.reviewBusy = true;
-    const requestId = newReviewId();
-    await this.registerReviewGate(requestId, sessionId, true);
-    return requestId;
-  }
-
-  /**
-   * The blocking turn-end gate. Resolves "allow" immediately unless a review is warranted for this
-   * session, in which case it surfaces review mode and waits for the user to Approve / Send Feedback.
-   * `changedThisTurn` is the agent's "touched files this turn" signal (uncommitted changes back it up).
-   */
-  async awaitStopOutcome(
-    sessionId: string | undefined,
-    changedThisTurn: boolean,
-    signal: AbortSignal,
-  ): Promise<StopGateResult> {
-    const key = this.repoRoot ?? "";
-    const action = stopGateAction({
-      hasPendingFeedback: this.pendingFeedback.has(key),
-      reviewActive: this.isSessionActive(),
-      reviewIsDeferred: this.activeIsDeferred,
-      changedThisTurn,
-      hasUncommittedChanges: this.hasUncommittedChanges(),
-      reviewBusy: this.reviewBusy,
-    });
-    // 1. Feedback the user already submitted this turn — deliver it (user-initiated, time-shifted).
-    if (action === "deliver-pending") {
-      const queued = this.pendingFeedback.get(key) ?? "";
-      this.pendingFeedback.delete(key);
-      return { block: true, reason: queued };
-    }
-    // Allow immediately: nothing changed, busy, or a blocking /paireto-review collects its own result.
-    if (action === "allow") {
-      return { block: false };
-    }
-    // 2/3. Open a deferred review if the turn touched files, else wait on the in-progress one.
-    if (!this.isSessionActive()) {
-      const id = await this.requestDeferredReview(sessionId);
-      if (!id) {
-        return { block: false };
-      }
-    }
-    if (this.activeRequestId) {
-      await this.coordinator.switchTo(this.activeRequestId); // bring review mode to the foreground
-    }
-    return await new Promise<StopGateResult>((resolve) => {
-      this.stopWaiter = { resolve };
-      signal.addEventListener(
-        "abort",
-        () => {
-          if (this.stopWaiter) {
-            this.stopWaiter = undefined;
-            resolve({ block: false }); // connection dropped — let the agent stop
-          }
-        },
-        { once: true },
-      );
-    });
-  }
-
-  /** True when there are staged/unstaged changes (the Stop-gate fallback for "the turn touched files"). */
-  private hasUncommittedChanges(): boolean {
-    return this.changes.staged.length > 0 || this.changes.unstaged.length > 0;
-  }
-
-  /**
-   * Resolve a deferred review's outcome: hand it to a waiting Stop gate if one is parked, otherwise
-   * queue submitted feedback for the session's next turn-end. Always tears the review down.
-   */
-  private resolveDeferred(outcome: StopGateResult): void {
-    const key = this.repoRoot ?? "";
-    const requestId = this.activeRequestId;
-    if (this.stopWaiter) {
-      const waiter = this.stopWaiter;
-      this.stopWaiter = undefined;
-      waiter.resolve(outcome);
-    } else if (outcome.block && outcome.reason) {
-      this.pendingFeedback.set(key, outcome.reason);
-    }
-    if (requestId) {
-      void this.cleanupReview(requestId);
-    }
   }
 
   /** Foreground: commenting on, Feedback section shown, view focused. */
@@ -368,14 +301,9 @@ export class ReviewController implements vscode.Disposable {
     this.changeEmitter.fire();
   }
 
-  /** True while a review is pending (drives commenting + diff read-only mode), even if backgrounded. */
+  /** True while a review is in progress (drives the gate buttons), even if backgrounded. */
   isSessionActive(): boolean {
     return this.activeRequestId !== undefined;
-  }
-
-  /** The owning agent session of the pending review, if known (drives the Agents panel). */
-  activeReviewSessionId(): string | undefined {
-    return this.activeSessionId;
   }
 
   private async setReviewContext(foreground: boolean): Promise<void> {
@@ -811,7 +739,6 @@ export class ReviewController implements vscode.Disposable {
       line,
       kind,
       body: reply.text,
-      resolved: false,
       quote,
       anchor: {
         lineText: quote,
@@ -836,13 +763,10 @@ export class ReviewController implements vscode.Disposable {
     });
     reply.thread.label = `${relPath}:${line + 1}`;
     this.comments.set(model.id, { comment, model });
+    // Comments accumulate in this bucket whether or not a review is in progress; a review (started by
+    // /paireto-review or the turn-end gate) consumes whatever is in it. The Feedback section reveals
+    // itself once the bucket is non-empty. Editability is unaffected.
     this.changeEmitter.fire();
-
-    // The first comment auto-starts a "deferred" review (reveals the Feedback section + registers the
-    // gate); the blocking review gate then surfaces it at turn-end. Editability is unaffected.
-    if (!this.isSessionActive() && this.repoRoot) {
-      await this.requestDeferredReview(this.resolveActiveSession?.());
-    }
   }
 
   /**
@@ -902,15 +826,15 @@ export class ReviewController implements vscode.Disposable {
     return [...this.comments.values()].map((e) => e.model);
   }
 
+  /** True when the user has left review comments (the bucket), whether or not a review is in progress. */
+  hasComments(): boolean {
+    return this.comments.size > 0;
+  }
+
   // ── GateSession (shared Approve / Send-Feedback commands dispatch here while active) ──
   /** Approve: proceed with no changes (the agent continues, no feedback). */
   approve(): void {
-    if (!this.activeRequestId) {
-      return;
-    }
-    if (this.activeIsDeferred) {
-      this.resolveDeferred({ block: false }); // let the turn-end through with nothing to address
-    } else {
+    if (this.activeRequestId) {
       this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
     }
   }
@@ -926,14 +850,10 @@ export class ReviewController implements vscode.Disposable {
       );
       return;
     }
-    if (this.activeIsDeferred) {
-      this.resolveDeferred({ block: true, reason: feedback });
-    } else {
-      this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
-    }
+    this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
   }
 
-  /** True when there's ≥1 actionable (unresolved) comment to send (drives which gate button shows). */
+  /** True when there's ≥1 comment to send (drives which gate button shows). */
   hasFeedback(): boolean {
     return renderReviewFeedback(this.getComments()).length > 0;
   }
@@ -1028,36 +948,19 @@ export function isFileEditable(file: ChangedFile, changes: ChangesModel): boolea
   return !LOWER_GROUPS[file.group].some((g) => changes[g].some((f) => f.path === file.path));
 }
 
-export type StopGateAction = "deliver-pending" | "allow" | "review";
-
 /**
- * Decide what the blocking Stop gate does at a turn-end. Pure so it's unit-testable apart from the
- * VS Code surfaces. "deliver-pending" = the user already submitted feedback (hand it over);
- * "review" = enter/continue review mode and wait for the user; "allow" = let the agent stop now.
+ * Decide whether the turn-end gate should open a review. Pure/testable. Opens only when no review is
+ * already in progress AND either this agent's turn edited files (the PostToolUse edit-tool hook sets
+ * `changedThisTurn`) or the user has left review comments to deliver. A turn that changed nothing and
+ * has no comments lets the agent stop immediately — we trust the per-turn hook signal, NOT the repo's
+ * overall uncommitted state (which says nothing about whether *this* turn changed anything).
  */
-export function stopGateAction(opts: {
-  hasPendingFeedback: boolean;
-  reviewActive: boolean;
-  reviewIsDeferred: boolean;
+export function shouldOpenTurnEndReview(opts: {
+  reviewInProgress: boolean;
   changedThisTurn: boolean;
-  hasUncommittedChanges: boolean;
-  reviewBusy: boolean;
-}): StopGateAction {
-  if (opts.hasPendingFeedback) {
-    return "deliver-pending";
-  }
-  // A blocking /paireto-review owns its own delivery; the agent can't reach Stop while parked in it.
-  if (opts.reviewActive && !opts.reviewIsDeferred) {
-    return "allow";
-  }
-  if (opts.reviewActive) {
-    return "review"; // an in-progress deferred review — wait for the user to resolve it
-  }
-  // No review active: only open one if the turn touched files (uncommitted changes back it up).
-  if (opts.reviewBusy || !(opts.changedThisTurn || opts.hasUncommittedChanges)) {
-    return "allow";
-  }
-  return "review";
+  hasComments: boolean;
+}): boolean {
+  return !opts.reviewInProgress && (opts.changedThisTurn || opts.hasComments);
 }
 
 /** True when `child` is the same as or nested under `root` (both absolute fs paths). */

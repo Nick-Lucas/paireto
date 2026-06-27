@@ -16,7 +16,6 @@ export interface ReviewComment {
   line: number; // 0-based on the side's document
   kind: CommentKind;
   body: string;
-  resolved: boolean;
   quote: string;
   anchor: ReviewAnchor;
 }

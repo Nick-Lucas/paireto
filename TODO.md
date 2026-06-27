@@ -60,6 +60,10 @@ Do not ever edit this, this is for humans only to edit!
 # WIP 8
 
 * When starting a review in the editor and then calling the agent skill to adopt the review, a new review is queued instead and only after submitting the first and "approving" the second does the agent get its comments
+* detection of changed files is not working properly or gating the review
+
+# WIP 9
+
 * Trim down settings, most of them seem nonsensical and we're missing important ones like the ability to disable automatic Review mode
 * A shortcut to open Paireto tab (Cmd+Shift+C)
 * Whenever I send a message to the agent with changes already made, but none made by the agent, the review workflow starts.

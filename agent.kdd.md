@@ -150,9 +150,11 @@
 - **One gate button shows at a time, via `paireto.gateHasFeedback`** — set from the foreground gate's
   `hasFeedback()`; `when` clauses show Approve before any feedback, Send Feedback once there is some.
 
-- **Commenting on Changes diffs is always on; the first comment auto-starts a "deferred" review.**
-  Comments anchor on the review-scheme side of a locked diff OR the editable working-tree (file:) side
-  of an editable one — so commenting works in both cases.
+- **Commenting on Changes diffs is always on; comments accumulate in an unclaimed "bucket"
+  (`this.comments`), they do NOT start a review.** A review (started by /paireto-review or the turn-end
+  gate) simply consumes whatever is in the bucket; resolving it clears the bucket. Comments anchor on
+  the review-scheme side of a locked diff OR the editable working-tree (file:) side of an editable one,
+  so commenting works in both cases.
 
 - **Editability is purely structural and session-independent** (`isFileEditable`): editable iff the
   file isn't deleted and has no change at a lower git layer. A review never forces a diff read-only;
@@ -163,7 +165,16 @@
   just the count (like the Git tab; partially-staged files counted per-section, not deduped); agent
   needs-you cues live on the colourable surfaces (status bar, agent rows, switcher).
 
-- **A blocking `Stop` hook delivers deferred-review feedback at turn-end** (`on-review-gate.js` +
-  `awaitStopOutcome`). It only enters review mode when the turn touched files (edit-class PostToolUse /
-  FileChanged; backup: any uncommitted change), waits for the user, and **never auto-submits** —
-  feedback reaches the agent only via an explicit Send Feedback. Fails open instantly otherwise.
+- **One review path, two entry points** (`runReview`): both `startSession` (/paireto-review) and
+  `awaitStopOutcome` (the turn-end `Stop` hook, `on-review-gate.js`) register a gate, block on
+  `this.gate`, then map the one `ReviewGateResult` to their reply (socket result vs Stop block/allow).
+  No separate "deferred review" type, no adoption/claiming — a starting review just consumes the
+  comment bucket. `awaitStopOutcome` (`shouldOpenTurnEndReview`) opens a review only when **this
+  agent's turn edited files** — detected via the `PostToolUse` edit-tool hook (`changedThisTurn`), NOT
+  the repo's overall uncommitted state — or the comment bucket is non-empty; otherwise it allows the
+  stop. **Never auto-submits** — feedback reaches the agent only via an explicit Send Feedback. Fails
+  open instantly otherwise.
+
+- **At most one review at a time, via the slot (`reviewBusy` + `reviewWaiters`).** `startSession`
+  acquires the slot, queuing behind any in-progress review; the turn-end gate just allows the stop if
+  the slot is busy. `cleanupReview` releases it. The dead `ReviewComment.resolved` flag was removed.

@@ -93,12 +93,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
   const switcher = new RepoSwitcher(repoService, worktrees, recents, context.extensionUri);
 
-  // A comment-started deferred review attributes to the current repo's most-recent agent session.
-  reviewController.resolveActiveSession = () => {
-    const repo = repoService.current();
-    return repo ? agents.mostRecentSessionForRepo(repo.root.fsPath) : undefined;
-  };
-
   // Drive which gate button shows: only Send Feedback once feedback is queued, only Approve before.
   // Recompute whenever the foreground gate switches or its comments change.
   const refreshGateFeedback = (): void => {

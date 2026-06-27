@@ -28,7 +28,11 @@ import {
   shortSessionId,
 } from "../views/MainTreeProvider.js";
 import { pickAuthorName } from "../comments/author.js";
-import { isFileEditable, reconcileDiffTarget, stopGateAction } from "../review/ReviewController.js";
+import {
+  isFileEditable,
+  reconcileDiffTarget,
+  shouldOpenTurnEndReview,
+} from "../review/ReviewController.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
 
@@ -174,27 +178,24 @@ suite("renderReviewFeedback", () => {
     line: 0,
     kind: "comment",
     body: "fix",
-    resolved: false,
     quote: "line",
     anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
     ...over,
   });
 
-  test("includes all unresolved kinds, excludes resolved, problems first", () => {
+  test("includes all kinds, problems first", () => {
     const out = renderReviewFeedback([
       mk({ kind: "question", body: "a-question" }),
-      mk({ resolved: true, body: "resolved-only" }),
       mk({ kind: "problem", body: "real-issue", line: 41 }),
     ]);
     assert.ok(out.includes("real-issue"));
     assert.ok(out.includes("a-question"));
-    assert.ok(!out.includes("resolved-only"));
     assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
     assert.ok(out.includes("src/a.ts:42"));
   });
 
-  test("returns empty when all comments are resolved", () => {
-    assert.strictEqual(renderReviewFeedback([mk({ resolved: true })]), "");
+  test("returns empty when there are no comments", () => {
+    assert.strictEqual(renderReviewFeedback([]), "");
   });
 });
 
@@ -867,51 +868,21 @@ suite("isFileEditable (structural, session-independent)", () => {
   });
 });
 
-suite("stopGateAction (turn-end review gate)", () => {
-  const base = {
-    hasPendingFeedback: false,
-    reviewActive: false,
-    reviewIsDeferred: false,
-    changedThisTurn: false,
-    hasUncommittedChanges: false,
-    reviewBusy: false,
-  };
-  test("allows immediately when the turn changed nothing", () => {
-    assert.strictEqual(stopGateAction(base), "allow");
+suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
+  const base = { reviewInProgress: false, changedThisTurn: false, hasComments: false };
+  test("opens a review when the agent's turn edited files", () => {
+    assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
   });
-  test("opens a review when the turn touched files", () => {
-    assert.strictEqual(stopGateAction({ ...base, changedThisTurn: true }), "review");
+  test("opens a review when the user has comments to deliver", () => {
+    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasComments: true }), true);
   });
-  test("opens a review when there are uncommitted changes (backup signal)", () => {
-    assert.strictEqual(stopGateAction({ ...base, hasUncommittedChanges: true }), "review");
+  test("does NOT open a review for a turn that changed nothing (no uncommitted-changes fallback)", () => {
+    assert.strictEqual(shouldOpenTurnEndReview(base), false);
   });
-  test("delivers already-submitted feedback", () => {
+  test("stays out of the way while a review is already in progress", () => {
     assert.strictEqual(
-      stopGateAction({ ...base, hasPendingFeedback: true, changedThisTurn: true }),
-      "deliver-pending",
-    );
-  });
-  test("waits on an in-progress deferred review", () => {
-    assert.strictEqual(
-      stopGateAction({ ...base, reviewActive: true, reviewIsDeferred: true }),
-      "review",
-    );
-  });
-  test("stays out of the way of a blocking /paireto-review session", () => {
-    assert.strictEqual(
-      stopGateAction({
-        ...base,
-        reviewActive: true,
-        reviewIsDeferred: false,
-        changedThisTurn: true,
-      }),
-      "allow",
-    );
-  });
-  test("does not open a second review while the slot is busy", () => {
-    assert.strictEqual(
-      stopGateAction({ ...base, changedThisTurn: true, reviewBusy: true }),
-      "allow",
+      shouldOpenTurnEndReview({ ...base, changedThisTurn: true, reviewInProgress: true }),
+      false,
     );
   });
 });
