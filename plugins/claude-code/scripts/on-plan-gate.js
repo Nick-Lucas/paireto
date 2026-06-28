@@ -3,7 +3,11 @@
 
 // Blocking plan-gate hook entry. Registered on PermissionRequest matching ExitPlanMode.
 // Sends the plan markdown to the extension and BLOCKS until the user approves or requests
-// changes, then emits the PermissionRequest decision. Falls back per config on any failure.
+// changes, then emits the PermissionRequest decision.
+//
+// Failure behavior is fixed (no longer configurable): if no VS Code window is listening we ALLOW
+// (fail-open, so a missing extension never blocks the agent); on a timeout or a malformed response
+// we defer to Claude Code's native plan prompt (fail-visible).
 //
 // PermissionRequest decision shape, per the Claude Code hooks API:
 //   allow: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}
@@ -15,6 +19,8 @@ const bridge = require("./bridge.js");
 
 const CONNECT_TIMEOUT_MS = 3000;
 const SOFT_TIMEOUT_BUFFER_MS = 5000;
+// Max time the gate blocks waiting for a decision before deferring to the native prompt (~4 days).
+const GATE_TIMEOUT_MS = 345600 * 1000;
 
 function emitAllow(nextMode) {
   // On allow, optionally set the permission mode the session enters next (e.g. "auto"). Claude Code
@@ -57,27 +63,13 @@ function writeAndExit(text) {
   process.stdout.write(text + "\n", () => process.exit(0));
 }
 
-/** Apply a configured fail mode ("fail-open" -> allow, "fail-visible" -> ask). */
-function applyFailMode(mode, denyMessage) {
-  if (mode === "fail-open") {
-    emitAllow();
-  } else if (mode === "deny") {
-    emitDeny(denyMessage || "Plan review unavailable.");
-  } else {
-    emitAsk(); // fail-visible
-  }
-}
-
 async function main() {
-  const config = bridge.loadConfig();
-  const gate = config.planGate;
-
   const raw = await bridge.readStdin();
   let event;
   try {
     event = JSON.parse(raw);
   } catch {
-    applyFailMode(gate.onMalformed);
+    emitAsk(); // malformed input -> defer to the native prompt
     return;
   }
 
@@ -87,7 +79,7 @@ async function main() {
 
   const target = bridge.resolveTarget(cwd);
   if (!target) {
-    applyFailMode(gate.onUnavailable);
+    emitAllow(); // no window listening -> fail open
     return;
   }
 
@@ -96,19 +88,19 @@ async function main() {
     const key = bridge.repoKey(target.repoRoot);
     conn = await bridge.connectAndHandshake(target.socketPath, key, CONNECT_TIMEOUT_MS);
   } catch {
-    applyFailMode(gate.onUnavailable);
+    emitAllow(); // couldn't reach the window -> fail open
     return;
   }
 
   const id = crypto.randomUUID();
   let resolved = false;
 
-  const softTimeoutMs = Math.max(1000, gate.timeoutSeconds * 1000 - SOFT_TIMEOUT_BUFFER_MS);
+  const softTimeoutMs = Math.max(1000, GATE_TIMEOUT_MS - SOFT_TIMEOUT_BUFFER_MS);
   const timer = setTimeout(() => {
     if (!resolved) {
       resolved = true;
       conn.sock.destroy();
-      applyFailMode(gate.onTimeout);
+      emitAsk(); // timed out -> defer to the native prompt
     }
   }, softTimeoutMs);
 
@@ -116,7 +108,7 @@ async function main() {
     if (!resolved) {
       resolved = true;
       clearTimeout(timer);
-      applyFailMode(gate.onTimeout); // socket dropped before a decision arrived
+      emitAsk(); // socket dropped before a decision arrived -> defer to the native prompt
     }
   });
 
@@ -128,7 +120,7 @@ async function main() {
       resolved = true;
       clearTimeout(timer);
       conn.sock.destroy();
-      applyFailMode(gate.onMalformed);
+      emitAsk(); // malformed response -> defer to the native prompt
       return;
     }
     if (msg && msg.t === "plan.review.response" && msg.id === id) {

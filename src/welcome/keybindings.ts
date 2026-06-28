@@ -118,6 +118,16 @@ export const MANAGED_SHORTCUTS: ManagedShortcut[] = [
       },
     ],
   },
+  {
+    id: "open-paireto-tab",
+    label: "Open Paireto tab",
+    // The auto-generated focus command for the Paireto activity-bar view container.
+    command: "workbench.view.extension.paireto",
+    macKey: "cmd+shift+c",
+    otherKey: "ctrl+shift+c",
+    // cmd+shift+c / ctrl+shift+c is "Open New External Terminal" by default — clear it.
+    removeDefaults: [{ command: "workbench.action.terminal.openNativeConsole" }],
+  },
 ];
 
 /** Recommended key for a shortcut on the given platform. */
@@ -227,7 +237,7 @@ export function isApplied(
   return (s.removeDefaults ?? []).every((rd) => removalApplied(entries, recNorm, rd));
 }
 
-/** A snapshot of how one shortcut resolves — for the `paireto.debug` output channel. */
+/** A snapshot of how one shortcut resolves — for the shared "Paireto" log channel. */
 export interface ShortcutDebug {
   command: string;
   recommended: string;

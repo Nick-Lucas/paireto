@@ -22,6 +22,7 @@ import {
   type ChangesModel,
 } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
+import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
@@ -98,8 +99,6 @@ export class ReviewController implements vscode.Disposable {
   private readonly openDiffs = new Map<string, { group: FileGroup; path: string }>();
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private refreshSeq = 0;
-  private readonly log = vscode.window.createOutputChannel("Paireto");
-  private debugEnabled = vscode.workspace.getConfiguration("paireto").get<boolean>("debug", false);
 
   constructor(
     private readonly repoService: RepoService,
@@ -149,14 +148,6 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewAddProblem, (r: vscode.CommentReply) => this.addComment(r, "problem")),
       reg(Commands.reviewRevealComment, (c: ReviewComment) => this.revealComment(c)),
       reg(Commands.reviewDeleteComment, (c: ReviewComment) => this.deleteComment(c)),
-      this.log,
-      vscode.workspace.onDidChangeConfiguration((e) => {
-        if (e.affectsConfiguration("paireto.debug")) {
-          this.debugEnabled = vscode.workspace
-            .getConfiguration("paireto")
-            .get<boolean>("debug", false);
-        }
-      }),
       // Editing an editable staged/committed diff routes the change to the working tree — flip the
       // diff to the unstaged base immediately, on the first keystroke (before any save).
       vscode.workspace.onDidChangeTextDocument((e) => this.maybeSwitchToUnstaged(e.document.uri)),
@@ -209,6 +200,9 @@ export class ReviewController implements vscode.Disposable {
       reviewInProgress: this.reviewBusy,
       changedThisTurn,
       hasComments: this.hasComments(),
+      automatic:
+        vscode.workspace.getConfiguration("paireto").get<string>("review.mode", "automatic") ===
+        "automatic",
     });
     if (!open) {
       return { block: false };
@@ -402,9 +396,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private debug(msg: string): void {
-    if (this.debugEnabled) {
-      this.log.appendLine(msg);
-    }
+    log.info(msg);
   }
 
   private async changeCompareTo(): Promise<void> {
@@ -959,8 +951,10 @@ export function shouldOpenTurnEndReview(opts: {
   reviewInProgress: boolean;
   changedThisTurn: boolean;
   hasComments: boolean;
+  /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only comments do. */
+  automatic: boolean;
 }): boolean {
-  return !opts.reviewInProgress && (opts.changedThisTurn || opts.hasComments);
+  return !opts.reviewInProgress && ((opts.automatic && opts.changedThisTurn) || opts.hasComments);
 }
 
 /** True when `child` is the same as or nested under `root` (both absolute fs paths). */

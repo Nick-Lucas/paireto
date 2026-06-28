@@ -57,12 +57,12 @@
   "contributes": {
     "commands": [
       {
-        "command": "paireto.openSwitcher",
+        "command": "paireto.switcher.open",
         "title": "Paireto: Switch Repository / Worktree",
         "icon": "$(repo)"
       },
       {
-        "command": "paireto.switcher.acceptThisWindow",
+        "command": "paireto.switcher.openInThisWindow",
         "title": "Paireto: Open Selected in This Window"
       },
       {
@@ -78,6 +78,10 @@
         "command": "paireto.gate.sendFeedback",
         "title": "Send Feedback",
         "icon": "media/send-feedback.svg"
+      },
+      {
+        "command": "paireto.submit",
+        "title": "Paireto: Submit Feedback or Approve if no Feedback"
       },
       {
         "command": "paireto.comment.edit",
@@ -208,24 +212,16 @@
     },
     "keybindings": [
       {
-        "command": "paireto.openSwitcher",
+        "command": "paireto.switcher.open",
         "key": "cmd+shift+k",
         "mac": "cmd+shift+k",
         "win": "ctrl+shift+k",
         "linux": "ctrl+shift+k"
       },
       {
-        "command": "paireto.switcher.acceptThisWindow",
+        "command": "paireto.switcher.openInThisWindow",
         "key": "shift+enter",
         "when": "paireto.switcherVisible"
-      },
-      {
-        "command": "editor.action.submitComment",
-        "key": "cmd+enter",
-        "mac": "cmd+enter",
-        "win": "ctrl+enter",
-        "linux": "ctrl+enter",
-        "when": "commentEditorFocused && (commentController == paireto.plan || commentController == paireto.review)"
       }
     ],
     "views": {
@@ -241,8 +237,12 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "paireto.switcher.acceptThisWindow",
+          "command": "paireto.switcher.openInThisWindow",
           "when": "false"
+        },
+        {
+          "command": "paireto.submit",
+          "when": "paireto.planPending || paireto.reviewSessionActive"
         },
         {
           "command": "paireto.plan.addQuestion",
@@ -517,10 +517,15 @@
     "configuration": {
       "title": "Paireto",
       "properties": {
-        "paireto.debug": {
-          "type": "boolean",
-          "default": false,
-          "description": "Log Paireto diagnostics (refreshes, diff open decisions) to the 'Paireto' output channel."
+        "paireto.logLevel": {
+          "type": "string",
+          "enum": [
+            "error",
+            "info",
+            "debug"
+          ],
+          "default": "info",
+          "description": "Paireto's log level."
         },
         "paireto.notify.type": {
           "type": "string",
@@ -540,59 +545,35 @@
           "default": "Ping",
           "description": "Sound played when 'paireto.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
         },
-        "paireto.planApprove.mode": {
+        "paireto.review.mode": {
           "type": "string",
           "enum": [
-            "auto",
-            "acceptEdits",
-            "default",
-            "plan",
-            "off"
+            "automatic",
+            "manual"
           ],
           "enumDescriptions": [
-            "Enter Claude's auto mode after approving a plan (auto-approve with background safety checks).",
-            "Enter accept-edits mode (auto-approve file edits) after approving a plan.",
-            "Restore the standard 'ask for permission' mode after approving a plan.",
-            "Stay in plan mode after approval.",
-            "Leave the permission mode unchanged (Claude's default: restore the pre-plan mode)."
+            "Open a Review automatically when the agent finishes a turn that edited files.",
+            "Only start a review if you have queued comments when the agent finishes, or when running /paireto-review from your agent."
           ],
-          "default": "auto",
-          "description": "The permission mode the agent enters when you approve its plan."
+          "default": "automatic",
+          "description": "When Paireto opens a code Review at the end of an agent's turn."
         },
-        "paireto.planGate.onUnavailable": {
-          "type": "string",
-          "enum": [
-            "fail-open",
-            "fail-visible",
-            "deny"
-          ],
-          "default": "fail-open",
-          "description": "Plan-gate behavior when no VS Code window is listening for this repo."
-        },
-        "paireto.planGate.onTimeout": {
-          "type": "string",
-          "enum": [
-            "fail-open",
-            "fail-visible",
-            "deny"
-          ],
-          "default": "fail-visible",
-          "description": "Plan-gate behavior when the review times out."
-        },
-        "paireto.planGate.onMalformed": {
-          "type": "string",
-          "enum": [
-            "fail-open",
-            "fail-visible",
-            "deny"
-          ],
-          "default": "fail-visible",
-          "description": "Plan-gate behavior on a malformed response."
-        },
-        "paireto.planGate.timeoutSeconds": {
-          "type": "number",
-          "default": 345600,
-          "description": "Maximum seconds the plan gate blocks waiting for a review decision."
+        "paireto.planApprove.mode": {
+          "type": "object",
+          "default": {
+            "claudecode": "auto"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "acceptEdits",
+              "default",
+              "plan",
+              "off"
+            ]
+          },
+          "description": "Per-harness permission mode the agent enters when you approve its plan, keyed by harness id (e.g. \"claudecode\"). Values: auto (auto-approve with background safety checks), acceptEdits (auto-approve file edits), default (ask for permission), plan (stay in plan mode), off (leave the mode unchanged)."
         }
       }
     }

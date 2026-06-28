@@ -9,6 +9,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { PLUGIN_VERSION } from "../bridge/PluginInstaller.js";
+import { log } from "../log.js";
 import {
   type AgentTerminalProfile,
   type OnboardingAgent,
@@ -58,15 +59,13 @@ export class WelcomePanel {
   }
 
   private readonly disposables: vscode.Disposable[] = [];
-  private readonly log = vscode.window.createOutputChannel("Paireto");
 
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly context: vscode.ExtensionContext,
   ) {
-    // NB: don't call this.log.show() here — it force-reveals the Output panel (the "bottom bar") every
-    // time the Welcome tab opens. Debug logs still land in the "Paireto" channel; open it manually.
-    this.disposables.push(this.log);
+    // NB: never reveal the Output panel here — opening Welcome must not force-show the "bottom bar".
+    // Logs land in the shared "Paireto" channel (gated on `paireto.logLevel`); open it manually.
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage(
       (msg) => void this.onMessage(msg),
@@ -74,13 +73,6 @@ export class WelcomePanel {
       this.disposables,
     );
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
-  }
-
-  /** Append to the 'Paireto' output channel when `paireto.debug` is on. */
-  private debug(msg: string): void {
-    if (vscode.workspace.getConfiguration("paireto").get<boolean>("debug", false)) {
-      this.log.appendLine(`[welcome] ${msg}`);
-    }
   }
 
   private dispose(): void {
@@ -165,12 +157,14 @@ export class WelcomePanel {
     const raw = this.readKeybindings();
     const entries = parseKeybindings(raw);
 
-    this.debug(
-      `buildState: platform=${platform} keybindingsPath=${this.keybindingsPath()} ` +
+    log.info(
+      `[welcome] buildState: platform=${platform} keybindingsPath=${this.keybindingsPath()} ` +
         `bytes=${raw.length} parsedEntries=${entries.length}`,
     );
     for (const s of MANAGED_SHORTCUTS) {
-      this.debug(`shortcut ${s.id}: ${JSON.stringify(debugShortcut(entries, s, platform))}`);
+      log.debug(
+        `[welcome] shortcut ${s.id}: ${JSON.stringify(debugShortcut(entries, s, platform))}`,
+      );
     }
 
     const agents: AgentState[] = ONBOARDING_AGENTS.map((a) => ({
@@ -220,10 +214,10 @@ export class WelcomePanel {
   private applyShortcutById(id: string): void {
     const shortcut: ManagedShortcut | undefined = MANAGED_SHORTCUTS.find((s) => s.id === id);
     if (!shortcut) {
-      this.debug(`applyShortcutById: unknown shortcut id "${id}"`);
+      log.info(`[welcome] applyShortcutById: unknown shortcut id "${id}"`);
       return;
     }
-    this.debug(`applyShortcutById: ${id} (${shortcut.command})`);
+    log.info(`[welcome] applyShortcutById: ${id} (${shortcut.command})`);
     this.writeKeybindings(applyShortcut(this.readKeybindings(), shortcut, this.platform()));
   }
 
@@ -286,9 +280,13 @@ export class WelcomePanel {
           { ...existing, [profile.name]: entry },
           vscode.ConfigurationTarget.Global,
         );
-        this.debug(`added terminal profile "${profile.name}" → ${profile.command} (${key})`);
+        log.info(
+          `[welcome] added terminal profile "${profile.name}" → ${profile.command} (${key})`,
+        );
       } catch (err) {
-        this.debug(`failed to write terminal profile: ${err instanceof Error ? err.message : err}`);
+        log.error(
+          `[welcome] failed to write terminal profile: ${err instanceof Error ? err.message : err}`,
+        );
       }
     }
     this.postState();

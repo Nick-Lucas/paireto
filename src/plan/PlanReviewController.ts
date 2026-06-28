@@ -144,10 +144,12 @@ export class PlanReviewController implements vscode.Disposable {
     }
     // Approving a plan otherwise restores the pre-plan permission mode; default to entering Claude's
     // auto mode so the agent can proceed without re-prompting. "off" (or an empty setting) leaves the
-    // mode unchanged.
-    const mode = vscode.workspace
+    // mode unchanged. The setting is keyed by harness so other harnesses can be configured later;
+    // only Claude Code ("claudecode") exists today (see agentLabel in MainTreeProvider).
+    const byHarness = vscode.workspace
       .getConfiguration("paireto")
-      .get<string>("planApprove.mode", "auto");
+      .get<Record<string, string>>("planApprove.mode", { claudecode: "auto" });
+    const mode = byHarness.claudecode ?? "auto";
     const nextMode = mode && mode !== "off" ? mode : undefined;
     this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }

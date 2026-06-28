@@ -3,7 +3,7 @@
 //
 // Window target: plain Enter opens in a NEW window; Shift+Enter opens in THIS window (shift == this
 // window). VS Code's QuickPick API exposes no live modifier-hold state, so this is wired as an
-// alternate-accept keybinding (paireto.switcher.acceptThisWindow) gated on a context key set
+// alternate-accept keybinding (paireto.switcher.openInThisWindow) gated on a context key set
 // while the switcher is visible — the title spells out the mapping. The per-row button mirrors it.
 
 import * as path from "node:path";
@@ -45,7 +45,7 @@ export class RepoSwitcher implements vscode.Disposable {
     this.waitingIcon = vscode.Uri.joinPath(extensionUri, "media", "bell-orange.svg");
     this.disposables.push(
       vscode.commands.registerCommand(Commands.openSwitcher, () => this.show()),
-      vscode.commands.registerCommand(Commands.switcherAcceptThisWindow, () =>
+      vscode.commands.registerCommand(Commands.switcherOpenInThisWindow, () =>
         this.acceptHighlighted(false),
       ),
     );

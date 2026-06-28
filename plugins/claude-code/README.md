@@ -39,7 +39,6 @@ For manual testing of these flows without a running agent, see the bridge emulat
 
 ## Failure behavior
 
-The plan gate reads its policy from `${XDG_STATE_HOME:-~/.local/state}/paireto/config.json`
-(written by the extension). Defaults: if no extension is listening it **allows** the plan (so a
+The plan gate's failure behavior is fixed: if no extension is listening it **allows** the plan (so a
 terminal-only workflow isn't blocked); on timeout or a malformed response it **defers to Claude
 Code's native plan-approval prompt**. Telemetry hooks always exit 0.

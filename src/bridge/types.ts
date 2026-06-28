@@ -1,6 +1,6 @@
-// Bridge-layer types: the discovery registry, the fail-mode config mirror, and the handler
-// interface the socket server calls into (kept dependency-free so the bridge doesn't import
-// Phase 1/2/3 services directly — they register callbacks instead).
+// Bridge-layer types: the discovery registry and the handler interface the socket server calls
+// into (kept dependency-free so the bridge doesn't import Phase 1/2/3 services directly — they
+// register callbacks instead).
 
 import type {
   HookEventMessage,
@@ -24,16 +24,6 @@ export interface IndexEntry {
 export interface IndexFile {
   version: number;
   entries: IndexEntry[];
-}
-
-/** Mirrored to $STATE/config.json so the (settings-blind) hook scripts know the policy. */
-export interface BridgeConfig {
-  planGate: {
-    onUnavailable: "fail-open" | "fail-visible" | "deny";
-    onTimeout: "fail-open" | "fail-visible" | "deny";
-    onMalformed: "fail-open" | "fail-visible" | "deny";
-    timeoutSeconds: number;
-  };
 }
 
 export interface PlanGateResult {

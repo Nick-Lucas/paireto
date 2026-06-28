@@ -13,10 +13,11 @@
   loaded via `<link>` (CSP `style-src` is just `cspSource`, scripts stay nonce-locked). Host↔webview
   share type-only contracts in `src/welcome/protocol.ts`. oxlint gains the `react` plugin.
 
-- **Never force-show logs; `paireto.debug` must not change app behaviour.** Debug being on is a normal
-  user state — it only controls whether lines are *written* to the "Paireto" output channel. Never call
-  `OutputChannel.show()` (it force-reveals the Output panel / "bottom bar") and never gate UI/layout/flow
-  on the debug flag. (This is why Welcome no longer reveals the channel on open.)
+- **Logging goes through one shared logger (`src/log.ts`, `log.error/info/debug`), gated on
+  `paireto.logLevel`** (`off`/`error`/`info`/`debug`, default `info`; replaces the old boolean
+  `paireto.debug`). Most diagnostics are `info`; big-JSON dumps (e.g. keybinding-match objects) are
+  `debug`. `logLevel` only controls whether lines are *written* — never call `OutputChannel.show()`
+  (it force-reveals the Output panel / "bottom bar") and never gate UI/layout/flow on it.
 
 - **Terminal-profile setup is a separate per-agent action** (its own nested row + **Configure** button
   with ✓ Configured / Not configured status), decoupled from plugin install. Writes
@@ -128,7 +129,7 @@
 
 - **Diffs sync with git via one funnel: `refresh()` → `ReviewContentProvider.refreshAllOpen()`.** Do
   NOT add a custom `**/*` FileSystemWatcher (an earlier one pinned the CPU on autosave churn) — the
-  VS Code git extension's `onDidChange` is the sole sync trigger. `paireto.debug` logs decisions.
+  VS Code git extension's `onDidChange` is the sole sync trigger. `log.info` records decisions.
 
 - **Folder rows reuse the file stage/unstage/discard commands** — a folder's `contextValue` is
   `folder:<group>` and handlers flatten it to descendant files. Committed rows are read-only.
@@ -142,7 +143,17 @@
 
 - **Approving a plan defaults the agent into `auto` mode** via the PermissionRequest decision's
   `updatedPermissions: [{type:"setMode", mode}]` (Claude otherwise restores the pre-plan mode).
-  Overridable by `paireto.planApprove.mode` (`off` = leave unchanged).
+  Overridable by `paireto.planApprove.mode`, a per-harness object (`{ "claudecode": "auto" }`) so
+  future harnesses get their own value (`off` = leave unchanged).
+
+- **Turn-end auto-review is gated by `paireto.review.mode`** (`automatic` default / `manual`): in
+  `manual`, `shouldOpenTurnEndReview` ignores `changedThisTurn`, so only queued comments or
+  `/paireto-review` open a review. Comment-driven and manual review are unaffected.
+
+- **Plan-gate failure behavior is canonical and inlined, not configured** — the `planGate.*` settings
+  AND the whole config-mirror plumbing (`config.json`, `ConfigMirror`, `BridgeConfig`,
+  `bridge.loadConfig`) were removed. `on-plan-gate.js` hardcodes it directly: no window → allow
+  (fail-open), timeout/malformed/dropped → defer to the native prompt (fail-visible), ~4-day timeout.
 
 - **Staging/unstaging/discarding re-points an open diff tab** to the file's new git layer
   (`reconcileOpenDiffsAfterWrite`: close+reopen at the new group, or close if the change is gone).

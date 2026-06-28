@@ -40,10 +40,6 @@ export function indexLockPath(): string {
   return path.join(stateDir(), "index.lock");
 }
 
-export function configPath(): string {
-  return path.join(stateDir(), "config.json");
-}
-
 /**
  * Resolve a filesystem path to its canonical, symlink-free form with no trailing slash.
  * Falls back to a lexical normalize if the path does not exist (realpath would throw).

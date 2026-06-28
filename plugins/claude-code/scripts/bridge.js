@@ -35,10 +35,6 @@ function indexPath() {
   return path.join(stateDir(), "index.json");
 }
 
-function configPath() {
-  return path.join(stateDir(), "config.json");
-}
-
 function canonicalize(p) {
   let resolved;
   try {
@@ -60,30 +56,6 @@ function repoKey(toplevel) {
 
 function socketPathFor(toplevel) {
   return path.join(socketDir(), `${repoKey(toplevel)}.sock`);
-}
-
-// ---------------------------------------------------------------------------
-// Config (fail-mode policy mirror written by the extension)
-// ---------------------------------------------------------------------------
-
-function loadConfig() {
-  const defaults = {
-    planGate: {
-      onUnavailable: "fail-open", // allow
-      onTimeout: "fail-visible", // ask
-      onMalformed: "fail-visible", // ask
-      timeoutSeconds: 345600,
-    },
-  };
-  try {
-    const raw = fs.readFileSync(configPath(), "utf8");
-    const parsed = JSON.parse(raw);
-    return {
-      planGate: Object.assign({}, defaults.planGate, parsed.planGate),
-    };
-  } catch {
-    return defaults;
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -298,7 +270,6 @@ module.exports = {
   canonicalize,
   repoKey,
   socketPathFor,
-  loadConfig,
   gitToplevel,
   resolveTarget,
   connectAndHandshake,

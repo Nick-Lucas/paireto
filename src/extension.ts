@@ -8,8 +8,7 @@ import * as vscode from "vscode";
 import { AgentSessionService } from "./agents/AgentSessionService.js";
 import { ActivityPublisher } from "./bridge/ActivityPublisher.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
-import { DEFAULT_CONFIG, writeConfigMirror } from "./bridge/ConfigMirror.js";
-import type { BridgeConfig, BridgeHandlers } from "./bridge/types.js";
+import type { BridgeHandlers } from "./bridge/types.js";
 import { registerCommentEditingCommands } from "./comments/CommentSession.js";
 import { resolveCommentAuthor } from "./comments/author.js";
 import { Commands, ContextKeys, Schemes } from "./config.js";
@@ -17,6 +16,7 @@ import { GateCoordinator } from "./gate/GateCoordinator.js";
 import { DiffService } from "./git/DiffService.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
+import { log } from "./log.js";
 import { NotificationController } from "./notify/NotificationController.js";
 import { PlanContentProvider } from "./plan/PlanContentProvider.js";
 import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
@@ -34,15 +34,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Warm the comment-author cache (signed-in account → OS user → "Developer"); fire-and-forget.
   void resolveCommentAuthor();
 
-  // 1. Mirror fail-mode config for the (settings-blind) hook scripts.
-  const config = readConfig();
-  try {
-    writeConfigMirror(config);
-  } catch (err) {
-    console.error("paireto: failed to write config mirror", err);
-  }
-
-  // 2. Show the Welcome / onboarding webview once, on first install — the user sets up their agent
+  // Show the Welcome / onboarding webview once, on first install — the user sets up their agent
   // (installs the bundled plugin) from there. A version string lets a future bump re-show it as a
   // "what's new". Reopenable any time via paireto.openWelcome.
   const WELCOME_VERSION = "1";
@@ -56,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void vscode.commands.executeCommand("setContext", ContextKeys.reviewSessionActive, false);
   void vscode.commands.executeCommand("setContext", ContextKeys.planPending, false);
 
-  // 3. Core services.
+  // Core services.
   const agents = new AgentSessionService();
   const repoService = new RepoService();
   const worktrees = new WorktreeService();
@@ -110,6 +102,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   context.subscriptions.push(
+    { dispose: () => log.dispose() },
     agents,
     repoService,
     coordinator,
@@ -131,6 +124,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(Commands.gateSendFeedback, () =>
       coordinator.current?.sendFeedback(),
     ),
+    // Palette entry point: one action that submits queued feedback, or approves when there is none.
+    vscode.commands.registerCommand(Commands.gateSubmit, () => {
+      const gate = coordinator.current;
+      if (!gate) {
+        void vscode.window.showWarningMessage(
+          "Paireto: nothing to submit — this command only works while an agent is awaiting your feedback on a Plan or Code Review.",
+        );
+        return;
+      }
+      if (gate.hasFeedback()) {
+        gate.sendFeedback();
+      } else {
+        gate.approve();
+      }
+    }),
     registerCommentEditingCommands(),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
     vscode.workspace.registerFileSystemProvider(Schemes.review, reviewContent, {
@@ -140,7 +148,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     mainTree.register(),
   );
 
-  // 4. Bridge: one socket per open repo, dispatching inbound messages to the services.
+  // Bridge: one socket per open repo, dispatching inbound messages to the services.
   const handlers: BridgeHandlers = {
     onHookEvent: (msg) => {
       agents.ingest(msg);
@@ -216,17 +224,4 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {
   // Disposables registered on context.subscriptions handle teardown (sockets, index entries).
-}
-
-function readConfig(): BridgeConfig {
-  const cfg = vscode.workspace.getConfiguration("paireto");
-  const gate = DEFAULT_CONFIG.planGate;
-  return {
-    planGate: {
-      onUnavailable: cfg.get("planGate.onUnavailable", gate.onUnavailable),
-      onTimeout: cfg.get("planGate.onTimeout", gate.onTimeout),
-      onMalformed: cfg.get("planGate.onMalformed", gate.onMalformed),
-      timeoutSeconds: cfg.get("planGate.timeoutSeconds", gate.timeoutSeconds),
-    },
-  };
 }

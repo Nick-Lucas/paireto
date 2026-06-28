@@ -869,7 +869,12 @@ suite("isFileEditable (structural, session-independent)", () => {
 });
 
 suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
-  const base = { reviewInProgress: false, changedThisTurn: false, hasComments: false };
+  const base = {
+    reviewInProgress: false,
+    changedThisTurn: false,
+    hasComments: false,
+    automatic: true,
+  };
   test("opens a review when the agent's turn edited files", () => {
     assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
   });
@@ -883,6 +888,18 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
     assert.strictEqual(
       shouldOpenTurnEndReview({ ...base, changedThisTurn: true, reviewInProgress: true }),
       false,
+    );
+  });
+  test("manual mode: edits alone do NOT open a review", () => {
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, automatic: false, changedThisTurn: true }),
+      false,
+    );
+  });
+  test("manual mode: queued comments still open a review", () => {
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, automatic: false, hasComments: true }),
+      true,
     );
   });
 });

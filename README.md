@@ -104,7 +104,7 @@ its agent activity. Manage all your VS Code windows and worktrees from any other
 # Troubleshooting
 
 - **Agent doesn't appear in the sidebar.** Make sure you restarted the agent after installing, and that
-  the repo is open in VS Code. Enable `paireto.debug` and check the *Paireto* output channel.
+  the repo is open in VS Code. Set `paireto.logLevel` to `debug` and check the *Paireto* output channel.
 - **Plugin didn't register.** Re-run the manual command from
   [Register the agent-side plugin](#2-register-the-agent-side-plugin), then restart the agent.
 - **No sound on notifications.** Confirm `paireto.notify.type` is `sound` and `paireto.notify.sound`

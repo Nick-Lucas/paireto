@@ -90,7 +90,8 @@ resolve with the same two actions.
 - Closing the plan tab while it's still pending prompts you to Approve or Send Feedback (dismiss to
   keep reviewing).
 - Approving puts the agent into **auto** mode by default so it proceeds without re-prompting
-  (`paireto.planApprove.mode` — `auto` / `acceptEdits` / `default` / `plan` / `off`).
+  (`paireto.planApprove.mode` — a per-harness object, e.g. `{ "claudecode": "auto" }`; values
+  `auto` / `acceptEdits` / `default` / `plan` / `off`).
 
 ### Code Review
 - **Comment any time:** open any Changes-section diff and add inline comments (Question / Comment /
@@ -102,9 +103,10 @@ resolve with the same two actions.
   `PostToolUse` edit-tool hook), or you've left comments, it parks in review mode until you act —
   **Send Feedback** delivers your comments, **Approve** lets it finish with nothing sent. Nothing is
   ever sent without an explicit Send Feedback; a turn that edited nothing (and has no comments) is
-  never delayed.
+  never delayed. Auto-parking on edits is governed by `paireto.review.mode` (`automatic` default /
+  `manual`); in `manual`, only queued comments or `/paireto-review` open a review.
 - **Manual `/paireto-review`:** still available — opens a blocking review session in VS Code and waits;
-  Send Feedback returns the comments, Approve proceeds with no changes (`Cmd+Enter` submits).
+  Send Feedback returns the comments, Approve proceeds with no changes.
 
 ### Changes View (always available)
 - Native-git-panel-style list of working changes, grouped top-down by git layer: **Committed**,
@@ -145,7 +147,7 @@ resolve with the same two actions.
     picker.
   - **The Paireto way:** recommended keyboard shortcuts for the terminal-first workflow (focus
     terminal, toggle bottom bar, fullscreen terminal, switch terminal tabs, quick-launch a TUI agent
-    via `newWithProfile`). These are all **built-in VS Code commands**; each row shows its command id
+    via `newWithProfile`, open the Paireto tab). These are all **built-in VS Code commands**; each row shows its command id
     (click to view it in Keyboard Shortcuts) and a **Set** button (or **Set all**) that writes the
     recommended key — and any required default removals — to the user's `keybindings.json`. An **Edit
     Keybindings** button opens the Keyboard Shortcuts UI.
