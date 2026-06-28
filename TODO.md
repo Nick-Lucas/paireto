@@ -61,6 +61,7 @@ Do not ever edit this, this is for humans only to edit!
 
 * When starting a review in the editor and then calling the agent skill to adopt the review, a new review is queued instead and only after submitting the first and "approving" the second does the agent get its comments
 * detection of changed files is not working properly or gating the review
+* Whenever I send a message to the agent with changes already made, but none made by the agent, the review workflow starts.
 
 # WIP 9
 
@@ -69,7 +70,6 @@ Do not ever edit this, this is for humans only to edit!
 
 # WIP 10
 
-* Whenever I send a message to the agent with changes already made, but none made by the agent, the review workflow starts.
 * Make the Staged, Unstaged, Committed, sections much clearer with some icons/colours for easy scannability (probably just copy how the native git panel does it with a blue notification circle and files count on the far right of each)
 * When a Plan or Review is automatically started, pop up a VS Code notification explaining this, with the option to "Approve Immediately" or (for plan only) "View Plan" (which focuses the plan tab and changes list in sidebar) or (for Review only) "Start Reviewing" (which just opens the changes list/sidebar) - disabling sets a setting which makes the review skill the way to trigger a review from the agent
 * Name Plan virtual files more clearly than just the title: `PLAN: $PARSED_FIRST_LINE - $DATETIME`
