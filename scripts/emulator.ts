@@ -35,7 +35,9 @@ type MessageType =
   | "plan.review.request"
   | "plan.review.response"
   | "review.await.request"
-  | "review.await.response";
+  | "review.await.response"
+  | "stop.gate.request"
+  | "stop.gate.response";
 
 type HookEventName =
   | "SessionStart"
@@ -110,6 +112,23 @@ interface ReviewAwaitResponse extends Envelope {
   id: string;
   status: ReviewStatus;
   feedback: string;
+}
+
+interface StopGateRequest extends Envelope {
+  t: "stop.gate.request";
+  id: string;
+  cwd: string;
+  repoRoot: string;
+  sessionId?: string;
+}
+
+type StopDecision = "allow" | "block";
+
+interface StopGateResponse extends Envelope {
+  t: "stop.gate.response";
+  id: string;
+  decision: StopDecision;
+  reason?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -611,6 +630,81 @@ async function cmdPlan(opts: Opts): Promise<void> {
 }
 
 async function cmdReview(opts: Opts): Promise<void> {
+  if (opts.manual) {
+    await cmdReviewManual(opts);
+    return;
+  }
+  await cmdReviewStop(opts);
+}
+
+/**
+ * The default review path: the turn-end Stop gate. Records a file change for this turn (PreToolUse +
+ * PostToolUse with an edit tool, after UserPromptSubmit resets the flag), then sends stop.gate.request
+ * so the extension auto-opens a review (and raises the auto-review notification). Mirrors what a real
+ * agent does when it finishes a turn that edited files.
+ */
+async function cmdReviewStop(opts: Opts): Promise<void> {
+  const timeoutMs = Number(strOpt(opts, "timeout") || 600) * 1000;
+  const id = crypto.randomUUID();
+  const sessionId = strOpt(opts, "session") || DEFAULT_SESSION;
+
+  await withBridge(
+    opts,
+    {
+      heading: "Code review · turn-end Stop gate",
+      live: {
+        sessionId,
+        // PostToolUse(Edit) after UserPromptSubmit marks changedThisTurn=true, so the Stop gate opens.
+        lifecycle: [
+          { event: "SessionStart" },
+          { event: "UserPromptSubmit" },
+          { event: "PreToolUse", tool: "Edit" },
+          { event: "PostToolUse", tool: "Edit" },
+        ],
+      },
+    },
+    async ({ conn, target }) => {
+      const request: StopGateRequest = {
+        t: "stop.gate.request",
+        v: bridge.PROTOCOL_VERSION,
+        id,
+        ts: bridge.nowIso(),
+        cwd: target.cwd,
+        repoRoot: target.repoRoot,
+        sessionId,
+      };
+
+      dumpMessage(ARROW_OUT, request);
+      console.log("");
+      console.log(
+        yellow(
+          `  ⏳ blocking — review the diff in VS Code, then Send Feedback / Approve (timeout ${timeoutMs / 1000}s)…`
+        )
+      );
+
+      const pending = awaitResponse<StopGateResponse>(conn, id, "stop.gate.response", timeoutMs);
+      bridge.sendLine(conn.sock, request);
+      const response = await pending;
+      if (!response) {
+        return;
+      }
+      dumpMessage(ARROW_IN, response);
+
+      if (response.decision === "block" && response.reason) {
+        banner("FEEDBACK SUBMITTED — turn blocked, agent acts on it", green);
+        console.log("");
+        console.log(bold("  Review feedback returned to the agent (block reason):"));
+        console.log("");
+        console.log(indent(response.reason, "  │ ", blue));
+      } else {
+        banner("STOP ALLOWED — agent proceeds, no changes", yellow);
+      }
+    }
+  );
+}
+
+/** The manual `/paireto-review` (MCP `paireto_review`) path. Does NOT raise the auto-review toast. */
+async function cmdReviewManual(opts: Opts): Promise<void> {
   const timeoutMs = Number(strOpt(opts, "timeout") || 600) * 1000;
   const id = crypto.randomUUID();
   const sessionId = strOpt(opts, "session") || DEFAULT_SESSION;
@@ -771,7 +865,9 @@ ${bold("Commands")}
                           Names: SessionStart UserPromptSubmit PreToolUse PostToolUse
                           Stop SubagentStart SubagentStop Notification SessionEnd …
   ${cyan("plan")}                    Send an ExitPlanMode plan gate; blocks for the decision.
-  ${cyan("review")}                  Open a paireto_review session; blocks for Send Feedback / Cancel.
+  ${cyan("review")}                  Finish a turn that edited files → turn-end Stop gate auto-opens a
+                          review (raises the auto-review toast). --manual uses the MCP
+                          paireto_review path instead. Blocks for Send Feedback / Approve.
   ${cyan("flow")}                    Fire a full simulated session lifecycle of events.
   ${cyan("agent")}                   Hold a live session open (liveness connection). Ctrl+C to
                           simulate the agent process being killed → the extension drops it.
@@ -787,6 +883,7 @@ ${bold("Options")}
   --mode <mode>           permissionMode (e.g. plan, acceptEdits).
   --plan <text>           Inline plan markdown for ${cyan("plan")}.
   --file <path>           Read plan markdown from a file for ${cyan("plan")}.
+  --manual                Use the MCP paireto_review path for ${cyan("review")} (no auto-review toast).
   --timeout <seconds>     Block timeout for plan/review (default 600).
 
 ${bold("Examples")}

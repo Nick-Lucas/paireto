@@ -84,6 +84,20 @@
   a FileDecoration tints the whole label; the letter-only colour git uses is SCM-viewlet-only, not
   available to a TreeView. Tradeoff: left letter instead of a right-aligned one, no file-type icon.
 
+- **Changed-files section rows carry a coloured left icon (`GROUP_ICON`) + the count description** —
+  a TreeView has no right-aligned count badge like the SCM viewlet, so the layer (committed/staged/
+  unstaged) is conveyed by a tinted `ThemeIcon`.
+
+- **Auto-opened gates raise a non-blocking toast + focus the sidebar.** Plan
+  (`notifyPlanOpened`) / turn-end review (`notifyReviewOpened`, NOT `/paireto-review`) show a
+  `showInformationMessage` with quick actions (View Plan/Start Reviewing, Approve Immediately);
+  handlers re-check the gate is still pending.
+
+- **Plan tab name is human (`planDocLabel`), URI uniqueness rides in the query.** The
+  `paireto-plan://` URI's path is `PLAN: <first line> - <datetime>` (the visible tab) and the unique
+  `planId` goes in `?query` — keeps the content-provider map (keyed by `uri.toString()`) collision-
+  free without polluting the tab name.
+
 - **Plan/Review gates are a foreground registry (`GateCoordinator`), not a hard one-at-a-time lock.**
   Many gates pending, one foreground (owns the editor/comment surfaces); clicking an agent `switchTo`s
   its gate. Multiple plans can pend; at most one review (avoids `paireto-review://` URI collisions).

@@ -82,10 +82,15 @@ resolve with the same two actions.
 - **Disconnect resets state:** if the agent side ends another way (interrupt, crash, ExitPlanMode
   resolved in the terminal), the dropped connection auto-closes the plan/review and resets the UI.
 - **Bottom panel:** hidden while any gate (plan or review) is foreground, restored once none is.
+- **Sidebar focus + notification on auto-start:** whenever a plan or review opens automatically, the
+  Paireto sidebar is focused and a (non-blocking) notification explains what happened with quick
+  actions — plan: **View Plan** / **Approve Immediately**; review: **Start Reviewing** / **Approve
+  Immediately**. `/paireto-review` never notifies.
 
 ### Plan Review
 - When the agent finishes a plan (ExitPlanMode), the plan opens in VS Code automatically, the bottom
-  panel (terminal) is hidden, and the agent blocks waiting for a decision.
+  panel (terminal) is hidden, and the agent blocks waiting for a decision. The plan tab is named
+  `PLAN: <first line of the plan> - <datetime>`.
 - On any resolution the plan tab auto-closes and the terminal panel is restored.
 - Closing the plan tab while it's still pending prompts you to Approve or Send Feedback (dismiss to
   keep reviewing).
@@ -112,7 +117,7 @@ resolve with the same two actions.
 - Native-git-panel-style list of working changes, grouped top-down by git layer: **Committed**,
   **Staged**, **Working Tree**.
   - Committed = files changed since the Compare-To point that aren't already staged/unstaged.
-  - Each group title row shows a muted `N files · +adds -dels` indicator after the label.
+  - Each group title row shows a coloured layer icon plus a muted `N files · +adds -dels` indicator.
 - **Compare To** presets (HEAD, merge-base, default branch (main/master auto-detected), recent refs,
   or any branch/ref via picker) and the **Flat / Tree** layout toggle are inline buttons on the
   Changed Files section row.

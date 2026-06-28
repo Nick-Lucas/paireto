@@ -10,12 +10,13 @@ import type { PlanGateResult } from "../bridge/types.js";
 import { CommentSession, commentText, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
-import { Commands, ContextKeys, Schemes } from "../config.js";
+import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { closeTabsForUri, tabUri } from "../gate/tabs.js";
 import type { PlanReviewRequest } from "../protocol/types.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
 import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
+import { planDocLabel } from "./planTitle.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
 
 interface PlanReview {
@@ -70,7 +71,14 @@ export class PlanReviewController implements vscode.Disposable {
   /** Open the plan (foregrounded only if no other gate is) and resolve with the user's decision. */
   async presentPlan(req: PlanReviewRequest, signal: AbortSignal): Promise<PlanGateResult> {
     const planId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${planCounter++}`;
-    const uri = vscode.Uri.parse(`${Schemes.plan}://${req.sessionId}/${planId}.md`);
+    // The tab basename is the human label; planId rides in the query so the URI (and the content
+    // provider's map keyed by uri.toString()) stays unique without polluting the visible tab name.
+    const uri = vscode.Uri.from({
+      scheme: Schemes.plan,
+      authority: req.sessionId,
+      path: `/${planDocLabel(req.plan, new Date())}`,
+      query: planId,
+    });
     const key = PlanGateRegistry.key(req.sessionId, planId);
     const review: PlanReview = { id: key, key, sessionId: req.sessionId, uri, markdown: req.plan };
 
@@ -94,6 +102,7 @@ export class PlanReviewController implements vscode.Disposable {
     await this.coordinator.register(entry);
     this.updatePendingContext();
     this.changeEmitter.fire();
+    this.notifyPlanOpened(review);
 
     // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
@@ -107,8 +116,32 @@ export class PlanReviewController implements vscode.Disposable {
     return result;
   }
 
+  /** Non-blocking toast announcing an auto-opened plan, with one-click View / Approve actions. */
+  private notifyPlanOpened(review: PlanReview): void {
+    const VIEW = "View Plan";
+    const APPROVE = "Approve Immediately";
+    void vscode.window
+      .showInformationMessage("Claude finished a plan and is waiting for your review.", VIEW, APPROVE)
+      .then(async (choice) => {
+        if (!this.plans.has(review.id)) {
+          return; // resolved/dropped while the toast was up
+        }
+        if (choice === VIEW) {
+          await this.coordinator.switchTo(review.id);
+        } else if (choice === APPROVE) {
+          await this.approve(review);
+        }
+      });
+  }
+
   // ── GateEntry foreground/background ──────────────────────────────────────────────────────────
   private async foreground(review: PlanReview): Promise<void> {
+    // Reveal the Paireto sidebar first, then open the plan tab so the editor ends up focused.
+    try {
+      await vscode.commands.executeCommand(`${Views.main}.focus`);
+    } catch {
+      /* view may not be registered yet — non-fatal */
+    }
     const doc = await vscode.workspace.openTextDocument(review.uri);
     await vscode.languages.setTextDocumentLanguage(doc, "markdown");
     await vscode.window.showTextDocument(doc, { preview: false });

@@ -275,6 +275,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         item.id = `group:${node.group}`;
         item.contextValue = `group:${node.group}`;
         // No resourceUri here: it would force a (blank) icon slot, gapping the label off the chevron.
+        // An explicit coloured icon fills that slot deliberately (see GROUP_ICON).
+        const gi = GROUP_ICON[node.group];
+        item.iconPath = new vscode.ThemeIcon(gi.icon, new vscode.ThemeColor(gi.color));
         const fileWord = node.count === 1 ? "file" : "files";
         item.description = `${node.count} ${fileWord} · +${node.additions} -${node.deletions}`;
         return item;
@@ -420,6 +423,14 @@ const GROUP_LABELS: Record<FileGroup, string> = {
   staged: "Staged",
   unstaged: "Working Tree",
   committed: "Committed",
+};
+
+// A coloured left icon per section so the three git layers are scannable at a glance (TreeView has
+// no right-aligned count badge like the SCM viewlet, so we lean on icon + colour + the count below).
+const GROUP_ICON: Record<FileGroup, { icon: string; color: string }> = {
+  committed: { icon: "git-commit", color: "charts.blue" },
+  staged: { icon: "diff-added", color: "charts.blue" },
+  unstaged: { icon: "diff-modified", color: "charts.blue" },
 };
 
 /**

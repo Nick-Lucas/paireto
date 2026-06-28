@@ -208,9 +208,37 @@ export class ReviewController implements vscode.Disposable {
       return { block: false };
     }
     this.reviewBusy = true;
-    return this.runReview(newReviewId(), sessionId, signal, (r) =>
+    const requestId = newReviewId();
+    this.notifyReviewOpened(requestId);
+    return this.runReview(requestId, sessionId, signal, (r) =>
       r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false },
     );
+  }
+
+  /**
+   * Non-blocking toast announcing an auto-opened turn-end review (only — /paireto-review stays
+   * silent), with one-click actions: review it or approve as-is.
+   */
+  private notifyReviewOpened(requestId: string): void {
+    const REVIEW = "Start Reviewing";
+    const APPROVE = "Approve Immediately";
+    void vscode.window
+      .showInformationMessage("Claude finished its turn is waiting for your review.", REVIEW, APPROVE)
+      .then(async (choice) => {
+        if (this.activeRequestId !== requestId) {
+          return; // resolved/dropped while the toast was up
+        }
+        if (choice === REVIEW) {
+          await this.coordinator.switchTo(requestId);
+          try {
+            await vscode.commands.executeCommand(`${Views.main}.focus`);
+          } catch {
+            /* view may not be registered yet — non-fatal */
+          }
+        } else if (choice === APPROVE) {
+          this.approve();
+        }
+      });
   }
 
   /**

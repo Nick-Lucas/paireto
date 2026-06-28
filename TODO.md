@@ -75,6 +75,10 @@ Do not ever edit this, this is for humans only to edit!
 * Name Plan virtual files more clearly than just the title: `PLAN: $PARSED_FIRST_LINE - $DATETIME`
 * When a Plan or Review starts the extension should be focused in the sidebar
 
+# WIP 11
+
+* I still get notifications at weird times, when a notification would be fired (even if sound is disabled) please log it as Info with a reason why
+
 # Feature Ideas:
 
 * Replace the Plan view with a proper WYSIWYG Markdown experience similar to Plannotator
