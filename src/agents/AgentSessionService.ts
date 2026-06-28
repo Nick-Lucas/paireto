@@ -4,6 +4,7 @@
 
 import * as vscode from "vscode";
 
+import { log } from "../log.js";
 import { canonicalize } from "../protocol/paths.js";
 import type { HookEventMessage } from "../protocol/types.js";
 import type { AgentSession, AgentState } from "../types.js";
@@ -40,6 +41,34 @@ const NEEDS_ATTENTION: ReadonlySet<AgentState> = new Set<AgentState>([
 /** True if an active session has gone silent long enough to be treated as idle. */
 export function isStaleActive(state: AgentState, lastEventAt: number, now: number): boolean {
   return ACTIVE_STATES.has(state) && lastEventAt < now - STALE_ACTIVE_MS;
+}
+
+/**
+ * The single notify decision: returns the human reason a needs-you notification should fire for this
+ * transition, or undefined when none should. The reason IS the condition — a turn "finishes" by
+ * entering a needs-you state (the edge into stopped / awaiting permission / awaiting plan) or by a
+ * `Notification` arriving while not already flagged. Callers log/ping iff this returns a reason.
+ */
+export function shouldNotify(
+  event: string,
+  state: AgentState,
+  prevState: AgentState,
+  alreadyNeedsAttention: boolean,
+): string | undefined {
+  if (NEEDS_ATTENTION.has(state) && !NEEDS_ATTENTION.has(prevState)) {
+    switch (state) {
+      case "stopped":
+        return "finished its turn (Stop)";
+      case "awaitingPermission":
+        return "awaiting your permission";
+      case "awaitingPlanApproval":
+        return "awaiting plan approval";
+    }
+  }
+  if (event === "Notification" && !alreadyNeedsAttention) {
+    return "Notification — Claude is waiting for your input";
+  }
+  return undefined;
 }
 
 /** Exposed for tests. */
@@ -161,15 +190,17 @@ export class AgentSessionService implements vscode.Disposable {
     // accompanies a permission prompt doesn't double-ping). Re-arm when the agent goes busy/idle
     // again so a new turn clears the marker. If the user is already looking at this window, don't
     // mark or ping at all (the bell/sound would just be noise).
-    const nowNeeds = NEEDS_ATTENTION.has(session.state);
-    const stateEdge = nowNeeds && !NEEDS_ATTENTION.has(prevState);
-    const notificationEdge = msg.event === "Notification" && !session.needsAttention;
-    if (stateEdge || notificationEdge) {
+    const reason = shouldNotify(msg.event, session.state, prevState, session.needsAttention);
+    if (reason) {
+      const who = msg.sessionId.slice(0, 8);
       if (!this.isWindowFocused()) {
+        log.info(`notification for agent ${who}: ${reason}`);
         session.needsAttention = true;
         this.finishEmitter.fire(session);
+      } else {
+        log.info(`notification for agent ${who} suppressed (window focused): ${reason}`);
       }
-    } else if (!nowNeeds && msg.event !== "Notification") {
+    } else if (!NEEDS_ATTENTION.has(session.state) && msg.event !== "Notification") {
       // A Notification doesn't change the headline state, so don't let it clear a marker we just set.
       session.needsAttention = false;
     }

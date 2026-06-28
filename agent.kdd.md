@@ -61,7 +61,9 @@
   **or a `Notification`** (Claude's "waiting for input" — covers question prompts that never reach a
   needs-you state), detected on the edge in `AgentSessionService.ingest` → `onDidFinish`. Suppressed
   when this window is focused (no point nagging); cleared when a new turn starts. Drives
-  `needsAttention`.
+  `needsAttention`. Every fired ping is logged at info with a `notifyReason` (independent of
+  `notify.type`, so unexpected pings are traceable even with sound off); focus-suppressed edges log
+  at debug.
 
 - **Subagent status is never tracked — global bailout at the top of `ingest`.** Any hook event
   carrying an `agentId` returns immediately (never creates/touches/states/pings the parent row). There

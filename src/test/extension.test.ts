@@ -18,6 +18,7 @@ import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import {
   AgentSessionService,
   isStaleActive,
+  shouldNotify,
   STALE_ACTIVE_MS_FOR_TEST,
 } from "../agents/AgentSessionService.js";
 import type { HookEventMessage } from "../protocol/types.js";
@@ -507,6 +508,39 @@ suite("AgentSessionService liveness ref-counting", () => {
     } finally {
       svc.dispose();
     }
+  });
+});
+
+suite("notifyReason (the notify decision + its reason)", () => {
+  test("returns a reason on the edge into each needs-you state", () => {
+    assert.strictEqual(shouldNotify("Stop", "stopped", "thinking", false), "finished its turn (Stop)");
+    assert.strictEqual(
+      shouldNotify("PermissionRequest", "awaitingPermission", "toolRunning", false),
+      "awaiting your permission",
+    );
+    assert.strictEqual(
+      shouldNotify("PreToolUse", "awaitingPlanApproval", "thinking", false),
+      "awaiting plan approval",
+    );
+  });
+
+  test("a Notification while not already flagged reads as waiting for input", () => {
+    assert.strictEqual(
+      shouldNotify("Notification", "thinking", "thinking", false),
+      "Notification — Claude is waiting for your input",
+    );
+  });
+
+  test("no reason when staying in (not entering) a needs-you state", () => {
+    assert.strictEqual(shouldNotify("Stop", "stopped", "stopped", true), undefined);
+  });
+
+  test("no reason for a Notification once already flagged (avoids double-ping)", () => {
+    assert.strictEqual(shouldNotify("Notification", "awaitingPermission", "awaitingPermission", true), undefined);
+  });
+
+  test("no reason for a busy/idle transition", () => {
+    assert.strictEqual(shouldNotify("UserPromptSubmit", "thinking", "idle", false), undefined);
   });
 });
 
