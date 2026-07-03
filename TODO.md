@@ -77,7 +77,19 @@ Do not ever edit this, this is for humans only to edit!
 
 # WIP 11
 
-* I still get notifications at weird times, when a notification would be fired (even if sound is disabled) please log it as Info with a reason why
+* I still get notifications at weird times, they should only fire when the parent agent has finished and has no child agents running, needs permission, or some other input for the user. Notably happens when I see "Waiting for 1 background agent to finish" and presumably the parent agent has indeed stopped with some listener to start again?
+* ensure that the project switcher does not list the same directory twice, and displays the branch name rather than the worktree name
+* The changes list also randomly goes blank sometimes, are we using a source control API incorrectly? Here are logs:
+```
+refresh(git) #298: staged=0 unstaged=8 committed=0
+refresh(manual) #299: staged=0 unstaged=0 committed=0
+```
+I think it could be that an agent running in a worktree's events are being processed here? could it be the cwd/branchname mismatch from the switcher is also affecting the connection to worktrees? 
+* allow an agent to be disabled/ignored on click (use a visibility toggle icon)
+
+# WIP 12
+
+* support git conflicts just like the main git panel
 
 # Feature Ideas:
 
@@ -92,3 +104,4 @@ Do not ever edit this, this is for humans only to edit!
 * plugins for Codex, Opencode, Pi
 * Support feedback on UIs in in-editor browser
 * Look at the agent providing review feedback to the user during coding, reacting to user interactions, reacting to compile and lint errors with quick fixes, etc.
+* keep user feedback around so they can easily review the changes and follow-up, give the agent a tool to reply to each with their fix plan
