@@ -1,5 +1,7 @@
-// Enumerates git worktrees (the Git extension API does not expose them). Parses the NUL-record
-// porcelain output and caches per repo root; invalidated on WorktreeCreate/Remove bridge events.
+// Enumerates git worktrees (the Git extension API does not expose them). Always fetches fresh:
+// there is no reliable invalidation signal (Claude Code's WorktreeCreate is a delegation hook we
+// must not register, and worktrees made outside Claude fire nothing), and the only caller is the
+// user-triggered switcher, where one fast `git worktree list` per open is fine.
 
 import { gitSafe, splitNul } from "./gitCli.js";
 
@@ -13,21 +15,9 @@ export interface WorktreeInfo {
 }
 
 export class WorktreeService {
-  private readonly cache = new Map<string, WorktreeInfo[]>();
-
-  invalidate(repoRoot: string): void {
-    this.cache.delete(repoRoot);
-  }
-
   async list(repoRoot: string): Promise<WorktreeInfo[]> {
-    const cached = this.cache.get(repoRoot);
-    if (cached) {
-      return cached;
-    }
     const out = await gitSafe(repoRoot, ["worktree", "list", "--porcelain", "-z"]);
-    const result = parseWorktrees(out);
-    this.cache.set(repoRoot, result);
-    return result;
+    return parseWorktrees(out);
   }
 }
 

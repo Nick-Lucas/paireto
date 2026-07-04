@@ -58,6 +58,12 @@ export function canonicalize(p: string): string {
   return resolved;
 }
 
+/** True when `child` is the same as or nested under `root` (both absolute fs paths). */
+export function isInside(root: string, child: string): boolean {
+  const rel = path.relative(root, child);
+  return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
+}
+
 /**
  * The stable key for a repo/worktree root: first 8 bytes of sha256(canonical path), hex.
  * 64 bits of entropy — collision-negligible for per-user repo counts.

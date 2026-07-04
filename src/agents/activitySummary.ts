@@ -20,6 +20,8 @@ export function summarizeActivity(
       return `$(comment-discussion) plan review`;
     case "awaitingPermission":
       return `$(warning) awaiting permission`;
+    case "awaitingInput":
+      return `$(question) awaiting input`;
     case "stopped":
       return `$(primitive-square) finished`;
     case "toolRunning":

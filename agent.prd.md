@@ -50,13 +50,22 @@ are correlated by repository directory, not terminal.
   for input) — an orange bell appears on the agent row (and in the status bar + repo switcher), and
   once per transition a sound plays (`paireto.notify.type` =
   `sound` (default, sound from `paireto.notify.sound`) or `disabled`). Only this window's agents
-  alert.
+  alert. A Stop that lands while background (child) agents are still running is ignored — the agent
+  emits a final Stop once they finish, which alerts normally — and informational `Notification`s
+  (e.g. auth success) never alert.
+- **Hide/show an agent:** an eye icon on each row mutes it — the row stays listed showing just the
+  agent name with a crossed-eye icon (no status text), stops pinging (no sound/bell), and is excluded
+  from needs-you aggregates (status bar, switcher, published activity). Toggle back on to re-enable;
+  row click behaviour is unchanged.
 - Stuck-state safety net: an agent that goes silent after an un-hookable interrupt is auto-cleared;
   an agent whose process is killed (no SessionEnd hook fires) is detected via a liveness connection
   the plugin's MCP server holds open, and dropped from the list immediately.
 
 ### Repo / Worktree Switcher
 - `Cmd/Ctrl+Shift+K` (or status bar click) opens a picker: current window, worktrees, recent repos.
+- Rows are labelled branch-first (directory as the secondary description) and deduped by canonical
+  path (Current > Worktrees > Recents), so a worktree that's also a recent — or a symlinked path —
+  shows once. Recent-repo branches are fetched live when the picker opens.
 - Enter opens in a new window; `Shift+Enter` opens in the current window.
 - Each row summarises that location's agent activity and whether it has an open window: `no window`,
   `open · idle`, a live state (`thinking · 2 agents`, `plan review`, …), or `needs you`. The data

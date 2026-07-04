@@ -31,10 +31,6 @@ function socketDir() {
   return path.join(stateDir(), "s");
 }
 
-function indexPath() {
-  return path.join(stateDir(), "index.json");
-}
-
 function canonicalize(p) {
   let resolved;
   try {
@@ -59,7 +55,7 @@ function socketPathFor(toplevel) {
 }
 
 // ---------------------------------------------------------------------------
-// Socket resolution: exact key -> index ancestor match -> ancestor walk
+// Socket resolution: cwd-first, exact toplevel only (no ancestor fallback)
 // ---------------------------------------------------------------------------
 
 function gitToplevel(cwd) {
@@ -75,74 +71,24 @@ function gitToplevel(cwd) {
   }
 }
 
-function pidAlive(pid) {
-  if (typeof pid !== "number") {
-    return false;
-  }
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    // EPERM means the process exists but is owned by someone else (treat as alive).
-    return err && err.code === "EPERM";
-  }
-}
-
-function isAncestorOrSame(ancestor, descendant) {
-  const a = canonicalize(ancestor);
-  const d = canonicalize(descendant);
-  return d === a || d.startsWith(a + path.sep);
-}
-
-function readIndexEntries() {
-  try {
-    const raw = fs.readFileSync(indexPath(), "utf8");
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed.entries) ? parsed.entries : [];
-  } catch {
-    return [];
-  }
-}
-
 /**
  * Decide which socket path to talk to for a given agent cwd.
  * Returns { socketPath, repoRoot } or null when nothing plausible is listening.
+ *
+ * STRICT cwd-first: an agent belongs to its OWN git toplevel (a worktree's toplevel is the worktree
+ * dir, not the main repo), never another window's repo. Match ONLY the exact toplevel socket; if
+ * none is live, resolve to no target — the hook scripts fail open. The old index-ancestor + ancestor-
+ * walk fallbacks let a worktree agent leak events into an ancestor repo's window (wrong refreshes /
+ * agent rows / gates → the blank Changes list) and are deliberately removed.
  */
 function resolveTarget(cwd) {
-  // 1. Exact: git toplevel -> key -> socket file present.
-  const top = gitToplevel(cwd);
-  if (top) {
-    const sp = socketPathFor(top);
-    if (fs.existsSync(sp)) {
-      return { socketPath: sp, repoRoot: canonicalize(top) };
-    }
+  // The agent's own git toplevel, falling back to its raw cwd (not a git repo / git unavailable) —
+  // still strictly the agent's own directory, never an ancestor's socket.
+  const top = gitToplevel(cwd) ?? cwd;
+  const sp = socketPathFor(top);
+  if (fs.existsSync(sp)) {
+    return { socketPath: sp, repoRoot: canonicalize(top) };
   }
-
-  // 2. Index ancestor match: longest live repoRoot that is an ancestor of cwd.
-  const entries = readIndexEntries()
-    .filter((e) => e && typeof e.repoRoot === "string" && typeof e.socketPath === "string")
-    .filter((e) => pidAlive(e.pid))
-    .filter((e) => isAncestorOrSame(e.repoRoot, cwd))
-    .sort((a, b) => b.repoRoot.length - a.repoRoot.length);
-  if (entries.length > 0) {
-    return { socketPath: entries[0].socketPath, repoRoot: canonicalize(entries[0].repoRoot) };
-  }
-
-  // 3. Ancestor walk from cwd: probe each parent's key for a socket file.
-  let dir = canonicalize(cwd);
-  const home = canonicalize(os.homedir());
-  for (;;) {
-    const sp = socketPathFor(dir);
-    if (fs.existsSync(sp)) {
-      return { socketPath: sp, repoRoot: dir };
-    }
-    const parent = path.dirname(dir);
-    if (parent === dir || dir === home) {
-      break;
-    }
-    dir = parent;
-  }
-
   return null;
 }
 

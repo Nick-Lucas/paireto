@@ -21,6 +21,7 @@ import { NotificationController } from "./notify/NotificationController.js";
 import { PlanContentProvider } from "./plan/PlanContentProvider.js";
 import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
 import { PlanReviewController } from "./plan/PlanReviewController.js";
+import { canonicalize } from "./protocol/paths.js";
 import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
 import { RecentRepoStore } from "./storage/RecentRepoStore.js";
@@ -148,13 +149,21 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     mainTree.register(),
   );
 
+  // Tripwire: a review/stop request should only ever arrive for the repo this window serves. A
+  // foreign repoRoot means the bridge targeted the wrong socket — log it (behavior unchanged).
+  const warnForeignRepo = (repoRoot: string): void => {
+    const mine = repoService.current()?.root.fsPath;
+    if (mine && canonicalize(mine) !== canonicalize(repoRoot)) {
+      log.info(
+        `review request from foreign repoRoot ${canonicalize(repoRoot)}, this window serves ${canonicalize(mine)}`,
+      );
+    }
+  };
+
   // Bridge: one socket per open repo, dispatching inbound messages to the services.
   const handlers: BridgeHandlers = {
     onHookEvent: (msg) => {
       agents.ingest(msg);
-      if (msg.event === "WorktreeCreate" || msg.event === "WorktreeRemove") {
-        worktrees.invalidate(msg.repoRoot);
-      }
     },
     onPlanReviewRequest: (msg, signal) => {
       // On disconnect (interrupt/crash) there's no Stop hook — return the agent to idle so its
@@ -165,6 +174,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return planReview.presentPlan(msg, signal);
     },
     onReviewAwait: (msg, signal) => {
+      warnForeignRepo(msg.repoRoot);
       // Reviews carry no sessionId reliably; attribute to the most-recently-active session in the
       // request's repo so the Agents panel can show "awaiting review" on the right row.
       const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
@@ -177,6 +187,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       return reviewController.startSession(msg.id, sessionId, signal);
     },
     onStopGate: (msg, signal) => {
+      warnForeignRepo(msg.repoRoot);
       // Fires on every turn-end. Resolves "allow" instantly unless a review is warranted for this
       // session (the turn touched files, a deferred review is open, or feedback is queued).
       const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);

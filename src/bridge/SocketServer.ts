@@ -5,10 +5,28 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 
+import { log } from "../log.js";
 import { repoKey, socketDir, socketPath } from "../protocol/paths.js";
 import { PROTOCOL_VERSION } from "../protocol/types.js";
 import type { AnyMessage } from "../protocol/types.js";
 import type { BridgeHandlers } from "./types.js";
+
+/** One clean line per inbound bridge message for debug logs: type, event, agent, and the extras
+ *  that explain behaviour (tool, subagent context, notification type) — nothing more. */
+export function createInboundEventLog(msg: AnyMessage): string {
+  const agent = "sessionId" in msg && msg.sessionId ? ` agent=${msg.sessionId.slice(0, 8)}` : "";
+  if (msg.t !== "hook.event") {
+    return `${msg.t}${agent}`;
+  }
+  const extras = [
+    msg.agentId ? `subagent=${msg.agentId.slice(0, 8)}` : "",
+    msg.toolName ? `tool=${msg.toolName}` : "",
+    msg.notificationType ? `type=${msg.notificationType}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `hook.event ${msg.event}${agent}${extras ? ` ${extras}` : ""}`;
+}
 
 export interface SocketServerOptions {
   repoRoot: string;
@@ -111,6 +129,7 @@ export class SocketServer {
           socket.destroy();
           return;
         }
+        log.debug(`bridge <- ${createInboundEventLog(msg)}`);
         if (!handshaken) {
           if (msg.t === "hello") {
             const accept = msg.v === PROTOCOL_VERSION;

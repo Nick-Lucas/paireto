@@ -45,6 +45,8 @@ async function main() {
     toolName: event.tool_name,
     toolInput: event.tool_input,
     transcriptPath: event.transcript_path,
+    notificationType: event.notification_type,
+    message: event.message,
   };
 
   await new Promise((resolve) => {

@@ -4,7 +4,7 @@
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
-import { basename, isAbsolute, join, relative } from "node:path";
+import { basename, join, relative } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -23,6 +23,7 @@ import {
 } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
 import { log } from "../log.js";
+import { isInside } from "../protocol/paths.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
@@ -223,7 +224,11 @@ export class ReviewController implements vscode.Disposable {
     const REVIEW = "Start Reviewing";
     const APPROVE = "Approve Immediately";
     void vscode.window
-      .showInformationMessage("Claude finished its turn is waiting for your review.", REVIEW, APPROVE)
+      .showInformationMessage(
+        "Claude finished its turn is waiting for your review.",
+        REVIEW,
+        APPROVE,
+      )
       .then(async (choice) => {
         if (this.activeRequestId !== requestId) {
           return; // resolved/dropped while the toast was up
@@ -382,6 +387,11 @@ export class ReviewController implements vscode.Disposable {
     const current = this.repoService.current();
     const prevRoot = this.repoRoot;
     this.repoRoot = current?.root.fsPath;
+    // undefined -> root is the legitimate late-discovery path (Git API populates after activation); a
+    // change between two real roots is the blank-list bug — log loudly but don't refuse.
+    if (prevRoot !== undefined && this.repoRoot !== prevRoot) {
+      log.info(`refresh(${reason}) #${seq}: repo root CHANGED ${prevRoot} -> ${this.repoRoot}`);
+    }
     let next: ChangesModel;
     try {
       next = this.repoRoot
@@ -983,12 +993,6 @@ export function shouldOpenTurnEndReview(opts: {
   automatic: boolean;
 }): boolean {
   return !opts.reviewInProgress && ((opts.automatic && opts.changedThisTurn) || opts.hasComments);
-}
-
-/** True when `child` is the same as or nested under `root` (both absolute fs paths). */
-function isInside(root: string, child: string): boolean {
-  const rel = relative(root, child);
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
 }
 
 /**

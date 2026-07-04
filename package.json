@@ -199,6 +199,16 @@
       {
         "command": "paireto.agent.switch",
         "title": "Switch to Agent"
+      },
+      {
+        "command": "paireto.agent.hide",
+        "title": "Hide Agent",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "paireto.agent.show",
+        "title": "Show Agent",
+        "icon": "$(eye-closed)"
       }
     ],
     "viewsContainers": {
@@ -319,6 +329,14 @@
         {
           "command": "paireto.agent.switch",
           "when": "false"
+        },
+        {
+          "command": "paireto.agent.hide",
+          "when": "false"
+        },
+        {
+          "command": "paireto.agent.show",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -397,8 +415,18 @@
         },
         {
           "command": "paireto.focusAgent",
-          "when": "view == paireto.main && viewItem == agentSession",
+          "when": "view == paireto.main && viewItem =~ /^agentSession/",
           "group": "inline@1"
+        },
+        {
+          "command": "paireto.agent.hide",
+          "when": "view == paireto.main && viewItem == agentSession",
+          "group": "inline@2"
+        },
+        {
+          "command": "paireto.agent.show",
+          "when": "view == paireto.main && viewItem == agentSession:muted",
+          "group": "inline@2"
         },
         {
           "command": "paireto.review.deleteComment",

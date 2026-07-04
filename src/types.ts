@@ -22,20 +22,10 @@ export type AgentState =
   | "toolRunning"
   | "awaitingPlanApproval"
   | "awaitingPermission"
+  // A Notification said Claude wants input (question prompt / elicitation form) — the generic
+  // needs-you state for input requests that have no dedicated hook event.
+  | "awaitingInput"
   | "stopped"
   | "ended";
 
-export interface AgentSession {
-  sessionId: string;
-  repoRoot: string;
-  state: AgentState;
-  lastTool?: string;
-  startedAt: number;
-  lastEventAt: number;
-  /** Set when the session enters a "needs you" state (stopped / awaiting plan / awaiting permission)
-   *  until the user looks at it or the agent goes busy again. Drives the sidebar attention marker. */
-  needsAttention: boolean;
-  /** True if an edit-class tool ran (or a file changed) since this turn began — drives whether the
-   *  Stop gate opens a code review at turn-end. Reset on UserPromptSubmit. */
-  changedThisTurn: boolean;
-}
+// Per-session agent state and behaviour live on the AgentSession class (src/agents/AgentSession.ts).

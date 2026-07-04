@@ -6,16 +6,24 @@
 // alternate-accept keybinding (paireto.switcher.openInThisWindow) gated on a context key set
 // while the switcher is visible — the title spells out the mapping. The per-row button mirrors it.
 
-import * as path from "node:path";
+import * as fs from "node:fs";
 
 import * as vscode from "vscode";
 
 import { summarizeActivity } from "../agents/activitySummary.js";
 import { repoSnapshots, type RepoSnapshot } from "../bridge/ActivitySnapshot.js";
 import { Commands } from "../config.js";
+import { currentBranch } from "../git/gitCli.js";
 import type { RepoService } from "../git/RepoService.js";
 import type { WorktreeService } from "../git/WorktreeService.js";
+import { canonicalize } from "../protocol/paths.js";
 import type { RecentRepoStore } from "../storage/RecentRepoStore.js";
+import {
+  buildSwitcherSections,
+  type SwitcherCandidate,
+  type SwitcherRow,
+  type SwitcherSections,
+} from "./switcherRows.js";
 
 const CONTEXT_VISIBLE = "paireto.switcherVisible";
 
@@ -31,7 +39,7 @@ const THIS_WINDOW_BUTTON: vscode.QuickInputButton = {
 export class RepoSwitcher implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private active?: vscode.QuickPick<SwitchItem>;
-  private currentPath?: string;
+  private currentCanonical?: string;
   /** Left icon for a repo whose agent is waiting — a baked-orange SVG, since QuickPick ignores a
    *  ThemeColor on a ThemeIcon iconPath (the colour just wouldn't apply otherwise). */
   private readonly waitingIcon: vscode.Uri;
@@ -53,74 +61,68 @@ export class RepoSwitcher implements vscode.Disposable {
 
   async show(): Promise<void> {
     const current = this.repoService.current();
-    this.currentPath = current?.root.fsPath;
-    const items: SwitchItem[] = [];
+    const currentCand: SwitcherCandidate | undefined = current
+      ? {
+          fsPath: current.root.fsPath,
+          canonical: canonicalize(current.root.fsPath),
+          branch: current.branch,
+        }
+      : undefined;
+    this.currentCanonical = currentCand?.canonical;
 
-    items.push({ label: "Current window", kind: vscode.QuickPickItemKind.Separator });
-    if (current) {
-      items.push({
-        iconPath: new vscode.ThemeIcon("repo"),
-        label: path.basename(current.root.fsPath),
-        description: current.branch,
-        detail: current.root.fsPath,
-        fsPath: current.root.fsPath,
-      });
-    }
-
+    let worktreeCands: SwitcherCandidate[] = [];
     if (current) {
       const list = await this.worktrees.list(current.root.fsPath);
-      const others = list.filter((w) => w.path !== current.root.fsPath);
-      if (others.length > 0) {
-        items.push({ label: "Worktrees", kind: vscode.QuickPickItemKind.Separator });
-        for (const w of others) {
-          items.push({
-            iconPath: new vscode.ThemeIcon("git-branch"),
-            label: w.branch ?? (w.detached ? "(detached)" : path.basename(w.path)),
-            description: w.locked ? "locked" : undefined,
-            detail: w.path,
-            fsPath: w.path,
-            buttons: [THIS_WINDOW_BUTTON],
-          });
-        }
-      }
+      worktreeCands = list.map((w) => ({
+        fsPath: w.path,
+        canonical: canonicalize(w.path),
+        branch: w.branch,
+        detached: w.detached,
+        locked: w.locked,
+      }));
     }
 
-    const recentList = this.recents.list().filter((r) => r.fsPath !== this.currentPath);
-    if (recentList.length > 0) {
-      items.push({ label: "Recent repositories", kind: vscode.QuickPickItemKind.Separator });
-      for (const r of recentList) {
-        items.push({
-          iconPath: new vscode.ThemeIcon("history"),
-          label: r.label,
-          detail: r.fsPath,
-          fsPath: r.fsPath,
-          buttons: [THIS_WINDOW_BUTTON],
-        });
-      }
-    }
-
-    // Annotate each row with its agent activity (from other windows' published summaries) and
-    // whether the repo even has an open window. Reads are cheap fs lookups done once. A repo whose
-    // agent is waiting gets the orange bell as its left icon so it's obvious at a glance.
-    const snaps = repoSnapshots(items.flatMap((i) => (i.fsPath ? [i.fsPath] : [])));
-    for (const item of items) {
-      if (!item.fsPath) {
-        continue;
-      }
-      const snap = snaps.get(item.fsPath);
-      if (snap?.needsAttention) {
-        item.iconPath = this.waitingIcon;
-      }
-      item.description = [item.description, activityText(snap)].filter(Boolean).join(" · ");
-    }
+    // Recents: skip directories that no longer exist (cheap — max ~12 entries). Branch is unknown at
+    // open; rows start with basename labels and get branch-first labels once the live fetch resolves.
+    const recentCands: SwitcherCandidate[] = this.recents
+      .list()
+      .filter((r) => fs.existsSync(r.fsPath))
+      .map((r) => ({ fsPath: r.fsPath, canonical: canonicalize(r.fsPath) }));
 
     const qp = vscode.window.createQuickPick<SwitchItem>();
     qp.title = "Switch Repository / Worktree";
     qp.placeholder = "Shift+Enter to open in current window";
-    qp.items = items;
+    qp.items = this.buildItems(buildSwitcherSections(currentCand, worktreeCands, recentCands));
     qp.matchOnDetail = true;
     this.active = qp;
     void vscode.commands.executeCommand("setContext", CONTEXT_VISIBLE, true);
+
+    // Live-fetch recent-repo branches (persisting them would go stale immediately) and rebuild the
+    // labels branch-first once they resolve — only if this same picker is still showing.
+    if (recentCands.length > 0) {
+      qp.busy = true;
+      void Promise.all(
+        recentCands.map(async (c) => [c.fsPath, await currentBranch(c.fsPath)] as const),
+      ).then((pairs) => {
+        if (this.active !== qp) {
+          return;
+        }
+        const branchByPath = new Map(pairs);
+        const sections = buildSwitcherSections(
+          currentCand,
+          worktreeCands,
+          recentCands.map((c) => ({ ...c, branch: branchByPath.get(c.fsPath) })),
+        );
+        const prevActive = qp.activeItems[0]?.fsPath;
+        const newItems = this.buildItems(sections);
+        qp.items = newItems;
+        const match = prevActive && newItems.find((i) => i.fsPath === prevActive);
+        if (match) {
+          qp.activeItems = [match];
+        }
+        qp.busy = false;
+      });
+    }
 
     qp.onDidTriggerItemButton(async (e) => {
       // Button mirrors the Shift alternate: open in this window.
@@ -144,6 +146,52 @@ export class RepoSwitcher implements vscode.Disposable {
     qp.show();
   }
 
+  /** Map the builder's sections to QuickPick items: separators, icons, buttons, activity annotation. */
+  private buildItems(sections: SwitcherSections): SwitchItem[] {
+    const items: SwitchItem[] = [];
+    items.push({ label: "Current Repository", kind: vscode.QuickPickItemKind.Separator });
+    if (sections.current) {
+      items.push(this.toItem(sections.current, new vscode.ThemeIcon("repo"), false));
+    }
+    if (sections.worktrees.length > 0) {
+      for (const row of sections.worktrees) {
+        items.push(this.toItem(row, new vscode.ThemeIcon("git-branch"), true));
+      }
+    }
+    if (sections.recents.length > 0) {
+      items.push({ label: "Recent repositories", kind: vscode.QuickPickItemKind.Separator });
+      for (const row of sections.recents) {
+        items.push(this.toItem(row, new vscode.ThemeIcon("history"), true));
+      }
+    }
+
+    // Annotate each row with its agent activity (from other windows' published summaries) and whether
+    // the repo even has an open window. A repo whose agent is waiting gets the orange bell left icon.
+    const snaps = repoSnapshots(items.flatMap((i) => (i.fsPath ? [i.fsPath] : [])));
+    for (const item of items) {
+      if (!item.fsPath) {
+        continue;
+      }
+      const snap = snaps.get(item.fsPath);
+      if (snap?.needsAttention) {
+        item.iconPath = this.waitingIcon;
+      }
+      item.description = [item.description, activityText(snap)].filter(Boolean).join(" · ");
+    }
+    return items;
+  }
+
+  private toItem(row: SwitcherRow, icon: vscode.ThemeIcon, withButton: boolean): SwitchItem {
+    return {
+      iconPath: icon,
+      label: row.label,
+      description: row.description,
+      detail: row.detail,
+      fsPath: row.fsPath,
+      buttons: withButton ? [THIS_WINDOW_BUTTON] : undefined,
+    };
+  }
+
   /** Invoked by the Shift+Enter keybinding: open the highlighted row in this window. */
   private async acceptHighlighted(newWindow: boolean): Promise<void> {
     const qp = this.active;
@@ -158,8 +206,8 @@ export class RepoSwitcher implements vscode.Disposable {
   }
 
   private async openFolder(fsPath: string, newWindow: boolean): Promise<void> {
-    if (!newWindow && fsPath === this.currentPath) {
-      return; // already here
+    if (!newWindow && this.currentCanonical && canonicalize(fsPath) === this.currentCanonical) {
+      return; // already here (canonical compare handles /var vs /private/var skew)
     }
     await this.recents.touch(fsPath);
     await vscode.commands.executeCommand("vscode.openFolder", vscode.Uri.file(fsPath), {

@@ -39,6 +39,10 @@ export const Commands = {
   focusAgent: "paireto.focusAgent",
   /** Click an agent row: switch the foreground gate to that agent's pending plan/review. */
   agentSwitch: "paireto.agent.switch",
+  /** Hide (mute) an agent row — it stays listed but stops pinging / driving aggregates. */
+  agentHide: "paireto.agent.hide",
+  /** Show (unmute) a hidden agent row. */
+  agentShow: "paireto.agent.show",
 } as const;
 
 export const Schemes = {

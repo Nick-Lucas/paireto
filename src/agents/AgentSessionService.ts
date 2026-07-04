@@ -1,78 +1,27 @@
-// Tracks the top-level Claude session keyed by session_id, driven purely by hook telemetry from the
-// bridge. Exposes per-repo aggregate activity for the status bar. The state machine follows the real
-// hook events; subagent activity is ignored entirely (we only observe the top-level agent).
+// Manages the list of live agent sessions, keyed by session_id and driven purely by hook telemetry
+// from the bridge. All per-session state and behaviour lives on AgentSession; this service routes
+// events to the right session, sweeps stale ones, tracks liveness attachments, and aggregates
+// per-repo activity for the status bar / switcher.
 
 import * as vscode from "vscode";
 
 import { log } from "../log.js";
+import { AgentSession, type AgentSessionHost } from "./AgentSession.js";
 import { canonicalize } from "../protocol/paths.js";
 import type { HookEventMessage } from "../protocol/types.js";
-import type { AgentSession, AgentState } from "../types.js";
+import type { AgentState } from "../types.js";
 
+// Pure helpers re-exported for tests and co-located callers.
+export {
+  isStaleActive,
+  shouldNotify,
+  stateForNotification,
+  STALE_ACTIVE_MS_FOR_TEST,
+} from "./AgentSession.js";
+
+/** How long an ended session's row lingers before it is removed from the panel. */
 const ENDED_RETAIN_MS = 4000;
-
-// Claude Code fires NO hook on user interrupt (Esc): per the docs, `Stop` does not fire on
-// interrupts and there is no abort/cancel event. So a "thinking"/"toolRunning" session can be left
-// spinning forever after an interrupt. We bound that with a staleness sweep: an active session with
-// no telemetry for this long is downgraded to idle. It self-corrects instantly on the next event
-// (UserPromptSubmit/PreToolUse/Stop), so the only cost is a brief wrong-idle during a genuinely
-// silent operation longer than this window.
-const STALE_ACTIVE_MS = 120_000;
 const SWEEP_INTERVAL_MS = 20_000;
-
-/** States that represent the agent actively working (and so can go stale after an interrupt). */
-const ACTIVE_STATES: ReadonlySet<AgentState> = new Set<AgentState>(["thinking", "toolRunning"]);
-
-/** Tools that edit files — running one marks the turn as having touched the working tree. */
-const EDIT_TOOLS: ReadonlySet<string> = new Set<string>([
-  "Edit",
-  "Write",
-  "MultiEdit",
-  "NotebookEdit",
-]);
-
-/** States where the agent has paused and wants the user — entering one of these "finishes" a turn. */
-const NEEDS_ATTENTION: ReadonlySet<AgentState> = new Set<AgentState>([
-  "stopped",
-  "awaitingPermission",
-  "awaitingPlanApproval",
-]);
-
-/** True if an active session has gone silent long enough to be treated as idle. */
-export function isStaleActive(state: AgentState, lastEventAt: number, now: number): boolean {
-  return ACTIVE_STATES.has(state) && lastEventAt < now - STALE_ACTIVE_MS;
-}
-
-/**
- * The single notify decision: returns the human reason a needs-you notification should fire for this
- * transition, or undefined when none should. The reason IS the condition — a turn "finishes" by
- * entering a needs-you state (the edge into stopped / awaiting permission / awaiting plan) or by a
- * `Notification` arriving while not already flagged. Callers log/ping iff this returns a reason.
- */
-export function shouldNotify(
-  event: string,
-  state: AgentState,
-  prevState: AgentState,
-  alreadyNeedsAttention: boolean,
-): string | undefined {
-  if (NEEDS_ATTENTION.has(state) && !NEEDS_ATTENTION.has(prevState)) {
-    switch (state) {
-      case "stopped":
-        return "finished its turn (Stop)";
-      case "awaitingPermission":
-        return "awaiting your permission";
-      case "awaitingPlanApproval":
-        return "awaiting plan approval";
-    }
-  }
-  if (event === "Notification" && !alreadyNeedsAttention) {
-    return "Notification — Claude is waiting for your input";
-  }
-  return undefined;
-}
-
-/** Exposed for tests. */
-export const STALE_ACTIVE_MS_FOR_TEST = STALE_ACTIVE_MS;
 
 export interface RepoActivity {
   sessionCount: number;
@@ -89,12 +38,21 @@ export class AgentSessionService implements vscode.Disposable {
   private readonly finishEmitter = new vscode.EventEmitter<AgentSession>();
   readonly onDidFinish = this.finishEmitter.event;
   private readonly sweepTimer: ReturnType<typeof setInterval>;
+  /** What every session gets from this service (focus lookup, emitters, settle override). */
+  private readonly host: AgentSessionHost;
 
   constructor(
-    // Injectable so unit tests can simulate focus without a real window. If this window is focused
-    // when an agent reaches a needs-you state, the user is already looking — no bell, no sound.
-    private readonly isWindowFocused: () => boolean = () => vscode.window.state.focused,
+    // Injectable so unit tests can simulate focus without a real window.
+    isWindowFocused: () => boolean = () => vscode.window.state.focused,
+    // Settle override for the stopped-edge ping (see debouncedStop.ts); tests pass 0.
+    stopSettleMs?: number,
   ) {
+    this.host = {
+      isWindowFocused,
+      onNeedsYou: (session) => this.finishEmitter.fire(session),
+      onChanged: () => this.changeEmitter.fire(),
+      stopSettleMs,
+    };
     this.sweepTimer = setInterval(() => this.sweepStale(), SWEEP_INTERVAL_MS);
     // Don't keep the host process alive just for the sweep.
     this.sweepTimer.unref?.();
@@ -103,113 +61,50 @@ export class AgentSessionService implements vscode.Disposable {
   /** Downgrade active sessions that have gone silent (e.g. after an un-hookable user interrupt). */
   private sweepStale(): void {
     const now = Date.now();
-    let changed = false;
+    let anyChanged = false;
     for (const session of this.sessions.values()) {
-      if (isStaleActive(session.state, session.lastEventAt, now)) {
-        session.state = "idle";
-        changed = true;
-      }
+      anyChanged = session.sweepIfStale(now) || anyChanged;
     }
-    if (changed) {
+    if (anyChanged) {
       this.changeEmitter.fire();
     }
   }
 
   ingest(msg: HookEventMessage): void {
+    // Subagent lifecycle events feed the running-subagent count that gates the parent's stop ping.
+    // Handle them BEFORE the agentId bailout (they carry their own agent_id) — they still never
+    // create a row, change headline state, or touch lastEventAt.
+    if (msg.event === "SubagentStart" || msg.event === "SubagentStop") {
+      const session = this.sessions.get(msg.sessionId);
+      if (!session) {
+        // Never creates a parent row. Logged at info because a count that silently lands nowhere
+        // means premature stop pings — this line is the tell.
+        log.info(`subagent ${msg.event} ignored: unknown session ${msg.sessionId.slice(0, 8)}`);
+        return;
+      }
+      session.trackSubagent(msg);
+      return;
+    }
     // We only observe the top-level agent session. A subagent's own events (they carry an agentId)
     // are ignored outright — they must never create, touch, change the state of, or ping for the
     // parent row.
     if (msg.agentId) {
       return;
     }
-    const now = Date.now();
     let session = this.sessions.get(msg.sessionId);
     if (!session) {
-      session = {
-        sessionId: msg.sessionId,
-        repoRoot: msg.repoRoot,
-        state: "idle",
-        startedAt: now,
-        lastEventAt: now,
-        needsAttention: false,
-        changedThisTurn: false,
-      };
+      session = new AgentSession(msg.sessionId, msg.repoRoot, this.host);
       this.sessions.set(msg.sessionId, session);
     }
-    session.lastEventAt = now;
-    session.repoRoot = msg.repoRoot || session.repoRoot;
-    const prevState = session.state;
-
-    switch (msg.event) {
-      case "SessionStart":
-        session.state = "idle";
-        break;
-      case "UserPromptSubmit":
-        session.state = "thinking";
-        session.changedThisTurn = false; // a new turn begins — reset the "touched files" flag
-        break;
-      case "PreToolUse":
-        if (msg.toolName === "ExitPlanMode") {
-          session.state = "awaitingPlanApproval";
-        } else {
-          session.state = "toolRunning";
-          session.lastTool = msg.toolName;
-        }
-        break;
-      case "PostToolUse":
-        if (msg.toolName && EDIT_TOOLS.has(msg.toolName)) {
-          session.changedThisTurn = true;
-        }
-        session.state = "thinking";
-        break;
-      case "PermissionRequest":
-        session.state = "awaitingPermission";
-        break;
-      case "Stop":
-        session.state = "stopped";
-        break;
-      case "SessionEnd":
-        session.state = "ended";
-        this.scheduleRemoval(msg.sessionId);
-        break;
-      case "FileChanged":
-        session.changedThisTurn = true;
-        break;
-      case "CwdChanged":
-      case "Notification":
-      case "WorktreeCreate":
-      case "WorktreeRemove":
-        break;
+    session.applyEvent(msg);
+    if (msg.event === "SessionEnd") {
+      this.scheduleRemoval(msg.sessionId);
     }
-
-    // Two things "finish" a turn (= want the user): entering a needs-you state (stopped / awaiting
-    // plan / awaiting permission), and a `Notification` — Claude's own "I'm waiting for your input"
-    // signal, which fires for question prompts that never reach a needs-you state (the agent just
-    // parks in a tool call). Fire once on the edge: a state edge is a non-needs→needs transition; a
-    // Notification edge is one that arrives while we're not already flagged (so the notification that
-    // accompanies a permission prompt doesn't double-ping). Re-arm when the agent goes busy/idle
-    // again so a new turn clears the marker. If the user is already looking at this window, don't
-    // mark or ping at all (the bell/sound would just be noise).
-    const reason = shouldNotify(msg.event, session.state, prevState, session.needsAttention);
-    if (reason) {
-      const who = msg.sessionId.slice(0, 8);
-      if (!this.isWindowFocused()) {
-        log.info(`notification for agent ${who}: ${reason}`);
-        session.needsAttention = true;
-        this.finishEmitter.fire(session);
-      } else {
-        log.info(`notification for agent ${who} suppressed (window focused): ${reason}`);
-      }
-    } else if (!NEEDS_ATTENTION.has(session.state) && msg.event !== "Notification") {
-      // A Notification doesn't change the headline state, so don't let it clear a marker we just set.
-      session.needsAttention = false;
-    }
-
-    this.changeEmitter.fire();
   }
 
   private scheduleRemoval(sessionId: string): void {
     setTimeout(() => {
+      this.sessions.get(sessionId)?.dispose();
       this.sessions.delete(sessionId);
       this.changeEmitter.fire();
     }, ENDED_RETAIN_MS);
@@ -251,33 +146,26 @@ export class AgentSessionService implements vscode.Disposable {
    * server crashed), its next telemetry event re-creates the row.
    */
   removeSession(sessionId: string): void {
+    const session = this.sessions.get(sessionId);
+    session?.dispose();
     if (this.sessions.delete(sessionId)) {
       this.changeEmitter.fire();
     }
   }
 
-  /**
-   * A gated session's connection dropped (interrupt/crash) with no Stop hook to clear its state —
-   * return it to idle so the Agents panel doesn't stay stuck on "awaiting plan review"/"thinking".
-   * It self-corrects on the next telemetry event. No-op if the session is gone, ended, or idle.
-   */
+  /** A gated session's connection dropped (interrupt/crash) — return it to idle (see AgentSession). */
   markIdleOnDisconnect(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (session && session.state !== "ended" && session.state !== "idle") {
-      session.state = "idle";
-      session.needsAttention = false;
-      session.lastEventAt = Date.now();
-      this.changeEmitter.fire();
-    }
+    this.sessions.get(sessionId)?.markIdleOnDisconnect();
+  }
+
+  /** Toggle an agent's visibility (see AgentSession.setMuted). No-op if the session is unknown. */
+  setMuted(sessionId: string, muted: boolean): void {
+    this.sessions.get(sessionId)?.setMuted(muted);
   }
 
   /** The user looked at the agent (focused/switched to it) — drop its attention marker. */
   clearAttention(sessionId: string): void {
-    const session = this.sessions.get(sessionId);
-    if (session?.needsAttention) {
-      session.needsAttention = false;
-      this.changeEmitter.fire();
-    }
+    this.sessions.get(sessionId)?.clearAttention();
   }
 
   /** True if the session touched files since its turn began (drives the Stop-gate review). */
@@ -295,13 +183,19 @@ export class AgentSessionService implements vscode.Disposable {
   /** Aggregate the busiest state for a repo (for the status-bar glyph). */
   activityForRepo(repoRoot: string): RepoActivity {
     const sessions = this.sessionsForRepo(repoRoot).filter((s) => s.state !== "ended");
-    const state = sessions.map((s) => s.state).sort(byPriority)[0] ?? "idle";
-    const needsAttention = sessions.some((s) => s.needsAttention);
+    // Muted agents stay listed/counted but must not drive the status bar / switcher / published
+    // activity — exclude them from the busiest-state pick and the needs-you aggregate.
+    const visible = sessions.filter((s) => !s.muted);
+    const state = visible.map((s) => s.state).sort(byPriority)[0] ?? "idle";
+    const needsAttention = visible.some((s) => s.needsAttention);
     return { sessionCount: sessions.length, state, needsAttention };
   }
 
   dispose(): void {
     clearInterval(this.sweepTimer);
+    for (const session of this.sessions.values()) {
+      session.dispose();
+    }
     this.sessions.clear();
     this.changeEmitter.dispose();
     this.finishEmitter.dispose();
@@ -311,11 +205,12 @@ export class AgentSessionService implements vscode.Disposable {
 const PRIORITY: Record<AgentState, number> = {
   awaitingPlanApproval: 0,
   awaitingPermission: 1,
-  toolRunning: 2,
-  thinking: 3,
-  stopped: 4,
-  idle: 5,
-  ended: 6,
+  awaitingInput: 2,
+  toolRunning: 3,
+  thinking: 4,
+  stopped: 5,
+  idle: 6,
+  ended: 7,
 };
 
 function byPriority(a: AgentState, b: AgentState): number {

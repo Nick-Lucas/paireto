@@ -26,16 +26,16 @@
     "Notification": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/on-event.js\"", "timeout": 5 }] }
     ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/on-event.js\"", "timeout": 5 }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/on-event.js\"", "timeout": 5 }] }
+    ],
     "CwdChanged": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/on-event.js\"", "timeout": 5 }] }
     ],
     "FileChanged": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/on-event.js\"", "timeout": 5 }] }
-    ],
-    "WorktreeCreate": [
-      { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/on-event.js\"", "timeout": 5 }] }
-    ],
-    "WorktreeRemove": [
       { "hooks": [{ "type": "command", "command": "node \"${CLAUDE_PLUGIN_ROOT}/scripts/on-event.js\"", "timeout": 5 }] }
     ],
     "PermissionRequest": [

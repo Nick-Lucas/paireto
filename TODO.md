@@ -86,10 +86,16 @@ refresh(manual) #299: staged=0 unstaged=0 committed=0
 ```
 I think it could be that an agent running in a worktree's events are being processed here? could it be the cwd/branchname mismatch from the switcher is also affecting the connection to worktrees? 
 * allow an agent to be disabled/ignored on click (use a visibility toggle icon)
+* the plugin's WorktreeCreate hook breaks Claude Code's worktree creation entirely: WorktreeCreate is a delegation hook (the hook must create the worktree and echo its path; registering it replaces the default git behaviour and there is no observer mode), so our passthrough on-event.js makes every worktree operation fail with "hook succeeded but returned no worktree path". Unregister WorktreeCreate/WorktreeRemove and fetch the switcher's worktree list fresh instead of caching on those events.
 
 # WIP 12
 
 * support git conflicts just like the main git panel
+* when staging or unstaging a file, don't refocus it in the new location or auto expand any ancestor if collapsed, don't change scroll position of the panel at all
+* tie the version of the plugin into both the extension and the plugin itself, send the plugin version with all events, check it, if it's older than the extension wants then prompt the user to update their plugin (VS Code notification, debounced, 1 click update then instruction to reboot the agent)
+* When clicking the "Open File" button on a diff which is already open, we should still open the underlying file, the diff is not the same thing.
+* If possible: when doing a Go To Definition from within a diff, if the target file also has a diff we should open the diff instead by default
+* refresh diffs when opening the diff for a file, rather than possibly showing an outdated version at first
 
 # Feature Ideas:
 
@@ -105,3 +111,4 @@ I think it could be that an agent running in a worktree's events are being proce
 * Support feedback on UIs in in-editor browser
 * Look at the agent providing review feedback to the user during coding, reacting to user interactions, reacting to compile and lint errors with quick fixes, etc.
 * keep user feedback around so they can easily review the changes and follow-up, give the agent a tool to reply to each with their fix plan
+* Claude WorktreeCreate etc could be used to manage a CoW system?

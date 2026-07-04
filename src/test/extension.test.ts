@@ -3,10 +3,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import * as vscode from "vscode";
+
 import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
+import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
 import { summarizeActivity } from "../agents/activitySummary.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
+import { branchFromRevParse } from "../git/gitCli.js";
+import { buildSwitcherSections } from "../status/switcherRows.js";
 import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderPlanFeedback } from "../plan/planFeedback.js";
@@ -19,12 +24,16 @@ import {
   AgentSessionService,
   isStaleActive,
   shouldNotify,
+  stateForNotification,
   STALE_ACTIVE_MS_FOR_TEST,
 } from "../agents/AgentSessionService.js";
-import type { HookEventMessage } from "../protocol/types.js";
+import type { AnyMessage, HookEventMessage } from "../protocol/types.js";
+import type { AgentSession } from "../agents/AgentSession.js";
+import { createInboundEventLog } from "../bridge/SocketServer.js";
 import {
   agentLabel,
   changedFileCount,
+  commandSession,
   computeViewBadge,
   shortSessionId,
 } from "../views/MainTreeProvider.js";
@@ -80,6 +89,122 @@ suite("parseWorktrees", () => {
     );
     assert.strictEqual(result[1].detached, true);
     assert.strictEqual(result[1].isMain, false);
+  });
+});
+
+suite("plugin hooks.json is observer-safe", () => {
+  // WorktreeCreate is a DELEGATION hook: registering it replaces Claude Code's default worktree
+  // creation, and the hook must create the worktree and echo its path — a passthrough observer
+  // breaks every worktree operation ("hook succeeded but returned no worktree path"). There is no
+  // observer mode, so the plugin must never register it (WorktreeRemove goes with it: without the
+  // create event the worktree cache can't stay coherent, so the switcher fetches fresh instead).
+  test("never registers the Worktree delegation hooks", () => {
+    const hooksJson = path.resolve(__dirname, "../../plugins/claude-code/hooks/hooks.json");
+    const config = JSON.parse(fs.readFileSync(hooksJson, "utf8")) as { hooks: Record<string, unknown> };
+    assert.strictEqual(config.hooks.WorktreeCreate, undefined);
+    assert.strictEqual(config.hooks.WorktreeRemove, undefined);
+  });
+});
+
+suite("branchFromRevParse", () => {
+  test("trims a branch name", () => {
+    assert.strictEqual(branchFromRevParse("main\n"), "main");
+  });
+  test("empty output -> undefined", () => {
+    assert.strictEqual(branchFromRevParse(""), undefined);
+  });
+  test("detached HEAD -> undefined", () => {
+    assert.strictEqual(branchFromRevParse("HEAD\n"), undefined);
+  });
+});
+
+suite("buildSwitcherSections", () => {
+  test("worktree also present in recents shows once (under Worktrees)", () => {
+    const sections = buildSwitcherSections(
+      undefined,
+      [{ fsPath: "/repo/wt", canonical: "/repo/wt", branch: "feature" }],
+      [{ fsPath: "/repo/wt", canonical: "/repo/wt", branch: "feature" }],
+    );
+    assert.strictEqual(sections.worktrees.length, 1);
+    assert.strictEqual(sections.recents.length, 0);
+    assert.strictEqual(sections.worktrees[0].fsPath, "/repo/wt");
+  });
+
+  test("recent equal to current by canonical (different raw spelling) is excluded", () => {
+    const sections = buildSwitcherSections(
+      { fsPath: "/var/repo", canonical: "/private/var/repo", branch: "main" },
+      [],
+      [{ fsPath: "/private/var/repo", canonical: "/private/var/repo", branch: "main" }],
+    );
+    assert.ok(sections.current);
+    assert.strictEqual(sections.recents.length, 0);
+  });
+
+  test("current label is branch when known, basename fallback otherwise", () => {
+    const withBranch = buildSwitcherSections(
+      { fsPath: "/x/repo", canonical: "/x/repo", branch: "develop" },
+      [],
+      [],
+    );
+    assert.strictEqual(withBranch.current?.label, "develop");
+    const noBranch = buildSwitcherSections(
+      { fsPath: "/x/repo", canonical: "/x/repo" },
+      [],
+      [],
+    );
+    assert.strictEqual(noBranch.current?.label, "repo");
+  });
+
+  test("recent with branch -> branch label + basename description", () => {
+    const sections = buildSwitcherSections(
+      undefined,
+      [],
+      [{ fsPath: "/x/my-repo", canonical: "/x/my-repo", branch: "main" }],
+    );
+    assert.strictEqual(sections.recents[0].label, "main");
+    assert.strictEqual(sections.recents[0].description, "my-repo");
+    assert.strictEqual(sections.recents[0].detail, "/x/my-repo");
+  });
+
+  test("recent without branch -> basename label, no description", () => {
+    const sections = buildSwitcherSections(
+      undefined,
+      [],
+      [{ fsPath: "/x/my-repo", canonical: "/x/my-repo" }],
+    );
+    assert.strictEqual(sections.recents[0].label, "my-repo");
+    assert.strictEqual(sections.recents[0].description, undefined);
+  });
+
+  test("detached worktree -> (detached) label", () => {
+    const sections = buildSwitcherSections(
+      undefined,
+      [{ fsPath: "/x/wt", canonical: "/x/wt", detached: true }],
+      [],
+    );
+    assert.strictEqual(sections.worktrees[0].label, "(detached)");
+  });
+
+  test("locked worktree keeps the locked annotation", () => {
+    const sections = buildSwitcherSections(
+      undefined,
+      [{ fsPath: "/x/wt", canonical: "/x/wt", branch: "feature", locked: true }],
+      [],
+    );
+    assert.ok(sections.worktrees[0].description?.includes("locked"));
+  });
+
+  test("two candidates both on main stay distinguishable via description", () => {
+    const sections = buildSwitcherSections(
+      { fsPath: "/x/repo-a", canonical: "/x/repo-a", branch: "main" },
+      [],
+      [{ fsPath: "/y/repo-b", canonical: "/y/repo-b", branch: "main" }],
+    );
+    assert.strictEqual(sections.current?.label, "main");
+    assert.strictEqual(sections.recents[0].label, "main");
+    assert.notStrictEqual(sections.current?.description, sections.recents[0].description);
+    assert.strictEqual(sections.current?.description, "repo-a");
+    assert.strictEqual(sections.recents[0].description, "repo-b");
   });
 });
 
@@ -513,34 +638,39 @@ suite("AgentSessionService liveness ref-counting", () => {
 
 suite("notifyReason (the notify decision + its reason)", () => {
   test("returns a reason on the edge into each needs-you state", () => {
-    assert.strictEqual(shouldNotify("Stop", "stopped", "thinking", false), "finished its turn (Stop)");
-    assert.strictEqual(
-      shouldNotify("PermissionRequest", "awaitingPermission", "toolRunning", false),
-      "awaiting your permission",
-    );
-    assert.strictEqual(
-      shouldNotify("PreToolUse", "awaitingPlanApproval", "thinking", false),
-      "awaiting plan approval",
-    );
-  });
-
-  test("a Notification while not already flagged reads as waiting for input", () => {
-    assert.strictEqual(
-      shouldNotify("Notification", "thinking", "thinking", false),
-      "Notification — Claude is waiting for your input",
-    );
+    assert.strictEqual(shouldNotify("stopped", "thinking"), "finished its turn (Stop)");
+    assert.strictEqual(shouldNotify("awaitingPermission", "toolRunning"), "awaiting your permission");
+    assert.strictEqual(shouldNotify("awaitingPlanApproval", "thinking"), "awaiting plan approval");
+    assert.strictEqual(shouldNotify("awaitingInput", "thinking"), "waiting for your input");
   });
 
   test("no reason when staying in (not entering) a needs-you state", () => {
-    assert.strictEqual(shouldNotify("Stop", "stopped", "stopped", true), undefined);
-  });
-
-  test("no reason for a Notification once already flagged (avoids double-ping)", () => {
-    assert.strictEqual(shouldNotify("Notification", "awaitingPermission", "awaitingPermission", true), undefined);
+    assert.strictEqual(shouldNotify("stopped", "stopped"), undefined);
+    assert.strictEqual(shouldNotify("awaitingInput", "awaitingPermission"), undefined);
   });
 
   test("no reason for a busy/idle transition", () => {
-    assert.strictEqual(shouldNotify("UserPromptSubmit", "thinking", "idle", false), undefined);
+    assert.strictEqual(shouldNotify("thinking", "idle"), undefined);
+  });
+});
+
+suite("stateForNotification (Notification types map onto the state machine)", () => {
+  test("user-wanting types map to their needs-you state", () => {
+    assert.strictEqual(stateForNotification("permission_prompt"), "awaitingPermission");
+    assert.strictEqual(stateForNotification("idle_prompt"), "stopped");
+    assert.strictEqual(stateForNotification("elicitation_dialog"), "awaitingInput");
+    assert.strictEqual(stateForNotification("agent_needs_input"), "awaitingInput");
+  });
+
+  test("a missing type (older CLI) still reads as an input request", () => {
+    assert.strictEqual(stateForNotification(undefined), "awaitingInput");
+  });
+
+  test("informational types map to nothing (no state change, no ping)", () => {
+    assert.strictEqual(stateForNotification("auth_success"), undefined);
+    assert.strictEqual(stateForNotification("agent_completed"), undefined);
+    assert.strictEqual(stateForNotification("elicitation_complete"), undefined);
+    assert.strictEqual(stateForNotification("elicitation_response"), undefined);
   });
 });
 
@@ -559,9 +689,12 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
 
   const session = (svc: AgentSessionService) => svc.sessionsForRepo("/repo")[0];
   // Window not focused, so needs-you transitions DO mark/ping (the default reads the real window).
-  const mkSvc = () => new AgentSessionService(() => false);
+  // settle 0 → the stopped-edge ping fires synchronously in tests
+  const mkSvc = () => new AgentSessionService(() => false, 0);
+  // Every ping is asynchronous (the gate fires on a macrotask even with settle 0) — tick to observe.
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-  test("fires once on entering a needs-you state and sets needsAttention", () => {
+  test("fires once on entering a needs-you state and sets needsAttention", async () => {
     const svc = mkSvc();
     const fired: string[] = [];
     svc.onDidFinish((s) => fired.push(s.state));
@@ -570,6 +703,8 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
       svc.ingest(ev("UserPromptSubmit"));
       assert.deepStrictEqual(fired, [], "busy states don't notify");
       svc.ingest(ev("Stop"));
+      assert.deepStrictEqual(fired, [], "asynchronous — nothing fires inside the same tick");
+      await tick();
       assert.deepStrictEqual(fired, ["stopped"]);
       assert.strictEqual(session(svc).needsAttention, true);
     } finally {
@@ -577,7 +712,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     }
   });
 
-  test("does NOT re-fire while staying within needs-you states", () => {
+  test("does NOT re-fire while staying within needs-you states", async () => {
     const svc = mkSvc();
     const fired: string[] = [];
     svc.onDidFinish((s) => fired.push(s.state));
@@ -585,24 +720,27 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop")); // stopped (needs-you) — fires
       svc.ingest(ev("PermissionRequest")); // awaitingPermission (still needs-you) — no re-fire
-      assert.deepStrictEqual(fired, ["stopped"]);
+      await tick();
+      assert.strictEqual(fired.length, 1, "exactly one ping for the whole needs-you stretch");
       assert.strictEqual(session(svc).needsAttention, true);
     } finally {
       svc.dispose();
     }
   });
 
-  test("clears on going busy/idle and re-arms on the next needs-you transition", () => {
+  test("clears on going busy/idle and re-arms on the next needs-you transition", async () => {
     const svc = mkSvc();
     const fired: string[] = [];
     svc.onDidFinish((s) => fired.push(s.state));
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
+      await tick();
       assert.strictEqual(session(svc).needsAttention, true);
       svc.ingest(ev("UserPromptSubmit")); // a new turn — clears
       assert.strictEqual(session(svc).needsAttention, false);
       svc.ingest(ev("PreToolUse", "ExitPlanMode")); // awaitingPlanApproval — re-arms + re-fires
+      await tick();
       assert.deepStrictEqual(fired, ["stopped", "awaitingPlanApproval"]);
       assert.strictEqual(session(svc).needsAttention, true);
     } finally {
@@ -610,13 +748,14 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     }
   });
 
-  test("does NOT mark or fire when this window is focused", () => {
-    const svc = new AgentSessionService(() => true); // user is already looking at the editor
+  test("does NOT mark or fire when this window is focused", async () => {
+    const svc = new AgentSessionService(() => true, 0); // user is already looking at the editor
     const fired: string[] = [];
     svc.onDidFinish((s) => fired.push(s.state));
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
+      await tick();
       assert.deepStrictEqual(fired, [], "no ping while focused");
       assert.strictEqual(session(svc).needsAttention, false, "no bell while focused");
     } finally {
@@ -667,7 +806,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     }
   });
 
-  test("a Notification (e.g. a question prompt) fires the needs-you ping", () => {
+  test("a Notification (e.g. a question prompt) fires the needs-you ping", async () => {
     const svc = mkSvc();
     const fired: string[] = [];
     svc.onDidFinish((s) => fired.push(s.state));
@@ -675,6 +814,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking — not itself a needs-you state
       svc.ingest(ev("Notification")); // Claude is waiting for the user's input
+      await tick();
       assert.strictEqual(fired.length, 1, "the question prompt pings once");
       assert.strictEqual(session(svc).needsAttention, true);
     } finally {
@@ -682,7 +822,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     }
   });
 
-  test("a Notification does not double-fire when already awaiting the user", () => {
+  test("a Notification does not double-fire when already awaiting the user", async () => {
     const svc = mkSvc();
     const fired: string[] = [];
     svc.onDidFinish((s) => fired.push(s.state));
@@ -690,17 +830,55 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("PermissionRequest")); // awaitingPermission — fires once
       svc.ingest(ev("Notification")); // the matching notification — must not re-ping
+      await tick();
       assert.strictEqual(fired.length, 1);
     } finally {
       svc.dispose();
     }
   });
 
-  test("clearAttention drops the marker without a state change", () => {
+  test("a typed Notification lands on the matching state (one ping via the state edge)", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit")); // thinking
+      svc.ingest({ ...ev("Notification"), notificationType: "permission_prompt" });
+      await tick();
+      assert.strictEqual(session(svc).state, "awaitingPermission");
+      assert.strictEqual(fired.length, 1);
+      svc.ingest(ev("PermissionRequest")); // the accompanying hook — same state, no second ping
+      await tick();
+      assert.strictEqual(fired.length, 1);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("an informational Notification changes nothing and never pings", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit")); // thinking
+      svc.ingest({ ...ev("Notification"), notificationType: "auth_success" });
+      await tick();
+      assert.deepStrictEqual(fired, []);
+      assert.strictEqual(session(svc).state, "thinking");
+      assert.strictEqual(session(svc).needsAttention, false);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("clearAttention drops the marker without a state change", async () => {
     const svc = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
+      await tick();
       assert.strictEqual(session(svc).needsAttention, true);
       svc.clearAttention("s1");
       assert.strictEqual(session(svc).needsAttention, false);
@@ -710,15 +888,316 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     }
   });
 
-  test("markIdleOnDisconnect also clears the marker", () => {
+  test("markIdleOnDisconnect also clears the marker", async () => {
     const svc = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("PreToolUse", "ExitPlanMode"));
+      await tick();
       assert.strictEqual(session(svc).needsAttention, true);
       svc.markIdleOnDisconnect("s1");
       assert.strictEqual(session(svc).needsAttention, false);
       assert.strictEqual(session(svc).state, "idle");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a muted session never fires onDidFinish or sets needsAttention", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.setMuted("s1", true);
+      svc.ingest(ev("Stop")); // needs-you edge, but the agent is muted
+      await tick();
+      assert.deepStrictEqual(fired, [], "muted agents don't ping");
+      assert.strictEqual(session(svc).needsAttention, false);
+      assert.strictEqual(session(svc).state, "stopped", "state is still tracked while muted");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("muting a session with needsAttention=true clears the marker", async () => {
+    const svc = mkSvc();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop"));
+      await tick();
+      assert.strictEqual(session(svc).needsAttention, true);
+      svc.setMuted("s1", true);
+      assert.strictEqual(session(svc).needsAttention, false, "muting drops a stale bell");
+      assert.strictEqual(session(svc).muted, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("unmuting re-arms the needs-you ping", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.setMuted("s1", true);
+      svc.ingest(ev("Stop")); // suppressed while muted
+      await tick();
+      assert.deepStrictEqual(fired, []);
+      svc.setMuted("s1", false);
+      svc.ingest(ev("UserPromptSubmit")); // a new turn
+      svc.ingest(ev("PreToolUse", "ExitPlanMode")); // needs-you edge — now fires normally
+      await tick();
+      assert.deepStrictEqual(fired, ["awaitingPlanApproval"]);
+      assert.strictEqual(session(svc).needsAttention, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("setMuted on an unknown sessionId is a no-op", () => {
+    const svc = mkSvc();
+    try {
+      svc.setMuted("missing", true); // must not throw
+      assert.deepStrictEqual(svc.allSessions(), []);
+    } finally {
+      svc.dispose();
+    }
+  });
+});
+
+suite("AgentSessionService.activityForRepo (muted sessions excluded)", () => {
+  const ev = (sessionId: string, event: string, toolName?: string): HookEventMessage =>
+    ({
+      t: "hook.event",
+      v: 1,
+      ts: "t",
+      event,
+      sessionId,
+      cwd: "/repo",
+      repoRoot: "/repo",
+      toolName,
+    }) as HookEventMessage;
+
+  test("excludes a muted session from the busiest-state pick and needsAttention aggregate", () => {
+    const svc = new AgentSessionService(() => false);
+    try {
+      // s1 is muted while awaiting plan approval (a high-priority, needs-you state).
+      svc.ingest(ev("s1", "SessionStart"));
+      svc.ingest(ev("s1", "PreToolUse", "ExitPlanMode"));
+      svc.setMuted("s1", true);
+      // s2 is a visible, idle agent.
+      svc.ingest(ev("s2", "SessionStart"));
+      const act = svc.activityForRepo("/repo");
+      assert.strictEqual(act.state, "idle", "the muted agent's state is ignored");
+      assert.strictEqual(act.needsAttention, false, "the muted agent's attention is ignored");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a repo with only muted sessions reports a no-attention idle aggregate", () => {
+    const svc = new AgentSessionService(() => false);
+    try {
+      svc.ingest(ev("s1", "SessionStart"));
+      svc.ingest(ev("s1", "PreToolUse", "ExitPlanMode"));
+      svc.setMuted("s1", true);
+      const act = svc.activityForRepo("/repo");
+      assert.strictEqual(act.state, "idle");
+      assert.strictEqual(act.needsAttention, false);
+      assert.strictEqual(act.sessionCount, 1, "the muted agent is still listed/counted");
+    } finally {
+      svc.dispose();
+    }
+  });
+});
+
+suite("AgentSessionService background-agent stop gating", () => {
+  const ev = (event: string, toolName?: string): HookEventMessage =>
+    ({ t: "hook.event", v: 1, ts: "t", event, sessionId: "s1", cwd: "/repo", repoRoot: "/repo", toolName }) as HookEventMessage;
+  // SubagentStart/SubagentStop carry the parent session_id plus their own agent_id.
+  const subEv = (event: string): HookEventMessage =>
+    ({ t: "hook.event", v: 1, ts: "t", event, sessionId: "s1", agentId: "sub-1", cwd: "/repo", repoRoot: "/repo" }) as HookEventMessage;
+  const session = (svc: AgentSessionService) => svc.sessionsForRepo("/repo")[0];
+  // settle 0 → the stopped-edge ping fires synchronously in tests
+  const mkSvc = () => new AgentSessionService(() => false, 0);
+
+  test("a Stop with a background agent running is ignored outright — no ping, no state change", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit")); // thinking
+      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(ev("Stop"));
+      assert.deepStrictEqual(fired, [], "no ping while a background agent runs");
+      assert.strictEqual(session(svc).needsAttention, false);
+      assert.strictEqual(session(svc).state, "thinking", "still working — the agent isn't done");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("SubagentStop never pings by itself; the agent's own final Stop does", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit"));
+      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(ev("Stop")); // ignored — two still running
+      svc.ingest(subEv("SubagentStop"));
+      svc.ingest(ev("Stop")); // ignored — one still running
+      svc.ingest(subEv("SubagentStop")); // last one done — still no ping (no deferral)
+      await wait(0);
+      assert.deepStrictEqual(fired, [], "only a real Stop pings, never a SubagentStop");
+      svc.ingest(ev("Stop")); // the agent picks back up and emits its true final Stop
+      await wait(0);
+      assert.deepStrictEqual(fired, ["stopped"], "final Stop pings once");
+      assert.strictEqual(session(svc).needsAttention, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("an ignored Stop doesn't eat the next turn's ping", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(ev("Stop")); // ignored
+      svc.ingest(ev("UserPromptSubmit")); // new turn while the background agent still runs
+      svc.ingest(subEv("SubagentStop"));
+      svc.ingest(ev("Stop")); // normal turn end
+      await wait(0);
+      assert.deepStrictEqual(fired, ["stopped"], "pings exactly once");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("SubagentStop with no prior start clamps at 0; a plain Stop still pings", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(subEv("SubagentStop")); // clamps at 0, never negative
+      svc.ingest(ev("Stop"));
+      await wait(0);
+      assert.deepStrictEqual(fired, ["stopped"]);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("SubagentStart for an unseen session creates no row", () => {
+    const svc = mkSvc();
+    try {
+      svc.ingest(subEv("SubagentStart"));
+      assert.deepStrictEqual(svc.allSessions(), []);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("SubagentStart doesn't change headline state", () => {
+    const svc = mkSvc();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit")); // thinking
+      svc.ingest(subEv("SubagentStart"));
+      assert.strictEqual(session(svc).state, "thinking");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("markIdleOnDisconnect zeroes the counter, so a later Stop pings (fail-open)", async () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit"));
+      svc.ingest(subEv("SubagentStart")); // its SubagentStop will never arrive (interrupt)
+      svc.markIdleOnDisconnect("s1");
+      svc.ingest(ev("Stop"));
+      await wait(0);
+      assert.deepStrictEqual(fired, ["stopped"], "a wedged counter must not eat future pings");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("SessionEnd zeroes the counter", () => {
+    const svc = mkSvc();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(ev("SessionEnd"));
+      assert.strictEqual(session(svc).runningSubagents, 0);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  test("a quiet settle window releases the stop ping", async () => {
+    const svc = new AgentSessionService(() => false, 10);
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop"));
+      assert.deepStrictEqual(fired, [], "no instant ping — the settle window is still open");
+      await wait(50);
+      assert.deepStrictEqual(fired, ["stopped"], "quiet window → the ping fires");
+      assert.strictEqual(session(svc).needsAttention, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("resumed activity inside the settle window cancels the ping (wake-turn Stop)", async () => {
+    const svc = new AgentSessionService(() => false, 30);
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop")); // intermediate stop — the agent picks back up below
+      svc.ingest(ev("PreToolUse", "Task"));
+      await wait(80);
+      assert.deepStrictEqual(fired, [], "the resumed turn cancelled the pending ping");
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a SubagentStart landing inside the settle window suppresses the ping", async () => {
+    const svc = new AgentSessionService(() => false, 30);
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("Stop")); // count is 0 at event time…
+      svc.ingest(subEv("SubagentStart")); // …but the spawn's events overtook the Stop on the socket
+      await wait(80);
+      assert.deepStrictEqual(fired, [], "count > 0 at fire time → skipped");
+      // The parent resumes and truly finishes: the next full turn pings normally.
+      svc.ingest(ev("PostToolUse", "Task"));
+      svc.ingest(subEv("SubagentStop"));
+      svc.ingest(ev("Stop"));
+      await wait(80);
+      assert.deepStrictEqual(fired, ["stopped"]);
     } finally {
       svc.dispose();
     }
@@ -855,6 +1334,73 @@ suite("reconcileDiffTarget (open-diff re-point after stage/unstage/discard)", ()
 
   test("falls back to the first candidate when the preferred group isn't present", () => {
     assert.strictEqual(reconcileDiffTarget("staged", ["committed"], "unstaged"), "committed");
+  });
+});
+
+suite("pickCurrentRepo (deterministic repo selection)", () => {
+  const repo = (root: string): RepoInfo => ({ root: vscode.Uri.file(root) });
+  const fileDoc = (fsPath: string) => ({ scheme: "file", fsPath });
+
+  test("BUG REPRO: virtual active doc + workspace anchor picks the window's repo, not repos[0]", () => {
+    const otherRepo = repo("/a/other");
+    const windowRepo = repo("/a/window");
+    const picked = pickCurrentRepo(
+      [otherRepo, windowRepo],
+      { scheme: "paireto-review", fsPath: "/a/other/x.ts" },
+      "/a/window",
+    );
+    assert.strictEqual(picked, windowRepo);
+  });
+
+  test("no active doc falls back to the workspace-folder repo", () => {
+    const otherRepo = repo("/a/other");
+    const windowRepo = repo("/a/window");
+    assert.strictEqual(
+      pickCurrentRepo([otherRepo, windowRepo], undefined, "/a/window"),
+      windowRepo,
+    );
+  });
+
+  test("active file: doc inside a repo beats the workspace anchor", () => {
+    const otherRepo = repo("/a/other");
+    const windowRepo = repo("/a/window");
+    assert.strictEqual(
+      pickCurrentRepo([otherRepo, windowRepo], fileDoc("/a/other/x.ts"), "/a/window"),
+      otherRepo,
+    );
+  });
+
+  test("nested roots pick the longest (worktree inside main repo)", () => {
+    const main = repo("/a/repo");
+    const worktree = repo("/a/repo/wt");
+    assert.strictEqual(
+      pickCurrentRepo([main, worktree], fileDoc("/a/repo/wt/src/x.ts"), "/a/repo"),
+      worktree,
+    );
+  });
+
+  test("startsWith trap: /a/repo must not claim /a/repo-two/x.ts", () => {
+    const repoOne = repo("/a/repo");
+    const repoTwo = repo("/a/repo-two");
+    assert.strictEqual(
+      pickCurrentRepo([repoOne, repoTwo], fileDoc("/a/repo-two/x.ts"), undefined),
+      repoTwo,
+    );
+  });
+
+  test("workspace folder exactly equal to a root matches", () => {
+    const repoOne = repo("/a/repo");
+    assert.strictEqual(pickCurrentRepo([repoOne], undefined, "/a/repo"), repoOne);
+  });
+
+  test("empty repos -> undefined", () => {
+    assert.strictEqual(pickCurrentRepo([], fileDoc("/a/repo/x.ts"), "/a/repo"), undefined);
+  });
+
+  test("no anchors at all -> repos[0]", () => {
+    const first = repo("/a/first");
+    const second = repo("/a/second");
+    assert.strictEqual(pickCurrentRepo([first, second], undefined, undefined), first);
   });
 });
 
@@ -1006,6 +1552,60 @@ suite("PlanGateRegistry (plan auto-mode forwarding)", () => {
     const result = await decision;
     assert.strictEqual(result.decision, "deny");
     assert.strictEqual(result.nextMode, undefined);
+  });
+});
+
+suite("describeInbound (bridge debug log line)", () => {
+  const base = { v: 1, ts: "t" };
+
+  test("hook events show event, agent, and the interesting extras", () => {
+    assert.strictEqual(
+      createInboundEventLog({
+        ...base,
+        t: "hook.event",
+        event: "PreToolUse",
+        sessionId: "72a4f124-aaaa",
+        cwd: "/x",
+        repoRoot: "/x",
+        toolName: "Edit",
+      } as AnyMessage),
+      "hook.event PreToolUse agent=72a4f124 tool=Edit",
+    );
+  });
+
+  test("subagent context and notification type are called out", () => {
+    assert.strictEqual(
+      createInboundEventLog({
+        ...base,
+        t: "hook.event",
+        event: "Notification",
+        sessionId: "72a4f124-aaaa",
+        agentId: "abcd1234-bbbb",
+        cwd: "/x",
+        repoRoot: "/x",
+        notificationType: "permission_prompt",
+      } as AnyMessage),
+      "hook.event Notification agent=72a4f124 subagent=abcd1234 type=permission_prompt",
+    );
+  });
+
+  test("non-hook messages show the type and agent", () => {
+    assert.strictEqual(
+      createInboundEventLog({ ...base, t: "session.attach", sessionId: "72a4f124-aaaa", repoRoot: "/x" } as AnyMessage),
+      "session.attach agent=72a4f124",
+    );
+  });
+});
+
+suite("commandSession (inline tree buttons receive the Node, row clicks the session)", () => {
+  const session = { sessionId: "s1", repoRoot: "/repo" } as AgentSession;
+
+  test("unwraps an agent tree node (inline eye/focus buttons)", () => {
+    assert.strictEqual(commandSession({ kind: "agent", session }), session);
+  });
+
+  test("passes a raw session through (row-click command args)", () => {
+    assert.strictEqual(commandSession(session), session);
   });
 });
 

@@ -17,7 +17,8 @@ import type { PlanReviewController } from "../plan/PlanReviewController.js";
 import type { PlanCommentData } from "../plan/planFeedback.js";
 import type { ReviewController } from "../review/ReviewController.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
-import type { AgentSession, AgentState, FileGroup } from "../types.js";
+import type { AgentSession } from "../agents/AgentSession.js";
+import type { AgentState, FileGroup } from "../types.js";
 import { buildFileTree, type TreeEntry } from "./fileTree.js";
 
 // Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
@@ -69,6 +70,7 @@ const STATE_LABEL: Record<AgentState, string> = {
   toolRunning: "running tool",
   awaitingPlanApproval: "awaiting plan review",
   awaitingPermission: "awaiting permission",
+  awaitingInput: "awaiting your input",
   stopped: "stopped",
   ended: "ended",
 };
@@ -79,6 +81,7 @@ const STATE_ICON: Record<AgentState, string> = {
   toolRunning: "tools",
   awaitingPlanApproval: "comment-discussion",
   awaitingPermission: "warning",
+  awaitingInput: "question",
   stopped: "primitive-square",
   ended: "circle-slash",
 };
@@ -98,6 +101,14 @@ export function shortSessionId(sessionId: string): string {
 /** The Agents-row label: the harness name + short session id, e.g. `Claude (a1b2c3d4)`. */
 export function agentLabel(sessionId: string): string {
   return `Claude (${shortSessionId(sessionId)})`;
+}
+
+/** What an agent command receives: the row's own `item.command` passes the raw session, but VS Code
+ *  hands inline `view/item/context` buttons the tree Node — accept both. */
+export type AgentCommandArg = AgentSession | { kind: "agent"; session: AgentSession };
+
+export function commandSession(arg: AgentCommandArg): AgentSession {
+  return "session" in arg ? arg.session : arg;
 }
 
 /**
@@ -156,8 +167,14 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       // foreground/queue changes (agent rows show which gate is active/pending).
       this.repoService.onDidChange(fire),
       this.coordinator.onDidChange(fire),
-      vscode.commands.registerCommand(Commands.agentSwitch, (s: AgentSession) =>
-        this.switchToAgent(s),
+      vscode.commands.registerCommand(Commands.agentSwitch, (arg: AgentCommandArg) =>
+        this.switchToAgent(commandSession(arg)),
+      ),
+      vscode.commands.registerCommand(Commands.agentHide, (arg: AgentCommandArg) =>
+        this.agents.setMuted(commandSession(arg).sessionId, true),
+      ),
+      vscode.commands.registerCommand(Commands.agentShow, (arg: AgentCommandArg) =>
+        this.agents.setMuted(commandSession(arg).sessionId, false),
       ),
     );
   }
@@ -509,12 +526,17 @@ function agentItem(
     item.iconPath = new vscode.ThemeIcon(STATE_ICON[s.state]);
     item.tooltip = `${ctx}\n${STATE_LABEL[s.state]}`;
   }
-  // The agent has paused and wants the user (and they haven't looked yet) — flag it prominently.
-  if (s.needsAttention && !gate?.foreground) {
+  // Hidden (muted) rows show just the name + crossed eye — no status text, no needs-you bell.
+  if (s.muted) {
+    item.description = undefined;
+    item.iconPath = new vscode.ThemeIcon("eye-closed");
+    item.tooltip = `${ctx}\nHidden — pings muted`;
+  } else if (s.needsAttention && !gate?.foreground) {
+    // The agent has paused and wants the user (and they haven't looked yet) — flag it prominently.
     item.description = `${item.description} · needs you`;
     item.iconPath = new vscode.ThemeIcon("bell-dot", new vscode.ThemeColor("charts.orange"));
   }
-  item.contextValue = "agentSession";
+  item.contextValue = s.muted ? "agentSession:muted" : "agentSession";
   item.command = { command: Commands.agentSwitch, title: "Switch to Agent", arguments: [s] };
   return item;
 }

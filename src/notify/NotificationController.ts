@@ -11,7 +11,7 @@ import * as vscode from "vscode";
 
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { log } from "../log.js";
-import type { AgentSession } from "../types.js";
+import type { AgentSession } from "../agents/AgentSession.js";
 
 type NotifyType = "sound" | "disabled";
 

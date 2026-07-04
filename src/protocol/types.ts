@@ -17,8 +17,20 @@ export type HookEventName =
   | "PermissionRequest"
   | "CwdChanged"
   | "FileChanged"
-  | "WorktreeCreate"
-  | "WorktreeRemove";
+  // Subagent lifecycle — counted only to gate the parent's turn-end ping
+  | "SubagentStart"
+  | "SubagentStop";
+
+/** `notification_type` values of the Notification hook (Claude Code hooks docs). */
+export type NotificationType =
+  | "permission_prompt"
+  | "idle_prompt"
+  | "auth_success"
+  | "elicitation_dialog"
+  | "elicitation_complete"
+  | "elicitation_response"
+  | "agent_needs_input"
+  | "agent_completed";
 
 /** Message type tags carried in the envelope `t` field. */
 export type MessageType =
@@ -76,6 +88,11 @@ export interface HookEventMessage extends Envelope {
   toolName?: string;
   toolInput?: unknown;
   transcriptPath?: string;
+  /** Notification hook: which kind of notification — maps user-wanting kinds onto agent states;
+   *  informational kinds are ignored. */
+  notificationType?: NotificationType;
+  /** Notification hook: the human-readable message text. */
+  message?: string;
 }
 
 /**

@@ -57,6 +57,18 @@
   `removeSession` (ref-counted so layered connections don't drop the row early). A gate interrupt
   (Esc) drops a different connection → `markIdleOnDisconnect`.
 
+- **The bridge targets ONLY the agent's own git-toplevel socket (`resolveTarget`), fail-open
+  otherwise.** cwd-first: a worktree agent's toplevel is the worktree dir, a plain repo's is its root
+  — never an ancestor. The old index-ancestor + ancestor-walk fallbacks leaked worktree events into an
+  ancestor repo's window (wrong refreshes/rows/gates → blank Changes list) and were removed; no live
+  socket for the exact toplevel → no target (hook scripts already fail open).
+
+- **`RepoService.current()` anchors on the first workspace folder, using the active editor only for
+  `file:`-scheme docs** (extracted pure `pickCurrentRepo`). A mid-review `refresh()` with a virtual
+  `paireto-review:` doc active must not retarget a different discovered repo (getChanges then succeeds
+  0/0/0 → blank view). Containment uses the `isInside` path.relative idiom (not startsWith), longest
+  root wins; both sides canonicalized. `refresh()` logs loudly on a real root→root change.
+
 - **"Agent finished" = entering a needs-you state** (stopped / awaiting permission / awaiting plan)
   **or a `Notification`** (Claude's "waiting for input" — covers question prompts that never reach a
   needs-you state), detected on the edge in `AgentSessionService.ingest` → `onDidFinish`. Suppressed
@@ -65,10 +77,57 @@
   `notify.type`, so unexpected pings are traceable even with sound off); focus-suppressed edges log
   at debug.
 
-- **Subagent status is never tracked — global bailout at the top of `ingest`.** Any hook event
-  carrying an `agentId` returns immediately (never creates/touches/states/pings the parent row). There
-  is no subagent counter: the `Subagent*` hooks are unsubscribed and surfaces show only the top-level
-  agent's general state.
+- **Agent visibility is per-session runtime mute (`AgentSession.muted`, `setMuted`).** A muted row
+  stays listed (dimmed, `eye-closed` icon, `agentSession:muted` contextValue) so it can be re-enabled,
+  but suppresses its needs-you ping (`fireNeedsYou` skips the mark/finish, logs the edge at debug) and
+  drops out of `activityForRepo`'s state + needsAttention aggregates (status bar / switcher / published
+  activity). Muting also clears any lingering `needsAttention`. Not persisted.
+
+- **Subagent status is never tracked as UI state — `agentId`-carrying events bail out of `ingest`.**
+  The one exception is a running-subagent COUNT: `SubagentStart`/`SubagentStop` are subscribed and
+  routed to `trackSubagent` (before the bailout) purely so a `Stop` with `runningSubagents > 0`
+  ("waiting for N background agents to finish") is **ignored outright** (logged at info, no state
+  change) — Claude emits another Stop once they all finish, and that one pings on the normal edge.
+  The stale sweep zeroes a wedged count. The count is never displayed; headline state still comes
+  only from the top-level agent. Count transitions log at info (gates the ping → must be traceable).
+
+- **The stopped-edge ping fires only after a settle window (2s); other needs-you pings are
+  instant.** A Stop is untrustworthy at event time: background-agent wake-turns end in a Stop then
+  auto-resume, and subagent lifecycle events can be delivered out of order, so an instantaneous count
+  check pings prematurely. Every event flows through ONE per-session gate call —
+  `createDebouncedStop(...).consider(reason, shouldDebounce)` (`src/agents/debouncedStop.ts`):
+  debounced (stopped) reasons wait out the window, undebounced ones fire on the next macrotask —
+  every fire is ASYNC, and staleness is the callback's job: the single `fireNeedsYou` re-validates at
+  fire time (still needs-attention, zero running subagents; skip logged at info). Tests await a tick.
+
+- **Per-session state/behaviour live on the `AgentSession` class (`src/agents/AgentSession.ts`), the
+  service only manages the list.** The class owns the hook-event state machine, subagent count, mute,
+  attention marker, and the notification gate, talking back through an `AgentSessionHost` (focus
+  lookup, emit callbacks, settle override); `AgentSessionService` routes events by session id, sweeps
+  stale sessions, tracks liveness attachments, and aggregates per-repo activity.
+
+- **Every inbound bridge message logs one debug line** (`bridge <- hook.event Stop agent=72a4f124
+  tool=… type=…`, via `describeInbound` in SocketServer) — enough to reconstruct event order/timing
+  when notification behaviour looks wrong, without dumping payloads.
+
+- **The plugin must never register `WorktreeCreate`/`WorktreeRemove`.** `WorktreeCreate` is a
+  DELEGATION hook — registering it replaces Claude Code's default creation and the hook must create
+  the worktree and echo its path, so a passthrough observer breaks every worktree operation ("hook
+  succeeded but returned no worktree path"); there is no observer mode. With no create signal the
+  worktree cache can't stay coherent, so `WorktreeService` fetches fresh per switcher open instead
+  (a test locks hooks.json against re-registration).
+
+- **`Notification`s map onto the state machine instead of being a second ping channel**
+  (`stateForNotification`): `permission_prompt` → `awaitingPermission`, `idle_prompt` → `stopped`,
+  `elicitation_dialog`/`agent_needs_input`/missing type → the new `awaitingInput` state; informational
+  types (`auth_success`, `agent_completed`, `elicitation_complete`/`response`) map to nothing. The
+  ping is then ONE state-edge decision (`shouldNotify(state, prevState)`) — the notification that
+  accompanies a permission prompt lands on the same state and can't double-ping. `notification_type`
+  is a literal union (`NotificationType`, protocol/types.ts) forwarded by `on-event.js`.
+
+- **Inline `view/item/context` buttons receive the tree NODE, not `item.command`'s arguments** — the
+  eye toggle silently no-oped because its handler read `.sessionId` off the Node. Agent command
+  handlers go through `commandSession()` (MainTreeProvider), which accepts both shapes.
 
 - **The needs-you cue is visual + optional sound, never an OS push notification.** osascript banners
   are silently dropped and `alerter`/AXRaise needed extra installs + Accessibility — not worth it. So
@@ -81,6 +140,13 @@
 
 - **The switcher's orange bell is a baked SVG, not a `ThemeIcon`+`ThemeColor`** — a QuickPick ignores
   the colour on an iconPath ThemeIcon (trees honour it, which is why the sidebar bell can stay one).
+
+- **Switcher rows dedup by canonical path with section precedence (Current > Worktrees > Recents)** —
+  a pure `buildSwitcherSections` (`src/status/switcherRows.ts`) keyed on precomputed `canonicalize()`
+  paths kills the worktree-in-recents duplicate and /var vs /private/var skew in one Set. Labels are
+  branch-first (branch ?? detached/basename) with the basename as description; recents' branches are
+  fetched live at picker-open (`currentBranch`/`branchFromRevParse`) and folded in via a second
+  `qp.items` assignment (persisting a branch on touch would go stale immediately).
 
 - **Changed-file status indicators are coloured-letter SVGs (left iconPath), not FileDecorations** —
   a FileDecoration tints the whole label; the letter-only colour git uses is SCM-viewlet-only, not

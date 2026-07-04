@@ -48,6 +48,20 @@ export async function gitSafeBytes(repoRoot: string, args: string[]): Promise<Bu
   }
 }
 
+/** Parse `git rev-parse --abbrev-ref HEAD` stdout: trims; "" and "HEAD" (detached) -> undefined. */
+export function branchFromRevParse(stdout: string): string | undefined {
+  const trimmed = stdout.trim();
+  if (trimmed === "" || trimmed === "HEAD") {
+    return undefined;
+  }
+  return trimmed;
+}
+
+/** Current branch of a repo/worktree root, or undefined when detached / on error. */
+export async function currentBranch(repoRoot: string): Promise<string | undefined> {
+  return branchFromRevParse(await gitSafe(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]));
+}
+
 /** Split NUL-separated git porcelain output, dropping a trailing empty token. */
 export function splitNul(output: string): string[] {
   const parts = output.split("\0");

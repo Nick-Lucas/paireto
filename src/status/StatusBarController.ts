@@ -66,6 +66,8 @@ function activityGlyph(activity: RepoActivity): string {
       return ` $(comment-discussion) plan review`;
     case "awaitingPermission":
       return ` $(warning) waiting`;
+    case "awaitingInput":
+      return ` $(question) waiting`;
     case "toolRunning":
       return ` $(tools)${agents}`;
     case "thinking":

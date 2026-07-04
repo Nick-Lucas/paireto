@@ -4,6 +4,7 @@
 
 import * as vscode from "vscode";
 
+import { canonicalize, isInside } from "../protocol/paths.js";
 import type { API as GitAPI, GitExtension, Repository } from "./vscode-git.js";
 
 export interface RepoInfo {
@@ -13,6 +14,45 @@ export interface RepoInfo {
 }
 
 const DEBOUNCE_MS = 150;
+
+/**
+ * Deterministically pick the repo this window is "in". Anchoring on the workspace folder (not
+ * repos[0]) is the actual blank-list fix: a mid-review refresh with a virtual `paireto-review:` doc
+ * active must not retarget a different discovered repo. Active editor is consulted ONLY for
+ * `file:`-scheme docs; both sides are canonicalized (macOS /var skew) and the longest containing
+ * root wins.
+ */
+export function pickCurrentRepo(
+  repos: RepoInfo[],
+  activeDoc: { scheme: string; fsPath: string } | undefined,
+  primaryWorkspaceFolder: string | undefined,
+): RepoInfo | undefined {
+  if (repos.length === 0) {
+    return undefined;
+  }
+  if (activeDoc && activeDoc.scheme === "file") {
+    const byDoc = longestContaining(repos, activeDoc.fsPath);
+    if (byDoc) {
+      return byDoc;
+    }
+  }
+  if (primaryWorkspaceFolder) {
+    const byFolder = longestContaining(repos, primaryWorkspaceFolder);
+    if (byFolder) {
+      return byFolder;
+    }
+  }
+  return repos[0]; // documented last resort
+}
+
+/** The repo whose canonical root contains-or-equals `target`, longest root winning ties. */
+function longestContaining(repos: RepoInfo[], target: string): RepoInfo | undefined {
+  const canonTarget = canonicalize(target);
+  return repos
+    .map((r) => ({ repo: r, root: canonicalize(r.root.fsPath) }))
+    .filter((x) => isInside(x.root, canonTarget))
+    .sort((a, b) => b.root.length - a.root.length)[0]?.repo;
+}
 
 export class RepoService implements vscode.Disposable {
   private api?: GitAPI;
@@ -79,22 +119,15 @@ export class RepoService implements vscode.Disposable {
     }));
   }
 
-  /** The repo containing the active editor, else the first open repo. */
+  // TODO: in the future, perhaps we include multi-root vs code workspaces but just returning all active repos and subscribing to them all?
+  /** The repo this window is in: workspace-folder anchored, active editor only for `file:` docs. */
   current(): RepoInfo | undefined {
-    const repos = this.repositories;
-    if (repos.length === 0) {
-      return undefined;
-    }
     const activeUri = vscode.window.activeTextEditor?.document.uri;
-    if (activeUri) {
-      const containing = repos
-        .filter((r) => activeUri.fsPath.startsWith(r.root.fsPath))
-        .sort((a, b) => b.root.fsPath.length - a.root.fsPath.length)[0];
-      if (containing) {
-        return containing;
-      }
-    }
-    return repos[0];
+    const activeDoc = activeUri
+      ? { scheme: activeUri.scheme, fsPath: activeUri.fsPath }
+      : undefined;
+    const primaryWorkspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    return pickCurrentRepo(this.repositories, activeDoc, primaryWorkspaceFolder);
   }
 
   dispose(): void {
