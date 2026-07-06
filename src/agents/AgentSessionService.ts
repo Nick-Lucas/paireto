@@ -5,6 +5,7 @@
 
 import * as vscode from "vscode";
 
+import { transformHarnessEventToAppEvent, type AppEvent } from "../bridge/transformHarnessEventToAppEvent.js";
 import { log } from "../log.js";
 import { AgentSession, type AgentSessionHost } from "./AgentSession.js";
 import { canonicalize } from "../protocol/paths.js";
@@ -28,6 +29,16 @@ export interface RepoActivity {
   state: AgentState;
   /** True if any session in the repo is waiting for the user (drives the orange "needs you" cue). */
   needsAttention: boolean;
+}
+
+/** What the Stop-gate review decision needs from a session's state — see
+ *  AgentSessionService.turnState / ReviewController.awaitStopOutcome. */
+export interface TurnState {
+  changedThisTurn: boolean;
+  /** A Task-tool subagent tracked via SubagentStart/Stop is still active, OR (Claude Code
+   *  v2.1.145+) the session's latest Stop/SubagentStop reported pending background_tasks/
+   *  session_crons — see AgentSession.hasPendingWork. */
+  hasPendingWork: boolean;
 }
 
 export class AgentSessionService implements vscode.Disposable {
@@ -71,34 +82,38 @@ export class AgentSessionService implements vscode.Disposable {
   }
 
   ingest(msg: HookEventMessage): void {
+    const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
     // Subagent lifecycle events feed the running-subagent count that gates the parent's stop ping.
     // Handle them BEFORE the agentId bailout (they carry their own agent_id) — they still never
     // create a row, change headline state, or touch lastEventAt.
-    if (msg.event === "SubagentStart" || msg.event === "SubagentStop") {
-      const session = this.sessions.get(msg.sessionId);
+    if (event.kind === "subagentStart" || event.kind === "subagentStop") {
+      const session = this.sessions.get(event.sessionId);
       if (!session) {
         // Never creates a parent row. Logged at info because a count that silently lands nowhere
         // means premature stop pings — this line is the tell.
-        log.info(`subagent ${msg.event} ignored: unknown session ${msg.sessionId.slice(0, 8)}`);
+        log.info(`subagent ${event.kind} ignored: unknown session ${event.sessionId.slice(0, 8)}`);
         return;
       }
-      session.trackSubagent(msg);
+      session.trackSubagent(event);
       return;
     }
     // We only observe the top-level agent session. A subagent's own events (they carry an agentId)
     // are ignored outright — they must never create, touch, change the state of, or ping for the
-    // parent row.
-    if (msg.agentId) {
+    // parent row. They DO count as evidence the subagent is still alive though (SubagentStart/Stop
+    // don't reliably bracket its real lifetime — see AgentSession.noteSubagentActivity), so revive
+    // its entry if the parent session already exists. Never creates a row.
+    if (event.agentId) {
+      this.sessions.get(event.sessionId)?.noteSubagentActivity(event.agentId);
       return;
     }
-    let session = this.sessions.get(msg.sessionId);
+    let session = this.sessions.get(event.sessionId);
     if (!session) {
-      session = new AgentSession(msg.sessionId, msg.repoRoot, this.host);
-      this.sessions.set(msg.sessionId, session);
+      session = new AgentSession(event.sessionId, msg.repoRoot, this.host);
+      this.sessions.set(event.sessionId, session);
     }
-    session.applyEvent(msg);
-    if (msg.event === "SessionEnd") {
-      this.scheduleRemoval(msg.sessionId);
+    session.applyEvent(event, msg.repoRoot);
+    if (event.kind === "sessionEnd") {
+      this.scheduleRemoval(event.sessionId);
     }
   }
 
@@ -168,9 +183,27 @@ export class AgentSessionService implements vscode.Disposable {
     this.sessions.get(sessionId)?.clearAttention();
   }
 
-  /** True if the session touched files since its turn began (drives the Stop-gate review). */
-  didChangeThisTurn(sessionId: string | undefined): boolean {
-    return sessionId ? (this.sessions.get(sessionId)?.changedThisTurn ?? false) : false;
+  /** Everything the Stop-gate review decision needs from this session's state, in one query — see
+   *  ReviewController.awaitStopOutcome. AgentSession owns both facts; this is the single place a
+   *  caller reads them, rather than pulling each one separately. */
+  turnState(sessionId: string | undefined): TurnState {
+    const session = sessionId ? this.sessions.get(sessionId) : undefined;
+    return {
+      changedThisTurn: session?.changedThisTurn ?? false,
+      hasPendingWork: session?.hasPendingWork ?? false,
+    };
+  }
+
+  /** Record the background-task/session-cron counts from a Stop event (the blocking
+   *  `stop.gate.request` path — see AgentSession.noteBackgroundWork) into the same session the
+   *  passive `hook.event Stop` message updates, so both paths agree on one piece of state. */
+  noteBackgroundWork(
+    sessionId: string | undefined,
+    event: Pick<AppEvent, "backgroundTaskCount" | "sessionCronCount">,
+  ): void {
+    if (sessionId) {
+      this.sessions.get(sessionId)?.noteBackgroundWork(event);
+    }
   }
 
   /** The most-recently-active non-ended session in a repo (best-effort review attribution). */

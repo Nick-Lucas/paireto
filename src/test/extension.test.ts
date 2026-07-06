@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
 import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
+import { transformHarnessEventToAppEvent } from "../bridge/transformHarnessEventToAppEvent.js";
 import { summarizeActivity } from "../agents/activitySummary.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
 import { branchFromRevParse } from "../git/gitCli.js";
@@ -27,7 +28,13 @@ import {
   stateForNotification,
   STALE_ACTIVE_MS_FOR_TEST,
 } from "../agents/AgentSessionService.js";
-import type { AnyMessage, HookEventMessage } from "../protocol/types.js";
+import type {
+  AnyMessage,
+  ClaudeCodeBackgroundTaskSummary,
+  ClaudeCodeHookEvent,
+  HookEventMessage,
+  ClaudeCodeSessionCronSummary,
+} from "../protocol/types.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import { createInboundEventLog } from "../bridge/SocketServer.js";
 import {
@@ -45,6 +52,32 @@ import {
 } from "../review/ReviewController.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
+
+/** Minimal valid `background_tasks`/`session_crons` entries for tests — only the counts matter, but
+ *  the types require all their documented fields. */
+function mkBackgroundTask(id: string): ClaudeCodeBackgroundTaskSummary {
+  return { id, type: "bash", status: "running", description: "test task" };
+}
+function mkSessionCron(id: string): ClaudeCodeSessionCronSummary {
+  return { id, schedule: "*/5 * * * *", recurring: true, prompt: "check in" };
+}
+
+/** Builds a HookEventMessage carrying a raw hook event, with sensible test defaults — the wire
+ *  protocol forwards Claude Code's raw hook payload (snake_case) rather than pre-extracted fields. */
+function mkHookEvent(
+  hookEventName: string,
+  overrides: Partial<ClaudeCodeHookEvent> & { sessionId?: string; repoRoot?: string } = {},
+): HookEventMessage {
+  const { sessionId = "s1", repoRoot = "/repo", ...rest } = overrides;
+  return {
+    t: "hook.event",
+    v: "1",
+    ts: "t",
+    harness: "claudecode",
+    repoRoot,
+    event: { hook_event_name: hookEventName, session_id: sessionId, ...rest },
+  } as HookEventMessage;
+}
 
 suite("repoKey", () => {
   test("is deterministic and 16 hex chars", () => {
@@ -510,16 +543,7 @@ suite("isStaleActive (interrupt fallback)", () => {
 
 suite("AgentSessionService.markIdleOnDisconnect", () => {
   const ev = (event: string, toolName?: string): HookEventMessage =>
-    ({
-      t: "hook.event",
-      v: 1,
-      ts: "t",
-      event,
-      sessionId: "s1",
-      cwd: "/repo",
-      repoRoot: "/repo",
-      toolName,
-    }) as HookEventMessage;
+    mkHookEvent(event, { tool_name: toolName });
 
   test("resets a gated session (awaiting plan / thinking) back to idle on disconnect", () => {
     const svc = new AgentSessionService();
@@ -552,16 +576,7 @@ suite("AgentSessionService.markIdleOnDisconnect", () => {
 });
 
 suite("AgentSessionService.removeSession (agent process died)", () => {
-  const ev = (event: string): HookEventMessage =>
-    ({
-      t: "hook.event",
-      v: 1,
-      ts: "t",
-      event,
-      sessionId: "s1",
-      cwd: "/repo",
-      repoRoot: "/repo",
-    }) as HookEventMessage;
+  const ev = (event: string): HookEventMessage => mkHookEvent(event);
 
   test("removes the session entirely (liveness connection dropped)", () => {
     const svc = new AgentSessionService();
@@ -593,16 +608,7 @@ suite("AgentSessionService.removeSession (agent process died)", () => {
 });
 
 suite("AgentSessionService liveness ref-counting", () => {
-  const ev = (event: string): HookEventMessage =>
-    ({
-      t: "hook.event",
-      v: 1,
-      ts: "t",
-      event,
-      sessionId: "s1",
-      cwd: "/repo",
-      repoRoot: "/repo",
-    }) as HookEventMessage;
+  const ev = (event: string): HookEventMessage => mkHookEvent(event);
 
   test("removes only when the LAST liveness connection detaches", () => {
     const svc = new AgentSessionService();
@@ -654,38 +660,106 @@ suite("notifyReason (the notify decision + its reason)", () => {
   });
 });
 
-suite("stateForNotification (Notification types map onto the state machine)", () => {
-  test("user-wanting types map to their needs-you state", () => {
-    assert.strictEqual(stateForNotification("permission_prompt"), "awaitingPermission");
-    assert.strictEqual(stateForNotification("idle_prompt"), "stopped");
-    assert.strictEqual(stateForNotification("elicitation_dialog"), "awaitingInput");
-    assert.strictEqual(stateForNotification("agent_needs_input"), "awaitingInput");
+suite("stateForNotification (normalized Notification kinds map onto the state machine)", () => {
+  test("user-wanting kinds map to their needs-you state", () => {
+    assert.strictEqual(stateForNotification("permissionPrompt"), "awaitingPermission");
+    assert.strictEqual(stateForNotification("idlePrompt"), "stopped");
+    assert.strictEqual(stateForNotification("inputNeeded"), "awaitingInput");
   });
 
-  test("a missing type (older CLI) still reads as an input request", () => {
+  test("a missing kind (older CLI) still reads as an input request", () => {
     assert.strictEqual(stateForNotification(undefined), "awaitingInput");
   });
 
-  test("informational types map to nothing (no state change, no ping)", () => {
-    assert.strictEqual(stateForNotification("auth_success"), undefined);
-    assert.strictEqual(stateForNotification("agent_completed"), undefined);
-    assert.strictEqual(stateForNotification("elicitation_complete"), undefined);
-    assert.strictEqual(stateForNotification("elicitation_response"), undefined);
+  test("informational kind maps to nothing (no state change, no ping)", () => {
+    assert.strictEqual(stateForNotification("informational"), undefined);
+  });
+});
+
+suite("transformHarnessEventToAppEvent (claudecode harness mapping)", () => {
+  const raw = (overrides: Partial<ClaudeCodeHookEvent> = {}): ClaudeCodeHookEvent =>
+    ({ hook_event_name: "PreToolUse", session_id: "s1", ...overrides }) as ClaudeCodeHookEvent;
+
+  test("maps every ClaudeCodeHookEventName to its normalized kind", () => {
+    const cases: Array<[string, string]> = [
+      ["SessionStart", "sessionStart"],
+      ["SessionEnd", "sessionEnd"],
+      ["UserPromptSubmit", "userPromptSubmit"],
+      ["PreToolUse", "preToolUse"],
+      ["PostToolUse", "postToolUse"],
+      ["Stop", "stop"],
+      ["Notification", "notification"],
+      ["PermissionRequest", "permissionRequest"],
+      ["CwdChanged", "cwdChanged"],
+      ["FileChanged", "fileChanged"],
+      ["SubagentStart", "subagentStart"],
+      ["SubagentStop", "subagentStop"],
+    ];
+    for (const [hookEventName, kind] of cases) {
+      assert.strictEqual(transformHarnessEventToAppEvent("claudecode", raw({ hook_event_name: hookEventName as never })).kind, kind);
+    }
+  });
+
+  test("carries sessionId, agentId, and toolName through", () => {
+    const event = transformHarnessEventToAppEvent(
+      "claudecode",
+      raw({ session_id: "abc", agent_id: "sub-1", tool_name: "Edit" }),
+    );
+    assert.strictEqual(event.sessionId, "abc");
+    assert.strictEqual(event.agentId, "sub-1");
+    assert.strictEqual(event.toolName, "Edit");
+  });
+
+  test("extracts the plan markdown from tool_input.plan", () => {
+    const event = transformHarnessEventToAppEvent(
+      "claudecode",
+      raw({ hook_event_name: "PermissionRequest", tool_input: { plan: "1. Do the thing" } }),
+    );
+    assert.strictEqual(event.planText, "1. Do the thing");
+  });
+
+  test("plan text is undefined when tool_input has no plan field", () => {
+    assert.strictEqual(transformHarnessEventToAppEvent("claudecode", raw({ tool_input: {} })).planText, undefined);
+    assert.strictEqual(transformHarnessEventToAppEvent("claudecode", raw()).planText, undefined);
+  });
+
+  test("collapses notification_type onto the normalized notification-kind set", () => {
+    const kindOf = (notificationType: string | undefined) =>
+      transformHarnessEventToAppEvent(
+        "claudecode",
+        raw({ hook_event_name: "Notification", notification_type: notificationType as never }),
+      ).notificationKind;
+    assert.strictEqual(kindOf("permission_prompt"), "permissionPrompt");
+    assert.strictEqual(kindOf("idle_prompt"), "idlePrompt");
+    assert.strictEqual(kindOf("elicitation_dialog"), "inputNeeded");
+    assert.strictEqual(kindOf("agent_needs_input"), "inputNeeded");
+    assert.strictEqual(kindOf(undefined), "inputNeeded");
+    assert.strictEqual(kindOf("auth_success"), "informational");
+    assert.strictEqual(kindOf("agent_completed"), "informational");
+    assert.strictEqual(kindOf("elicitation_complete"), "informational");
+    assert.strictEqual(kindOf("elicitation_response"), "informational");
+  });
+
+  test("counts background_tasks/session_crons, defaulting to zero when absent", () => {
+    const busy = transformHarnessEventToAppEvent(
+      "claudecode",
+      raw({
+        hook_event_name: "Stop",
+        background_tasks: [mkBackgroundTask("t1"), mkBackgroundTask("t2")],
+        session_crons: [mkSessionCron("c1")],
+      }),
+    );
+    assert.strictEqual(busy.backgroundTaskCount, 2);
+    assert.strictEqual(busy.sessionCronCount, 1);
+    const idle = transformHarnessEventToAppEvent("claudecode", raw({ hook_event_name: "Stop" }));
+    assert.strictEqual(idle.backgroundTaskCount, 0);
+    assert.strictEqual(idle.sessionCronCount, 0);
   });
 });
 
 suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   const ev = (event: string, toolName?: string): HookEventMessage =>
-    ({
-      t: "hook.event",
-      v: 1,
-      ts: "t",
-      event,
-      sessionId: "s1",
-      cwd: "/repo",
-      repoRoot: "/repo",
-      toolName,
-    }) as HookEventMessage;
+    mkHookEvent(event, { tool_name: toolName });
 
   const session = (svc: AgentSessionService) => svc.sessionsForRepo("/repo")[0];
   // Window not focused, so needs-you transitions DO mark/ping (the default reads the real window).
@@ -764,17 +838,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   const subEv = (event: string, toolName?: string): HookEventMessage =>
-    ({
-      t: "hook.event",
-      v: 1,
-      ts: "t",
-      event,
-      sessionId: "s1",
-      agentId: "sub-1",
-      cwd: "/repo",
-      repoRoot: "/repo",
-      toolName,
-    }) as HookEventMessage;
+    mkHookEvent(event, { agent_id: "sub-1", tool_name: toolName });
 
   test("subagent events never change headline state or notify", () => {
     const svc = mkSvc();
@@ -844,7 +908,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
-      svc.ingest({ ...ev("Notification"), notificationType: "permission_prompt" });
+      svc.ingest(mkHookEvent("Notification", { notification_type: "permission_prompt" }));
       await tick();
       assert.strictEqual(session(svc).state, "awaitingPermission");
       assert.strictEqual(fired.length, 1);
@@ -863,7 +927,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
-      svc.ingest({ ...ev("Notification"), notificationType: "auth_success" });
+      svc.ingest(mkHookEvent("Notification", { notification_type: "auth_success" }));
       await tick();
       assert.deepStrictEqual(fired, []);
       assert.strictEqual(session(svc).state, "thinking");
@@ -969,16 +1033,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
 
 suite("AgentSessionService.activityForRepo (muted sessions excluded)", () => {
   const ev = (sessionId: string, event: string, toolName?: string): HookEventMessage =>
-    ({
-      t: "hook.event",
-      v: 1,
-      ts: "t",
-      event,
-      sessionId,
-      cwd: "/repo",
-      repoRoot: "/repo",
-      toolName,
-    }) as HookEventMessage;
+    mkHookEvent(event, { sessionId, tool_name: toolName });
 
   test("excludes a muted session from the busiest-state pick and needsAttention aggregate", () => {
     const svc = new AgentSessionService(() => false);
@@ -1015,10 +1070,10 @@ suite("AgentSessionService.activityForRepo (muted sessions excluded)", () => {
 
 suite("AgentSessionService background-agent stop gating", () => {
   const ev = (event: string, toolName?: string): HookEventMessage =>
-    ({ t: "hook.event", v: 1, ts: "t", event, sessionId: "s1", cwd: "/repo", repoRoot: "/repo", toolName }) as HookEventMessage;
+    mkHookEvent(event, { tool_name: toolName });
   // SubagentStart/SubagentStop carry the parent session_id plus their own agent_id.
-  const subEv = (event: string): HookEventMessage =>
-    ({ t: "hook.event", v: 1, ts: "t", event, sessionId: "s1", agentId: "sub-1", cwd: "/repo", repoRoot: "/repo" }) as HookEventMessage;
+  const subEv = (event: string, agentId = "sub-1"): HookEventMessage =>
+    mkHookEvent(event, { agent_id: agentId });
   const session = (svc: AgentSessionService) => svc.sessionsForRepo("/repo")[0];
   // settle 0 → the stopped-edge ping fires synchronously in tests
   const mkSvc = () => new AgentSessionService(() => false, 0);
@@ -1047,12 +1102,12 @@ suite("AgentSessionService background-agent stop gating", () => {
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit"));
-      svc.ingest(subEv("SubagentStart"));
-      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(subEv("SubagentStart", "sub-1"));
+      svc.ingest(subEv("SubagentStart", "sub-2"));
       svc.ingest(ev("Stop")); // ignored — two still running
-      svc.ingest(subEv("SubagentStop"));
+      svc.ingest(subEv("SubagentStop", "sub-1"));
       svc.ingest(ev("Stop")); // ignored — one still running
-      svc.ingest(subEv("SubagentStop")); // last one done — still no ping (no deferral)
+      svc.ingest(subEv("SubagentStop", "sub-2")); // last one done — still no ping (no deferral)
       await wait(0);
       assert.deepStrictEqual(fired, [], "only a real Stop pings, never a SubagentStop");
       svc.ingest(ev("Stop")); // the agent picks back up and emits its true final Stop
@@ -1136,14 +1191,32 @@ suite("AgentSessionService background-agent stop gating", () => {
     }
   });
 
-  test("SessionEnd zeroes the counter", () => {
+  test("SessionEnd clears active subagents", () => {
     const svc = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
-      svc.ingest(subEv("SubagentStart"));
-      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(subEv("SubagentStart", "sub-1"));
+      svc.ingest(subEv("SubagentStart", "sub-2"));
       svc.ingest(ev("SessionEnd"));
-      assert.strictEqual(session(svc).runningSubagents, 0);
+      assert.strictEqual(session(svc).hasActiveSubagents, false);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a subagent's own tool activity revives it after a premature SubagentStop", () => {
+    const svc = mkSvc();
+    const fired: string[] = [];
+    svc.onDidFinish((s) => fired.push(s.state));
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(ev("UserPromptSubmit")); // thinking
+      svc.ingest(subEv("SubagentStart"));
+      svc.ingest(subEv("SubagentStop")); // reported done...
+      svc.ingest(subEv("PreToolUse")); // ...but it's still actually emitting tool activity
+      svc.ingest(ev("Stop"));
+      assert.deepStrictEqual(fired, [], "revived activity must still gate the stop ping");
+      assert.strictEqual(session(svc).state, "thinking");
     } finally {
       svc.dispose();
     }
@@ -1484,28 +1557,19 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
   });
 });
 
-suite("AgentSessionService.didChangeThisTurn (Stop-gate signal)", () => {
+suite("AgentSessionService.turnState (Stop-gate signal)", () => {
   const ev = (event: string, toolName?: string): HookEventMessage =>
-    ({
-      t: "hook.event",
-      v: 1,
-      ts: "t",
-      event,
-      sessionId: "s1",
-      cwd: "/repo",
-      repoRoot: "/repo",
-      toolName,
-    }) as HookEventMessage;
+    mkHookEvent(event, { tool_name: toolName });
   const mk = () => new AgentSessionService(() => false);
 
   test("an edit-class tool marks the turn as having touched files", () => {
     const svc = mk();
     try {
       svc.ingest(ev("UserPromptSubmit"));
-      assert.strictEqual(svc.didChangeThisTurn("s1"), false);
+      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
       svc.ingest(ev("PreToolUse", "Edit"));
       svc.ingest(ev("PostToolUse", "Edit"));
-      assert.strictEqual(svc.didChangeThisTurn("s1"), true);
+      assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
     } finally {
       svc.dispose();
     }
@@ -1516,7 +1580,7 @@ suite("AgentSessionService.didChangeThisTurn (Stop-gate signal)", () => {
     try {
       svc.ingest(ev("UserPromptSubmit"));
       svc.ingest(ev("PostToolUse", "Read"));
-      assert.strictEqual(svc.didChangeThisTurn("s1"), false);
+      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
     } finally {
       svc.dispose();
     }
@@ -1526,9 +1590,61 @@ suite("AgentSessionService.didChangeThisTurn (Stop-gate signal)", () => {
     const svc = mk();
     try {
       svc.ingest(ev("PostToolUse", "Write"));
-      assert.strictEqual(svc.didChangeThisTurn("s1"), true);
+      assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
       svc.ingest(ev("UserPromptSubmit"));
-      assert.strictEqual(svc.didChangeThisTurn("s1"), false);
+      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("hasPendingWork reflects a Task-tool subagent believed still active", () => {
+    const svc = mk();
+    try {
+      svc.ingest(ev("SessionStart"));
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
+      svc.ingest(mkHookEvent("SubagentStart", { agent_id: "sub-1" }));
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
+      svc.ingest(mkHookEvent("SubagentStop", { agent_id: "sub-1" }));
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("hasPendingWork reflects background_tasks/session_crons on a Stop event, with no SubagentStart/Stop at all", () => {
+    // The scenario a plain SubagentStart/Stop counter can't see: an async-launched (background
+    // Agent-tool) subagent emits no subagent-related hook events — only the top-level Stop's own
+    // background_tasks count (Claude Code v2.1.145+) reveals it's still running.
+    const svc = mk();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(mkHookEvent("Stop", { background_tasks: [mkBackgroundTask("t1"), mkBackgroundTask("t2")] }));
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
+      svc.ingest(mkHookEvent("Stop", { background_tasks: [] }));
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("hasPendingWork reflects session_crons on a Stop event", () => {
+    const svc = mk();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.ingest(mkHookEvent("Stop", { session_crons: [mkSessionCron("c1")] }));
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("noteBackgroundWork (blocking stop.gate.request path) feeds the same session state", () => {
+    const svc = mk();
+    try {
+      svc.ingest(ev("SessionStart"));
+      svc.noteBackgroundWork("s1", { backgroundTaskCount: 1, sessionCronCount: 0 });
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
     } finally {
       svc.dispose();
     }
@@ -1556,18 +1672,16 @@ suite("PlanGateRegistry (plan auto-mode forwarding)", () => {
 });
 
 suite("describeInbound (bridge debug log line)", () => {
-  const base = { v: 1, ts: "t" };
+  const base = { v: "1", ts: "t" };
 
   test("hook events show event, agent, and the interesting extras", () => {
     assert.strictEqual(
       createInboundEventLog({
         ...base,
         t: "hook.event",
-        event: "PreToolUse",
-        sessionId: "72a4f124-aaaa",
-        cwd: "/x",
+        harness: "claudecode",
         repoRoot: "/x",
-        toolName: "Edit",
+        event: { hook_event_name: "PreToolUse", session_id: "72a4f124-aaaa", tool_name: "Edit" },
       } as AnyMessage),
       "hook.event PreToolUse agent=72a4f124 tool=Edit",
     );
@@ -1578,12 +1692,14 @@ suite("describeInbound (bridge debug log line)", () => {
       createInboundEventLog({
         ...base,
         t: "hook.event",
-        event: "Notification",
-        sessionId: "72a4f124-aaaa",
-        agentId: "abcd1234-bbbb",
-        cwd: "/x",
+        harness: "claudecode",
         repoRoot: "/x",
-        notificationType: "permission_prompt",
+        event: {
+          hook_event_name: "Notification",
+          session_id: "72a4f124-aaaa",
+          agent_id: "abcd1234-bbbb",
+          notification_type: "permission_prompt",
+        },
       } as AnyMessage),
       "hook.event Notification agent=72a4f124 subagent=abcd1234 type=permission_prompt",
     );

@@ -13,7 +13,7 @@
 const crypto = require("node:crypto");
 const bridge = require("../scripts/bridge.js");
 
-const SERVER_INFO = { name: "paireto", version: "0.2.0" };
+const SERVER_INFO = { name: "paireto", version: bridge.PLUGIN_VERSION };
 const CONNECT_TIMEOUT_MS = 3000;
 
 const TOOL = {
@@ -56,7 +56,7 @@ async function runReview() {
     return textResult(
       "No VS Code Paireto is listening for this repository. Open the project in VS Code " +
         "(with the Paireto extension active) and try again.",
-      true
+      true,
     );
   }
 
@@ -90,7 +90,7 @@ async function runReview() {
     });
     bridge.sendLine(conn.sock, {
       t: "review.await.request",
-      v: bridge.PROTOCOL_VERSION,
+      v: bridge.PLUGIN_VERSION,
       id,
       ts: bridge.nowIso(),
       cwd,
@@ -168,7 +168,7 @@ function attachSessionLiveness() {
       conn.sock.on("error", () => {});
       bridge.sendLine(conn.sock, {
         t: "session.attach",
-        v: bridge.PROTOCOL_VERSION,
+        v: bridge.PLUGIN_VERSION,
         ts: bridge.nowIso(),
         sessionId,
         repoRoot: target.repoRoot,

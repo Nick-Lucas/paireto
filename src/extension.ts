@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import { AgentSessionService } from "./agents/AgentSessionService.js";
 import { ActivityPublisher } from "./bridge/ActivityPublisher.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
+import { transformHarnessEventToAppEvent } from "./bridge/transformHarnessEventToAppEvent.js";
 import type { BridgeHandlers } from "./bridge/types.js";
 import { registerCommentEditingCommands } from "./comments/CommentSession.js";
 import { resolveCommentAuthor } from "./comments/author.js";
@@ -166,12 +167,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       agents.ingest(msg);
     },
     onPlanReviewRequest: (msg, signal) => {
+      const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
       // On disconnect (interrupt/crash) there's no Stop hook — return the agent to idle so its
       // activity indicator doesn't stay stuck on "awaiting plan review".
-      signal.addEventListener("abort", () => agents.markIdleOnDisconnect(msg.sessionId), {
+      signal.addEventListener("abort", () => agents.markIdleOnDisconnect(event.sessionId), {
         once: true,
       });
-      return planReview.presentPlan(msg, signal);
+      return planReview.presentPlan(event, msg.repoRoot, signal);
     },
     onReviewAwait: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
@@ -188,14 +190,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     onStopGate: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
+      const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
       // Fires on every turn-end. Resolves "allow" instantly unless a review is warranted for this
       // session (the turn touched files, a deferred review is open, or feedback is queued).
-      const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
-      return reviewController.awaitStopOutcome(
-        sessionId,
-        agents.didChangeThisTurn(sessionId),
-        signal,
-      );
+      const sessionId = event.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
+      // This Stop event's own background-task/session-cron counts (this request arrives on a
+      // separate connection from the passive hook.event Stop — feed AgentSession before querying it
+      // so both paths agree on one piece of state, per AgentSessionService.noteBackgroundWork).
+      agents.noteBackgroundWork(sessionId, event);
+      const turn = agents.turnState(sessionId);
+      // A subagent/background task is believed still pending — the agent isn't really done, it'll
+      // emit a real final Stop later. Decide this HERE, using AgentSession's own owned state, before
+      // ever calling into the review flow — ReviewController.awaitStopOutcome only ever needs to
+      // reason about whether THIS turn's edits/comments warrant a review, nothing about subagents.
+      if (turn.hasPendingWork) {
+        log.info(
+          `review gate skipped for agent ${sessionId?.slice(0, 8) ?? "unknown"}: subagent/background work still pending`,
+        );
+        return Promise.resolve({ block: false });
+      }
+      return reviewController.awaitStopOutcome(sessionId, turn.changedThisTurn, signal);
     },
     // The MCP server holds a liveness connection per session; when the last one drops, the agent
     // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).

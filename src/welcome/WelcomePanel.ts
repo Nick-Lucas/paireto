@@ -8,7 +8,7 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { PLUGIN_VERSION } from "../bridge/PluginInstaller.js";
+import { readPluginVersion } from "../bridge/PluginInstaller.js";
 import { log } from "../log.js";
 import {
   type AgentTerminalProfile,
@@ -135,11 +135,18 @@ export class WelcomePanel {
     }
   }
 
+  private pluginsRoot(): string {
+    return vscode.Uri.joinPath(this.context.extensionUri, "plugins").fsPath;
+  }
+
   private agentInstalled(agent: OnboardingAgent): boolean {
     if (agent.id !== "claude-code") {
       return false;
     }
-    return this.context.globalState.get<string>(PLUGIN_VERSION_MARKER) === PLUGIN_VERSION;
+    return (
+      this.context.globalState.get<string>(PLUGIN_VERSION_MARKER) ===
+      readPluginVersion(this.pluginsRoot())
+    );
   }
 
   /** True when the agent's terminal profile already exists in the user's settings for this platform. */
@@ -236,10 +243,10 @@ export class WelcomePanel {
       return;
     }
     void this.panel.webview.postMessage({ type: "agentBusy", agentId });
-    const pluginsRoot = vscode.Uri.joinPath(this.context.extensionUri, "plugins").fsPath;
+    const pluginsRoot = this.pluginsRoot();
     const result = await agent.install(pluginsRoot);
     if (result.ok) {
-      await this.context.globalState.update(PLUGIN_VERSION_MARKER, PLUGIN_VERSION);
+      await this.context.globalState.update(PLUGIN_VERSION_MARKER, readPluginVersion(pluginsRoot));
     } else if (result.manualCommand) {
       const choice = await vscode.window.showWarningMessage(
         `Couldn't set up ${agent.name} automatically. Copy the manual command?`,

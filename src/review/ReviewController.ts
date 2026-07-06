@@ -181,6 +181,7 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
+    log.info(`review opened for agent ${sessionId?.slice(0, 8) ?? "unknown"}: manual (/paireto-review)`);
     return this.runReview(requestId, sessionId, signal, (result) => result);
   }
 
@@ -195,19 +196,28 @@ export class ReviewController implements vscode.Disposable {
     changedThisTurn: boolean,
     signal: AbortSignal,
   ): Promise<StopGateResult> {
+    const who = sessionId?.slice(0, 8) ?? "unknown";
+    const hasComments = this.hasComments();
+    const automatic =
+      vscode.workspace.getConfiguration("paireto").get<string>("review.mode", "automatic") ===
+      "automatic";
     // Only park if there's something to review: this agent's turn edited files (per the PostToolUse
-    // hook) or the user has comments to deliver — and no review already owns the surface.
+    // hook) or the user has comments to deliver — and no review already owns the surface. Whether a
+    // subagent/background task is still pending is decided by the caller (extension.ts, using
+    // AgentSession's own state) BEFORE this is even invoked — that's not this function's concern.
     const open = shouldOpenTurnEndReview({
       reviewInProgress: this.reviewBusy,
       changedThisTurn,
-      hasComments: this.hasComments(),
-      automatic:
-        vscode.workspace.getConfiguration("paireto").get<string>("review.mode", "automatic") ===
-        "automatic",
+      hasComments,
+      automatic,
     });
     if (!open) {
+      log.debug(`review gate: agent ${who} stop allowed, nothing to review`);
       return { block: false };
     }
+    // Technical, not narrative: the raw decision inputs, for debugging exactly why the gate opened.
+    const reason = `changedThisTurn=${changedThisTurn} hasComments=${hasComments} automatic=${automatic} reviewInProgress=${this.reviewBusy}`;
+    log.info(`review opened for agent ${who}: turn-end (${reason})`);
     this.reviewBusy = true;
     const requestId = newReviewId();
     this.notifyReviewOpened(requestId);
@@ -547,6 +557,7 @@ export class ReviewController implements vscode.Disposable {
         await this.openDiff(file, {
           viewColumn: located?.viewColumn,
           preserveFocus: !located?.active,
+          suppressActiveDiffEvent: true,
         });
         this.debug(`reconcile: ${relPath} ${oldGroup} -> ${target}`);
       }
@@ -638,23 +649,37 @@ export class ReviewController implements vscode.Disposable {
     if (!this.repoRoot || !file) {
       return;
     }
+    const uri = vscode.Uri.file(join(this.repoRoot, file.path));
+    // A diff tab showing this file as its modified side satisfies vscode.open's "already open"
+    // check without ever showing the plain file — close any such tab first (in any group) so Open
+    // File always does something. If the plain file is already open elsewhere, vscode.open switches
+    // to it as normal.
+    await closeTabsWhere(
+      (tab) =>
+        tab.input instanceof vscode.TabInputTextDiff && tab.input.modified.toString() === uri.toString(),
+    );
     // `vscode.open` (not showTextDocument) lets VS Code pick the editor for the file type — image
     // preview, etc. — instead of forcing a text editor, matching the native git panel's "Open File".
-    await vscode.commands.executeCommand(
-      "vscode.open",
-      vscode.Uri.file(join(this.repoRoot, file.path)),
-    );
+    await vscode.commands.executeCommand("vscode.open", uri);
   }
 
   private async openDiff(
     file: ChangedFile,
-    show?: { viewColumn?: vscode.ViewColumn; preserveFocus?: boolean },
+    show?: {
+      viewColumn?: vscode.ViewColumn;
+      preserveFocus?: boolean;
+      /** Set when silently re-pointing an already-open tab after a git write (stage/unstage/
+       *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
+      suppressActiveDiffEvent?: boolean;
+    },
   ): Promise<void> {
     if (!this.repoRoot) {
       return;
     }
     this.openDiffFile = { path: file.path, group: file.group };
-    this.activeDiffEmitter.fire({ group: file.group, path: file.path });
+    if (!show?.suppressActiveDiffEvent) {
+      this.activeDiffEmitter.fire({ group: file.group, path: file.path });
+    }
     // Reopening from a row shows that level's comparison again, so drop any prior index demotion.
     this.reviewContent.clearDemotion(file.path);
 
@@ -865,6 +890,7 @@ export class ReviewController implements vscode.Disposable {
   /** Approve: proceed with no changes (the agent continues, no feedback). */
   approve(): void {
     if (this.activeRequestId) {
+      log.info(`review approved for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}`);
       this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
     }
   }
@@ -873,13 +899,17 @@ export class ReviewController implements vscode.Disposable {
     if (!this.activeRequestId) {
       return;
     }
-    const feedback = renderReviewFeedback(this.getComments());
+    const comments = this.getComments();
+    const feedback = renderReviewFeedback(comments);
     if (!feedback) {
       void vscode.window.showWarningMessage(
         "No comments to send. Add a comment, or Approve to proceed with no changes.",
       );
       return;
     }
+    log.info(
+      `review feedback sent for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}: ${comments.length} comment(s)`,
+    );
     this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
   }
 

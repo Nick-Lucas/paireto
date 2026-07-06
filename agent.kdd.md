@@ -17,7 +17,10 @@
   `paireto.logLevel`** (`off`/`error`/`info`/`debug`, default `info`; replaces the old boolean
   `paireto.debug`). Most diagnostics are `info`; big-JSON dumps (e.g. keybinding-match objects) are
   `debug`. `logLevel` only controls whether lines are *written* — never call `OutputChannel.show()`
-  (it force-reveals the Output panel / "bottom bar") and never gate UI/layout/flow on it.
+  (it force-reveals the Output panel / "bottom bar") and never gate UI/layout/flow on it. Every line
+  gets a compact `MM/dd HH:mm:ss` local timestamp prefix (`Logger.write`), and every plan/review gate
+  open and resolve (approve/send-feedback) logs at `info` with who and why — the routine "nothing to
+  review, allow the stop" turn-end case stays at `debug` since it fires on every turn.
 
 - **Terminal-profile setup is a separate per-agent action** (its own nested row + **Configure** button
   with ✓ Configured / Not configured status), decoupled from plugin install. Writes
@@ -52,6 +55,41 @@
   `scripts/`.** So `!plugins/**` ships the folder verbatim with no per-file filtering. The emulator
   (`scripts/emulator.ts`) `require()`s the plugin's `bridge.js` across the tree.
 
+- **`PluginInstaller.installPlugin` repoints a stale marketplace registration before re-adding it,
+  and the installed-version marker reads `plugin.json` directly** (`readPluginVersion`, no try/catch
+  — the manifest ships with the extension, so a missing/malformed file is a packaging bug that should
+  crash loudly, not a runtime condition to swallow — but it does explicitly assert the parsed JSON has
+  a string `version` field rather than blindly trust-casting, so the error points straight at the
+  manifest instead of surfacing later as a confusing downstream failure) instead of a second
+  hardcoded constant. Two
+  enabled marketplaces shipping the same plugin double-fires every hook (a plan approval only
+  resolves one of the two pending `plan.review.request`s, so Claude Code never fully unblocks) — this
+  happens whenever the extension's install path moves (VSIX upgrade, switching installed-extension
+  vs. dev-mode) and the old idempotency check (`isAlreadyPresent`) never verified the
+  already-registered source still matched. `claude plugin marketplace list --json` is the check; a
+  mismatch triggers `remove` before `add`, logging at info either way (repointed, or removal failed
+  with the CLI's error) so a still-stuck registration is traceable. This doesn't merge two
+  *differently-named* marketplaces already pointing at the same plugin — that's a one-time manual
+  `claude plugin marketplace remove <stale-name>` cleanup.
+
+- **One name, one value, one point of truth for the whole plugin bundle's version: `PLUGIN_VERSION`,
+  imported straight from `plugin.json`.** Before this there were four independently-drifting version
+  strings (a bare-integer wire `PROTOCOL_VERSION` hand-copied into `bridge.js`, `bridge.js`'s own
+  `PLUGIN_VERSION`, the MCP server's `SERVER_INFO.version`, and a hardcoded `extVersion` in
+  `SocketServer.ts`'s `hello.ack`) — collapsed into ONE constant used for all of them (the wire
+  protocol marker sent as `v`, the hello handshake's `pluginVersion`, the MCP `serverInfo.version`,
+  and `hello.ack`'s `extVersion`); `Envelope.v` changed from `number` to `string` accordingly. TS
+  side: `src/protocol/types.ts` does `import pluginManifest from "../../plugins/claude-code/
+  .claude-plugin/plugin.json"` (needs `resolveJsonModule: true` in tsconfig — confirmed this works
+  fine despite the file living outside `rootDir: "src"`; TS's JSON-module handling doesn't apply the
+  rootDir check) and re-exports `pluginManifest.version` as `PLUGIN_VERSION`, so bumping the manifest
+  updates every TS consumer automatically — no more hand-syncing a literal. Plugin side: `bridge.js`
+  reads the SAME manifest at runtime via `require("../.claude-plugin/plugin.json").version` under its
+  own `PLUGIN_VERSION` name (no separate `PROTOCOL_VERSION`); `mcp/server.js` reuses
+  `bridge.PLUGIN_VERSION` for `SERVER_INFO.version`. Bump `plugin.json` whenever the wire shape
+  changes incompatibly (checked via strict `===` in the hello handshake) — that's the one thing left
+  to remember by hand, mirroring this file's existing convention for the plugin's plain-JS scripts.
+
 - **Agent process-death is detected via an MCP liveness socket, not a PID.** Claude exposes no agent
   PID and `SessionEnd` doesn't fire on kill, so the MCP server holds a socket open; its drop →
   `removeSession` (ref-counted so layered connections don't drop the row early). A gate interrupt
@@ -62,6 +100,44 @@
   — never an ancestor. The old index-ancestor + ancestor-walk fallbacks leaked worktree events into an
   ancestor repo's window (wrong refreshes/rows/gates → blank Changes list) and were removed; no live
   socket for the exact toplevel → no target (hook scripts already fail open).
+
+- **Hook scripts forward Claude Code's raw hook payload as-is; field-specific processing happens in
+  the extension, not the plugin.** `on-event.js`/`on-plan-gate.js`/`on-review-gate.js` used to
+  hand-pick fields into a bespoke camelCase shape (`sessionId`, `toolName`, `backgroundTaskCount`,
+  …) — every time Claude Code added a hook field (e.g. `background_tasks`) the plugin scripts needed
+  updating before the extension could see it. Now they just wrap the untouched JSON:
+  `{ t, v, ts, harness: "claudecode", repoRoot, event: <raw Claude Code payload> }` (`repoRoot` is
+  the bridge's own routing metadata, resolved from `cwd` via `resolveTarget` — not part of Claude's
+  payload). `HookEventMessage`/`PlanReviewRequest`/`StopGateRequest` all carry `event:
+  ClaudeCodeHookEvent` (`src/protocol/types.ts`), typed exactly as documented today (Claude Code
+  hooks docs' common input fields + the per-event fields we consume — `ClaudeCodePermissionMode`/
+  `ClaudeCodeEffortLevel` as literal unions, `ClaudeCodeBackgroundTaskSummary`/
+  `ClaudeCodeSessionCronSummary` for the `background_tasks`/`session_crons` arrays) — **no catch-all
+  index signature**; an undocumented field simply isn't accessible, on purpose. Every harness-specific
+  type in this file is `ClaudeCode`-prefixed (`ClaudeCodeHookEvent`, `ClaudeCodeHookEventName`,
+  `ClaudeCodeNotificationType`, …) so it reads unambiguously at a call site — only `Harness`/
+  `HookEventMessage`/`Envelope`/etc. (the harness-agnostic wire envelope, carrying a `harness: Harness`
+  field to say which dialect it holds) stay unprefixed. `ReviewAwaitRequest`/`SessionAttachMessage`
+  are NOT hook-script messages (they come from the MCP server/tool) and keep their existing flat shape.
+
+- **A single mapping layer (`src/bridge/normalizeEvent.ts`) converts a harness's raw
+  `ClaudeCodeHookEvent` into one common internal representation, the "app event" (`AppEvent`) —
+  `AgentSession`, `AgentSessionService`, and `PlanReviewController` read ONLY this, never a harness's
+  raw field names.** `transformHarnessEventToAppEvent(harness, event)` dispatches on the `Harness`
+  union (today just `"claudecode"`) to a per-harness mapper; adding a harness means adding a mapper
+  here, not touching every consumer. `AppEventKind` (camelCase: `sessionStart`, `preToolUse`,
+  `subagentStop`, …) replaces Claude's PascalCase `hook_event_name`; `AppNotificationKind`
+  (`permissionPrompt`/`idlePrompt`/`inputNeeded`/`informational`) replaces Claude's raw
+  `notification_type` values, collapsing the informational ones (`auth_success`, `agent_completed`,
+  elicitation bookkeeping) into one bucket up front — `AgentSession.stateForNotification` and
+  `PlanReviewController` never see Claude's own vocabulary. The mapper also does the
+  Claude-specific-field work that used to live inline in `AgentSession`/`PlanReviewController`:
+  counting `background_tasks`/`session_crons` into `backgroundTaskCount`/`sessionCronCount`, and
+  extracting the plan markdown from `tool_input.plan` into `planText`. `AgentSessionService.ingest`
+  and `extension.ts`'s `onPlanReviewRequest`/`onStopGate` handlers call
+  `transformHarnessEventToAppEvent` right at the bridge boundary (the earliest point they have
+  `{ harness, event }`), so everything downstream — including `AgentSession.applyEvent`, now
+  `(event: AppEvent, repoRoot: string)` instead of `(msg: HookEventMessage)` — is harness-agnostic.
 
 - **`RepoService.current()` anchors on the first workspace folder, using the active editor only for
   `file:`-scheme docs** (extracted pure `pickCurrentRepo`). A mid-review `refresh()` with a virtual
@@ -84,12 +160,37 @@
   activity). Muting also clears any lingering `needsAttention`. Not persisted.
 
 - **Subagent status is never tracked as UI state — `agentId`-carrying events bail out of `ingest`.**
-  The one exception is a running-subagent COUNT: `SubagentStart`/`SubagentStop` are subscribed and
-  routed to `trackSubagent` (before the bailout) purely so a `Stop` with `runningSubagents > 0`
-  ("waiting for N background agents to finish") is **ignored outright** (logged at info, no state
-  change) — Claude emits another Stop once they all finish, and that one pings on the normal edge.
-  The stale sweep zeroes a wedged count. The count is never displayed; headline state still comes
-  only from the top-level agent. Count transitions log at info (gates the ping → must be traceable).
+  The one exception is `AgentSession.hasPendingWork`, which combines TWO signals so a `Stop` firing
+  while there's real background work is **ignored outright** (logged at info, no state change), and
+  is checked by `extension.ts`'s `onStopGate` handler BEFORE it ever calls into the review flow —
+  `ReviewController.awaitStopOutcome`/`shouldOpenTurnEndReview` only ever reason about whether *this
+  turn's* edits/comments warrant a review; they take no subagent/background-work signal at all, and
+  never did need to once this check sits one layer up, where the raw Stop event is decided about
+  using AgentSession's own owned state rather than pushed down into review-specific logic. Claude
+  emits another Stop once everything finishes, and that one pings/reviews on the normal edge:
+  1. A running-subagent SET (`activeSubagents`, id -> last-seen ms) fed by `SubagentStart`/
+     `SubagentStop` (`trackSubagent`, before the bailout). This covers the classic **Task-tool**
+     subagent, where those events (and tool calls tagged with its agentId) genuinely bracket its
+     lifetime, but not perfectly reliably — a duplicate/erroneous `SubagentStop` can arrive while it's
+     still emitting tool activity, so ANY other event carrying that agent's id revives its entry via
+     `noteSubagentActivity`, and a 10-minute inactivity sweep (`SUBAGENT_STALE_MS`) is a backstop for
+     one whose process died without ever reporting `SubagentStop`.
+  2. **`background_tasks`/`session_crons` arrays carried directly on the `Stop`/`SubagentStop` hook's
+     own raw payload** (`AgentSession.noteBackgroundWork` reads `.length` off them; Claude Code
+     v2.1.145+, confirmed against the official CHANGELOG.md, absent → reads as zero on older CLIs).
+     This is the signal for **background/async agents launched via the Agent tool, which emit NO
+     `SubagentStart`/`Stop` or `agentId`-tagged events of their own at all** (confirmed empirically:
+     only plain `PreToolUse`/`PostToolUse tool=Agent` on the parent) — the set above genuinely cannot
+     see them, but Claude Code's own Stop payload directly reports "N background tasks still
+     running", so no tracking/correlation is needed for this case at all. Because the blocking
+     `stop.gate.request` (`on-review-gate.js`) is a SEPARATE socket connection from the passive
+     `hook.event Stop` (`on-event.js`) — both fire off the same underlying Stop hook invocation but
+     arrive independently — `extension.ts`'s `onStopGate` calls `AgentSessionService.noteBackgroundWork`
+     with its own copy of the raw event before querying `turnState`, so both paths feed and read the
+     one owned `AgentSession` state rather than duplicating the decision.
+
+  The set/counts are never displayed; headline state still comes only from the top-level agent. All
+  transitions log at info (gates the ping/review → must be traceable).
 
 - **The stopped-edge ping fires only after a settle window (2s); other needs-you pings are
   instant.** A Stop is untrustworthy at event time: background-agent wake-turns end in a Stop then
@@ -104,7 +205,11 @@
   service only manages the list.** The class owns the hook-event state machine, subagent count, mute,
   attention marker, and the notification gate, talking back through an `AgentSessionHost` (focus
   lookup, emit callbacks, settle override); `AgentSessionService` routes events by session id, sweeps
-  stale sessions, tracks liveness attachments, and aggregates per-repo activity.
+  stale sessions, tracks liveness attachments, and aggregates per-repo activity. A consumer that needs
+  more than one fact off a session's state (e.g. the Stop-gate review needs both `changedThisTurn`
+  and `hasPendingWork`) gets it as ONE query — `AgentSessionService.turnState(sessionId)` returns
+  a single `TurnState` object — rather than pulling each fact through its own getter and threading
+  them as separate parameters across the bridge-handler/controller boundary.
 
 - **Every inbound bridge message logs one debug line** (`bridge <- hook.event Stop agent=72a4f124
   tool=… type=…`, via `describeInbound` in SocketServer) — enough to reconstruct event order/timing
@@ -198,7 +303,18 @@
   serves raw bytes (`gitSafeBytes` + binary `fs.readFile`, never a UTF-8 round-trip that mangles
   binary blobs); "Open File" uses `vscode.open` (not `showTextDocument`) so VS Code picks the editor;
   the editable-diff TextDocument pre-open (for TS LSP) is skipped for binary files (`isTextFile`
-  NUL-byte check) so it doesn't defeat the image diff.
+  NUL-byte check) so it doesn't defeat the image diff. A diff tab showing this file as its modified
+  side satisfies `vscode.open`'s "already open" check without ever showing the plain file — `openFile`
+  closes any such diff tab first (`closeTabsWhere`, any tab group, not just the active one), then
+  calls plain `vscode.open`, which switches to an already-open plain tab as normal.
+
+- **`openDiff`'s `activeDiffEmitter` only fires for genuine user-driven diff focus, not a silent
+  reopen.** It's what drives "tree selection follows the diff in focus" (`MainTreeProvider.reveal`),
+  but `reconcileOpenDiffsAfterWrite` also calls `openDiff` to silently re-point an already-open tab
+  after stage/unstage/discard moves it a git layer — firing the emitter there scrolled/selected the
+  tree on every stage/unstage with no user-visible focus change. That one call site passes
+  `suppressActiveDiffEvent: true`; `maybeSwitchToUnstaged`'s intentional unstaged-highlight emit and
+  normal user-driven `openDiff` calls (tree click, `reviewOpenDiff` command) are untouched.
 
 - **Adds/deletes open a SINGLE editor, not a two-pane diff** (`singlePaneSide`): one side is empty, so
   a diff would render a broken/empty pane (an image viewer can't show the 0-byte side). Add → show the

@@ -73,8 +73,6 @@ async function main() {
     return;
   }
 
-  const toolInput = event.tool_input || {};
-  const plan = typeof toolInput.plan === "string" ? toolInput.plan : "";
   const cwd = event.cwd || process.cwd();
 
   const target = bridge.resolveTarget(cwd);
@@ -135,18 +133,16 @@ async function main() {
     }
   });
 
+  // Pass the raw hook payload through as-is (the plan markdown lives at event.tool_input.plan) —
+  // field-specific processing happens in the extension, not here.
   bridge.sendLine(conn.sock, {
     t: "plan.review.request",
-    v: bridge.PROTOCOL_VERSION,
+    v: bridge.PLUGIN_VERSION,
     id,
     ts: bridge.nowIso(),
-    sessionId: event.session_id,
-    agentId: event.agent_id,
-    cwd,
+    harness: "claudecode",
     repoRoot: target.repoRoot,
-    permissionMode: event.permission_mode,
-    toolName: event.tool_name || "ExitPlanMode",
-    plan,
+    event,
   });
 }
 

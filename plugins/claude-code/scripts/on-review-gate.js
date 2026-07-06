@@ -76,15 +76,16 @@ async function main() {
     }
   });
 
+  // Pass the raw hook payload through as-is — field-specific processing (counting background_tasks,
+  // etc.) happens in the extension, not here.
   bridge.sendLine(conn.sock, {
     t: "stop.gate.request",
-    v: bridge.PROTOCOL_VERSION,
+    v: bridge.PLUGIN_VERSION,
     id,
     ts: bridge.nowIso(),
-    cwd,
+    harness: "claudecode",
     repoRoot: target.repoRoot,
-    sessionId: event.session_id,
-    agentId: event.agent_id,
+    event,
   });
 }
 

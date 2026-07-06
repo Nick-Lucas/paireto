@@ -7,25 +7,35 @@ import * as net from "node:net";
 
 import { log } from "../log.js";
 import { repoKey, socketDir, socketPath } from "../protocol/paths.js";
-import { PROTOCOL_VERSION } from "../protocol/types.js";
-import type { AnyMessage } from "../protocol/types.js";
+import { PLUGIN_VERSION } from "../protocol/types.js";
+import type { AnyMessage, ClaudeCodeHookEvent } from "../protocol/types.js";
 import type { BridgeHandlers } from "./types.js";
+
+/** The label + extras (agent, subagent, tool, notification type) common to any message carrying a
+ *  raw hook event — see {@link createInboundEventLog}. */
+function describeHookEvent(label: string, event: ClaudeCodeHookEvent): string {
+  const agent = event.session_id ? ` agent=${event.session_id.slice(0, 8)}` : "";
+  const extras = [
+    event.agent_id ? `subagent=${event.agent_id.slice(0, 8)}` : "",
+    event.tool_name ? `tool=${event.tool_name}` : "",
+    event.notification_type ? `type=${event.notification_type}` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `${label}${agent}${extras ? ` ${extras}` : ""}`;
+}
 
 /** One clean line per inbound bridge message for debug logs: type, event, agent, and the extras
  *  that explain behaviour (tool, subagent context, notification type) — nothing more. */
 export function createInboundEventLog(msg: AnyMessage): string {
-  const agent = "sessionId" in msg && msg.sessionId ? ` agent=${msg.sessionId.slice(0, 8)}` : "";
-  if (msg.t !== "hook.event") {
-    return `${msg.t}${agent}`;
+  if (msg.t === "hook.event") {
+    return describeHookEvent(`hook.event ${msg.event.hook_event_name}`, msg.event);
   }
-  const extras = [
-    msg.agentId ? `subagent=${msg.agentId.slice(0, 8)}` : "",
-    msg.toolName ? `tool=${msg.toolName}` : "",
-    msg.notificationType ? `type=${msg.notificationType}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return `hook.event ${msg.event}${agent}${extras ? ` ${extras}` : ""}`;
+  if (msg.t === "plan.review.request" || msg.t === "stop.gate.request") {
+    return describeHookEvent(msg.t, msg.event);
+  }
+  const agent = "sessionId" in msg && msg.sessionId ? ` agent=${msg.sessionId.slice(0, 8)}` : "";
+  return `${msg.t}${agent}`;
 }
 
 export interface SocketServerOptions {
@@ -132,13 +142,14 @@ export class SocketServer {
         log.debug(`bridge <- ${createInboundEventLog(msg)}`);
         if (!handshaken) {
           if (msg.t === "hello") {
-            const accept = msg.v === PROTOCOL_VERSION;
+            const accept = msg.v === PLUGIN_VERSION;
             send({
               t: "hello.ack",
-              v: PROTOCOL_VERSION,
+              v: PLUGIN_VERSION,
               ts: new Date().toISOString(),
               role: "extension",
-              extVersion: "0.0.1",
+              // Same shared version as the plugin/MCP server report — see PLUGIN_VERSION's doc.
+              extVersion: PLUGIN_VERSION,
               accept,
               ...(accept ? {} : { reason: "protocol-version-mismatch" }),
             });
@@ -180,7 +191,7 @@ export class SocketServer {
           const result = await this.handlers.onPlanReviewRequest(msg, ac.signal);
           send({
             t: "plan.review.response",
-            v: PROTOCOL_VERSION,
+            v: PLUGIN_VERSION,
             id: msg.id,
             ts: new Date().toISOString(),
             decision: result.decision,
@@ -199,7 +210,7 @@ export class SocketServer {
           const result = await this.handlers.onReviewAwait(msg, ac.signal);
           send({
             t: "review.await.response",
-            v: PROTOCOL_VERSION,
+            v: PLUGIN_VERSION,
             id: msg.id,
             ts: new Date().toISOString(),
             status: result.status,
@@ -217,7 +228,7 @@ export class SocketServer {
           const result = await this.handlers.onStopGate(msg, ac.signal);
           send({
             t: "stop.gate.response",
-            v: PROTOCOL_VERSION,
+            v: PLUGIN_VERSION,
             id: msg.id,
             ts: new Date().toISOString(),
             decision: result.block ? "block" : "allow",

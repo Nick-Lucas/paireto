@@ -57,7 +57,7 @@ type HookEventName =
 
 interface Envelope {
   t: MessageType;
-  v: number;
+  v: string;
   id?: string;
   ts: string;
 }
@@ -146,7 +146,6 @@ interface BridgeTarget {
 }
 
 interface Bridge {
-  PROTOCOL_VERSION: number;
   PLUGIN_VERSION: string;
   stateDir(): string;
   socketDir(): string;
@@ -321,7 +320,7 @@ function telemetry(
 ): HookEventMessage {
   return {
     t: "hook.event",
-    v: bridge.PROTOCOL_VERSION,
+    v: bridge.PLUGIN_VERSION,
     ts: bridge.nowIso(),
     event,
     sessionId: session,
@@ -358,7 +357,7 @@ async function announceSession(
 function sendAttach(conn: Connection, session: string, target: Target): void {
   bridge.sendLine(conn.sock, {
     t: "session.attach",
-    v: bridge.PROTOCOL_VERSION,
+    v: bridge.PLUGIN_VERSION,
     ts: bridge.nowIso(),
     sessionId: session,
     repoRoot: target.repoRoot,
@@ -539,7 +538,7 @@ async function cmdEvent(opts: Opts, positionals: string[]): Promise<void> {
   await withBridge(opts, { heading: `Telemetry event · ${eventName}` }, async ({ conn, target }) => {
     const message: HookEventMessage = {
       t: "hook.event",
-      v: bridge.PROTOCOL_VERSION,
+      v: bridge.PLUGIN_VERSION,
       ts: bridge.nowIso(),
       event: eventName,
       sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
@@ -588,7 +587,7 @@ async function cmdPlan(opts: Opts): Promise<void> {
     async ({ conn, target }) => {
       const request: PlanReviewRequest = {
         t: "plan.review.request",
-        v: bridge.PROTOCOL_VERSION,
+        v: bridge.PLUGIN_VERSION,
         id,
         ts: bridge.nowIso(),
         sessionId,
@@ -666,7 +665,7 @@ async function cmdReviewStop(opts: Opts): Promise<void> {
     async ({ conn, target }) => {
       const request: StopGateRequest = {
         t: "stop.gate.request",
-        v: bridge.PROTOCOL_VERSION,
+        v: bridge.PLUGIN_VERSION,
         id,
         ts: bridge.nowIso(),
         cwd: target.cwd,
@@ -718,7 +717,7 @@ async function cmdReviewManual(opts: Opts): Promise<void> {
     async ({ conn, target }) => {
       const request: ReviewAwaitRequest = {
         t: "review.await.request",
-        v: bridge.PROTOCOL_VERSION,
+        v: bridge.PLUGIN_VERSION,
         id,
         ts: bridge.nowIso(),
         cwd: target.cwd,

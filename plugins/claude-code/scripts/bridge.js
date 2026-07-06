@@ -13,8 +13,12 @@ const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
-const PROTOCOL_VERSION = 1;
-const PLUGIN_VERSION = "0.1.0";
+// Single source of truth for every version this plugin reports: the wire protocol marker (`v`,
+// checked for strict equality against the extension's own PLUGIN_VERSION in src/protocol/types.ts
+// — bump plugin.json's version whenever the wire shape changes incompatibly), the `pluginVersion`
+// reported in the hello handshake, and (via mcp/server.js reusing this same constant) the MCP
+// server's own reported version — one name, one value, read straight from the manifest.
+const PLUGIN_VERSION = require("../.claude-plugin/plugin.json").version;
 const APP_DIR = "paireto";
 
 // ---------------------------------------------------------------------------
@@ -136,7 +140,7 @@ function connectAndHandshake(socketPath, repoKeyHex, timeoutMs) {
     sock.on("connect", () => {
       sendLine(sock, {
         t: "hello",
-        v: PROTOCOL_VERSION,
+        v: PLUGIN_VERSION,
         ts: nowIso(),
         role: "hook",
         pluginVersion: PLUGIN_VERSION,
@@ -209,7 +213,6 @@ function readStdin() {
 }
 
 module.exports = {
-  PROTOCOL_VERSION,
   PLUGIN_VERSION,
   stateDir,
   socketDir,

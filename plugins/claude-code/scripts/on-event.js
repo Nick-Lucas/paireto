@@ -31,22 +31,16 @@ async function main() {
     return; // unreachable — drop silently
   }
 
+  // Pass the raw hook payload through as-is — field-specific processing (counting background_tasks,
+  // reading tool_input.plan, etc.) happens in the extension, not here. New Claude Code hook fields
+  // are then available immediately without touching this script.
   const message = {
     t: "hook.event",
-    v: bridge.PROTOCOL_VERSION,
+    v: bridge.PLUGIN_VERSION,
     ts: bridge.nowIso(),
-    event: event.hook_event_name,
-    sessionId: event.session_id,
-    agentId: event.agent_id,
-    agentType: event.agent_type,
-    cwd,
+    harness: "claudecode",
     repoRoot: target.repoRoot,
-    permissionMode: event.permission_mode,
-    toolName: event.tool_name,
-    toolInput: event.tool_input,
-    transcriptPath: event.transcript_path,
-    notificationType: event.notification_type,
-    message: event.message,
+    event,
   };
 
   await new Promise((resolve) => {

@@ -6,6 +6,7 @@
 
 import * as vscode from "vscode";
 
+import type { AppEvent } from "../bridge/transformHarnessEventToAppEvent.js";
 import type { PlanGateResult } from "../bridge/types.js";
 import { CommentSession, commentText, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
@@ -13,7 +14,7 @@ import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { closeTabsForUri, tabUri } from "../gate/tabs.js";
-import type { PlanReviewRequest } from "../protocol/types.js";
+import { log } from "../log.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
 import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 import { planDocLabel } from "./planTitle.js";
@@ -69,27 +70,33 @@ export class PlanReviewController implements vscode.Disposable {
   }
 
   /** Open the plan (foregrounded only if no other gate is) and resolve with the user's decision. */
-  async presentPlan(req: PlanReviewRequest, signal: AbortSignal): Promise<PlanGateResult> {
+  async presentPlan(
+    event: AppEvent,
+    repoRoot: string,
+    signal: AbortSignal,
+  ): Promise<PlanGateResult> {
+    const sessionId = event.sessionId;
+    const plan = event.planText ?? "";
     const planId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${planCounter++}`;
     // The tab basename is the human label; planId rides in the query so the URI (and the content
     // provider's map keyed by uri.toString()) stays unique without polluting the visible tab name.
     const uri = vscode.Uri.from({
       scheme: Schemes.plan,
-      authority: req.sessionId,
-      path: `/${planDocLabel(req.plan, new Date())}`,
+      authority: sessionId,
+      path: `/${planDocLabel(plan, new Date())}`,
       query: planId,
     });
-    const key = PlanGateRegistry.key(req.sessionId, planId);
-    const review: PlanReview = { id: key, key, sessionId: req.sessionId, uri, markdown: req.plan };
+    const key = PlanGateRegistry.key(sessionId, planId);
+    const review: PlanReview = { id: key, key, sessionId, uri, markdown: plan };
 
-    this.provider.set(uri, req.plan);
+    this.provider.set(uri, plan);
     this.plans.set(review.id, review);
 
     const entry: GateEntry = {
       id: review.id,
-      sessionId: req.sessionId,
+      sessionId,
       kind: "plan",
-      repoRoot: req.repoRoot,
+      repoRoot,
       session: {
         kind: "plan",
         approve: () => this.approve(review),
@@ -102,6 +109,7 @@ export class PlanReviewController implements vscode.Disposable {
     await this.coordinator.register(entry);
     this.updatePendingContext();
     this.changeEmitter.fire();
+    log.info(`plan review opened for agent ${sessionId.slice(0, 8)} (ExitPlanMode, repo ${repoRoot})`);
     this.notifyPlanOpened(review);
 
     // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
@@ -184,6 +192,10 @@ export class PlanReviewController implements vscode.Disposable {
       .get<Record<string, string>>("planApprove.mode", { claudecode: "auto" });
     const mode = byHarness.claudecode ?? "auto";
     const nextMode = mode && mode !== "off" ? mode : undefined;
+    log.info(
+      `plan review approved for agent ${review.sessionId.slice(0, 8)}` +
+        (nextMode ? ` (mode -> ${nextMode})` : ""),
+    );
     this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
 
@@ -198,6 +210,9 @@ export class PlanReviewController implements vscode.Disposable {
       );
       return;
     }
+    log.info(
+      `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s)`,
+    );
     this.registry.fulfill(review.key, { decision: "deny", reason: renderPlanFeedback(comments) });
   }
 
