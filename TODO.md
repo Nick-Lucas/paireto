@@ -90,12 +90,51 @@ I think it could be that an agent running in a worktree's events are being proce
 
 # WIP 12
 
-* support git conflicts just like the main git panel
-* when staging or unstaging a file, don't refocus it in the new location or auto expand any ancestor if collapsed, don't change scroll position of the panel at all
-* tie the version of the plugin into both the extension and the plugin itself, send the plugin version with all events, check it, if it's older than the extension wants then prompt the user to update their plugin (VS Code notification, debounced, 1 click update then instruction to reboot the agent)
+* Approving a plan is no longer moving claudecode on to implementing it
+* I saw a blocking review start for this:
+```
+refresh(git) #58: no change
+refresh(save) #59: staged=0 unstaged=1 committed=11
+refresh(git) #60: no change
+refresh(manual) #61: staged=1 unstaged=0 committed=11
+refresh(git) #62: no change
+subagent SubagentStart for agent 84a1ce04: 1 running
+stop ignored for agent 84a1ce04: 1 background agents still running
+refresh(manual) #63: no change
+refresh(manual) #64: no change
+```
+also
+```
+refresh(git) #351: no change
+subagent SubagentStart for agent d8566da2: 1 running
+stop ignored for agent d8566da2: 1 background agents still running
+subagent SubagentStop for agent d8566da2: 0 running
+subagent SubagentStop for agent d8566da2: 0 running
+notification for agent d8566da2: finished its turn (Stop)
+refresh(git) #352: no change
+
+-- and claude code, it happend somewhere in here:
+
+I'll wait for the exploration to complete before deciding on the refactor.
+  Ran 1 shell command
+I'll pause and resume when the exploration agent reports back.
+  Ran 1 shell command
+Waiting for the exploration agent to finish mapping the existing session-boot machinery.
+✻ Waiting for 1 background agent to finish
+```
+* please add timestamps to all logs, also add more logs for interactions like: plan/code review started by $REASON, user approved/sent feedback
 * When clicking the "Open File" button on a diff which is already open, we should still open the underlying file, the diff is not the same thing.
+* when staging or unstaging a file, don't refocus it in the new location or auto expand any ancestor if collapsed, don't change scroll position of the panel at all
+
+
+# WIP 13
+
+* support git conflicts just like the main git panel
+* tie the version of the plugin into both the extension and the plugin itself, send the plugin version with all events, check it, if it's older than the extension wants then prompt the user to update their plugin (VS Code notification, debounced, 1 click update then instruction to reboot the agent)
 * If possible: when doing a Go To Definition from within a diff, if the target file also has a diff we should open the diff instead by default
 * refresh diffs when opening the diff for a file, rather than possibly showing an outdated version at first
+* Add a "Compare To" control in virtual diff file tabs, when starting to edit an up-stream (committed / staged) file the new diff should remain compared to the original comparison point, and this button should let you change it freely for any virtual file
+* Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
 
 # Feature Ideas:
 
