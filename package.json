@@ -1,7 +1,7 @@
 {
   "name": "paireto",
   "displayName": "Paireto",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Paireto — VS Code companion for terminal-first AI coding agents.",
   "categories": [
     "Other"
