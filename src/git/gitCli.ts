@@ -62,6 +62,18 @@ export async function currentBranch(repoRoot: string): Promise<string | undefine
   return branchFromRevParse(await gitSafe(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]));
 }
 
+/**
+ * The real git toplevel for `cwd` (a worktree's own directory, never its main repo), or `undefined`
+ * if `cwd` isn't inside a git repo. Mirrors `plugins/claude-code/scripts/bridge.js`'s `gitToplevel`
+ * exactly — this is what lets the extension bind sockets under the SAME identity the hook scripts
+ * independently resolve, rather than trusting a third party's (`vscode.git`) repo-root reporting.
+ */
+export async function gitToplevel(cwd: string): Promise<string | undefined> {
+  const stdout = await gitSafe(cwd, ["rev-parse", "--show-toplevel"]);
+  const trimmed = stdout.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 /** Split NUL-separated git porcelain output, dropping a trailing empty token. */
 export function splitNul(output: string): string[] {
   const parts = output.split("\0");

@@ -1,4 +1,5 @@
 import * as assert from "node:assert";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -11,7 +12,7 @@ import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
 import { transformHarnessEventToAppEvent } from "../bridge/transformHarnessEventToAppEvent.js";
 import { summarizeActivity } from "../agents/activitySummary.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
-import { branchFromRevParse } from "../git/gitCli.js";
+import { branchFromRevParse, gitToplevel } from "../git/gitCli.js";
 import { buildSwitcherSections } from "../status/switcherRows.js";
 import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
@@ -148,6 +149,55 @@ suite("branchFromRevParse", () => {
   });
   test("detached HEAD -> undefined", () => {
     assert.strictEqual(branchFromRevParse("HEAD\n"), undefined);
+  });
+});
+
+// Guards the core fix for worktree/root-repo bridge socket cross-talk: the extension must bind a
+// worktree window's socket to the worktree's OWN toplevel, never its main repo's — mirroring
+// plugins/claude-code/scripts/bridge.js's gitToplevel exactly, against a real repo + worktree.
+suite("gitToplevel (real git CLI, worktree fixture)", () => {
+  let base: string;
+  let mainRepo: string;
+  let worktree: string;
+
+  suiteSetup(() => {
+    base = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-toplevel-"));
+    mainRepo = path.join(base, "main");
+    fs.mkdirSync(mainRepo);
+    const git = (args: string[]): void => {
+      execFileSync("git", args, { cwd: mainRepo });
+    };
+    git(["init", "-q"]);
+    git(["config", "user.email", "test@example.com"]);
+    git(["config", "user.name", "Test"]);
+    fs.writeFileSync(path.join(mainRepo, "a.txt"), "a");
+    git(["add", "a.txt"]);
+    git(["commit", "-q", "-m", "init"]);
+    worktree = path.join(base, "worktree");
+    git(["worktree", "add", "-q", worktree, "-b", "feature"]);
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(base, { recursive: true, force: true });
+  });
+
+  test("resolves the main repo's own toplevel", async () => {
+    assert.strictEqual(await gitToplevel(mainRepo), fs.realpathSync(mainRepo));
+  });
+
+  test("resolves a worktree's own toplevel, never the main repo's", async () => {
+    const resolved = await gitToplevel(worktree);
+    assert.strictEqual(resolved, fs.realpathSync(worktree));
+    assert.notStrictEqual(resolved, await gitToplevel(mainRepo));
+  });
+
+  test("resolves undefined for a directory outside any git repo", async () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-nongit-"));
+    try {
+      assert.strictEqual(await gitToplevel(outside), undefined);
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 

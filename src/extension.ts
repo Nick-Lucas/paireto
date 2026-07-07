@@ -15,6 +15,7 @@ import { resolveCommentAuthor } from "./comments/author.js";
 import { Commands, ContextKeys, Schemes } from "./config.js";
 import { GateCoordinator } from "./gate/GateCoordinator.js";
 import { DiffService } from "./git/DiffService.js";
+import { gitToplevel } from "./git/gitCli.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
 import { log } from "./log.js";
@@ -224,15 +225,44 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await repoService.init();
   void reviewController.refresh("init"); // after init so the first model has a real repo
 
-  const serveOpenRepos = (): void => {
-    for (const repo of repoService.repositories) {
-      void bridge.ensureServerFor(repo.root.fsPath);
+  // One socket per open workspace folder, keyed by that folder's REAL git toplevel — resolved
+  // independently via the git CLI (mirroring exactly what the hook scripts compute in
+  // bridge.js's gitToplevel), never trusted from vscode.git's own repository auto-detection. A
+  // mismatch between the two (e.g. a worktree window whose vscode.git reports its main repo's
+  // root) previously bound the wrong socket identity with no diagnostic trail. Toplevel doesn't
+  // change when a repo's working tree does, so this only re-runs on folder add/remove, not on
+  // every repoService change.
+  const servedToplevels = new Map<string, string>(); // workspace folder fsPath -> resolved toplevel
+
+  const serveFolder = async (folder: vscode.WorkspaceFolder): Promise<void> => {
+    const toplevel = await gitToplevel(folder.uri.fsPath);
+    if (!toplevel) {
+      return;
     }
+    servedToplevels.set(folder.uri.fsPath, toplevel);
+    await bridge.ensureServerFor(toplevel);
   };
-  serveOpenRepos();
+
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    void serveFolder(folder);
+  }
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeWorkspaceFolders((e) => {
+      for (const folder of e.added) {
+        void serveFolder(folder);
+      }
+      for (const folder of e.removed) {
+        const toplevel = servedToplevels.get(folder.uri.fsPath);
+        servedToplevels.delete(folder.uri.fsPath);
+        if (toplevel && ![...servedToplevels.values()].includes(toplevel)) {
+          bridge.removeServerFor(toplevel);
+        }
+      }
+    }),
+  );
+
   context.subscriptions.push(
     repoService.onDidChange(() => {
-      serveOpenRepos();
       void reviewController.refresh("git"); // the git extension is our sole working-tree/index signal
     }),
   );

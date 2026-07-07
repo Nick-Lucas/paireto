@@ -387,3 +387,19 @@
 - **At most one review at a time, via the slot (`reviewBusy` + `reviewWaiters`).** `startSession`
   acquires the slot, queuing behind any in-progress review; the turn-end gate just allows the stop if
   the slot is busy. `cleanupReview` releases it. The dead `ReviewComment.resolved` flag was removed.
+
+- **Socket binding is workspace-folder-driven, keyed by a git-CLI-resolved toplevel, never
+  `vscode.git`'s reported root.** A worktree window and its main repo's window were cross-talking
+  because `extension.ts` bound sockets off `RepoService.repositories` (a raw passthrough of
+  `vscode.git`'s own `Repository.rootUri`) while the plugin/hook side independently resolves its own
+  toplevel via real `git -C <cwd> rev-parse --show-toplevel` (`bridge.js`) — the two were assumed, but
+  never checked, to agree. `gitCli.ts` now exports `gitToplevel(cwd)` mirroring `bridge.js` exactly;
+  `extension.ts` binds one socket per `vscode.workspace.workspaceFolders` entry resolved through it
+  (tracked in a `Map<folderFsPath, toplevel>`, added/removed via
+  `onDidChangeWorkspaceFolders`), never off `vscode.git`'s reporting.
+  `BridgeManager.ensureServerFor` now logs resolved roots, successful binds, and — previously
+  silent — binds skipped because another window owns the socket. `IndexRegistry.gc()` skips
+  unlinking `.sock`/activity files younger than a 10s grace period (a concurrently-starting window's
+  fresh bind could otherwise be deleted before it's indexed) and logs removals.
+  `BridgeManager.isOwnedByLiveServer` now checks PID liveness (`IndexRegistry.isEntryLive`) instead
+  of trusting raw index presence.

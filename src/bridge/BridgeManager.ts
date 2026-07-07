@@ -4,6 +4,7 @@
 
 import * as crypto from "node:crypto";
 
+import { log } from "../log.js";
 import { IndexRegistry } from "./IndexRegistry.js";
 import { SocketServer } from "./SocketServer.js";
 import type { BridgeHandlers, IndexEntry } from "./types.js";
@@ -22,7 +23,9 @@ export class BridgeManager {
   private isOwnedByLiveServer = (socketPath: string): boolean => {
     return this.registry
       .read()
-      .entries.some((e) => e.socketPath === socketPath && e.pid !== process.pid);
+      .entries.some(
+        (e) => e.socketPath === socketPath && e.pid !== process.pid && this.registry.isEntryLive(e),
+      );
   };
 
   /** Start serving a repo root (idempotent). No-op if already serving or owned by another window. */
@@ -35,10 +38,15 @@ export class BridgeManager {
     if (this.servers.has(server.socketPath)) {
       return;
     }
+    log.info(`bridge: resolved repo root ${repoRoot} -> socket ${server.socketPath}`);
     const bound = await server.listen();
     if (!bound) {
-      return; // another window owns it
+      log.info(
+        `bridge: bind skipped for ${repoRoot}, socket ${server.socketPath} already owned by another live window`,
+      );
+      return;
     }
+    log.info(`bridge: bound socket ${server.socketPath} for repo root ${repoRoot}`);
     this.servers.set(server.socketPath, server);
     const entry: IndexEntry = {
       repoRoot: server.repoRoot,
