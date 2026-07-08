@@ -19,7 +19,6 @@ import { gitToplevel } from "./git/gitCli.js";
 import { RepoService } from "./git/RepoService.js";
 import { WorktreeService } from "./git/WorktreeService.js";
 import { log } from "./log.js";
-import { NotificationController } from "./notify/NotificationController.js";
 import { PlanContentProvider } from "./plan/PlanContentProvider.js";
 import { PlanGateRegistry } from "./plan/PlanGateRegistry.js";
 import { PlanReviewController } from "./plan/PlanReviewController.js";
@@ -62,8 +61,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const planGate = new PlanGateRegistry();
   const planReview = new PlanReviewController(planProvider, planGate, coordinator);
   const statusBar = new StatusBarController(repoService, agents);
-  // Ping the user when one of this window's agents needs them; publish activity for other windows.
-  const notifications = new NotificationController(agents);
   const activityPublisher = new ActivityPublisher(agents);
 
   // Code review (Phase 3).
@@ -112,7 +109,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     planProvider,
     planReview,
     statusBar,
-    notifications,
     activityPublisher,
     reviewContent,
     reviewController,
@@ -169,6 +165,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     onPlanReviewRequest: (msg, signal) => {
       const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
+      if (agents.isMuted(event.sessionId)) {
+        log.info(`plan review skipped for muted session ${event.sessionId.slice(0, 8)}`);
+        return Promise.resolve({ decision: "allow" });
+      }
+
       // On disconnect (interrupt/crash) there's no Stop hook — return the agent to idle so its
       // activity indicator doesn't stay stuck on "awaiting plan review".
       signal.addEventListener("abort", () => agents.markIdleOnDisconnect(event.sessionId), {
@@ -182,6 +183,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // request's repo so the Agents panel can show "awaiting review" on the right row.
       const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
       if (sessionId) {
+        // We do not honour muted here because this event is a manual user action (Skill → Review)
+
         // Likewise reset the agent to idle if its review connection drops.
         signal.addEventListener("abort", () => agents.markIdleOnDisconnect(sessionId), {
           once: true,
@@ -195,11 +198,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // Fires on every turn-end. Resolves "allow" instantly unless a review is warranted for this
       // session (the turn touched files, a deferred review is open, or feedback is queued).
       const sessionId = event.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
+      if (agents.isMuted(sessionId)) {
+        log.info(`stop gate skipped for muted session ${sessionId?.slice(0, 8) ?? "unknown"}`);
+        return Promise.resolve({ block: false });
+      }
+
       // This Stop event's own background-task/session-cron counts (this request arrives on a
       // separate connection from the passive hook.event Stop — feed AgentSession before querying it
       // so both paths agree on one piece of state, per AgentSessionService.noteBackgroundWork).
       agents.noteBackgroundWork(sessionId, event);
       const turn = agents.turnState(sessionId);
+
       // A subagent/background task is believed still pending — the agent isn't really done, it'll
       // emit a real final Stop later. Decide this HERE, using AgentSession's own owned state, before
       // ever calling into the review flow — ReviewController.awaitStopOutcome only ever needs to
@@ -212,11 +221,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return reviewController.awaitStopOutcome(sessionId, turn.changedThisTurn, signal);
     },
+
     // The MCP server holds a liveness connection per session; when the last one drops, the agent
     // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => agents.detachSession(sessionId),
   };
+
   const bridge = new BridgeManager(handlers);
   context.subscriptions.push({ dispose: () => bridge.dispose() });
   context.subscriptions.push({ dispose: () => planGate.drain({ decision: "allow" }) });

@@ -5,6 +5,7 @@
 
 import type { AppEvent, AppNotificationKind } from "../bridge/transformHarnessEventToAppEvent.js";
 import { log } from "../log.js";
+import type { NotificationService } from "../notify/NotificationService.js";
 import type { AgentState } from "../types.js";
 import { createDebouncedStop, type DebouncedStop } from "./debouncedStop.js";
 
@@ -104,12 +105,10 @@ export function shouldNotify(state: AgentState, prevState: AgentState): string |
 /** Exposed for tests. */
 export const STALE_ACTIVE_MS_FOR_TEST = STALE_ACTIVE_MS;
 
-/** What a session needs from its owner: window focus, emit hooks, and the settle override. */
+/** What a session needs from its owner: window focus, the change hook, and the settle override. */
 export interface AgentSessionHost {
   /** If this window is focused the user is already looking — no bell, no sound. */
   isWindowFocused(): boolean;
-  /** A needs-you ping actually fired for this session (drives the notification sound). */
-  onNeedsYou(session: AgentSession): void;
   /** Something observable changed (state, marker, counters) — re-render. */
   onChanged(): void;
   /** Settle override for the stopped-edge debounce (see debouncedStop.ts; tests pass 0). */
@@ -145,6 +144,7 @@ export class AgentSession {
     sessionId: string,
     repoRoot: string,
     private readonly host: AgentSessionHost,
+    private readonly notifications: NotificationService,
   ) {
     this.sessionId = sessionId;
     this.repoRoot = repoRoot;
@@ -268,9 +268,7 @@ export class AgentSession {
   /** Record the background-task/session-cron counts carried on a Stop/SubagentStop event — see
    *  hasPendingWork. Zero (older CLI versions, or a harness with no such concept) leaves
    *  hasActiveSubagents as the only signal. */
-  noteBackgroundWork(
-    event: Pick<AppEvent, "backgroundTaskCount" | "sessionCronCount">,
-  ): void {
+  noteBackgroundWork(event: Pick<AppEvent, "backgroundTaskCount" | "sessionCronCount">): void {
     this.backgroundTaskCount = event.backgroundTaskCount;
     this.sessionCronCount = event.sessionCronCount;
   }
@@ -401,7 +399,7 @@ export class AgentSession {
     }
     log.info(`notification for agent ${this.who}: ${reason}`);
     this.needsAttention = true;
-    this.host.onNeedsYou(this);
+    this.notifications.notify(this);
     this.host.onChanged();
   }
 }

@@ -55,10 +55,10 @@ export interface BridgeHandlers {
    * so the controller can close the plan and reset its state.
    */
   onPlanReviewRequest(msg: PlanReviewRequest, signal: AbortSignal): Promise<PlanGateResult>;
-  /** Blocking review session — resolve when the user submits feedback or approves. `signal` aborts
+  /** Manually launched review session via Skill — resolve when the user submits feedback or approves. `signal` aborts
    *  on disconnect so the controller can reset. */
   onReviewAwait(msg: ReviewAwaitRequest, signal: AbortSignal): Promise<ReviewGateResult>;
-  /** Blocking turn-end gate — resolve "allow" immediately unless a review is pending/in-progress for
+  /** Turn-end gated review session — resolve "allow" immediately unless a review is pending/in-progress for
    *  this session, in which case it holds until the user resolves the review. `signal` aborts on
    *  disconnect. */
   onStopGate(msg: StopGateRequest, signal: AbortSignal): Promise<StopGateResult>;

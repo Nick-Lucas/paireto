@@ -37,6 +37,7 @@ import type {
   ClaudeCodeSessionCronSummary,
 } from "../protocol/types.js";
 import type { AgentSession } from "../agents/AgentSession.js";
+import { NotificationService } from "../notify/NotificationService.js";
 import { createInboundEventLog } from "../bridge/SocketServer.js";
 import {
   agentLabel,
@@ -134,7 +135,9 @@ suite("plugin hooks.json is observer-safe", () => {
   // create event the worktree cache can't stay coherent, so the switcher fetches fresh instead).
   test("never registers the Worktree delegation hooks", () => {
     const hooksJson = path.resolve(__dirname, "../../plugins/claude-code/hooks/hooks.json");
-    const config = JSON.parse(fs.readFileSync(hooksJson, "utf8")) as { hooks: Record<string, unknown> };
+    const config = JSON.parse(fs.readFileSync(hooksJson, "utf8")) as {
+      hooks: Record<string, unknown>;
+    };
     assert.strictEqual(config.hooks.WorktreeCreate, undefined);
     assert.strictEqual(config.hooks.WorktreeRemove, undefined);
   });
@@ -230,11 +233,7 @@ suite("buildSwitcherSections", () => {
       [],
     );
     assert.strictEqual(withBranch.current?.label, "develop");
-    const noBranch = buildSwitcherSections(
-      { fsPath: "/x/repo", canonical: "/x/repo" },
-      [],
-      [],
-    );
+    const noBranch = buildSwitcherSections({ fsPath: "/x/repo", canonical: "/x/repo" }, [], []);
     assert.strictEqual(noBranch.current?.label, "repo");
   });
 
@@ -695,7 +694,10 @@ suite("AgentSessionService liveness ref-counting", () => {
 suite("notifyReason (the notify decision + its reason)", () => {
   test("returns a reason on the edge into each needs-you state", () => {
     assert.strictEqual(shouldNotify("stopped", "thinking"), "finished its turn (Stop)");
-    assert.strictEqual(shouldNotify("awaitingPermission", "toolRunning"), "awaiting your permission");
+    assert.strictEqual(
+      shouldNotify("awaitingPermission", "toolRunning"),
+      "awaiting your permission",
+    );
     assert.strictEqual(shouldNotify("awaitingPlanApproval", "thinking"), "awaiting plan approval");
     assert.strictEqual(shouldNotify("awaitingInput", "thinking"), "waiting for your input");
   });
@@ -746,7 +748,13 @@ suite("transformHarnessEventToAppEvent (claudecode harness mapping)", () => {
       ["SubagentStop", "subagentStop"],
     ];
     for (const [hookEventName, kind] of cases) {
-      assert.strictEqual(transformHarnessEventToAppEvent("claudecode", raw({ hook_event_name: hookEventName as never })).kind, kind);
+      assert.strictEqual(
+        transformHarnessEventToAppEvent(
+          "claudecode",
+          raw({ hook_event_name: hookEventName as never }),
+        ).kind,
+        kind,
+      );
     }
   });
 
@@ -769,7 +777,10 @@ suite("transformHarnessEventToAppEvent (claudecode harness mapping)", () => {
   });
 
   test("plan text is undefined when tool_input has no plan field", () => {
-    assert.strictEqual(transformHarnessEventToAppEvent("claudecode", raw({ tool_input: {} })).planText, undefined);
+    assert.strictEqual(
+      transformHarnessEventToAppEvent("claudecode", raw({ tool_input: {} })).planText,
+      undefined,
+    );
     assert.strictEqual(transformHarnessEventToAppEvent("claudecode", raw()).planText, undefined);
   });
 
@@ -807,21 +818,32 @@ suite("transformHarnessEventToAppEvent (claudecode harness mapping)", () => {
   });
 });
 
-suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
+// Records the state at every needs-you ping (a session calls notify() past mute/focus suppression),
+// standing in for the old onDidFinish observation now that AgentSession pings the service directly.
+class RecordingNotifications extends NotificationService {
+  readonly fired: string[] = [];
+  override notify(session: AgentSession): void {
+    this.fired.push(session.state);
+  }
+}
+
+suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   const ev = (event: string, toolName?: string): HookEventMessage =>
     mkHookEvent(event, { tool_name: toolName });
 
   const session = (svc: AgentSessionService) => svc.sessionsForRepo("/repo")[0];
   // Window not focused, so needs-you transitions DO mark/ping (the default reads the real window).
-  // settle 0 → the stopped-edge ping fires synchronously in tests
-  const mkSvc = () => new AgentSessionService(() => false, 0);
+  // settle 0 → the stopped-edge ping fires synchronously in tests. `fired` records each ping's state.
+  const mkSvc = (focused = false, settle = 0) => {
+    const notifications = new RecordingNotifications();
+    const svc = new AgentSessionService(() => focused, settle, notifications);
+    return { svc, fired: notifications.fired };
+  };
   // Every ping is asynchronous (the gate fires on a macrotask even with settle 0) — tick to observe.
   const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
   test("fires once on entering a needs-you state and sets needsAttention", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit"));
@@ -837,9 +859,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("does NOT re-fire while staying within needs-you states", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop")); // stopped (needs-you) — fires
@@ -853,9 +873,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("clears on going busy/idle and re-arms on the next needs-you transition", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
@@ -873,9 +891,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("does NOT mark or fire when this window is focused", async () => {
-    const svc = new AgentSessionService(() => true, 0); // user is already looking at the editor
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc(true); // user is already looking at the editor
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
@@ -891,9 +907,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     mkHookEvent(event, { agent_id: "sub-1", tool_name: toolName });
 
   test("subagent events never change headline state or notify", () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
@@ -911,7 +925,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("a subagent event never even creates a parent row", () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.ingest(subEv("PreToolUse", "Read")); // no top-level session has been seen yet
       assert.deepStrictEqual(svc.allSessions(), [], "subagent events are ignored outright");
@@ -921,9 +935,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("a Notification (e.g. a question prompt) fires the needs-you ping", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking — not itself a needs-you state
@@ -937,9 +949,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("a Notification does not double-fire when already awaiting the user", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("PermissionRequest")); // awaitingPermission — fires once
@@ -952,9 +962,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("a typed Notification lands on the matching state (one ping via the state edge)", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
@@ -971,9 +979,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("an informational Notification changes nothing and never pings", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
@@ -988,7 +994,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("clearAttention drops the marker without a state change", async () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
@@ -1003,7 +1009,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("markIdleOnDisconnect also clears the marker", async () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("PreToolUse", "ExitPlanMode"));
@@ -1017,10 +1023,8 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
     }
   });
 
-  test("a muted session never fires onDidFinish or sets needsAttention", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+  test("a muted session never pings or sets needsAttention", async () => {
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.setMuted("s1", true);
@@ -1035,7 +1039,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("muting a session with needsAttention=true clears the marker", async () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
@@ -1050,9 +1054,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("unmuting re-arms the needs-you ping", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.setMuted("s1", true);
@@ -1071,7 +1073,7 @@ suite("AgentSessionService attention (onDidFinish / needsAttention)", () => {
   });
 
   test("setMuted on an unknown sessionId is a no-op", () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.setMuted("missing", true); // must not throw
       assert.deepStrictEqual(svc.allSessions(), []);
@@ -1125,13 +1127,15 @@ suite("AgentSessionService background-agent stop gating", () => {
   const subEv = (event: string, agentId = "sub-1"): HookEventMessage =>
     mkHookEvent(event, { agent_id: agentId });
   const session = (svc: AgentSessionService) => svc.sessionsForRepo("/repo")[0];
-  // settle 0 → the stopped-edge ping fires synchronously in tests
-  const mkSvc = () => new AgentSessionService(() => false, 0);
+  // settle 0 → the stopped-edge ping fires synchronously in tests. `fired` records each ping's state.
+  const mkSvc = (settle = 0) => {
+    const notifications = new RecordingNotifications();
+    const svc = new AgentSessionService(() => false, settle, notifications);
+    return { svc, fired: notifications.fired };
+  };
 
   test("a Stop with a background agent running is ignored outright — no ping, no state change", () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
@@ -1146,9 +1150,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("SubagentStop never pings by itself; the agent's own final Stop does", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit"));
@@ -1170,9 +1172,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("an ignored Stop doesn't eat the next turn's ping", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(subEv("SubagentStart"));
@@ -1188,9 +1188,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("SubagentStop with no prior start clamps at 0; a plain Stop still pings", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(subEv("SubagentStop")); // clamps at 0, never negative
@@ -1203,7 +1201,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("SubagentStart for an unseen session creates no row", () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.ingest(subEv("SubagentStart"));
       assert.deepStrictEqual(svc.allSessions(), []);
@@ -1213,7 +1211,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("SubagentStart doesn't change headline state", () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
@@ -1225,9 +1223,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("markIdleOnDisconnect zeroes the counter, so a later Stop pings (fail-open)", async () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit"));
@@ -1242,7 +1238,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("SessionEnd clears active subagents", () => {
-    const svc = mkSvc();
+    const { svc } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(subEv("SubagentStart", "sub-1"));
@@ -1255,9 +1251,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("a subagent's own tool activity revives it after a premature SubagentStop", () => {
-    const svc = mkSvc();
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc();
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("UserPromptSubmit")); // thinking
@@ -1275,9 +1269,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
   test("a quiet settle window releases the stop ping", async () => {
-    const svc = new AgentSessionService(() => false, 10);
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc(10);
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop"));
@@ -1291,9 +1283,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("resumed activity inside the settle window cancels the ping (wake-turn Stop)", async () => {
-    const svc = new AgentSessionService(() => false, 30);
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc(30);
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop")); // intermediate stop — the agent picks back up below
@@ -1306,9 +1296,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   });
 
   test("a SubagentStart landing inside the settle window suppresses the ping", async () => {
-    const svc = new AgentSessionService(() => false, 30);
-    const fired: string[] = [];
-    svc.onDidFinish((s) => fired.push(s.state));
+    const { svc, fired } = mkSvc(30);
     try {
       svc.ingest(ev("SessionStart"));
       svc.ingest(ev("Stop")); // count is 0 at event time…
@@ -1669,7 +1657,9 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
     const svc = mk();
     try {
       svc.ingest(ev("SessionStart"));
-      svc.ingest(mkHookEvent("Stop", { background_tasks: [mkBackgroundTask("t1"), mkBackgroundTask("t2")] }));
+      svc.ingest(
+        mkHookEvent("Stop", { background_tasks: [mkBackgroundTask("t1"), mkBackgroundTask("t2")] }),
+      );
       assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
       svc.ingest(mkHookEvent("Stop", { background_tasks: [] }));
       assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
@@ -1757,7 +1747,12 @@ suite("describeInbound (bridge debug log line)", () => {
 
   test("non-hook messages show the type and agent", () => {
     assert.strictEqual(
-      createInboundEventLog({ ...base, t: "session.attach", sessionId: "72a4f124-aaaa", repoRoot: "/x" } as AnyMessage),
+      createInboundEventLog({
+        ...base,
+        t: "session.attach",
+        sessionId: "72a4f124-aaaa",
+        repoRoot: "/x",
+      } as AnyMessage),
       "session.attach agent=72a4f124",
     );
   });

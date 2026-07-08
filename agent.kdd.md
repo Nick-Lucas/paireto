@@ -147,11 +147,19 @@
 
 - **"Agent finished" = entering a needs-you state** (stopped / awaiting permission / awaiting plan)
   **or a `Notification`** (Claude's "waiting for input" — covers question prompts that never reach a
-  needs-you state), detected on the edge in `AgentSessionService.ingest` → `onDidFinish`. Suppressed
+  needs-you state), detected on the edge inside `AgentSession.fireNeedsYou`. Suppressed
   when this window is focused (no point nagging); cleared when a new turn starts. Drives
   `needsAttention`. Every fired ping is logged at info with a `notifyReason` (independent of
   `notify.type`, so unexpected pings are traceable even with sound off); focus-suppressed edges log
   at debug.
+
+- **The needs-you sound is played by a `NotificationService` each `AgentSession` owns and calls
+  directly** (`fireNeedsYou` → `notifications.notify(this)`), not via an event. Collapsed the old
+  two-hop plumbing (`AgentSession` → host `onNeedsYou` → `AgentSessionService.onDidFinish` event →
+  `NotificationController`) into one direct call — simpler and one layer fewer. `AgentSessionService`
+  constructs one `NotificationService` (injectable for tests) and passes it to every session; the
+  `onDidFinish`/`finishEmitter` and the host `onNeedsYou` callback are gone. Tests observe pings via a
+  `RecordingNotifications` subclass injected into the service.
 
 - **Agent visibility is per-session runtime mute (`AgentSession.muted`, `setMuted`).** A muted row
   stays listed (dimmed, `eye-closed` icon, `agentSession:muted` contextValue) so it can be re-enabled,
@@ -236,7 +244,7 @@
 
 - **The needs-you cue is visual + optional sound, never an OS push notification.** osascript banners
   are silently dropped and `alerter`/AXRaise needed extra installs + Accessibility — not worth it. So
-  just a sound (`NotificationController`, `notify.type` = sound|disabled) plus an orange bell in the
+  just a sound (`NotificationService`, `notify.type` = sound|disabled) plus an orange bell in the
   sidebar, status bar, and switcher.
 
 - **Cross-window agent activity travels through per-repo files** (`$STATE/activity/<repoKey>.json`),

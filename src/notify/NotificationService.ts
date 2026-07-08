@@ -1,5 +1,6 @@
-// Plays a sound when one of THIS window's agents enters a "needs you" state (the
-// AgentSessionService.onDidFinish edge). Gated on `paireto.notify.type` (`sound` | `disabled`).
+// Plays a sound when one of THIS window's agents enters a "needs you" state. Each AgentSession
+// holds one of these and calls `notify()` directly from its single ping path (fireNeedsYou) — there
+// is no event plumbing in between. Gated on `paireto.notify.type` (`sound` | `disabled`).
 // We shell out to the platform sound player (like the rest of the repo shells out to git); it's
 // best-effort and non-blocking — failures are logged via the shared logger.
 // (The visible "needs you" cue lives in the sidebar, status bar, and repo switcher.)
@@ -9,24 +10,25 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { log } from "../log.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 
 type NotifyType = "sound" | "disabled";
 
-export class NotificationController implements vscode.Disposable {
-  private readonly sub: vscode.Disposable;
-
-  constructor(agents: AgentSessionService) {
-    this.sub = agents.onDidFinish((s) => this.notify(s));
-  }
-
+export class NotificationService {
   private config<T>(key: string, fallback: T): T {
     return vscode.workspace.getConfiguration("paireto").get<T>(key, fallback);
   }
 
-  private notify(_session: AgentSession): void {
+  /** Called by an AgentSession when it fires a needs-you ping (already past mute/focus suppression). */
+  notify(_session: AgentSession): void {
+    if (_session.muted) {
+      log.debug(
+        `NotificationService.notify skipped for muted session ${_session.sessionId.slice(0, 8)}`,
+      );
+      return;
+    }
+
     if (this.config<NotifyType>("notify.type", "sound") !== "sound") {
       return;
     }
@@ -74,9 +76,5 @@ export class NotificationController implements vscode.Disposable {
   private logFailure(context: string, err: unknown): void {
     const detail = err instanceof Error ? err.message : String(err);
     log.error(`notify ${context} failed: ${detail}`);
-  }
-
-  dispose(): void {
-    this.sub.dispose();
   }
 }

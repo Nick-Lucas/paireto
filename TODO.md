@@ -151,3 +151,9 @@ Waiting for the exploration agent to finish mapping the existing session-boot ma
 * Look at the agent providing review feedback to the user during coding, reacting to user interactions, reacting to compile and lint errors with quick fixes, etc.
 * keep user feedback around so they can easily review the changes and follow-up, give the agent a tool to reply to each with their fix plan
 * Claude WorktreeCreate etc could be used to manage a CoW system?
+
+# Refactoring ideas:
+
+* Use real MCP server instead of the dependency free one
+* compile the claude hooks from TS so they're type-safe and can import shared code between both sides of the bridge
+* Consider consolidating the bridge so the MCP server provides everything

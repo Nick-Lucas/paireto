@@ -5,9 +5,13 @@
 
 import * as vscode from "vscode";
 
-import { transformHarnessEventToAppEvent, type AppEvent } from "../bridge/transformHarnessEventToAppEvent.js";
+import {
+  transformHarnessEventToAppEvent,
+  type AppEvent,
+} from "../bridge/transformHarnessEventToAppEvent.js";
 import { log } from "../log.js";
 import { AgentSession, type AgentSessionHost } from "./AgentSession.js";
+import { NotificationService } from "../notify/NotificationService.js";
 import { canonicalize } from "../protocol/paths.js";
 import type { HookEventMessage } from "../protocol/types.js";
 import type { AgentState } from "../types.js";
@@ -45,11 +49,8 @@ export class AgentSessionService implements vscode.Disposable {
   private readonly sessions = new Map<string, AgentSession>();
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.changeEmitter.event;
-  /** Fires when a session enters a "needs you" state — drives the notification/sound. */
-  private readonly finishEmitter = new vscode.EventEmitter<AgentSession>();
-  readonly onDidFinish = this.finishEmitter.event;
   private readonly sweepTimer: ReturnType<typeof setInterval>;
-  /** What every session gets from this service (focus lookup, emitters, settle override). */
+  /** What every session gets from this service (focus lookup, change hook, settle override). */
   private readonly host: AgentSessionHost;
 
   constructor(
@@ -57,10 +58,11 @@ export class AgentSessionService implements vscode.Disposable {
     isWindowFocused: () => boolean = () => vscode.window.state.focused,
     // Settle override for the stopped-edge ping (see debouncedStop.ts); tests pass 0.
     stopSettleMs?: number,
+    // The sound player each session pings directly (injectable so tests can record calls).
+    private readonly notifications: NotificationService = new NotificationService(),
   ) {
     this.host = {
       isWindowFocused,
-      onNeedsYou: (session) => this.finishEmitter.fire(session),
       onChanged: () => this.changeEmitter.fire(),
       stopSettleMs,
     };
@@ -83,6 +85,7 @@ export class AgentSessionService implements vscode.Disposable {
 
   ingest(msg: HookEventMessage): void {
     const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
+
     // Subagent lifecycle events feed the running-subagent count that gates the parent's stop ping.
     // Handle them BEFORE the agentId bailout (they carry their own agent_id) — they still never
     // create a row, change headline state, or touch lastEventAt.
@@ -108,7 +111,7 @@ export class AgentSessionService implements vscode.Disposable {
     }
     let session = this.sessions.get(event.sessionId);
     if (!session) {
-      session = new AgentSession(event.sessionId, msg.repoRoot, this.host);
+      session = new AgentSession(event.sessionId, msg.repoRoot, this.host, this.notifications);
       this.sessions.set(event.sessionId, session);
     }
     session.applyEvent(event, msg.repoRoot);
@@ -178,6 +181,14 @@ export class AgentSessionService implements vscode.Disposable {
     this.sessions.get(sessionId)?.setMuted(muted);
   }
 
+  /** whether the user has muted this session */
+  isMuted(sessionId: string | undefined): boolean {
+    if (!sessionId) {
+      return false;
+    }
+    return this.sessions.get(sessionId)?.muted ?? false;
+  }
+
   /** The user looked at the agent (focused/switched to it) — drop its attention marker. */
   clearAttention(sessionId: string): void {
     this.sessions.get(sessionId)?.clearAttention();
@@ -231,7 +242,6 @@ export class AgentSessionService implements vscode.Disposable {
     }
     this.sessions.clear();
     this.changeEmitter.dispose();
-    this.finishEmitter.dispose();
   }
 }
 
