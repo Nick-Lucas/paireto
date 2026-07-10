@@ -129,11 +129,14 @@ Waiting for the exploration agent to finish mapping the existing session-boot ma
 
 # WIP 13
 
+* refresh diffs when opening the diff for a file, rather than possibly showing an outdated version at first
+* Add a "Compare To" control in virtual diff file tabs, when starting to edit an up-stream (committed / staged) file the new diff should remain compared to the original comparison point, and this button should let you change it freely for any virtual file
+
+# WIP 14
+
 * support git conflicts just like the main git panel
 * tie the version of the plugin into both the extension and the plugin itself, send the plugin version with all events, check it, if it's older than the extension wants then prompt the user to update their plugin (VS Code notification, debounced, 1 click update then instruction to reboot the agent)
 * If possible: when doing a Go To Definition from within a diff, if the target file also has a diff we should open the diff instead by default
-* refresh diffs when opening the diff for a file, rather than possibly showing an outdated version at first
-* Add a "Compare To" control in virtual diff file tabs, when starting to edit an up-stream (committed / staged) file the new diff should remain compared to the original comparison point, and this button should let you change it freely for any virtual file
 * Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
 
 # Feature Ideas:
