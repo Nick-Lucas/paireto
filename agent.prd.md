@@ -154,8 +154,9 @@ resolve with the same two actions.
   (while a plan is pending), Feedback (during a review session). Section controls live on their
   section rows / the title bar; the shared gate actions use colored icons whenever a plan or review is
   active — **Approve** (green) until feedback is queued, then **Send Feedback** (amber).
-- Every contributed command title starts with `Paireto: ` so Command Palette and keybinding search
-  results are consistently namespaced.
+- Commands exposed in the Command Palette or parent editor UI use the `Paireto: ` prefix; actions
+  shown only inside Paireto comment boxes or tree context menus keep concise local labels. The
+  comment-controller gutter action is parent UI and remains `Paireto: Add Comment`.
 
 ### Welcome / Onboarding
 - A Welcome webview opens **once on first install** (and via **Paireto: Open Welcome**). Two sections:

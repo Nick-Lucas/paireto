@@ -1,7 +1,7 @@
 {
   "name": "paireto",
   "displayName": "Paireto",
-  "version": "0.13.0",
+  "version": "0.13.1",
   "description": "Paireto — VS Code companion for terminal-first AI coding agents.",
   "categories": [
     "Other"
@@ -85,32 +85,32 @@
       },
       {
         "command": "paireto.comment.edit",
-        "title": "Paireto: Edit Comment",
+        "title": "Edit Comment",
         "icon": "$(edit)"
       },
       {
         "command": "paireto.comment.save",
-        "title": "Paireto: Save Comment",
+        "title": "Save Comment",
         "icon": "$(check)"
       },
       {
         "command": "paireto.comment.delete",
-        "title": "Paireto: Delete Comment",
+        "title": "Delete Comment",
         "icon": "$(trash)"
       },
       {
         "command": "paireto.plan.addComment",
-        "title": "Paireto: Comment",
+        "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
         "command": "paireto.plan.addQuestion",
-        "title": "Paireto: Question",
+        "title": "Question",
         "enablement": "!commentIsEmpty"
       },
       {
         "command": "paireto.plan.addProblem",
-        "title": "Paireto: Problem",
+        "title": "Problem",
         "enablement": "!commentIsEmpty"
       },
       {
@@ -135,21 +135,21 @@
       },
       {
         "command": "paireto.review.openDiff",
-        "title": "Paireto: Open Changes"
+        "title": "Open Changes"
       },
       {
         "command": "paireto.review.openFile",
-        "title": "Paireto: Open File",
+        "title": "Open File",
         "icon": "$(go-to-file)"
       },
       {
         "command": "paireto.review.stage",
-        "title": "Paireto: Stage Changes",
+        "title": "Stage Changes",
         "icon": "$(add)"
       },
       {
         "command": "paireto.review.unstage",
-        "title": "Paireto: Unstage Changes",
+        "title": "Unstage Changes",
         "icon": "$(remove)"
       },
       {
@@ -164,7 +164,7 @@
       },
       {
         "command": "paireto.review.discard",
-        "title": "Paireto: Discard Changes",
+        "title": "Discard Changes",
         "icon": "$(discard)"
       },
       {
@@ -174,26 +174,26 @@
       },
       {
         "command": "paireto.review.addComment",
-        "title": "Paireto: Comment",
+        "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
         "command": "paireto.review.addQuestion",
-        "title": "Paireto: Question",
+        "title": "Question",
         "enablement": "!commentIsEmpty"
       },
       {
         "command": "paireto.review.addProblem",
-        "title": "Paireto: Problem",
+        "title": "Problem",
         "enablement": "!commentIsEmpty"
       },
       {
         "command": "paireto.review.revealComment",
-        "title": "Paireto: Reveal Comment"
+        "title": "Reveal Comment"
       },
       {
         "command": "paireto.review.deleteComment",
-        "title": "Paireto: Delete Comment",
+        "title": "Delete Comment",
         "icon": "$(trash)"
       },
       {
@@ -203,16 +203,16 @@
       },
       {
         "command": "paireto.agent.switch",
-        "title": "Paireto: Switch to Agent"
+        "title": "Switch to Agent"
       },
       {
         "command": "paireto.agent.hide",
-        "title": "Paireto: Hide Agent",
+        "title": "Hide Agent",
         "icon": "$(eye)"
       },
       {
         "command": "paireto.agent.show",
-        "title": "Paireto: Show Agent",
+        "title": "Show Agent",
         "icon": "$(eye-closed)"
       }
     ],

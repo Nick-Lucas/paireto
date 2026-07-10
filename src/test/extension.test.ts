@@ -115,18 +115,82 @@ suite("repoKey", () => {
 });
 
 suite("command manifest", () => {
-  test("every contributed command title is namespaced as Paireto", () => {
-    const manifest = JSON.parse(
-      fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"),
-    ) as { contributes: { commands: Array<{ command: string; title: string }> } };
+  const manifest = JSON.parse(
+    fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"),
+  ) as {
+    contributes: {
+      commands: Array<{ command: string; title: string }>;
+      menus: { commandPalette: Array<{ command: string; when?: string }> };
+    };
+  };
+
+  test("every command exposed in the Command Palette is namespaced as Paireto", () => {
+    const paletteHidden = new Set(
+      manifest.contributes.menus.commandPalette
+        .filter(({ when }) => when === "false")
+        .map(({ command }) => command),
+    );
     const unprefixed = manifest.contributes.commands.filter(
-      ({ title }) => !title.startsWith("Paireto: "),
+      ({ command, title }) => !paletteHidden.has(command) && !title.startsWith("Paireto: "),
     );
     assert.deepStrictEqual(
       unprefixed,
       [],
-      `unprefixed command titles: ${unprefixed.map(({ command }) => command).join(", ")}`,
+      `unprefixed palette commands: ${unprefixed.map(({ command }) => command).join(", ")}`,
     );
+  });
+
+  test("commands shown only inside local comment/tree context keep concise titles", () => {
+    const localCommands = new Set([
+      "paireto.comment.edit",
+      "paireto.comment.save",
+      "paireto.comment.delete",
+      "paireto.plan.addComment",
+      "paireto.plan.addQuestion",
+      "paireto.plan.addProblem",
+      "paireto.review.openDiff",
+      "paireto.review.openFile",
+      "paireto.review.stage",
+      "paireto.review.unstage",
+      "paireto.review.discard",
+      "paireto.review.addComment",
+      "paireto.review.addQuestion",
+      "paireto.review.addProblem",
+      "paireto.review.revealComment",
+      "paireto.review.deleteComment",
+      "paireto.agent.switch",
+      "paireto.agent.hide",
+      "paireto.agent.show",
+    ]);
+    const incorrectlyPrefixed = manifest.contributes.commands.filter(
+      ({ command, title }) => localCommands.has(command) && title.startsWith("Paireto: "),
+    );
+    assert.deepStrictEqual(incorrectlyPrefixed, []);
+  });
+
+  test("parent editor actions remain namespaced", () => {
+    const parentCommands = new Set([
+      "paireto.gate.approve",
+      "paireto.gate.sendFeedback",
+      "paireto.review.pickDiffCompareTo",
+    ]);
+    const unprefixed = manifest.contributes.commands.filter(
+      ({ command, title }) => parentCommands.has(command) && !title.startsWith("Paireto: "),
+    );
+    assert.deepStrictEqual(unprefixed, []);
+  });
+
+  test("comment gutter actions use a namespaced controller label", () => {
+    const planSource = fs.readFileSync(
+      path.join(__dirname, "../../src/plan/PlanReviewController.ts"),
+      "utf8",
+    );
+    const reviewSource = fs.readFileSync(
+      path.join(__dirname, "../../src/review/ReviewController.ts"),
+      "utf8",
+    );
+    assert.match(planSource, /new CommentSession\("paireto\.plan", "Paireto: Add Comment"/);
+    assert.match(reviewSource, /"paireto\.review",\s*"Paireto: Add Comment"/);
   });
 });
 
