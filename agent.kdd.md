@@ -324,6 +324,14 @@
   `suppressActiveDiffEvent: true`; `maybeSwitchToUnstaged`'s intentional unstaged-highlight emit and
   normal user-driven `openDiff` calls (tree click, `reviewOpenDiff` command) are untouched.
 
+- **The tree-follows-active-editor sync honours `explorer.autoReveal`** (`resolveAutoReveal` in
+  `src/util/editorSettings.ts` — self-contained readers for the built-in editor settings we honour
+  live here): focusing a review diff tab pulled the Paireto sidebar forward + moved the tree
+  selection unconditionally; now `syncSelectionToActiveTab` bails when
+  `explorer.autoReveal` is `false`, matching native explorer semantics (`true`/`"focusNoScroll"` →
+  still reveal; we can't suppress the scroll via the TreeView API so `"focusNoScroll"` behaves like
+  `true`). Only the focus-follow path is gated — tree-click and demote reveals are unaffected.
+
 - **Adds/deletes open a SINGLE editor, not a two-pane diff** (`singlePaneSide`): one side is empty, so
   a diff would render a broken/empty pane (an image viewer can't show the 0-byte side). Add → show the
   modified side; delete → show the base. Both panes still match the comment controller (file: side or

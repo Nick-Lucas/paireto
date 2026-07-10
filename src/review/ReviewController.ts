@@ -26,6 +26,7 @@ import { log } from "../log.js";
 import { isInside } from "../protocol/paths.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
+import { getAutoRevealSetting } from "../util/editorSettings.js";
 import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
@@ -181,7 +182,9 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
-    log.info(`review opened for agent ${sessionId?.slice(0, 8) ?? "unknown"}: manual (/paireto-review)`);
+    log.info(
+      `review opened for agent ${sessionId?.slice(0, 8) ?? "unknown"}: manual (/paireto-review)`,
+    );
     return this.runReview(requestId, sessionId, signal, (result) => result);
   }
 
@@ -612,8 +615,13 @@ export class ReviewController implements vscode.Disposable {
     this.reviewContent.demoteToIndex(open.path);
   }
 
-  /** The active editor changed — if it's one of our diff tabs, re-select that file's tree row. */
+  /** The active editor changed — if it's one of our diff tabs, re-select that file's tree row.
+   *  Honours VS Code's `explorer.autoReveal`: when disabled, focusing a diff tab no longer pulls the
+   *  Paireto sidebar forward or moves the tree selection. */
   private syncSelectionToActiveTab(): void {
+    if (!getAutoRevealSetting()) {
+      return;
+    }
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
     if (!(input instanceof vscode.TabInputTextDiff) || input.original.scheme !== Schemes.review) {
       return;
@@ -656,7 +664,8 @@ export class ReviewController implements vscode.Disposable {
     // to it as normal.
     await closeTabsWhere(
       (tab) =>
-        tab.input instanceof vscode.TabInputTextDiff && tab.input.modified.toString() === uri.toString(),
+        tab.input instanceof vscode.TabInputTextDiff &&
+        tab.input.modified.toString() === uri.toString(),
     );
     // `vscode.open` (not showTextDocument) lets VS Code pick the editor for the file type — image
     // preview, etc. — instead of forcing a text editor, matching the native git panel's "Open File".

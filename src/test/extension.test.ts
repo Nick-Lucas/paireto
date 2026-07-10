@@ -52,6 +52,7 @@ import {
   reconcileDiffTarget,
   shouldOpenTurnEndReview,
 } from "../review/ReviewController.js";
+import { getAutoRevealSetting } from "../util/editorSettings.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
 
@@ -1557,6 +1558,26 @@ suite("isFileEditable (structural, session-independent)", () => {
     const file = f("a.ts", "unstaged", "D");
     assert.strictEqual(isFileEditable(file, model({ unstaged: [file] })), false);
   });
+});
+
+suite("resolveAutoReveal (honours explorer.autoReveal)", () => {
+  const explorer = () => vscode.workspace.getConfiguration("explorer");
+  let original: unknown;
+  suiteSetup(() => {
+    original = explorer().get("autoReveal");
+  });
+  suiteTeardown(async () => {
+    await explorer().update("autoReveal", original, vscode.ConfigurationTarget.Global);
+  });
+  const withSetting = async (value: unknown, expected: boolean | "focusNoScroll") => {
+    await explorer().update("autoReveal", value, vscode.ConfigurationTarget.Global);
+    assert.strictEqual(getAutoRevealSetting(), expected);
+  };
+
+  test("false disables reveal-on-focus (falsy)", () => withSetting(false, false));
+  test("true keeps reveal on", () => withSetting(true, true));
+  test('"focusNoScroll" is preserved (still truthy, so reveal stays on)', () =>
+    withSetting("focusNoScroll", "focusNoScroll"));
 });
 
 suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
