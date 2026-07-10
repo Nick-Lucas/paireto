@@ -21,6 +21,7 @@ export const Commands = {
   planAddComment: "paireto.plan.addComment",
   planAddProblem: "paireto.plan.addProblem",
   reviewPickCompareTo: "paireto.review.pickCompareTo",
+  reviewPickDiffCompareTo: "paireto.review.pickDiffCompareTo",
   reviewToggleLayout: "paireto.review.toggleLayout",
   reviewRefresh: "paireto.review.refresh",
   reviewOpenDiff: "paireto.review.openDiff",
@@ -59,6 +60,8 @@ export const ContextKeys = {
   switcherVisible: "paireto.switcherVisible",
   planPending: "paireto.planPending",
   reviewSessionActive: "paireto.reviewSessionActive",
+  /** True while the active editor is one of Paireto's virtual diff tabs. */
+  reviewDiffActive: "paireto.reviewDiffActive",
   /** True when the foreground gate has ≥1 actionable comment — shows Send Feedback, hides Approve. */
   gateHasFeedback: "paireto.gateHasFeedback",
 } as const;

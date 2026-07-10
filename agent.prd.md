@@ -129,19 +129,22 @@ resolve with the same two actions.
   - Each group title row shows a coloured layer icon plus a muted `N files · +adds -dels` indicator.
 - **Compare To** presets (HEAD, merge-base, default branch (main/master auto-detected), recent refs,
   or any branch/ref via picker) and the **Flat / Tree** layout toggle are inline buttons on the
-  Changed Files section row.
+  Changed Files section row. Every open virtual review file also has its own **Compare To** title
+  action (Index, HEAD, merge-base, default branch, recent ref, or any branch/ref); this changes only
+  that tab's pinned baseline.
 - Per-file: open changes (row click), open file (first inline button on every row), stage, unstage,
   discard (confirm) + right-click menu.
 - Browsing diffs are **editable with full LSP** when the file has no change at a lower level
   (committed > staged > unstaged): the modified side is the real working-tree file, so edits land in
-  the unstaged level and the view refreshes on save. The first edit to a staged/committed file's
-  diff re-targets it in place to the unstaged diff (index → live working tree) — same tab, no save
-  prompt, caret + focus preserved. Diffs stay read-only during a `/paireto-review`
-  session (so inline comments work) and for deleted files.
+  the unstaged level and the view refreshes on save. The first edit to a staged/committed file moves
+  its sidebar location to Working Tree but never changes the diff's baseline: the tab continues to
+  compare against the ref/index it opened with until the user explicitly changes it. The tab title
+  names that baseline. Diffs stay read-only for deleted files and whenever a lower-level change makes
+  editing ambiguous.
 - Per-folder (tree layout): stage / unstage / discard every change under the folder, via the same
   inline buttons — matching the native git panel.
 - The tree selection follows the diff in focus: opening a file or switching between open diff tabs
-  selects its row, and when an edit demotes a staged/committed diff to the working tree, the Unstaged
+  selects its row, and when an edit moves a staged/committed file to the working tree, the Unstaged
   row is highlighted as it appears.
 - Group-level: Stage All, Unstage All, Discard All.
 - Git controls apply to Staged/Unstaged; the Committed group is read-only.
@@ -151,6 +154,8 @@ resolve with the same two actions.
   (while a plan is pending), Feedback (during a review session). Section controls live on their
   section rows / the title bar; the shared gate actions use colored icons whenever a plan or review is
   active — **Approve** (green) until feedback is queued, then **Send Feedback** (amber).
+- Every contributed command title starts with `Paireto: ` so Command Palette and keybinding search
+  results are consistently namespaced.
 
 ### Welcome / Onboarding
 - A Welcome webview opens **once on first install** (and via **Paireto: Open Welcome**). Two sections:

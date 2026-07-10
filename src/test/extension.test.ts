@@ -49,6 +49,7 @@ import {
 import { pickAuthorName } from "../comments/author.js";
 import {
   isFileEditable,
+  markOpenDiffEdited,
   reconcileDiffTarget,
   shouldOpenTurnEndReview,
 } from "../review/ReviewController.js";
@@ -110,6 +111,22 @@ suite("repoKey", () => {
     } finally {
       fs.rmSync(base, { recursive: true, force: true });
     }
+  });
+});
+
+suite("command manifest", () => {
+  test("every contributed command title is namespaced as Paireto", () => {
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"),
+    ) as { contributes: { commands: Array<{ command: string; title: string }> } };
+    const unprefixed = manifest.contributes.commands.filter(
+      ({ title }) => !title.startsWith("Paireto: "),
+    );
+    assert.deepStrictEqual(
+      unprefixed,
+      [],
+      `unprefixed command titles: ${unprefixed.map(({ command }) => command).join(", ")}`,
+    );
   });
 });
 
@@ -1446,6 +1463,22 @@ suite("reconcileDiffTarget (open-diff re-point after stage/unstage/discard)", ()
 
   test("falls back to the first candidate when the preferred group isn't present", () => {
     assert.strictEqual(reconcileDiffTarget("staged", ["committed"], "unstaged"), "committed");
+  });
+});
+
+suite("open diff comparison stability", () => {
+  test("editing a staged diff moves its tree location without changing its HEAD comparison", () => {
+    assert.deepStrictEqual(
+      markOpenDiffEdited({ path: "src/a.ts", group: "staged", baseRef: "HEAD" }),
+      { path: "src/a.ts", group: "unstaged", baseRef: "HEAD" },
+    );
+  });
+
+  test("editing a committed diff preserves its originally resolved comparison ref", () => {
+    assert.deepStrictEqual(
+      markOpenDiffEdited({ path: "src/a.ts", group: "committed", baseRef: "origin/main" }),
+      { path: "src/a.ts", group: "unstaged", baseRef: "origin/main" },
+    );
   });
 });
 

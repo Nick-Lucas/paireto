@@ -49,7 +49,7 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly registry: PlanGateRegistry,
     private readonly coordinator: GateCoordinator,
   ) {
-    this.comments = new CommentSession("paireto.plan", "Plan Review", Schemes.plan, {
+    this.comments = new CommentSession("paireto.plan", "Paireto: Add Comment", Schemes.plan, {
       prompt: "Add plan feedback",
       placeHolder: "Comment on this line of the plan",
     });

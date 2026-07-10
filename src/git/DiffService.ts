@@ -41,6 +41,11 @@ export interface FileSides {
   modified: ContentRef;
 }
 
+/** Replace a tab's comparison point without changing the content shown on its modified side. */
+export function withBaseComparison(sides: FileSides, base: ContentRef): FileSides {
+  return { base, modified: sides.modified };
+}
+
 /**
  * Which side to show in a SINGLE editor (no diff) for an add or delete — there's nothing to diff
  * against the empty side, and a two-pane diff would render a broken/empty pane (fatal for an image
@@ -68,7 +73,12 @@ export class DiffService {
     const unstaged = await this.collect(repoRoot, ["diff"], "unstaged");
 
     // Untracked files are working-tree changes → Unstaged group.
-    const untrackedOut = await gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"]);
+    const untrackedOut = await gitSafe(repoRoot, [
+      "ls-files",
+      "--others",
+      "--exclude-standard",
+      "-z",
+    ]);
     for (const p of splitNul(untrackedOut)) {
       unstaged.push({
         path: p,
@@ -107,7 +117,11 @@ export class DiffService {
   /** Run a name-status diff + numstat for one group and merge the line counts.
    *  name-status uses {@link git} (throwing) so a transient git failure surfaces as an error rather
    *  than a spurious "no changes" — the caller keeps the last good model instead of blanking it. */
-  private async collect(repoRoot: string, diffArgs: string[], group: FileGroup): Promise<ChangedFile[]> {
+  private async collect(
+    repoRoot: string,
+    diffArgs: string[],
+    group: FileGroup,
+  ): Promise<ChangedFile[]> {
     const nameStatus = (await git(repoRoot, [...diffArgs, "--name-status", "-z"])).stdout;
     const files = parseNameStatus(nameStatus, group);
     const counts = parseNumstat(await gitSafe(repoRoot, [...diffArgs, "--numstat", "-z"]));
@@ -124,7 +138,7 @@ export class DiffService {
   /** Resolve a Compare-To descriptor to a concrete ref (null = HEAD, no committed group) + label. */
   async resolveCompareTo(
     repoRoot: string,
-    compareTo: CompareTo
+    compareTo: CompareTo,
   ): Promise<{ ref: string | null; label: string }> {
     switch (compareTo.kind) {
       case "head":
@@ -188,7 +202,9 @@ export class DiffService {
       return wrapDeleted(file, { kind: "index" }, { kind: "working" });
     }
     // committed
-    const base: ContentRef = compareRef ? { kind: "ref", ref: compareRef } : { kind: "ref", ref: "HEAD" };
+    const base: ContentRef = compareRef
+      ? { kind: "ref", ref: compareRef }
+      : { kind: "ref", ref: "HEAD" };
     return wrapDeleted(file, base, { kind: "ref", ref: "HEAD" });
   }
 
@@ -225,6 +241,20 @@ export class DiffService {
       case "ref":
         return ref.ref;
     }
+  }
+
+  /** Decode the provider token carried by an open diff back into its domain reference. */
+  static decodeRef(ref: string): ContentRef {
+    if (ref === "EMPTY") {
+      return { kind: "empty" };
+    }
+    if (ref === "WORKING") {
+      return { kind: "working" };
+    }
+    if (ref === "INDEX") {
+      return { kind: "index" };
+    }
+    return { kind: "ref", ref };
   }
 }
 

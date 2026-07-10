@@ -18,8 +18,10 @@ import { closeTabsWhere } from "../gate/tabs.js";
 import {
   DiffService,
   singlePaneSide,
+  withBaseComparison,
   type ChangedFile,
   type ChangesModel,
+  type ContentRef,
 } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
 import { log } from "../log.js";
@@ -31,7 +33,7 @@ import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
-import { pickCompareTo } from "./reviewSelectors.js";
+import { pickCompareTo, pickFileCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
 /** A review comment: the VS Code comment instance paired with its serializable model. */
@@ -68,6 +70,20 @@ export interface ReviewState {
   changes: ChangesModel;
 }
 
+/** State belonging to an open tab: its tree location may move, but its comparison stays pinned. */
+export interface OpenDiffState {
+  path: string;
+  group: FileGroup;
+  /** Encoded ContentRef token (HEAD, INDEX, a git ref, etc.) used by the base URI. */
+  baseRef: string;
+  baseLabel?: string;
+}
+
+/** Editing always lands in the Working Tree; it must never silently rewrite the tab's baseline. */
+export function markOpenDiffEdited(open: OpenDiffState): OpenDiffState {
+  return { ...open, group: "unstaged" };
+}
+
 export class ReviewController implements vscode.Disposable {
   private readonly commentSession: CommentSession;
   private readonly disposables: vscode.Disposable[] = [];
@@ -94,11 +110,10 @@ export class ReviewController implements vscode.Disposable {
    *  `reviewWaiters` until the one ahead resolves (at most one review pending at a time). */
   private reviewBusy = false;
   private readonly reviewWaiters: Array<() => void> = [];
-  /** The file currently shown in the diff editor, so an edit can re-target its compare base. */
-  private openDiffFile?: { path: string; group: FileGroup };
-  /** Each open diff's (group, path), keyed by its base URI (stable across demotion) — lets a tab
-   *  switch re-select the matching tree row. */
-  private readonly openDiffs = new Map<string, { group: FileGroup; path: string }>();
+  /** The file currently shown in the diff editor, including its independently pinned baseline. */
+  private openDiffFile?: OpenDiffState;
+  /** Each open diff's state, keyed by its virtual tab URI — lets a tab switch re-select its row. */
+  private readonly openDiffs = new Map<string, OpenDiffState>();
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private refreshSeq = 0;
 
@@ -116,7 +131,7 @@ export class ReviewController implements vscode.Disposable {
     // of whether the file can be edited. The first comment auto-starts a "deferred" review.
     this.commentSession = new CommentSession(
       "paireto.review",
-      "Code Review",
+      "Paireto: Add Comment",
       Schemes.review,
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
       (doc) =>
@@ -131,6 +146,7 @@ export class ReviewController implements vscode.Disposable {
       this.activeDiffEmitter,
       reg(Commands.reviewRefresh, () => this.refresh()),
       reg(Commands.reviewPickCompareTo, () => this.changeCompareTo()),
+      reg(Commands.reviewPickDiffCompareTo, () => this.changeActiveDiffCompareTo()),
       reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
       reg(Commands.reviewOpenDiff, (a: unknown) => {
         const f = asFile(a);
@@ -150,23 +166,24 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewAddProblem, (r: vscode.CommentReply) => this.addComment(r, "problem")),
       reg(Commands.reviewRevealComment, (c: ReviewComment) => this.revealComment(c)),
       reg(Commands.reviewDeleteComment, (c: ReviewComment) => this.deleteComment(c)),
-      // Editing an editable staged/committed diff routes the change to the working tree — flip the
-      // diff to the unstaged base immediately, on the first keystroke (before any save).
-      vscode.workspace.onDidChangeTextDocument((e) => this.maybeSwitchToUnstaged(e.document.uri)),
+      // Editing an editable staged/committed diff routes the change to the working tree. Track that
+      // location immediately, but keep the tab's comparison point pinned.
+      vscode.workspace.onDidChangeTextDocument((e) => this.maybeMarkAsUnstaged(e.document.uri)),
       // Saving writes to the working tree — keep the Changes view in sync.
       vscode.workspace.onDidSaveTextDocument((doc) => {
         if (doc.uri.scheme === "file" && this.repoRoot && isInside(this.repoRoot, doc.uri.fsPath)) {
           void this.refresh("save");
         }
       }),
-      // When a demoted diff's tab closes, drop its index-demotion so a later reopen starts clean.
+      // Keep the open-tab index and editor-title context in sync with tab lifecycle changes.
       vscode.window.tabGroups.onDidChangeTabs(() => {
-        this.reviewContent.pruneClosedDemotions();
         this.pruneClosedDiffs();
+        this.syncActiveDiffContext();
       }),
       // Switching between already-open diff tabs re-selects that file's row in the tree.
       vscode.window.onDidChangeActiveTextEditor(() => this.syncSelectionToActiveTab()),
     );
+    this.syncActiveDiffContext();
   }
 
   /**
@@ -425,9 +442,6 @@ export class ReviewController implements vscode.Disposable {
     }
 
     const rootChanged = this.repoRoot !== prevRoot;
-    if (rootChanged) {
-      this.reviewContent.clearAllDemotions(); // demotions belonged to the old repo
-    }
     const changed = rootChanged || !changesEqual(this.changes, next);
     this.changes = next; // adopt the new model (identical on a no-change refresh)
 
@@ -463,8 +477,67 @@ export class ReviewController implements vscode.Disposable {
     if (choice.kind === "ref" && choice.ref) {
       await this.store.addRecentRef(choice.ref);
     }
-    this.reviewContent.clearAllDemotions(); // committed bases must recompute against the new ref
     await this.refresh();
+  }
+
+  /** Change only the active tab's pinned base; the Changes view's global Compare-To is untouched. */
+  private async changeActiveDiffCompareTo(): Promise<void> {
+    if (!this.repoRoot) {
+      return;
+    }
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    const activeKey = reviewTabKey(input);
+    const open = activeKey ? this.openDiffs.get(activeKey) : undefined;
+    if (!open) {
+      return;
+    }
+    const choice = await pickFileCompareTo(this.repoRoot, this.diff, this.store.getRecentRefs());
+    if (!choice) {
+      return;
+    }
+
+    let base: ContentRef;
+    let label: string;
+    if (choice.kind === "index") {
+      base = { kind: "index" };
+      label = "Index";
+    } else if (choice.kind === "head") {
+      base = { kind: "ref", ref: "HEAD" };
+      label = "HEAD";
+    } else {
+      const resolved = await this.diff.resolveCompareTo(this.repoRoot, choice);
+      base = { kind: "ref", ref: resolved.ref ?? "HEAD" };
+      label = resolved.label;
+    }
+    if (choice.kind === "ref" && choice.ref) {
+      await this.store.addRecentRef(choice.ref);
+    }
+
+    const encoded = DiffService.encodeRef(base);
+    if (encoded === open.baseRef) {
+      if (input instanceof vscode.TabInputTextDiff) {
+        this.reviewContent.refresh(input.original);
+      } else if (input instanceof vscode.TabInputText) {
+        this.reviewContent.refresh(input.uri);
+      }
+      return;
+    }
+    const file =
+      this.changes[open.group].find((f) => f.path === open.path) ??
+      this.allFiles().find((f) => f.path === open.path);
+    if (!file) {
+      return;
+    }
+    const oldTabKey = activeKey!;
+    const located = this.locateReviewTab(oldTabKey);
+    await this.openDiff(file, {
+      baseComparison: { ref: base, label },
+      trackedGroup: open.group,
+      viewColumn: located?.viewColumn,
+      preserveFocus: false,
+    });
+    await closeTabsWhere((tab) => reviewTabKey(tab.input) === oldTabKey);
+    this.openDiffs.delete(oldTabKey);
   }
 
   private async toggleLayout(): Promise<void> {
@@ -533,7 +606,8 @@ export class ReviewController implements vscode.Disposable {
     const order: FileGroup[] = ["committed", "staged", "unstaged"];
     // Snapshot so we can mutate openDiffs (delete re-pointed entries) while iterating.
     const snapshot = Array.from(this.openDiffs.entries());
-    for (const [baseKey, { group: oldGroup, path: relPath }] of snapshot) {
+    for (const [baseKey, open] of snapshot) {
+      const { group: oldGroup, path: relPath } = open;
       if (!affected.has(relPath) || this.hasCommentOnPath(relPath)) {
         continue;
       }
@@ -542,15 +616,12 @@ export class ReviewController implements vscode.Disposable {
       if (target === "keep") {
         continue; // still present at the same level — content refresh handles it
       }
-      const located = this.locateDiffTab(baseKey);
+      const located = this.locateReviewTab(baseKey);
       this.openDiffs.delete(baseKey);
       if (this.openDiffFile?.path === relPath && this.openDiffFile.group === oldGroup) {
         this.openDiffFile = undefined;
       }
-      await closeTabsWhere(
-        (tab) =>
-          tab.input instanceof vscode.TabInputTextDiff && tab.input.original.toString() === baseKey,
-      );
+      await closeTabsWhere((tab) => reviewTabKey(tab.input) === baseKey);
       if (target === "close") {
         this.debug(`reconcile: ${relPath} gone — closed diff tab`);
         continue;
@@ -558,25 +629,27 @@ export class ReviewController implements vscode.Disposable {
       const file = this.changes[target].find((f) => f.path === relPath);
       if (file) {
         await this.openDiff(file, {
+          baseComparison: {
+            ref: DiffService.decodeRef(open.baseRef),
+            label: open.baseLabel ?? comparisonLabel(DiffService.decodeRef(open.baseRef)),
+          },
           viewColumn: located?.viewColumn,
           preserveFocus: !located?.active,
           suppressActiveDiffEvent: true,
+          skipRefresh: true,
         });
         this.debug(`reconcile: ${relPath} ${oldGroup} -> ${target}`);
       }
     }
   }
 
-  /** The open review diff tab whose base URI matches `baseKey`: its column and whether it's active. */
-  private locateDiffTab(
-    baseKey: string,
+  /** The open review tab whose virtual URI matches `tabKey`: its column and active state. */
+  private locateReviewTab(
+    tabKey: string,
   ): { viewColumn: vscode.ViewColumn; active: boolean } | undefined {
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
-        if (
-          tab.input instanceof vscode.TabInputTextDiff &&
-          tab.input.original.toString() === baseKey
-        ) {
+        if (reviewTabKey(tab.input) === tabKey) {
           return { viewColumn: group.viewColumn, active: tab.isActive };
         }
       }
@@ -586,10 +659,10 @@ export class ReviewController implements vscode.Disposable {
 
   /**
    * Editing the working-tree side of an editable staged/committed diff puts the change at the
-   * unstaged level. Re-render the open diff's base against the index *in place* (the content provider
-   * swaps the left side) — no reopen, so the tab, dirty buffer, caret, and focus are all untouched.
+   * unstaged level. Update only its tree location: the base URI and comparison remain unchanged, so
+   * the tab, dirty buffer, caret, focus, and—most importantly—the user's chosen baseline are stable.
    */
-  private maybeSwitchToUnstaged(uri: vscode.Uri): void {
+  private maybeMarkAsUnstaged(uri: vscode.Uri): void {
     const open = this.openDiffFile;
     if (uri.scheme !== "file" || !this.repoRoot || !open || open.group === "unstaged") {
       return;
@@ -608,29 +681,38 @@ export class ReviewController implements vscode.Disposable {
     if (!isOurDiff) {
       return;
     }
-    this.openDiffFile = { path: open.path, group: "unstaged" }; // flip synchronously: no re-entry
-    this.openDiffs.set(input.original.toString(), { group: "unstaged", path: open.path });
+    const edited = markOpenDiffEdited(open);
+    this.openDiffFile = edited; // flip synchronously: no re-entry
+    this.openDiffs.set(input.original.toString(), edited);
     this.activeDiffEmitter.fire({ group: "unstaged", path: open.path });
-    this.debug(`demote: ${open.path} (was ${open.group}) -> index base`);
-    this.reviewContent.demoteToIndex(open.path);
+    this.debug(
+      `edit: ${open.path} ${open.group} -> unstaged; comparison remains ${open.baseLabel ?? open.baseRef}`,
+    );
   }
 
   /** The active editor changed — if it's one of our diff tabs, re-select that file's tree row.
    *  Honours VS Code's `explorer.autoReveal`: when disabled, focusing a diff tab no longer pulls the
    *  Paireto sidebar forward or moves the tree selection. */
   private syncSelectionToActiveTab(): void {
+    this.syncActiveDiffContext();
     if (!getAutoRevealSetting()) {
       return;
     }
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
-    if (!(input instanceof vscode.TabInputTextDiff) || input.original.scheme !== Schemes.review) {
-      return;
-    }
-    const target = this.openDiffs.get(input.original.toString());
+    const key = reviewTabKey(input);
+    const target = key ? this.openDiffs.get(key) : undefined;
     if (target) {
       this.openDiffFile = target;
       this.activeDiffEmitter.fire(target);
     }
+  }
+
+  /** Drives the Compare To editor-title action, including editable diffs whose right side is file:. */
+  private syncActiveDiffContext(): void {
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    const key = reviewTabKey(input);
+    const active = key !== undefined && this.openDiffs.has(key);
+    void vscode.commands.executeCommand("setContext", ContextKeys.reviewDiffActive, active);
   }
 
   /** Forget diffs whose tabs have closed (keeps the openDiffs map from growing unbounded). */
@@ -641,8 +723,9 @@ export class ReviewController implements vscode.Disposable {
     const open = new Set<string>();
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
-        if (tab.input instanceof vscode.TabInputTextDiff) {
-          open.add(tab.input.original.toString());
+        const key = reviewTabKey(tab.input);
+        if (key) {
+          open.add(key);
         }
       }
     }
@@ -673,10 +756,16 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async openDiff(
-    file: ChangedFile,
+    requestedFile: ChangedFile,
     show?: {
       viewColumn?: vscode.ViewColumn;
       preserveFocus?: boolean;
+      /** Explicit tab-local base. Omitted when opening from the tree, which uses the row's default. */
+      baseComparison?: { ref: ContentRef; label: string };
+      /** Preserve an edited tree location that is not on disk yet because the file is dirty. */
+      trackedGroup?: FileGroup;
+      /** Internal: a caller that has just refreshed can avoid repeating the git scan. */
+      skipRefresh?: boolean;
       /** Set when silently re-pointing an already-open tab after a git write (stage/unstage/
        *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
       suppressActiveDiffEvent?: boolean;
@@ -685,24 +774,47 @@ export class ReviewController implements vscode.Disposable {
     if (!this.repoRoot) {
       return;
     }
-    this.openDiffFile = { path: file.path, group: file.group };
+    // Opening is a synchronization boundary. Refresh both the model and, below, the exact URIs that
+    // are about to open; the provider may still cache a URI from a previously closed tab.
+    if (!show?.skipRefresh) {
+      await this.refresh("open-diff");
+    }
+    if (!this.repoRoot) {
+      return;
+    }
+    const refreshedFile =
+      this.changes[requestedFile.group].find((f) => f.path === requestedFile.path) ??
+      this.allFiles().find((f) => f.path === requestedFile.path);
+    if (!refreshedFile) {
+      this.debug(`openDiff: ${requestedFile.path} disappeared during refresh`);
+      return;
+    }
+    const file = show?.trackedGroup
+      ? { ...refreshedFile, group: show.trackedGroup }
+      : refreshedFile;
     if (!show?.suppressActiveDiffEvent) {
       this.activeDiffEmitter.fire({ group: file.group, path: file.path });
     }
-    // Reopening from a row shows that level's comparison again, so drop any prior index demotion.
-    this.reviewContent.clearDemotion(file.path);
 
-    const sides = this.diff.fileSides(file, this.changes.compareRef);
+    const naturalSides = this.diff.fileSides(file, this.changes.compareRef);
+    const sides = show?.baseComparison
+      ? withBaseComparison(naturalSides, show.baseComparison.ref)
+      : naturalSides;
+    const baseRef = DiffService.encodeRef(sides.base);
+    const baseLabel =
+      show?.baseComparison?.label ??
+      (file.group === "committed" && baseRef === this.changes.compareRef
+        ? this.changes.compareLabel
+        : comparisonLabel(sides.base));
+    const open: OpenDiffState = { path: file.path, group: file.group, baseRef, baseLabel };
+    this.openDiffFile = open;
     const baseUri = ReviewContentProvider.buildUri(
       this.reviewId,
       "base",
       file.path,
-      DiffService.encodeRef(sides.base),
+      baseRef,
       this.repoRoot,
     );
-    // Remember which row this tab represents, so switching back to it re-selects the right row.
-    this.openDiffs.set(baseUri.toString(), { group: file.group, path: file.path });
-
     // When editable, the modified side is the real working-tree file: it gets LSP + editing, and
     // edits land in the lowest (unstaged) level. Otherwise it's a read-only virtual document (the
     // paireto-review FileSystemProvider is registered read-only, so it genuinely can't be typed into).
@@ -718,11 +830,18 @@ export class ReviewController implements vscode.Disposable {
           this.repoRoot,
         );
 
-    // Editable diffs always compare against the live working tree and the base may demote to the
-    // index mid-edit, so a fixed group label would lie — title them neutrally. Use just the filename
-    // (not the whole relative path) so the tab label stays short.
+    // Invalidate the exact documents before VS Code asks for them. refreshAllOpen() cannot clear a
+    // cached URI left behind by a closed tab, which was the source of stale content on first open.
+    this.reviewContent.refresh(baseUri);
+    if (modUri.scheme === Schemes.review) {
+      this.reviewContent.refresh(modUri);
+    }
+
+    // State the pinned baseline in the title so comparison changes are explicit and predictable.
+    // Use just the filename (not the whole relative path) so the tab label stays short.
     const name = basename(file.path);
-    const title = editable ? `${name} (Working Tree)` : `${name} (${GROUP_LABEL[file.group]})`;
+    const modifiedLabel = editable ? "Working Tree" : GROUP_LABEL[file.group];
+    const title = `${name} (${modifiedLabel} vs ${baseLabel})`;
 
     // An add (no base) or delete (no modified) has nothing to diff against — a two-pane diff would
     // show a broken/empty side (an image viewer can't render the 0-byte side at all). Open the one
@@ -731,14 +850,21 @@ export class ReviewController implements vscode.Disposable {
     const singleSide = singlePaneSide(sides);
     if (singleSide) {
       const paneUri = singleSide === "base" ? baseUri : modUri;
+      if (paneUri.scheme === Schemes.review) {
+        this.openDiffs.set(paneUri.toString(), open);
+      }
       await vscode.commands.executeCommand("vscode.open", paneUri, {
         preview: !editable,
         viewColumn: show?.viewColumn,
         preserveFocus: show?.preserveFocus,
       });
+      this.syncActiveDiffContext();
       void ensureCommentingVisible();
       return;
     }
+
+    // Remember which row this tab represents, so switching back to it re-selects the right row.
+    this.openDiffs.set(baseUri.toString(), open);
 
     if (editable && (await isTextFile(join(this.repoRoot, file.path)))) {
       // Open the real working-tree file as a normal document first so the TypeScript server attaches
@@ -753,6 +879,7 @@ export class ReviewController implements vscode.Disposable {
       viewColumn: show?.viewColumn,
       preserveFocus: show?.preserveFocus,
     });
+    this.syncActiveDiffContext();
     void ensureCommentingVisible();
   }
 
@@ -982,6 +1109,31 @@ function filesFromArg(arg: unknown): ChangedFile[] {
 
 function newReviewId(): string {
   return "review-" + crypto.randomBytes(4).toString("hex");
+}
+
+/** Stable virtual URI used to identify either a two-pane review diff or a single virtual pane. */
+function reviewTabKey(input: unknown): string | undefined {
+  if (input instanceof vscode.TabInputTextDiff && input.original.scheme === Schemes.review) {
+    return input.original.toString();
+  }
+  if (input instanceof vscode.TabInputText && input.uri.scheme === Schemes.review) {
+    return input.uri.toString();
+  }
+  return undefined;
+}
+
+/** Short user-facing label for a content reference used as a diff baseline. */
+function comparisonLabel(ref: ContentRef): string {
+  switch (ref.kind) {
+    case "empty":
+      return "Empty";
+    case "working":
+      return "Working Tree";
+    case "index":
+      return "Index";
+    case "ref":
+      return ref.ref;
+  }
 }
 
 /**

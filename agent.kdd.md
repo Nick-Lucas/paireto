@@ -321,7 +321,7 @@
   but `reconcileOpenDiffsAfterWrite` also calls `openDiff` to silently re-point an already-open tab
   after stage/unstage/discard moves it a git layer — firing the emitter there scrolled/selected the
   tree on every stage/unstage with no user-visible focus change. That one call site passes
-  `suppressActiveDiffEvent: true`; `maybeSwitchToUnstaged`'s intentional unstaged-highlight emit and
+  `suppressActiveDiffEvent: true`; `maybeMarkAsUnstaged`'s intentional unstaged-highlight emit and
   normal user-driven `openDiff` calls (tree click, `reviewOpenDiff` command) are untouched.
 
 - **The tree-follows-active-editor sync honours `explorer.autoReveal`** (`resolveAutoReveal` in
@@ -330,20 +330,26 @@
   selection unconditionally; now `syncSelectionToActiveTab` bails when
   `explorer.autoReveal` is `false`, matching native explorer semantics (`true`/`"focusNoScroll"` →
   still reveal; we can't suppress the scroll via the TreeView API so `"focusNoScroll"` behaves like
-  `true`). Only the focus-follow path is gated — tree-click and demote reveals are unaffected.
+  `true`). Only the focus-follow path is gated — tree-click and edit-location reveals are unaffected.
 
 - **Adds/deletes open a SINGLE editor, not a two-pane diff** (`singlePaneSide`): one side is empty, so
   a diff would render a broken/empty pane (an image viewer can't show the 0-byte side). Add → show the
   modified side; delete → show the base. Both panes still match the comment controller (file: side or
   paireto-review side), so they stay commentable.
 
-- **A staged/committed diff's first edit "demotes" its base to the index in place** — fire
-  `onDidChange` on the open base URI rather than reopening, so there's no save prompt and caret/focus
-  survive. Demotions clear on re-open, Compare-To change, repo switch, and tab close.
+- **Every open diff owns a pinned baseline, independent of its current Git layer.** Editing a
+  staged/committed diff changes only the tracked tree location to Working Tree; it never rewrites the
+  base URI to the index. Stage/unstage reconciliation also carries the same baseline forward. The
+  editor-title **Compare To** action is the only way to change a tab's baseline and offers Index,
+  HEAD, merge-base, default branch, recent refs, and arbitrary refs. The title names the active base.
 
 - **Diffs sync with git via one funnel: `refresh()` → `ReviewContentProvider.refreshAllOpen()`.** Do
   NOT add a custom `**/*` FileSystemWatcher (an earlier one pinned the CPU on autosave churn) — the
-  VS Code git extension's `onDidChange` is the sole sync trigger. `log.info` records decisions.
+  VS Code git extension's `onDidChange` is the sole background sync trigger. `openDiff()` additionally
+  awaits `refresh("open-diff")` and invalidates its exact base/modified URIs before opening, because
+  `refreshAllOpen()` cannot clear provider cache entries left by a previously closed tab. Provider
+  cache entries are generation-guarded so a pre-refresh async read cannot finish late and overwrite
+  fresh content. `log.info` records decisions.
 
 - **Folder rows reuse the file stage/unstage/discard commands** — a folder's `contextValue` is
   `folder:<group>` and handlers flatten it to descendant files. Committed rows are read-only.

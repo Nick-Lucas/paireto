@@ -20,59 +20,15 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
   private readonly emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.emitter.event;
 
-  /**
-   * Paths whose base side is "demoted" to the index. Set when the user edits an editable
-   * staged/committed diff: the left side re-renders against the index (the unstaged comparison)
-   * in place, without reopening the diff. Keyed by repo-relative path.
-   */
-  private readonly demoted = new Set<string>();
-
   /** Last-resolved content per URI, so stat() + readFile() share one git call; cleared on change. */
   private readonly cache = new Map<string, Uint8Array>();
+  /** Invalidation generation per URI; prevents a pre-refresh read finishing late into the cache. */
+  private readonly generations = new Map<string, number>();
 
-  // ── Refresh / demotion API (fires FileChangeEvents so open diffs re-read) ──────────────────────
+  // ── Refresh API (fires FileChangeEvents so open diffs re-read) ────────────────────────────────
   /** Force a refresh of any open diff editors backed by this URI. */
   refresh(uri: vscode.Uri): void {
     this.fire(uri);
-  }
-
-  /** Re-render a file's base side against the index, in place (no reopen). */
-  demoteToIndex(relPath: string): void {
-    this.demoted.add(relPath);
-    this.refreshOpenForPath(relPath);
-  }
-
-  /** Drop a single path's index demotion (e.g. when its diff is reopened fresh). */
-  clearDemotion(relPath: string): void {
-    this.demoted.delete(relPath);
-  }
-
-  /** Drop all demotions (e.g. on Compare-To change or repo switch). */
-  clearAllDemotions(): void {
-    this.demoted.clear();
-  }
-
-  /** Drop demotions for files whose diff tab has been closed (safe: never touches an open diff). */
-  pruneClosedDemotions(): void {
-    if (this.demoted.size === 0) {
-      return;
-    }
-    const open = new Set<string>();
-    this.forEachOpenReviewUri((u) => open.add(stripSide(u.path)));
-    for (const p of this.demoted) {
-      if (!open.has(p)) {
-        this.demoted.delete(p);
-      }
-    }
-  }
-
-  /** Re-fetch every open virtual diff side whose file path matches `relPath`. */
-  refreshOpenForPath(relPath: string): void {
-    this.forEachOpenReviewUri((u) => {
-      if (stripSide(u.path) === relPath) {
-        this.fire(u);
-      }
-    });
   }
 
   /** Re-fetch all open virtual diff sides — used after any git state change to avoid stale blobs. */
@@ -81,7 +37,9 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
   }
 
   private fire(uri: vscode.Uri): void {
-    this.cache.delete(uri.toString());
+    const key = uri.toString();
+    this.cache.delete(key);
+    this.generations.set(key, (this.generations.get(key) ?? 0) + 1);
     this.emitter.fire([{ type: vscode.FileChangeType.Changed, uri }]);
   }
 
@@ -152,24 +110,21 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
     if (cached !== undefined) {
       return cached;
     }
+    const generation = this.generations.get(key) ?? 0;
     const bytes = await this.resolveContent(uri);
-    this.cache.set(key, bytes);
+    // A refresh may have happened while git/fs was resolving. Return to the old caller, but never
+    // let its stale result overwrite the cache used by the post-refresh editor read.
+    if ((this.generations.get(key) ?? 0) === generation) {
+      this.cache.set(key, bytes);
+    }
     return bytes;
   }
 
   private async resolveContent(uri: vscode.Uri): Promise<Uint8Array> {
     const params = new URLSearchParams(uri.query);
-    let ref = params.get("ref") ?? "EMPTY";
+    const ref = params.get("ref") ?? "EMPTY";
     const repoRoot = params.get("repo") ? decodeURIComponent(params.get("repo")!) : "";
     const relPath = stripSide(uri.path);
-    const side = uri.path.replace(/^\//, "").split("/")[0];
-
-    // A demoted base side re-renders against the index — the unstaged comparison — regardless of the
-    // ref the diff was opened with. Only the base side is affected; the modified side is untouched.
-    if (side === "base" && repoRoot && relPath && this.demoted.has(relPath)) {
-      ref = "INDEX";
-    }
-
     if (ref === "EMPTY" || !repoRoot || !relPath) {
       return EMPTY;
     }

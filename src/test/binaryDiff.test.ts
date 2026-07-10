@@ -7,7 +7,12 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { DiffService, singlePaneSide, type ChangedFile } from "../git/DiffService.js";
+import {
+  DiffService,
+  singlePaneSide,
+  withBaseComparison,
+  type ChangedFile,
+} from "../git/DiffService.js";
 import { ReviewContentProvider } from "../review/ReviewContentProvider.js";
 
 // A tiny 1x1 PNG: contains bytes (0x89, 0xFF, 0x00) that are not valid standalone UTF-8 and so are
@@ -72,5 +77,13 @@ suite("single-pane add/delete", () => {
 
   test("a deleted file shows only the base side", () => {
     assert.strictEqual(singlePaneSide(diff.fileSides(file("unstaged", "D"), null)), "base");
+  });
+
+  test("a tab-local comparison replaces only the pinned base", () => {
+    const natural = diff.fileSides(file("unstaged", "M"), null);
+    assert.deepStrictEqual(withBaseComparison(natural, { kind: "ref", ref: "origin/main" }), {
+      base: { kind: "ref", ref: "origin/main" },
+      modified: { kind: "working" },
+    });
   });
 });
