@@ -138,6 +138,7 @@ Waiting for the exploration agent to finish mapping the existing session-boot ma
 * tie the version of the plugin into both the extension and the plugin itself, send the plugin version with all events, check it, if it's older than the extension wants then prompt the user to update their plugin (VS Code notification, debounced, 1 click update then instruction to reboot the agent)
 * If possible: when doing a Go To Definition from within a diff, if the target file also has a diff we should open the diff instead by default
 * Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
+* support multi-repo vs code workspaces
 
 # Feature Ideas:
 
