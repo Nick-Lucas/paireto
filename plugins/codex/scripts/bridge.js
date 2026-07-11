@@ -246,6 +246,99 @@ function readStdin() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Plan-mode detection via the rollout transcript (Codex-only)
+// ---------------------------------------------------------------------------
+// The Codex Stop hook payload carries NO usable plan-mode signal: `permission_mode` is derived
+// exclusively from the approval policy and never emits "plan", `last_assistant_message` is null in
+// plan mode, and `update_plan` is REJECTED in plan mode (so nothing is ever stashed) — all
+// source-verified against codex-rs rust-v0.144.1 (see the codex-plangate empirical findings). The
+// ONLY discriminator is the rollout JSONL at `transcript_path`, whose records are keyed by the Stop's
+// `turn_id` and flushed BEFORE the Stop hook fires. Two records matter:
+//   (B, PRIMARY) event_msg / item_completed with item.type=="Plan" — item.text is the full plan
+//     markdown; produced ONLY in plan mode (ProposedPlanItemState, gated on collaboration_mode.mode
+//     == Plan) and written near the END of the turn, so a tail window reliably catches it.
+//   (A, CORROBORATION) turn_context with collaboration_mode.mode=="plan" — written at turn START, so
+//     it can fall OUTSIDE a tail window; its presence confirms plan mode, its absence proves nothing.
+// The Plan item near the file end is why a bounded tail read is safe. Fail-closed on any doubt:
+// missing path / no turn_id / any stat/read/parse error -> {isPlanTurn:false}, and the caller then
+// treats it as an ordinary turn-end (fail-open into the review gate).
+
+// Read the whole transcript when small; otherwise the last chunk (the Plan item is near the end).
+const PLAN_TRANSCRIPT_MAX_BYTES = 8 * 1024 * 1024;
+const PLAN_TRANSCRIPT_TAIL_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Inspect a Codex rollout transcript to decide whether the just-ended turn was a plan-mode turn and,
+ * if so, recover its plan markdown. Returns { isPlanTurn, planMarkdown } — planMarkdown is the latest
+ * matching Plan item's text (undefined when the turn is plan-mode by corroboration alone or produced
+ * no plan). Any missing input / IO / parse error -> { isPlanTurn: false }.
+ */
+function readPlanTurn(transcriptPath, turnId) {
+  if (!transcriptPath || !turnId) {
+    return { isPlanTurn: false };
+  }
+  let text;
+  try {
+    const stat = fs.statSync(transcriptPath);
+    if (stat.size <= PLAN_TRANSCRIPT_MAX_BYTES) {
+      text = fs.readFileSync(transcriptPath, "utf8");
+    } else {
+      const fd = fs.openSync(transcriptPath, "r");
+      try {
+        const start = stat.size - PLAN_TRANSCRIPT_TAIL_BYTES;
+        const buf = Buffer.alloc(PLAN_TRANSCRIPT_TAIL_BYTES);
+        const read = fs.readSync(fd, buf, 0, PLAN_TRANSCRIPT_TAIL_BYTES, start);
+        text = buf.toString("utf8", 0, read);
+      } finally {
+        fs.closeSync(fd);
+      }
+    }
+  } catch {
+    return { isPlanTurn: false };
+  }
+
+  let planMarkdown; // (B) latest matching Plan item's text
+  let sawPlanContext = false; // (A) turn_context.collaboration_mode.mode === "plan"
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed === "") {
+      continue;
+    }
+    let rec;
+    try {
+      // A tail window's first (partial) line simply fails to parse here and is skipped.
+      rec = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+    const payload = rec && rec.payload;
+    if (!payload || payload.turn_id !== turnId) {
+      continue;
+    }
+    if (
+      rec.type === "turn_context" &&
+      payload.collaboration_mode &&
+      payload.collaboration_mode.mode === "plan"
+    ) {
+      sawPlanContext = true;
+    }
+    if (
+      payload.type === "item_completed" &&
+      payload.item &&
+      payload.item.type === "Plan" &&
+      typeof payload.item.text === "string"
+    ) {
+      planMarkdown = payload.item.text; // latest wins
+    }
+  }
+
+  if (planMarkdown !== undefined || sawPlanContext) {
+    return { isPlanTurn: true, planMarkdown };
+  }
+  return { isPlanTurn: false };
+}
+
 module.exports = {
   PLUGIN_VERSION,
   stateDir,
@@ -261,5 +354,6 @@ module.exports = {
   readMessages,
   sendLine,
   readStdin,
+  readPlanTurn,
   nowIso,
 };

@@ -4,10 +4,11 @@
 // wire dialect. Empirically pinned against opencode 1.15.10 (see the adapter design notes).
 //
 // Subagent routing is the distinctive part: OpenCode models a sub-agent as a full child SESSION with
-// its own id and a `parentID`. The plugin stamps `parentSessionID` on every event whose session it
-// knows to be a child, so here a child event maps to the PARENT's row (`sessionId: parentSessionID`)
-// carrying the child's own id as `agentId` — which makes AgentSessionService treat it as subagent
-// activity (the agentId bailout) instead of a top-level row. A child's session.idle/deleted becomes
+// its own id and a `parentID`. The plugin passes a `parentSessionId` in the event's `meta` (adapter-
+// injected enrichment, kept OUT of the raw event) for every event whose session it knows to be a
+// child, so here a child event maps to the PARENT's row (`sessionId: meta.parentSessionId`) carrying
+// the child's own id as `agentId` — which makes AgentSessionService treat it as subagent activity
+// (the agentId bailout) instead of a top-level row. A child's session.idle/deleted becomes
 // subagentStop; a top-level session.idle becomes stop, session.deleted becomes sessionEnd.
 //
 // OpenCode's session.idle can't PARK the agent (it's fire-and-forget), so turn-end review is POST-HOC:
@@ -18,6 +19,7 @@
 // true. On plan approval `nextMode` is the target agent to switch to (default `build`), not a
 // permission mode — see defaultPlanApproveMode.
 
+import type { HarnessEventMeta } from "../protocol/types.js";
 import type { Harness } from "../protocol/types.js";
 import type { AppEvent, AppEventKind } from "./appEvent.js";
 import type { AgentStrategy } from "./AgentStrategy.js";
@@ -85,18 +87,18 @@ export interface OpenCodeEventProperties {
 }
 
 /**
- * One OpenCode event as forwarded by the adapter's plugin — the raw SDK event's `{type, properties}`
- * plus two plugin-stamped fields.
+ * One OpenCode event as forwarded by the adapter's plugin — the raw SDK event's `{type, properties}`.
+ * The child→parent correlation the plugin computes is NOT a field here: it's adapter-injected
+ * enrichment that rides alongside in `HarnessEventMeta.parentSessionId`, because a forwarded SDK
+ * event is (by the seam invariant) the harness's own shape. `plan_markdown` stays, but ONLY on the
+ * fully SYNTHETIC `paireto.plan.submitted` event, which is the plugin's OWN dialect (there is no
+ * corresponding SDK event) — so carrying the plan on it doesn't touch any raw harness payload.
  */
 export interface OpenCodeForwardedEvent {
   type: OpenCodeEventType;
   properties: OpenCodeEventProperties;
-  /** PLUGIN-INJECTED, not part of the SDK event: the parent session id when this event's session is
-   *  a known child. The plugin keeps the sessionID→parentID map from session.created/updated —
-   *  cross-event correlation is plugin-side per the seam invariant. */
-  parentSessionID?: string;
-  /** ADAPTER-INJECTED: plan markdown from the paireto_submit_plan tool's synthetic event. Present
-   *  only on a plan.review.request event. */
+  /** SYNTHETIC-ONLY: plan markdown on the plugin-fabricated `paireto.plan.submitted` gate event. Not
+   *  present on any forwarded real SDK event. */
   plan_markdown?: string;
 }
 // ------------------------------------------------------------------------------------------------
@@ -121,7 +123,7 @@ export class OpenCodeStrategy implements AgentStrategy {
   // death clears the row directly — no silence sweep needed.
   readonly supportsLiveness = true;
 
-  toAppEvent(event: OpenCodeForwardedEvent): AppEvent | undefined {
+  toAppEvent(event: OpenCodeForwardedEvent, meta?: HarnessEventMeta): AppEvent | undefined {
     const props = event.properties;
 
     // session.created decides top-level vs subagent by the child's own parentID.
@@ -136,21 +138,23 @@ export class OpenCodeStrategy implements AgentStrategy {
       return this.build("sessionStart", info.id, event);
     }
 
-    // Any event the plugin tagged with a parent belongs to a child session — route it to the parent
-    // row, carrying the child id as agentId. A child's own idle/deleted is its subagentStop.
-    if (event.parentSessionID) {
+    // Any event the plugin tagged (via meta, NOT a field on the raw event) with a parent belongs to a
+    // child session — route it to the parent row, carrying the child id as agentId. A child's own
+    // idle/deleted is its subagentStop.
+    const parentSessionId = meta?.parentSessionId;
+    if (parentSessionId) {
       const child = props.sessionID;
       if (!child) {
         return undefined;
       }
       if (event.type === "session.idle" || event.type === "session.deleted") {
-        return this.build("subagentStop", event.parentSessionID, event, child);
+        return this.build("subagentStop", parentSessionId, event, child);
       }
       const childKind = this.baseKind(event);
       if (!childKind) {
         return undefined;
       }
-      return this.build(childKind, event.parentSessionID, event, child);
+      return this.build(childKind, parentSessionId, event, child);
     }
 
     // Top-level lifecycle: idle ends the turn (stop), deleted ends the session.
@@ -171,9 +175,10 @@ export class OpenCodeStrategy implements AgentStrategy {
     const props = event.properties;
     const session = props.sessionID ?? props.info?.id;
     const agent = session ? ` agent=${session.slice(0, 8)}` : "";
-    const parent = event.parentSessionID ? ` parent=${event.parentSessionID.slice(0, 8)}` : "";
+    // The parent correlation now rides in HarnessEventMeta, not on the raw event, so it's no longer
+    // part of this one-line raw-event render (describeEvent sees only the untouched harness payload).
     const tool = props.tool ? ` tool=${props.tool}` : "";
-    return `${event.type}${agent}${parent}${tool}`;
+    return `${event.type}${agent}${tool}`;
   }
 
   /** Map a non-lifecycle event type to its common kind (or undefined to drop). Lifecycle events

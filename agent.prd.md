@@ -40,7 +40,7 @@ OpenCode reach it where the harness allows and degrade gracefully where it doesn
 |---|---|---|---|
 | Live status / agent list | yes | yes (TUI; awaiting-permission is TUI-only) | yes |
 | Turn-end blocking review | yes | yes | post-hoc — not parked; Send Feedback auto-resumes the idle agent |
-| Plan review | yes, auto (ExitPlanMode) | at Stop-in-plan-mode; plan text = closing message + `update_plan` checklist; approve leaves Codex in plan mode | yes, automatic (plugin-injected planning prompt + `paireto_submit_plan` tool) |
+| Plan review | yes, auto (ExitPlanMode) | at Stop-in-plan-mode (detected via the rollout transcript); plan text = the transcript's Plan-item markdown; approve unblocks the Stop but the implement/stay choice stays in the TUI | yes, automatic (plugin-injected planning prompt + `paireto_submit_plan` tool) |
 | Approve → auto mode switch | yes | no | yes (agent switch; default `build`) |
 | False-turn-end protection | subagents + background counts | subagent events only | child-session tracking |
 | Process-death cleanup | MCP liveness | MCP stdio liveness (instant when attached; 30-min silence sweep backstop) | plugin socket drop |

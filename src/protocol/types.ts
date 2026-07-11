@@ -35,6 +35,17 @@ export type Harness = "claudecode" | "codex" | "opencode";
  *  `harness` tag — see AgentStrategy's bivariance note). */
 export type HarnessHookEvent = ClaudeCodeHookEvent | CodexHookEvent | OpenCodeForwardedEvent;
 
+/** Adapter-injected enrichment travelling ALONGSIDE the raw `event`, never merged into it: `event`
+ *  is BY DEFINITION the harness's own untouched payload (the self-describing-events invariant), so
+ *  anything the plugin computes/correlates (a plan recovered from a transcript, a parent-session
+ *  correlation) rides here in a separate object instead. Produced plugin-side; each field is used by
+ *  exactly the harness that needs it (`planMarkdown` = Codex's transcript-recovered plan;
+ *  `parentSessionId` = OpenCode's child→parent routing). NEVER part of any harness's own payload. */
+export interface HarnessEventMeta {
+  planMarkdown?: string;
+  parentSessionId?: string;
+}
+
 /** Message type tags carried in the envelope `t` field. */
 export type MessageType =
   | "hello"
@@ -84,6 +95,8 @@ export interface HookEventMessage extends Envelope {
   harness: Harness;
   repoRoot: string;
   event: HarnessHookEvent;
+  /** Adapter-injected enrichment kept OUT of `event` (see {@link HarnessEventMeta}). */
+  meta?: HarnessEventMeta;
 }
 
 /**
@@ -100,14 +113,17 @@ export interface SessionAttachMessage extends Envelope {
 
 /** Blocking plan-gate request. Carries an `id`; the hook blocks until the matching response. `event`
  *  is the raw harness payload carrying the plan (see {@link HarnessHookEvent}): Claude's ExitPlanMode
- *  PermissionRequest (`event.tool_input.plan`), or a Codex/OpenCode event with an adapter-injected
- *  `plan_markdown`. */
+ *  PermissionRequest (`event.tool_input.plan`), or an OpenCode synthetic `paireto.plan.submitted`
+ *  event (the plugin's own dialect). A plan the adapter had to RECOVER (Codex, from its rollout
+ *  transcript) rides in `meta.planMarkdown` — never merged into the raw Codex `event`. */
 export interface PlanReviewRequest extends Envelope {
   t: "plan.review.request";
   id: string;
   harness: Harness;
   repoRoot: string;
   event: HarnessHookEvent;
+  /** Adapter-injected enrichment kept OUT of `event` (see {@link HarnessEventMeta}). */
+  meta?: HarnessEventMeta;
 }
 
 export type PlanDecision = "allow" | "deny";
@@ -164,6 +180,8 @@ export interface StopGateRequest extends Envelope {
   harness: Harness;
   repoRoot: string;
   event: HarnessHookEvent;
+  /** Adapter-injected enrichment kept OUT of `event` (see {@link HarnessEventMeta}). */
+  meta?: HarnessEventMeta;
 }
 
 export type StopDecision = "allow" | "block";

@@ -102,31 +102,28 @@ suite("OpenCodeStrategy mapper fixtures", () => {
       expect: { kind: "sessionEnd", sessionId: TOP },
     },
     {
-      name: "child tool.execute.before → routed to parent, child id as agentId",
-      raw: ev(
-        "tool.execute.before",
-        { sessionID: CHILD, tool: "bash", callID: "call_5" },
-        { parentSessionID: PARENT },
-      ),
+      name: "child tool.execute.before (parent via meta) → routed to parent, child id as agentId",
+      raw: ev("tool.execute.before", { sessionID: CHILD, tool: "bash", callID: "call_5" }),
+      // The child→parent correlation rides in meta (alongside the raw event), NOT on the event.
+      meta: { parentSessionId: PARENT },
       expect: { kind: "preToolUse", sessionId: PARENT, agentId: CHILD, toolName: "bash" },
     },
     {
-      name: "child session.idle → subagentStop (parent row, child id as agentId)",
-      raw: ev(
-        "session.idle",
-        { sessionID: CHILD, info: { id: CHILD } },
-        { parentSessionID: PARENT },
-      ),
+      name: "child session.idle (parent via meta) → subagentStop (parent row, child id as agentId)",
+      raw: ev("session.idle", { sessionID: CHILD, info: { id: CHILD } }),
+      meta: { parentSessionId: PARENT },
       expect: { kind: "subagentStop", sessionId: PARENT, agentId: CHILD },
     },
     {
-      name: "child session.deleted → subagentStop",
-      raw: ev(
-        "session.deleted",
-        { sessionID: CHILD, info: { id: CHILD } },
-        { parentSessionID: PARENT },
-      ),
+      name: "child session.deleted (parent via meta) → subagentStop",
+      raw: ev("session.deleted", { sessionID: CHILD, info: { id: CHILD } }),
+      meta: { parentSessionId: PARENT },
       expect: { kind: "subagentStop", sessionId: PARENT, agentId: CHILD },
+    },
+    {
+      name: "child-session event with NO meta → treated as top-level (meta alone drives routing)",
+      raw: ev("session.idle", { sessionID: CHILD, info: { id: CHILD } }),
+      expect: { kind: "stop", sessionId: CHILD, agentId: undefined },
     },
     {
       name: "session.updated → dropped (bookkeeping only)",

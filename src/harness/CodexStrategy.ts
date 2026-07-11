@@ -8,6 +8,7 @@
 // session.attach path, but supportsLiveness stays FALSE so the silence sweep remains the backstop for
 // a never-attached session (see the CodexStrategy notes below).
 
+import type { HarnessEventMeta } from "../protocol/types.js";
 import type { Harness } from "../protocol/types.js";
 import type { AppEvent, AppEventKind } from "./appEvent.js";
 import type { AgentStrategy } from "./AgentStrategy.js";
@@ -31,12 +32,13 @@ export type CodexHookEventName =
   | "SubagentStop"
   | "Stop";
 
-/** Codex `permission_mode` values. Only `"bypassPermissions"` (forced by `codex exec`) was
- *  live-pinned; `"plan"` (the plan-collaboration mode the plan gate keys on) is source-confirmed
- *  (ModeKind::Plan) but TUI-only, so it could not be empirically verified. Other TUI modes exist but
- *  are never consumed — the strategy only ever compares against `"plan"`, so an unlisted value simply
- *  falls through. Typed defensively, per the design's TUI-only caveat. */
-export type CodexPermissionMode = "plan" | "bypassPermissions";
+/** Codex `permission_mode` values. Source-verified approval-policy-only (`hook_permission_mode`,
+ *  codex-rs rust-v0.144.1): `AskForApproval::Never → "bypassPermissions"`, every other policy →
+ *  `"default"` — collaboration mode is NEVER consulted, so `"plan"` is never emitted (the plan gate
+ *  keys on the rollout transcript instead; see the codex-plangate findings). `"bypassPermissions"`
+ *  was live-pinned under `codex exec`. Nothing in the strategy compares against this field beyond the
+ *  debug line, so the union is purely documentary. */
+export type CodexPermissionMode = "default" | "bypassPermissions";
 
 /**
  * The raw Codex hook payload (its stdin JSON), passed through by the Codex adapter's hook scripts
@@ -69,11 +71,10 @@ export interface CodexHookEvent {
   stop_hook_active?: boolean;
   /** Stop only. */
   last_assistant_message?: string;
-  /** ADAPTER-INJECTED, not part of Codex's own payload: the plan markdown the Codex plugin renders
-   *  from the stashed `update_plan` step array and stamps onto the plan-gate request (Codex's Stop
-   *  payload carries no plan). Present only on a plan.review.request event. */
-  plan_markdown?: string;
 }
+// The plan markdown the Codex plugin recovers from the rollout transcript (Codex's Stop payload
+// carries no plan) is NOT a field here — it's adapter-injected enrichment that rides alongside in
+// `HarnessEventMeta.planMarkdown`, because this type is BY DEFINITION Codex's own untouched payload.
 // ------------------------------------------------------------------------------------------------
 
 /** The one Codex tool that edits working-tree files. Codex mixes a Claude-style name for shell
@@ -106,8 +107,8 @@ export class CodexStrategy implements AgentStrategy {
   // session that never attached (no window listening, or a state-dir divergence).
   readonly supportsLiveness = false;
 
-  toAppEvent(event: CodexHookEvent): AppEvent | undefined {
-    const kind = kindFor(event);
+  toAppEvent(event: CodexHookEvent, meta?: HarnessEventMeta): AppEvent | undefined {
+    const kind = kindFor(event, meta);
     if (!kind) {
       return undefined;
     }
@@ -117,9 +118,9 @@ export class CodexStrategy implements AgentStrategy {
       sessionId: event.session_id,
       toolName: event.tool_name,
       isEditTool: EDIT_TOOLS.has(event.tool_name ?? ""),
-      // Present only on a plan-gate request (the Codex adapter injects it from the stashed
-      // update_plan steps); absent on every ordinary event.
-      planText: event.plan_markdown,
+      // Present only on a plan-mode Stop (the Codex adapter recovers it from the rollout transcript's
+      // Plan item and passes it in `meta`, never merged into the raw event); absent otherwise.
+      planText: meta?.planMarkdown,
       // Codex reports neither background tasks nor session crons — the false-turn-end protection has
       // only subagent events to work with (typed defensively; shapes unverified).
       backgroundTaskCount: 0,
@@ -140,10 +141,13 @@ export class CodexStrategy implements AgentStrategy {
 }
 
 /** Codex signals a plan proposal by finishing a turn (Stop) while in plan collaboration mode — there
- *  is no ExitPlanMode tool. Classify that edge to planProposal here so the shared state machine never
- *  matches on permission_mode. Every other event maps by its hook name. */
-function kindFor(event: CodexHookEvent): AppEventKind | undefined {
-  if (event.hook_event_name === "Stop" && event.permission_mode === "plan") {
+ *  is no ExitPlanMode tool. The adapter's Stop hooks detect that via the rollout transcript and pass
+ *  the recovered plan in `meta.planMarkdown`; its PRESENCE (on a Stop) is the edge. We do NOT key on
+ *  `permission_mode === "plan"` — that field is approval-policy-only and never carries "plan"
+ *  (source-verified, codex-rs rust-v0.144.1; see the codex-plangate findings), so such a check would
+ *  be dead code. Every other event maps by its hook name. */
+function kindFor(event: CodexHookEvent, meta?: HarnessEventMeta): AppEventKind | undefined {
+  if (event.hook_event_name === "Stop" && meta?.planMarkdown !== undefined) {
     return "planProposal";
   }
   return CODEX_KIND[event.hook_event_name];

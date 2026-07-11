@@ -2,9 +2,9 @@
 "use strict";
 
 // The Codex turn-end fork, registered on the Stop hook (alongside the passive on-event.js). Codex
-// has no ExitPlanMode/PermissionRequest plan event and no separate review gate, so ONE script keys
-// off the Stop payload's permission_mode to serve both surfaces. Fails OPEN everywhere (any socket
-// / timeout / malformed error lets the agent stop) so a normal turn-end is never stalled.
+// has no ExitPlanMode/PermissionRequest plan event and no separate review gate, so ONE script serves
+// both surfaces off the Stop payload. Fails OPEN everywhere (any socket / timeout / malformed error
+// lets the agent stop) so a normal turn-end is never stalled.
 //
 // Codex Stop decision shape (empirically CONFIRMED Claude-identical, codex-cli 0.144.1):
 //   allow: exit 0 with no output.
@@ -13,18 +13,19 @@
 //
 // Fork:
 //   - stop_hook_active === true            -> allow (this Stop is our own block's re-injected follow-up).
-//   - permission_mode === "plan"           -> PLAN GATE: send plan.review.request with the composed
-//                                             plan markdown (last_assistant_message prose + the
-//                                             stashed update_plan checklist); allow -> emit nothing
-//                                             (stop proceeds, Codex stays in plan mode; the user exits
-//                                             it manually); deny -> block with the feedback (agent
-//                                             revises the plan).
+//   - readPlanTurn().isPlanTurn === true   -> PLAN GATE: the ONLY plan-mode signal is the rollout
+//                                             transcript (permission_mode is approval-policy-only and
+//                                             never "plan", last_assistant_message is null, update_plan
+//                                             is rejected in plan mode — see codex-plangate findings).
+//                                             Send plan.review.request with the adapter-injected
+//                                             plan_markdown (the transcript's Plan item); allow -> emit
+//                                             nothing (stop proceeds, Codex stays in plan mode; the
+//                                             user exits it manually); deny -> block with the feedback
+//                                             (agent revises the plan).
 //   - otherwise                            -> REVIEW GATE: stop.gate.request, block/allow like the
 //                                             Claude adapter's on-review-gate.js.
 
 const crypto = require("node:crypto");
-const fs = require("node:fs");
-const path = require("node:path");
 
 const bridge = require("./bridge.js");
 
@@ -41,33 +42,6 @@ function allow() {
 /** Block the stop and feed the reason back to Codex so it keeps going. */
 function block(reason) {
   process.stdout.write(JSON.stringify({ decision: "block", reason }) + "\n", () => process.exit(0));
-}
-
-/** Best-effort read of the update_plan checklist stashed by on-plan-stash.js. */
-function readStashedPlan(sessionId) {
-  try {
-    const file = path.join(bridge.stateDir(), "codex-plans", `${sessionId}.json`);
-    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
-    return typeof parsed.plan_markdown === "string" ? parsed.plan_markdown : "";
-  } catch {
-    return "";
-  }
-}
-
-/**
- * Compose the plan markdown shown in the gate. The Stop payload's `last_assistant_message` is the
- * plan PROSE (empirically the primary plan text); the stashed `update_plan` array is a structured
- * step CHECKLIST. Prefer the prose, appending the checklist under a heading when both exist; fall
- * back to whichever is present (stash-only when the model never wrote a closing message). Composition
- * stays plugin-side so the gate event is self-contained (plan_markdown unchanged on the wire).
- */
-function composePlanText(lastAssistantMessage, stashMarkdown) {
-  const prose = typeof lastAssistantMessage === "string" ? lastAssistantMessage.trim() : "";
-  const checklist = typeof stashMarkdown === "string" ? stashMarkdown.trim() : "";
-  if (prose && checklist) {
-    return `${prose}\n\n## Plan\n\n${checklist}`;
-  }
-  return prose || checklist;
 }
 
 /** REVIEW GATE: ask the extension whether a turn-end review should block; fail open on any error. */
@@ -115,8 +89,9 @@ async function reviewGate(event, target) {
   });
 }
 
-/** PLAN GATE: present the stashed plan and block until the user approves or requests changes. */
-async function planGate(event, target) {
+/** PLAN GATE: present the plan (recovered from the rollout transcript) and block until the user
+ *  approves or requests changes. */
+async function planGate(event, target, planMarkdown) {
   let conn;
   try {
     const key = bridge.repoKey(target.repoRoot);
@@ -156,9 +131,6 @@ async function planGate(event, target) {
     }
   });
 
-  // Self-contained gate event per the seam invariant: the raw Stop payload plus the adapter-injected
-  // plan_markdown (Codex's Stop carries no plan of its own) composed from the message prose + stash.
-  const planText = composePlanText(event.last_assistant_message, readStashedPlan(event.session_id));
   bridge.sendLine(conn.sock, {
     t: "plan.review.request",
     v: bridge.PLUGIN_VERSION,
@@ -166,7 +138,8 @@ async function planGate(event, target) {
     ts: bridge.nowIso(),
     harness: "codex",
     repoRoot: target.repoRoot,
-    event: { ...event, plan_markdown: planText },
+    event,
+    meta: { planMarkdown: planMarkdown ?? "" },
   });
 }
 
@@ -192,8 +165,11 @@ async function main() {
     return;
   }
 
-  if (event.permission_mode === "plan") {
-    await planGate(event, target);
+  // The rollout transcript is the ONLY reliable plan-mode discriminator (see readPlanTurn / the
+  // codex-plangate findings). Fail-closed there means fail-open here: any transcript doubt -> review.
+  const { isPlanTurn, planMarkdown } = bridge.readPlanTurn(event.transcript_path, event.turn_id);
+  if (isPlanTurn) {
+    await planGate(event, target, planMarkdown);
   } else {
     await reviewGate(event, target);
   }

@@ -153,9 +153,13 @@
   param to its own dialect — allowed only because TS checks method params bivariantly. This is NOT
   compile-time-sound: the runtime `harness` tag guarantees a strategy only ever gets its own dialect,
   and per-harness mapper fixture suites (built from empirically-pinned payloads via
-  `src/test/harnessFixtures.ts`) are the safety net. `plan_markdown` (Codex/OpenCode) and
-  `parentSessionID` (OpenCode) are documented as ADAPTER/PLUGIN-injected, not part of the harness's
-  own payload. **Each dialect type is defined IN its strategy file** (`ClaudeCode*` in
+  `src/test/harnessFixtures.ts`) are the safety net. Adapter-injected enrichment (a Codex plan
+  recovered from a transcript, an OpenCode child→parent correlation) is NEVER merged into `event` —
+  `event` is BY DEFINITION the harness's own untouched payload — it rides ALONGSIDE in the envelope's
+  optional `meta: HarnessEventMeta` (`{ planMarkdown?, parentSessionId? }`), passed to `toAppEvent` as
+  a second arg. The one exception isn't an exception: OpenCode's fully SYNTHETIC events (`paireto.
+  plan.submitted`, `tool.execute.*`) are the plugin's OWN dialect, so a field like `plan_markdown` on
+  the synthetic plan event touches no raw harness payload. **Each dialect type is defined IN its strategy file** (`ClaudeCode*` in
   `ClaudeCodeStrategy.ts`, `Codex*` in `CodexStrategy.ts`, `OpenCode*` in `OpenCodeStrategy.ts`) —
   agent-specific types belong with their one consumer; `protocol/types.ts` keeps `PLUGIN_VERSION`/
   `Harness`/the envelope + message types and imports the dialects TYPE-ONLY for the `HarnessHookEvent`
@@ -492,17 +496,24 @@
   `harness:"codex"`. Adding the harness on the extension side was just `new CodexStrategy()` in the
   locator — the AgentStrategy seam carries everything else.
 
-- **Codex has no plan/review hooks of its own, so ONE Stop-hook script (`on-stop-gate.js`) forks on
-  `permission_mode`.** `stop_hook_active` → allow (our block's follow-up); `permission_mode==="plan"`
-  → plan gate (deny = `{"decision":"block","reason"}`, allow = emit nothing so the stop proceeds and
-  Codex stays in plan mode — it has no settable approve mode); else the turn-end review gate, exactly
-  like Claude's `on-review-gate.js`. Plan text is COMPOSED plugin-side (self-contained gate event):
-  the Stop payload's `last_assistant_message` prose is primary, with the `update_plan` checklist
-  appended under a `## Plan` heading when present (`on-plan-stash.js`, PostToolUse `update_plan`,
-  renders the step array to `$XDG_STATE/paireto/codex-plans/<session_id>.json`); stash-only when the
-  message is empty. The composed string is injected as `plan_markdown`.
-  `CodexStrategy` maps `Stop`+`permission_mode==="plan"` → `planProposal` (planText = `plan_markdown`);
-  `isEditTool = {"apply_patch"}`; `supportsLiveness:false` (no MCP session id → silence sweep only).
+- **Codex has no plan/review hooks of its own, so ONE Stop-hook script (`on-stop-gate.js`) serves
+  both.** `stop_hook_active` → allow (our block's follow-up); a plan-mode turn → plan gate (deny =
+  `{"decision":"block","reason"}` so the agent revises; allow = emit nothing so the stop proceeds and
+  Codex stays in plan mode — no settable approve mode, and the "Implement this plan?" prompt is a
+  hook-invisible TUI selection, so approve only unblocks the Stop); else the turn-end review gate,
+  like Claude's `on-review-gate.js`. Plan-mode detection is via the ROLLOUT TRANSCRIPT
+  (`bridge.readPlanTurn`, matched on the Stop's `turn_id`), NOT `permission_mode` — that field is
+  approval-policy-only and NEVER carries "plan" (source-verified codex-rs rust-v0.144.1); a plan-mode
+  Stop's `last_assistant_message` is null and `update_plan` is rejected in plan mode (the old
+  `on-plan-stash.js` was thus dead weight — removed). Transcript records (both turn_id-keyed, flushed
+  before Stop): `event_msg`/`item_completed` with `item.type=="Plan"` carries the plan markdown
+  (primary, near the file end so a tail read catches it); `turn_context.collaboration_mode.mode=="plan"`
+  corroborates (written at turn start, may miss a tail window). The Plan item's `item.text` rides in
+  the envelope's `meta.planMarkdown` (ALONGSIDE the untouched raw Stop event, never merged in) — by
+  `on-stop-gate.js` for the gate and `on-event.js` for the forwarded telemetry — and its PRESENCE is
+  the edge. `CodexStrategy` maps `Stop` + `meta.planMarkdown` present → `planProposal` (planText =
+  `meta.planMarkdown`); `isEditTool = {"apply_patch"}`;
+  `supportsLiveness:false` (no MCP session id → silence sweep only).
 
 - **The Codex installer auto-trusts by writing the `trusted_hash` itself** — Codex silently skips
   untrusted hooks and has no non-interactive trust CLI, but the hash is deterministic
@@ -540,8 +551,9 @@
   `worktree "/"` in a non-git dir → the factory returns `{}`); resolves the per-repo socket from the
   canonicalized worktree byte-identically to `protocol/paths.ts`. The `event` hook forwards
   session/permission/file/user-message events fire-and-forget over ONE lazily-reconnected connection
-  (writes serialized), stamping each with the owning `sessionID` and — the one plugin-side
-  correlation — a `parentSessionID` for known child sessions. `tool.execute.before/after` are awaited
+  (writes serialized), stamping each with the owning `sessionID`; a known child session's — the one
+  plugin-side correlation — parent rides in the envelope's `meta.parentSessionId` (ALONGSIDE the raw
+  event, never a field on it). `tool.execute.before/after` are awaited
   hooks re-emitted as synthetic events that RETURN IMMEDIATELY. Liveness: a held-open `session.attach`
   connection per top-level session, closed on `session.deleted`/`server.instance.disposed`
   (`supportsLiveness:true`). Two custom tools BLOCK the agent via `execute():Promise<string>` —
@@ -551,11 +563,12 @@
 
 - **`OpenCodeStrategy` models a sub-agent as a full child SESSION.** `session.created` with no
   `info.parentID` → `sessionStart`; with one → `subagentStart {sessionId: parentID, agentId: childId}`.
-  Any event the plugin tagged with `parentSessionID` routes to the parent row carrying the child id as
+  Any event carrying a `meta.parentSessionId` routes to the parent row carrying the child id as
   `agentId` (so the `AgentSessionService` agentId-bailout keeps it off a top-level row); a child's
   `session.idle`/`deleted` → `subagentStop`. Top-level `session.idle` → `stop`, `session.deleted` →
   `sessionEnd`. `tool.execute.before(paireto_submit_plan)` and `paireto.plan.submitted` →
-  `planProposal` (planText from the gate event's `plan_markdown`). Top-level `session.idle` also maps
+  `planProposal` (planText from the synthetic gate event's `plan_markdown` — that event is the
+  plugin's OWN dialect, so the field is legitimate there). Top-level `session.idle` also maps
   to `stop` for the POST-HOC turn-end gate below. On plan approval `nextMode` = the target AGENT to
   switch to (not a permission mode); `defaultPlanApproveMode = "build"`.
 

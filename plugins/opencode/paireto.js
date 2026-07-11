@@ -8,9 +8,10 @@
 //   - The per-repo socket path is derived from the canonicalized worktree, BYTE-IDENTICAL to
 //     src/protocol/paths.ts (realpath both sides before hashing, or the hook talks to the wrong socket).
 //   - `event` forwards session/permission/file/message events fire-and-forget over ONE lazily-(re)opened
-//     connection, writes serialized so they can't interleave, each stamped with the owning sessionID and
-//     (for a known child session) a parentSessionID — the ONE piece of cross-event correlation that has
-//     to live plugin-side (the extension's mapper is stateless per the seam invariant).
+//     connection, writes serialized so they can't interleave, each stamped with the owning sessionID; a
+//     known child session's parent correlation rides in the envelope's `meta.parentSessionId` (kept OUT
+//     of the raw event) — the ONE piece of cross-event correlation that has to live plugin-side (the
+//     extension's mapper is stateless per the seam invariant).
 //   - `tool.execute.before/after` are forwarded as synthetic events and RETURN IMMEDIATELY (they're
 //     awaited hooks — blocking here would stall every tool call).
 //   - Per top-level session it holds a dedicated `session.attach` liveness connection open; the OS
@@ -454,26 +455,28 @@ function createBridge(worktree) {
       .catch(() => {});
   }
 
-  /** Forward a raw/synthetic SDK event as a hook.event, stamping the owning sessionID + (for a known
-   *  child) parentSessionID. Events whose session can't be resolved are dropped. */
+  /** Forward a raw/synthetic SDK event as a hook.event, stamping the owning sessionID. A known-child
+   *  session's parent correlation rides in the envelope's `meta` (adapter-injected enrichment,
+   *  ALONGSIDE the raw event — never merged into it). Events whose session can't be resolved are
+   *  dropped. */
   function forwardEvent(type, event) {
     const sessionID = owningSessionId(event);
     if (!sessionID) {
       return;
     }
-    const forwarded = { type, properties: curatedProperties(event, sessionID) };
-    const parentID = parentOf.get(sessionID);
-    if (parentID) {
-      forwarded.parentSessionID = parentID;
-    }
-    forward({
+    const message = {
       t: "hook.event",
       v: PLUGIN_VERSION,
       ts: nowIso(),
       harness: "opencode",
       repoRoot,
-      event: forwarded,
-    });
+      event: { type, properties: curatedProperties(event, sessionID) },
+    };
+    const parentID = parentOf.get(sessionID);
+    if (parentID) {
+      message.meta = { parentSessionId: parentID };
+    }
+    forward(message);
   }
 
   /** Forward a synthetic tool.execute.before/after event (awaited hooks aren't on the event bus).
@@ -483,22 +486,20 @@ function createBridge(worktree) {
     if (typeof sessionID !== "string") {
       return;
     }
-    const forwarded = {
-      type,
-      properties: { sessionID, tool: input.tool, callID: input.callID },
-    };
-    const parentID = parentOf.get(sessionID);
-    if (parentID) {
-      forwarded.parentSessionID = parentID;
-    }
-    forward({
+    const message = {
       t: "hook.event",
       v: PLUGIN_VERSION,
       ts: nowIso(),
       harness: "opencode",
       repoRoot,
-      event: forwarded,
-    });
+      event: { type, properties: { sessionID, tool: input.tool, callID: input.callID } },
+    };
+    // Parent correlation rides in meta, ALONGSIDE the raw event — never merged into it.
+    const parentID = parentOf.get(sessionID);
+    if (parentID) {
+      message.meta = { parentSessionId: parentID };
+    }
+    forward(message);
   }
 
   // ---- liveness ----------------------------------------------------------

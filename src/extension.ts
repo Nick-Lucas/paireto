@@ -168,7 +168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       // Render the unmappable event via the strategy (msg.event is the harness-dialect union, so its
       // fields aren't uniformly accessible here — the strategy knows its own dialect).
       const strategy = locator.strategyFor(msg.harness);
-      const event = strategy.toAppEvent(msg.event);
+      const event = strategy.toAppEvent(msg.event, msg.meta);
       if (!event) {
         log.info(`hook event dropped (unmappable ${strategy.describeEvent(msg.event)})`);
         return;
@@ -177,7 +177,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     onPlanReviewRequest: (msg, signal) => {
       const strategy = locator.strategyFor(msg.harness);
-      const event = strategy.toAppEvent(msg.event);
+      const event = strategy.toAppEvent(msg.event, msg.meta);
       if (!event) {
         // Unmappable plan-gate request — fail open (allow) so the agent isn't left blocked.
         log.info(`plan review allowed (unmappable ${strategy.describeEvent(msg.event)})`);
@@ -213,7 +213,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onStopGate: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
       const strategy = locator.strategyFor(msg.harness);
-      const event = strategy.toAppEvent(msg.event);
+      const event = strategy.toAppEvent(msg.event, msg.meta);
       if (!event) {
         // Unmappable stop-gate request — fail open (allow the stop) so the agent isn't left blocked.
         log.info(`stop gate allowed (unmappable ${strategy.describeEvent(msg.event)})`);

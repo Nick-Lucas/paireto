@@ -1,8 +1,8 @@
 // Codex mapper fixture suite, built from the EXACT empirically-pinned payloads (codex-cli 0.144.1;
 // see the adapter empirical notes). The mapper is the one compile-time-unsound seam (method
 // bivariance narrows the wire union to Codex's dialect), so these fixtures are the safety net:
-// every kind, the plan-proposal edge (Stop-in-plan-mode with the adapter-injected plan_markdown),
-// the isEditTool=apply_patch classification, and the dropped-event cases.
+// every kind, the plan-proposal edge (a Stop carrying an adapter-recovered plan in meta.planMarkdown,
+// alongside the raw event), the isEditTool=apply_patch classification, and the dropped-event cases.
 
 import { CodexStrategy } from "../harness/CodexStrategy.js";
 import type { CodexHookEvent } from "../harness/CodexStrategy.js";
@@ -106,15 +106,25 @@ suite("CodexStrategy mapper fixtures", () => {
       expect: { kind: "stop", backgroundTaskCount: 0, sessionCronCount: 0 },
     },
     {
-      name: "Stop + permission_mode plan → planProposal with adapter-injected plan_markdown",
+      name: "Stop + adapter-injected meta.planMarkdown → planProposal with planText",
       raw: {
         ...base,
-        permission_mode: "plan",
         hook_event_name: "Stop",
         stop_hook_active: false,
-        plan_markdown: "- [x] inspect\n- [ ] finish _(in progress)_",
       } as CodexHookEvent,
+      // The recovered plan rides in meta (alongside the raw Stop), never merged into the event.
+      meta: { planMarkdown: "- [x] inspect\n- [ ] finish _(in progress)_" },
       expect: { kind: "planProposal", planText: "- [x] inspect\n- [ ] finish _(in progress)_" },
+    },
+    {
+      name: "Stop with NO meta → plain stop (no plan proposal, no planText)",
+      raw: {
+        ...base,
+        hook_event_name: "Stop",
+        stop_hook_active: false,
+        last_assistant_message: "done",
+      } as CodexHookEvent,
+      expect: { kind: "stop", planText: undefined },
     },
     {
       name: "an unsubscribed hook name is dropped (Codex has no Notification hook)",

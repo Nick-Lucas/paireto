@@ -4,7 +4,7 @@
 // event. Everything downstream consumes only AppEvent; strategies are resolved through the
 // AgentServiceLocator. Adding a harness means adding a strategy here, nothing else.
 
-import type { HarnessHookEvent } from "../protocol/types.js";
+import type { HarnessEventMeta, HarnessHookEvent } from "../protocol/types.js";
 import type { Harness } from "../protocol/types.js";
 import type { AppEvent } from "./appEvent.js";
 
@@ -22,8 +22,10 @@ export interface AgentStrategy {
    *  by AgentSessionService's silence-based sweep-removal, so the service reads this to decide. */
   readonly supportsLiveness: boolean;
   /** Map one raw hook payload into the common representation; undefined = not relevant, drop it. A
-   *  harness forwarding an event firehose keeps its relevance filter HERE, not in its plugin. */
-  toAppEvent(event: HarnessHookEvent): AppEvent | undefined;
+   *  harness forwarding an event firehose keeps its relevance filter HERE, not in its plugin. `meta`
+   *  carries adapter-injected enrichment kept OUT of the raw `event` (see {@link HarnessEventMeta});
+   *  a strategy that needs none ignores it. */
+  toAppEvent(event: HarnessHookEvent, meta?: HarnessEventMeta): AppEvent | undefined;
   /** One-line rendering of a raw inbound event for the bridge debug log (event name + context). */
   describeEvent(event: HarnessHookEvent): string;
 }

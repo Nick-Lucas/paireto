@@ -10,8 +10,7 @@
       { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
     ],
     "PostToolUse": [
-      { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] },
-      { "matcher": "update_plan", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-plan-stash.js\"", "timeout": 5 }] }
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
     ],
     "PermissionRequest": [
       { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }

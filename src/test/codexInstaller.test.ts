@@ -85,12 +85,6 @@ const TEMPLATE = JSON.stringify({
         matcher: "*",
         hooks: [{ type: "command", command: 'node "{{PAIRETO_SCRIPTS}}/on-event.js"', timeout: 5 }],
       },
-      {
-        matcher: "update_plan",
-        hooks: [
-          { type: "command", command: 'node "{{PAIRETO_SCRIPTS}}/on-plan-stash.js"', timeout: 5 },
-        ],
-      },
     ],
     Stop: [
       {
@@ -126,7 +120,7 @@ suite("resolveCodexGroups", () => {
     const post = groups.filter((g) => g.event === "PostToolUse");
     assert.deepStrictEqual(
       post.map((g) => g.matcher),
-      ["*", "update_plan"],
+      ["*"],
     );
     const stop = groups.find((g) => g.event === "Stop");
     assert.deepStrictEqual(
@@ -153,11 +147,11 @@ suite("mergeCodexHooks — create / append / preserve / dedupe", () => {
       "SessionStart",
       "Stop",
     ]);
-    // PostToolUse: two groups, both ours, at indices 0 and 1.
+    // PostToolUse: one group, ours, at index 0.
     const post = placements.filter((p) => p.event === "PostToolUse");
     assert.deepStrictEqual(
       post.map((p) => p.groupIndex),
-      [0, 1],
+      [0],
     );
     // Stop group has two handlers.
     const stop = placements.find((p) => p.event === "Stop");
@@ -205,9 +199,9 @@ suite("mergeCodexHooks — create / append / preserve / dedupe", () => {
     const parsed = parse(second.text) as { hooks: Record<string, unknown[]> };
     assert.ok(!second.text.includes("/stable/codex/0.1.0/scripts"), "stale version gone");
     assert.ok(second.text.includes("/stable/codex/0.4.0/scripts"), "current version present");
-    // SessionStart has exactly one (our) group, PostToolUse exactly two — no accumulation.
+    // SessionStart has exactly one (our) group, PostToolUse exactly one — no accumulation.
     assert.strictEqual(parsed.hooks.SessionStart.length, 1);
-    assert.strictEqual(parsed.hooks.PostToolUse.length, 2);
+    assert.strictEqual(parsed.hooks.PostToolUse.length, 1);
   });
 
   test("keeps a foreign group registered AFTER ours at its index on upgrade", () => {
@@ -248,7 +242,6 @@ suite("codexTrustEntries", () => {
     assert.ok(keys.includes("/home/.codex/hooks.json:stop:0:0"));
     assert.ok(keys.includes("/home/.codex/hooks.json:stop:0:1"));
     assert.ok(keys.includes("/home/.codex/hooks.json:post_tool_use:0:0"));
-    assert.ok(keys.includes("/home/.codex/hooks.json:post_tool_use:1:0"));
     assert.ok(keys.includes("/home/.codex/hooks.json:session_start:0:0"));
     assert.ok(
       entries.every((e) => e.hash.startsWith("sha256:")),

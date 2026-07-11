@@ -79,8 +79,6 @@ async function main() {
     return; // unreachable — drop silently
   }
 
-  // Pass the raw Codex hook payload through as-is — field-specific processing (tool classification,
-  // plan text, permission_mode edges) happens in the extension's CodexStrategy, not here.
   const message = {
     t: "hook.event",
     v: bridge.PLUGIN_VERSION,
@@ -89,6 +87,13 @@ async function main() {
     repoRoot: target.repoRoot,
     event,
   };
+
+  if (event.hook_event_name === "Stop") {
+    const { isPlanTurn, planMarkdown } = bridge.readPlanTurn(event.transcript_path, event.turn_id);
+    if (isPlanTurn) {
+      message.meta = { planMarkdown: planMarkdown ?? "" };
+    }
+  }
 
   await new Promise((resolve) => {
     conn.sock.write(JSON.stringify(message) + "\n", () => {
