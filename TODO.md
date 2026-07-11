@@ -139,6 +139,7 @@ Waiting for the exploration agent to finish mapping the existing session-boot ma
 * If possible: when doing a Go To Definition from within a diff, if the target file also has a diff we should open the diff instead by default
 * Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
 * support multi-repo vs code workspaces
+* support a paireto-review-consume skill which consumes the already added comments instead of starting a blocking review
 
 # Feature Ideas:
 
