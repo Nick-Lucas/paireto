@@ -560,8 +560,13 @@
   switch to (not a permission mode); `defaultPlanApproveMode = "build"`.
 
 - **OpenCode automation = plugin instructs the agent itself (zero user setup); pure decision helpers
-  exported from `paireto.js` + unit-tested (`openCodeAutomation.test.ts` dynamic-imports the shipped
-  JS).** Why: OpenCode has no ExitPlanMode gate to intercept on 1.15.10, so — mirroring the vendored
+  unit-tested via the `_internals` export (`openCodeAutomation.test.ts` dynamic-imports the shipped
+  JS).** `paireto.js` must expose ONLY loader-safe exports: OpenCode invokes EVERY export as a plugin
+  factory `fn(input, options)` and hard-errors on non-function exports ("Plugin export is not a
+  function") — directly-exported helpers crashed opencode's boot (read their params off the wrong
+  objects). Helpers therefore ride `_internals`, an inert callable plugin (`async () => ({})`) with
+  the helpers attached as properties; an export-shape test locks this. Why the automation:
+  OpenCode has no ExitPlanMode gate to intercept on 1.15.10, so — mirroring the vendored
   plannotator plugin — a `config` hook scopes `paireto_submit_plan` to planning agents (`primary_tools`
   + per-agent allow/deny; in-place permission mutation, never a spread, to dodge the string-vs-object
   hazard), and `experimental.chat.system.transform` appends a lean planning prompt for a resolved

@@ -13,11 +13,42 @@ import { pathToFileURL } from "node:url";
 const pluginPath = path.resolve(__dirname, "../../plugins/opencode/paireto.js");
 
 // The plugin is plain JS with no type surface — the dynamic import resolves to `any`.
+let full: any;
 let mod: any;
 
 suite("OpenCode adapter automation helpers", () => {
   suiteSetup(async () => {
-    mod = await import(pathToFileURL(pluginPath).href);
+    full = await import(pathToFileURL(pluginPath).href);
+    mod = full._internals;
+  });
+
+  suite("module export shape (OpenCode loader contract)", () => {
+    // OpenCode's plugin loader treats EVERY export as a plugin factory: functions are invoked as
+    // `fn(pluginInput, options)` (a directly-exported helper crashes the boot — seen live:
+    // "failed to load plugin ... evaluating 'planningAgents'"), and a NON-function export is a
+    // hard load error too ("Plugin export is not a function", also seen live). So every export
+    // must be a function whose call is safe under the loader: the real factory, plus _internals —
+    // an inert no-op plugin (async () => ({})) carrying the test-only helpers as properties.
+    test("every export is a loader-safe function", () => {
+      const exportNames = Object.keys(full).sort();
+      assert.deepStrictEqual(exportNames, ["PairetoOpenCode", "_internals"]);
+      for (const name of exportNames) {
+        assert.strictEqual(typeof full[name], "function", name);
+      }
+    });
+
+    test("_internals is an inert plugin (empty hooks) carrying the helpers", async () => {
+      assert.deepStrictEqual(await full._internals({}), {});
+      for (const name of [
+        "applyOpenCodeConfig",
+        "shouldInjectPlanningPrompt",
+        "planToolArgs",
+        "stopGateInjectionReason",
+        "isChildSession",
+      ]) {
+        assert.strictEqual(typeof full._internals[name], "function", name);
+      }
+    });
   });
 
   suite("applyOpenCodeConfig (plan-tool scoping)", () => {

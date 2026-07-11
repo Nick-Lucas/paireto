@@ -69,7 +69,7 @@ call blocks until the user approves or requests changes; on changes, revise and 
 
 /** Dedup a raw `experimental.primary_tools` value into a clean string array (drops non-strings /
  *  blanks / duplicates). Anything not an array reads as empty — we only ever ADD our tool. */
-export function normalizePrimaryTools(value) {
+function normalizePrimaryTools(value) {
   if (!Array.isArray(value)) {
     return [];
   }
@@ -93,7 +93,7 @@ export function normalizePrimaryTools(value) {
  *  can be a bare string (`"allow"`) as well as an object; a malformed/absent `permission` must not be
  *  spread (spreading a string yields `{0:"a",1:"l",…}`). We reset only when it isn't a usable object,
  *  then MUTATE IN PLACE (never spread) so existing per-tool entries survive untouched. */
-export function ensurePermission(agent) {
+function ensurePermission(agent) {
   if (!agent.permission || typeof agent.permission !== "object" || Array.isArray(agent.permission)) {
     agent.permission = {};
   }
@@ -102,7 +102,7 @@ export function ensurePermission(agent) {
 
 /** A non-planning agent that CAN run the plan tool if we don't deny it — anything not a subagent
  *  (primary / all / unset mode). Subagents never see the tool (it's in primary_tools). */
-export function isPrimaryCapableAgent(agent) {
+function isPrimaryCapableAgent(agent) {
   const mode = agent && typeof agent.mode === "string" ? agent.mode : undefined;
   return mode !== "subagent";
 }
@@ -116,7 +116,7 @@ export function isPrimaryCapableAgent(agent) {
  *   - `permission.<tool> = "deny"` for the built-in `build` agent and every other primary-capable
  *     agent already declared in the config.
  */
-export function applyOpenCodeConfig(config, planningAgents) {
+function applyOpenCodeConfig(config, planningAgents) {
   const existing = normalizePrimaryTools(config.experimental?.primary_tools);
   config.experimental = {
     ...config.experimental,
@@ -154,14 +154,14 @@ export function applyOpenCodeConfig(config, planningAgents) {
 
 /** True for the internal title-generation prompt (a short LLM call OpenCode makes with no real agent
  *  session) — we must never inject planning steering into it. Matches plannotator's substring check. */
-export function isTitleGeneratorPrompt(systemText) {
+function isTitleGeneratorPrompt(systemText) {
   const lower = (systemText || "").toLowerCase();
   return lower.includes("title generator") || lower.includes("generate a title");
 }
 
 /** The agent name of the LAST user message (that's the agent driving the current turn), or undefined.
  *  Messages come from `client.session.messages` as `{ info, parts }[]`. Mirrors plannotator. */
-export function getLastUserAgentFromMessages(messages) {
+function getLastUserAgentFromMessages(messages) {
   if (!Array.isArray(messages)) {
     return undefined;
   }
@@ -175,7 +175,7 @@ export function getLastUserAgentFromMessages(messages) {
 }
 
 /** The declared `mode` of a named agent from the cached `app.agents` list, or undefined if unknown. */
-export function agentModeFor(agentName, agents) {
+function agentModeFor(agentName, agents) {
   const list = Array.isArray(agents) ? agents : [];
   const agent = list.find((a) => a && a.name === agentName);
   return agent && typeof agent.mode === "string" ? agent.mode : undefined;
@@ -183,7 +183,7 @@ export function agentModeFor(agentName, agents) {
 
 /** Whether to append the planning steering to this session's system prompt. Only a resolved,
  *  non-subagent PLANNING agent qualifies, and never the title-generator prompt. */
-export function shouldInjectPlanningPrompt({ agentName, isSubagent, isTitleGenerator, planningAgents }) {
+function shouldInjectPlanningPrompt({ agentName, isSubagent, isTitleGenerator, planningAgents }) {
   if (isTitleGenerator || isSubagent || !agentName) {
     return false;
   }
@@ -192,14 +192,14 @@ export function shouldInjectPlanningPrompt({ agentName, isSubagent, isTitleGener
 
 /** True when this session id is a KNOWN child (sub-)session — used to fire the post-hoc turn-end gate
  *  only for TOP-LEVEL sessions (a child's idle is a subagent finishing, not the user's turn ending). */
-export function isChildSession(sessionID, parentOf) {
+function isChildSession(sessionID, parentOf) {
   return !!sessionID && !!parentOf && parentOf.has(sessionID);
 }
 
 /** Map a stop.gate.response to the feedback to inject as a new user turn, or null to inject NOTHING.
  *  STRICT: only an explicit `block` with a non-empty reason injects — allow, a blank reason, the
  *  fail-open fallback (null), or any malformed message all resolve to "do nothing". */
-export function stopGateInjectionReason(msg) {
+function stopGateInjectionReason(msg) {
   if (msg && msg.decision === "block" && typeof msg.reason === "string" && msg.reason.trim()) {
     return msg.reason;
   }
@@ -212,7 +212,7 @@ export function stopGateInjectionReason(msg) {
  *  entry — it throws during JSON-schema advertisement and arg validation, so the plan text would
  *  never reach VS Code. When the SDK zod is unavailable (i.e. not running under OpenCode — unit
  *  tests) fall back to an empty shape (fail-open; the tool advertises no args instead of crashing). */
-export function planToolArgs(schema) {
+function planToolArgs(schema) {
   if (!schema || typeof schema.string !== "function") {
     return {};
   }
@@ -967,3 +967,23 @@ export const PairetoOpenCode = async ({ worktree, client, directory }) => {
     },
   };
 };
+
+// Test-only surface. OpenCode's plugin loader treats EVERY export as a plugin factory: a function
+// export is invoked as `fn(pluginInput, options)` (a bare helper then crashes the boot — it reads
+// its real parameters off the wrong objects), and a non-function export is a hard load error
+// ("Plugin export is not a function"). So the helpers ride an INERT plugin: a callable that
+// registers no hooks (async () => ({})), with the helpers attached as properties for the unit
+// tests to destructure.
+export const _internals = Object.assign(async () => ({}), {
+  normalizePrimaryTools,
+  ensurePermission,
+  isPrimaryCapableAgent,
+  applyOpenCodeConfig,
+  isTitleGeneratorPrompt,
+  getLastUserAgentFromMessages,
+  agentModeFor,
+  shouldInjectPlanningPrompt,
+  isChildSession,
+  stopGateInjectionReason,
+  planToolArgs,
+});
