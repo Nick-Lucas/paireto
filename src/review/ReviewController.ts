@@ -32,6 +32,7 @@ import { getAutoRevealSetting } from "../util/editorSettings.js";
 import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
+import { relocateReviewAnchor } from "./commentAnchors.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
 import { pickCompareTo, pickFileCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
@@ -77,6 +78,13 @@ export interface OpenDiffState {
   /** Encoded ContentRef token (HEAD, INDEX, a git ref, etc.) used by the base URI. */
   baseRef: string;
   baseLabel?: string;
+}
+
+interface OpenedReviewFile {
+  baseUri: vscode.Uri;
+  modifiedUri: vscode.Uri;
+  /** One URI for a single-pane add/delete, otherwise both diff sides. */
+  visibleUris: vscode.Uri[];
 }
 
 /** Editing always lands in the Working Tree; it must never silently rewrite the tab's baseline. */
@@ -468,7 +476,12 @@ export class ReviewController implements vscode.Disposable {
     if (!this.repoRoot) {
       return;
     }
-    const choice = await pickCompareTo(this.repoRoot, this.diff, this.store.getRecentRefs());
+    const choice = await pickCompareTo(
+      this.repoRoot,
+      this.diff,
+      this.store.getRecentRefs(),
+      this.compareTo,
+    );
     if (!choice) {
       return;
     }
@@ -491,14 +504,23 @@ export class ReviewController implements vscode.Disposable {
     if (!open) {
       return;
     }
-    const choice = await pickFileCompareTo(this.repoRoot, this.diff, this.store.getRecentRefs());
+    const choice = await pickFileCompareTo(
+      this.repoRoot,
+      this.diff,
+      this.store.getRecentRefs(),
+      open.baseRef,
+      open.baseLabel,
+    );
     if (!choice) {
       return;
     }
 
     let base: ContentRef;
     let label: string;
-    if (choice.kind === "index") {
+    if (choice.kind === "empty") {
+      base = { kind: "empty" };
+      label = "Empty";
+    } else if (choice.kind === "index") {
       base = { kind: "index" };
       label = "Index";
     } else if (choice.kind === "head") {
@@ -695,14 +717,13 @@ export class ReviewController implements vscode.Disposable {
    *  Paireto sidebar forward or moves the tree selection. */
   private syncSelectionToActiveTab(): void {
     this.syncActiveDiffContext();
-    if (!getAutoRevealSetting()) {
-      return;
-    }
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
     const key = reviewTabKey(input);
     const target = key ? this.openDiffs.get(key) : undefined;
     if (target) {
       this.openDiffFile = target;
+    }
+    if (target && getAutoRevealSetting()) {
       this.activeDiffEmitter.fire(target);
     }
   }
@@ -770,7 +791,7 @@ export class ReviewController implements vscode.Disposable {
        *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
       suppressActiveDiffEvent?: boolean;
     },
-  ): Promise<void> {
+  ): Promise<OpenedReviewFile | undefined> {
     if (!this.repoRoot) {
       return;
     }
@@ -860,7 +881,7 @@ export class ReviewController implements vscode.Disposable {
       });
       this.syncActiveDiffContext();
       void ensureCommentingVisible();
-      return;
+      return { baseUri, modifiedUri: modUri, visibleUris: [paneUri] };
     }
 
     // Remember which row this tab represents, so switching back to it re-selects the right row.
@@ -881,6 +902,7 @@ export class ReviewController implements vscode.Disposable {
     });
     this.syncActiveDiffContext();
     void ensureCommentingVisible();
+    return { baseUri, modifiedUri: modUri, visibleUris: [baseUri, modUri] };
   }
 
   /**
@@ -912,6 +934,7 @@ export class ReviewController implements vscode.Disposable {
     }
     const { side, relPath } = anchor;
     const line = reply.thread.range?.start.line ?? 0;
+    const open = this.openStateForCommentUri(uri, relPath);
 
     const doc = await vscode.workspace.openTextDocument(uri);
     const quote = line < doc.lineCount ? doc.lineAt(line).text : "";
@@ -937,8 +960,17 @@ export class ReviewController implements vscode.Disposable {
         contextAfter: anchorLines(line + 1, line + 3),
         lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
       },
+      attachment: open
+        ? {
+            group: open.group,
+            baseRef: open.baseRef,
+            baseLabel: open.baseLabel,
+            sourceUri: uri.toString(),
+          }
+        : undefined,
     };
-    const comment = this.commentSession.add(reply, kind, {
+    let comment: GateComment;
+    comment = this.commentSession.add(reply, kind, {
       id: model.id,
       onSaved: (newBody) => {
         model.body = newBody;
@@ -946,8 +978,9 @@ export class ReviewController implements vscode.Disposable {
       },
       onDeleted: () => {
         this.comments.delete(model.id);
-        if (reply.thread.comments.length === 0) {
-          this.commentSession.forget(reply.thread);
+        const thread = comment.thread;
+        if (thread?.comments.length === 0) {
+          this.commentSession.forget(thread);
         }
         this.changeEmitter.fire();
       },
@@ -977,22 +1010,164 @@ export class ReviewController implements vscode.Disposable {
     return undefined;
   }
 
+  /** Resolve the exact open-tab state that produced a comment, especially for partially staged files. */
+  private openStateForCommentUri(uri: vscode.Uri, relPath: string): OpenDiffState | undefined {
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    if (
+      input instanceof vscode.TabInputTextDiff &&
+      (input.original.toString() === uri.toString() || input.modified.toString() === uri.toString())
+    ) {
+      return this.openDiffs.get(input.original.toString());
+    }
+    if (input instanceof vscode.TabInputText && input.uri.toString() === uri.toString()) {
+      const tracked = this.openDiffs.get(input.uri.toString());
+      if (tracked) {
+        return tracked;
+      }
+    }
+    // A plain changed-file editor is also commentable. Derive its natural Working Tree attachment
+    // instead of borrowing whichever diff happened to be focused previously.
+    const file = selectCommentFile(
+      this.changes,
+      relPath,
+      uri.scheme === "file" ? "unstaged" : undefined,
+    );
+    if (!file) {
+      return undefined;
+    }
+    const base = this.diff.fileSides(file, this.changes.compareRef).base;
+    return {
+      path: file.path,
+      group: file.group,
+      baseRef: DiffService.encodeRef(base),
+      baseLabel: file.group === "committed" ? this.changes.compareLabel : comparisonLabel(base),
+    };
+  }
+
   /** Reveal a feedback row's line in its diff and expand the comment thread. */
   private async revealComment(c: ReviewComment): Promise<void> {
-    const file = this.allFiles().find((f) => f.path === c.filePath);
+    const entry = this.comments.get(c.id);
+    if (!entry?.comment.thread || !this.repoRoot) {
+      return;
+    }
+
+    await this.refresh("reveal-comment");
+    const file = selectCommentFile(this.changes, c.filePath, c.attachment?.group);
+    let targetUri: vscode.Uri | undefined;
+    let revealSurface: "review" | "fallback" = "fallback";
+    let migratedAttachment: { file: ChangedFile; baseRef: string; baseLabel?: string } | undefined;
     if (file) {
-      await this.openDiff(file);
+      const baseRef = c.attachment?.baseRef;
+      const opened = await this.openDiff(file, {
+        baseComparison: baseRef
+          ? {
+              ref: DiffService.decodeRef(baseRef),
+              label: c.attachment?.baseLabel ?? comparisonLabel(DiffService.decodeRef(baseRef)),
+            }
+          : undefined,
+        skipRefresh: true,
+      });
+      if (opened) {
+        revealSurface = "review";
+        const requested = c.side === "base" ? opened.baseUri : opened.modifiedUri;
+        targetUri = opened.visibleUris.some((uri) => uri.toString() === requested.toString())
+          ? requested
+          : opened.visibleUris[0];
+        const naturalBase = this.diff.fileSides(file, this.changes.compareRef).base;
+        migratedAttachment = {
+          file,
+          baseRef: baseRef ?? DiffService.encodeRef(naturalBase),
+          baseLabel: c.attachment?.baseLabel ?? comparisonLabel(naturalBase),
+        };
+      }
+    }
+    targetUri ??= await this.fallbackCommentUri(c, entry.comment.thread.uri);
+    if (!targetUri) {
+      return; // original live thread remains untouched
+    }
+
+    let doc: vscode.TextDocument;
+    try {
+      doc = await vscode.workspace.openTextDocument(targetUri);
+    } catch {
+      return; // never dispose/repoint the original thread unless its replacement can be opened
+    }
+    const lines = Array.from({ length: doc.lineCount }, (_, i) => doc.lineAt(i).text);
+    const line = relocateReviewAnchor(lines, c.line, c.anchor);
+    const lineText = line < doc.lineCount ? doc.lineAt(line).text : "";
+    const range = new vscode.Range(line, 0, line, lineText.length);
+    const attachedPath = migratedAttachment?.file.path ?? c.filePath;
+    const label = `${attachedPath}:${line + 1}`;
+    const thread = this.commentSession.reattach(entry.comment, targetUri, range, label);
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    c.line = line;
+    if (migratedAttachment) {
+      // Only commit metadata after the replacement thread exists, so failed migrations are harmless.
+      c.filePath = migratedAttachment.file.path;
+      c.attachment = {
+        group: migratedAttachment.file.group,
+        baseRef: migratedAttachment.baseRef,
+        baseLabel: migratedAttachment.baseLabel,
+        sourceUri: targetUri.toString(),
+      };
+    } else if (c.attachment) {
+      c.attachment.sourceUri = targetUri.toString();
+    }
+
+    // openDiff already opened the target inside its diff/single review surface. Opening that side URI
+    // again would make VS Code materialize a duplicate plain-file tab.
+    if (shouldOpenStandaloneCommentTarget(revealSurface)) {
+      await vscode.commands.executeCommand("vscode.open", targetUri, { preview: false });
     }
     const editor = vscode.window.activeTextEditor;
-    if (editor) {
-      const pos = new vscode.Position(c.line, 0);
+    if (editor?.document.uri.toString() === targetUri.toString()) {
+      const pos = new vscode.Position(line, 0);
       editor.selection = new vscode.Selection(pos, pos);
       editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
     }
-    const entry = this.comments.get(c.id);
-    if (entry?.comment.thread) {
-      entry.comment.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    void ensureCommentingVisible();
+  }
+
+  /** Best-effort home when the file no longer appears in any Changes group. */
+  private async fallbackCommentUri(
+    c: ReviewComment,
+    currentThreadUri: vscode.Uri,
+  ): Promise<vscode.Uri | undefined> {
+    if (!this.repoRoot) {
+      return undefined;
     }
+    const candidates: vscode.Uri[] = [];
+    if (c.side === "modified") {
+      candidates.push(vscode.Uri.file(join(this.repoRoot, c.filePath)));
+    }
+    if (c.attachment?.sourceUri) {
+      candidates.push(vscode.Uri.parse(c.attachment.sourceUri));
+    }
+    candidates.push(currentThreadUri);
+    const historicalBase = ReviewContentProvider.buildUri(
+      this.reviewId,
+      "base",
+      c.filePath,
+      c.attachment?.baseRef && c.attachment.baseRef !== "EMPTY" ? c.attachment.baseRef : "HEAD",
+      this.repoRoot,
+    );
+    candidates.push(historicalBase);
+
+    const seen = new Set<string>();
+    for (const candidate of candidates) {
+      const key = candidate.toString();
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      try {
+        await vscode.workspace.openTextDocument(candidate);
+        return candidate;
+      } catch {
+        // Try the next durable representation; the original thread has not been changed.
+      }
+    }
+    return undefined;
   }
 
   /** Delete a comment from the Feedback tree row (its in-diff thread also drops it). */
@@ -1134,6 +1309,39 @@ function comparisonLabel(ref: ContentRef): string {
     case "ref":
       return ref.ref;
   }
+}
+
+/**
+ * Find the current incarnation of a commented file. Its attachment group wins when the path appears
+ * in multiple layers; otherwise prefer the newest available content and follow Git rename metadata.
+ */
+export function selectCommentFile(
+  changes: ChangesModel,
+  filePath: string,
+  preferredGroup?: FileGroup,
+): ChangedFile | undefined {
+  const order: FileGroup[] = preferredGroup
+    ? [
+        preferredGroup,
+        ...(["unstaged", "staged", "committed"] as FileGroup[]).filter(
+          (group) => group !== preferredGroup,
+        ),
+      ]
+    : ["unstaged", "staged", "committed"];
+  for (const group of order) {
+    const file = changes[group].find((candidate) =>
+      [candidate.path, candidate.oldPath].includes(filePath),
+    );
+    if (file) {
+      return file;
+    }
+  }
+  return undefined;
+}
+
+/** Only historical/current-file fallbacks need an editor open; review targets are already visible. */
+export function shouldOpenStandaloneCommentTarget(surface: "review" | "fallback"): boolean {
+  return surface === "fallback";
 }
 
 /**

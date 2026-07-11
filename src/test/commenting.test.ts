@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 
 import { fullDocumentCommentingRanges } from "../comments/commentingRanges.js";
 import {
+  CommentSession,
   GateComment,
   editComment,
   saveComment,
@@ -121,6 +122,40 @@ suite("commenting integration", () => {
       thread.dispose();
     } finally {
       controller.dispose();
+    }
+  });
+
+  test("reattach moves the same live comment to a replacement document without losing it", async () => {
+    const session = new CommentSession("paireto-test-reattach", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const oldDoc = await openDoc(3);
+      const newDoc = await openDoc(6);
+      const oldThread = session.controller.createCommentThread(
+        oldDoc.uri,
+        new vscode.Range(1, 0, 1, 0),
+        [],
+      );
+      const comment = new GateComment("keep me", "comment");
+      comment.thread = oldThread;
+      oldThread.comments = [comment];
+
+      const replacement = session.reattach(
+        comment,
+        newDoc.uri,
+        new vscode.Range(4, 0, 4, 6),
+        "file.ts:5",
+      );
+
+      assert.strictEqual(comment.thread, replacement);
+      assert.strictEqual(replacement.uri.toString(), newDoc.uri.toString());
+      assert.strictEqual(replacement.range?.start.line, 4);
+      assert.deepStrictEqual(replacement.comments, [comment]);
+      assert.strictEqual(replacement.label, "file.ts:5");
+    } finally {
+      session.dispose();
     }
   });
 });

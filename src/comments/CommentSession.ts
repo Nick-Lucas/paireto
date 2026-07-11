@@ -124,6 +124,38 @@ export class CommentSession implements vscode.Disposable {
     return comment;
   }
 
+  /** Move a live comment to a new document/range without losing it when its backing diff changes. */
+  reattach(
+    comment: GateComment,
+    uri: vscode.Uri,
+    range: vscode.Range,
+    label: string,
+  ): vscode.CommentThread {
+    const old = comment.thread;
+    if (old?.uri.toString() === uri.toString()) {
+      old.range = range;
+      old.label = label;
+      return old;
+    }
+
+    // Create first: if VS Code rejects the new attachment, the original thread remains intact.
+    const replacement = this.controller.createCommentThread(uri, range, [comment]);
+    replacement.label = label;
+    replacement.collapsibleState =
+      old?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded;
+    this.threadSet.add(replacement);
+    comment.thread = replacement;
+
+    if (old) {
+      old.comments = old.comments.filter((item) => item !== comment);
+      if (old.comments.length === 0) {
+        this.threadSet.delete(old);
+        old.dispose();
+      }
+    }
+    return replacement;
+  }
+
   /** All tracked threads (plan collects per-thread; review tracks per-comment). */
   threads(): vscode.CommentThread[] {
     return [...this.threadSet];

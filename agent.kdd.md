@@ -342,6 +342,19 @@
   base URI to the index. Stage/unstage reconciliation also carries the same baseline forward. The
   editor-title **Compare To** action is the only way to change a tab's baseline and offers Index,
   HEAD, merge-base, default branch, recent refs, and arbitrary refs. The title names the active base.
+  Both Compare-To pickers use `createQuickPick` and set `activeItems` to the persisted/tab-local
+  value (`QuickPickItem.picked` is ignored for single-select); unknown current refs get an explicit
+  current-comparison row, and the nested branch/ref picker highlights the current ref too.
+
+- **Review comments own durable attachment metadata** (`group`, pinned `baseRef`/label, source URI)
+  in addition to their quote/context anchor. Sidebar reveal must use `selectCommentFile` so the saved
+  group wins for partially staged paths, then migrate across layer changes/renames. It re-scores the
+  saved quote and before/after context with `relocateReviewAnchor`, and `CommentSession.reattach`
+  creates the replacement thread before disposing the old one. Never delete a comment because its
+  original document or exact line is unavailable; fall back to current working content, the prior
+  URI, or a historical base document. Once `openDiff` has opened a review surface, reveal must not
+  call `vscode.open` on the side URI—it creates an unwanted duplicate plain-file tab; standalone
+  opening is reserved for the no-review-surface fallback.
 
 - **Diffs sync with git via one funnel: `refresh()` → `ReviewContentProvider.refreshAllOpen()`.** Do
   NOT add a custom `**/*` FileSystemWatcher (an earlier one pinned the CPU on autosave churn) — the

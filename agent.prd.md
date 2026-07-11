@@ -113,6 +113,11 @@ resolve with the same two actions.
   section. They don't start a review; the next review (turn-end or `/paireto-review`) consumes them.
   Commenting works whether or not the diff is editable; editability is purely structural (editable
   when the file has no lower-level change, locked otherwise) and a review never changes it.
+- **Durable comment links:** each sidebar comment remembers the Git layer and pinned comparison where
+  it was created. Revealing it prefers that exact layer when a path is both staged and unstaged,
+  follows later staging/unstaging/commits and detected renames, and relocates the live thread using
+  its saved quote plus surrounding context. If the code was rewritten or removed, the comment stays
+  attached at a safe nearby/current or historical location rather than being discarded.
 - **Resolved at turn-end:** when the agent finishes a turn in which it edited files (detected via the
   `PostToolUse` edit-tool hook), or you've left comments, it parks in review mode until you act —
   **Send Feedback** delivers your comments, **Approve** lets it finish with nothing sent. Nothing is
@@ -131,7 +136,8 @@ resolve with the same two actions.
   or any branch/ref via picker) and the **Flat / Tree** layout toggle are inline buttons on the
   Changed Files section row. Every open virtual review file also has its own **Compare To** title
   action (Index, HEAD, merge-base, default branch, recent ref, or any branch/ref); this changes only
-  that tab's pinned baseline.
+  that tab's pinned baseline. Both pickers initially highlight their current value; an arbitrary
+  current ref is included explicitly when it is not already a preset/recent item.
 - Per-file: open changes (row click), open file (first inline button on every row), stage, unstage,
   discard (confirm) + right-click menu.
 - Browsing diffs are **editable with full LSP** when the file has no change at a lower level

@@ -51,8 +51,12 @@ import {
   isFileEditable,
   markOpenDiffEdited,
   reconcileDiffTarget,
+  selectCommentFile,
+  shouldOpenStandaloneCommentTarget,
   shouldOpenTurnEndReview,
 } from "../review/ReviewController.js";
+import { relocateReviewAnchor } from "../review/commentAnchors.js";
+import { compareToEqual, currentFileCompareKind } from "../review/reviewSelectors.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
@@ -1543,6 +1547,111 @@ suite("open diff comparison stability", () => {
       markOpenDiffEdited({ path: "src/a.ts", group: "committed", baseRef: "origin/main" }),
       { path: "src/a.ts", group: "unstaged", baseRef: "origin/main" },
     );
+  });
+});
+
+suite("Compare To picker defaults", () => {
+  test("matches the persisted global comparison by kind and ref", () => {
+    assert.strictEqual(compareToEqual({ kind: "mergeBase" }, { kind: "mergeBase" }), true);
+    assert.strictEqual(
+      compareToEqual({ kind: "ref", ref: "origin/main" }, { kind: "ref", ref: "origin/main" }),
+      true,
+    );
+    assert.strictEqual(
+      compareToEqual({ kind: "ref", ref: "origin/main" }, { kind: "ref", ref: "main" }),
+      false,
+    );
+  });
+
+  test("recovers the semantic tab comparison when concrete refs overlap", () => {
+    assert.strictEqual(currentFileCompareKind("INDEX", "Index", "origin/main"), "index");
+    assert.strictEqual(currentFileCompareKind("HEAD", "HEAD", "origin/main"), "head");
+    assert.strictEqual(
+      currentFileCompareKind("abc123", "merge-base(origin/main)", "origin/main"),
+      "mergeBase",
+    );
+    assert.strictEqual(
+      currentFileCompareKind("origin/main", "origin/main", "origin/main"),
+      "default",
+    );
+    assert.strictEqual(currentFileCompareKind("feature", "feature", "origin/main"), "ref");
+  });
+});
+
+suite("durable review comment attachments", () => {
+  const changes = (overrides: Partial<ChangesModel>): ChangesModel => ({
+    staged: [],
+    unstaged: [],
+    committed: [],
+    compareLabel: "HEAD",
+    compareRef: null,
+    ...overrides,
+  });
+  const changed = (path: string, group: FileGroup, oldPath?: string): ChangedFile => ({
+    path,
+    oldPath,
+    group,
+    status: oldPath ? "R" : "M",
+    additions: 1,
+    deletions: 1,
+  });
+
+  test("a comment from Working Tree chooses that entry when the file is also staged", () => {
+    const staged = changed("src/a.ts", "staged");
+    const unstaged = changed("src/a.ts", "unstaged");
+    assert.strictEqual(
+      selectCommentFile(
+        changes({ staged: [staged], unstaged: [unstaged] }),
+        "src/a.ts",
+        "unstaged",
+      ),
+      unstaged,
+    );
+  });
+
+  test("a comment follows the file when its original Git group no longer exists", () => {
+    const staged = changed("src/a.ts", "staged");
+    assert.strictEqual(
+      selectCommentFile(changes({ staged: [staged] }), "src/a.ts", "unstaged"),
+      staged,
+    );
+  });
+
+  test("a comment follows a detected rename", () => {
+    const renamed = changed("src/new.ts", "unstaged", "src/old.ts");
+    assert.strictEqual(
+      selectCommentFile(changes({ unstaged: [renamed] }), "src/old.ts", "unstaged"),
+      renamed,
+    );
+  });
+
+  test("re-anchors an unchanged quoted line after lines are inserted above it", () => {
+    assert.strictEqual(
+      relocateReviewAnchor(["new", "before", "target", "after"], 1, {
+        lineText: "target",
+        contextBefore: ["before"],
+        contextAfter: ["after"],
+        lineHash: "unused",
+      }),
+      2,
+    );
+  });
+
+  test("keeps a comment visible at a safe nearby line when its quoted line was rewritten", () => {
+    assert.strictEqual(
+      relocateReviewAnchor(["before", "rewritten", "after"], 1, {
+        lineText: "target",
+        contextBefore: ["before"],
+        contextAfter: ["after"],
+        lineHash: "unused",
+      }),
+      1,
+    );
+  });
+
+  test("does not open a standalone file when the review diff already opened the target", () => {
+    assert.strictEqual(shouldOpenStandaloneCommentTarget("review"), false);
+    assert.strictEqual(shouldOpenStandaloneCommentTarget("fallback"), true);
   });
 });
 
