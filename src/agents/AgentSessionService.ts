@@ -5,15 +5,12 @@
 
 import * as vscode from "vscode";
 
-import {
-  transformHarnessEventToAppEvent,
-  type AppEvent,
-} from "../bridge/transformHarnessEventToAppEvent.js";
+import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
+import type { AppEvent } from "../harness/appEvent.js";
 import { log } from "../log.js";
 import { AgentSession, type AgentSessionHost } from "./AgentSession.js";
 import { NotificationService } from "../notify/NotificationService.js";
 import { canonicalize } from "../protocol/paths.js";
-import type { HookEventMessage } from "../protocol/types.js";
 import type { AgentState } from "../types.js";
 
 // Pure helpers re-exported for tests and co-located callers.
@@ -22,6 +19,7 @@ export {
   shouldNotify,
   stateForNotification,
   STALE_ACTIVE_MS_FOR_TEST,
+  LIVENESS_LESS_REMOVE_MS_FOR_TEST,
 } from "./AgentSession.js";
 
 /** How long an ended session's row lingers before it is removed from the panel. */
@@ -54,6 +52,9 @@ export class AgentSessionService implements vscode.Disposable {
   private readonly host: AgentSessionHost;
 
   constructor(
+    // Resolves the per-harness strategy so each new session is stamped with its supportsLiveness
+    // (the only thing the service reads off the strategy — see ingest / sweepStale).
+    private readonly locator: AgentServiceLocator,
     // Injectable so unit tests can simulate focus without a real window.
     isWindowFocused: () => boolean = () => vscode.window.state.focused,
     // Settle override for the stopped-edge ping (see debouncedStop.ts); tests pass 0.
@@ -71,21 +72,47 @@ export class AgentSessionService implements vscode.Disposable {
     this.sweepTimer.unref?.();
   }
 
-  /** Downgrade active sessions that have gone silent (e.g. after an un-hookable user interrupt). */
+  /** Downgrade active sessions that have gone silent (e.g. after an un-hookable user interrupt), and
+   *  REMOVE liveness-less sessions that have been silent past the removal window — the only cleanup
+   *  path for a harness with no process-death signal (Codex). Downgrade runs first so a silent active
+   *  session becomes idle before it can qualify for removal (see AgentSession.shouldRemoveAfterSilence). */
   private sweepStale(): void {
     const now = Date.now();
     let anyChanged = false;
-    for (const session of this.sessions.values()) {
+    for (const [id, session] of this.sessions) {
       anyChanged = session.sweepIfStale(now) || anyChanged;
+      if (this.sweepRemove(id, session, now)) {
+        anyChanged = true;
+      }
     }
     if (anyChanged) {
       this.changeEmitter.fire();
     }
   }
 
-  ingest(msg: HookEventMessage): void {
-    const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
+  /** Remove a liveness-less session the sweep found dead, and report whether it did. This is the
+   *  BACKSTOP, not the primary signal: Codex's bundled MCP liveness server holds a socket per session
+   *  (keyed off a pid-scoped handoff file plugin-side), so process death normally lands as an instant
+   *  detachSession → removeSession. The silence timeout only covers a session whose liveness server
+   *  never attached (crashed/killed independently of Codex) — and a session with a live attachment is
+   *  explicitly exempt, however long it idles: the held socket IS proof of life. Liveness-capable
+   *  harnesses (supportsLiveness) never qualify at all. */
+  private sweepRemove(id: string, session: AgentSession, now: number): boolean {
+    if ((this.attachCounts.get(id) ?? 0) > 0) {
+      return false;
+    }
+    if (!session.shouldRemoveAfterSilence(now)) {
+      return false;
+    }
+    log.info(
+      `removing liveness-less agent ${id.slice(0, 8)} (${session.harness}) after prolonged silence`,
+    );
+    session.dispose();
+    this.sessions.delete(id);
+    return true;
+  }
 
+  ingest(event: AppEvent, repoRoot: string): void {
     // Subagent lifecycle events feed the running-subagent count that gates the parent's stop ping.
     // Handle them BEFORE the agentId bailout (they carry their own agent_id) — they still never
     // create a row, change headline state, or touch lastEventAt.
@@ -111,10 +138,19 @@ export class AgentSessionService implements vscode.Disposable {
     }
     let session = this.sessions.get(event.sessionId);
     if (!session) {
-      session = new AgentSession(event.sessionId, msg.repoRoot, this.host, this.notifications);
+      session = new AgentSession(
+        event.sessionId,
+        repoRoot,
+        event.harness,
+        // Total over the validated Harness union (event.harness came off a typed AppEvent) — a
+        // missing strategy is a wiring bug and throws, not a runtime condition to swallow.
+        this.locator.strategyFor(event.harness).supportsLiveness,
+        this.host,
+        this.notifications,
+      );
       this.sessions.set(event.sessionId, session);
     }
-    session.applyEvent(event, msg.repoRoot);
+    session.applyEvent(event, repoRoot);
     if (event.kind === "sessionEnd") {
       this.scheduleRemoval(event.sessionId);
     }

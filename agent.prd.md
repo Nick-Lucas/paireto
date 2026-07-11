@@ -2,9 +2,9 @@
 
 ## What it is
 
-A VS Code extension + bundled Claude Code plugin that bring terminal-first AI coding (Claude Code in
-a terminal) into the VS Code UI — without replacing the TUI. You keep driving the agent in the
-terminal; VS Code gives you visibility and PR-style review surfaces.
+A VS Code extension + bundled agent bridge plugins that bring terminal-first AI coding (Claude Code,
+Codex, or OpenCode in a terminal) into the VS Code UI — without replacing the TUI. You keep driving
+the agent in the terminal; VS Code gives you visibility and PR-style review surfaces.
 
 ## Goals
 
@@ -24,8 +24,42 @@ terminal; VS Code gives you visibility and PR-style review surfaces.
 
 ## Architecture (one line)
 
-VS Code extension ⇄ per-repo Unix domain socket ⇄ Claude Code plugin (hooks + MCP server). Sessions
-are correlated by repository directory, not terminal.
+VS Code extension ⇄ per-repo Unix domain socket ⇄ a per-harness bridge plugin (hooks/events, plus an
+MCP server or custom tools where the harness supports them). Sessions are correlated by repository
+directory, not terminal.
+
+---
+
+## Supported agents
+
+Three harnesses connect through the same socket protocol; a per-harness `AgentStrategy` maps each
+one's events into the common model. Claude Code is the reference (full feature set); Codex and
+OpenCode reach it where the harness allows and degrade gracefully where it doesn't.
+
+| Capability | Claude Code | Codex | OpenCode |
+|---|---|---|---|
+| Live status / agent list | yes | yes (TUI; awaiting-permission is TUI-only) | yes |
+| Turn-end blocking review | yes | yes | post-hoc — not parked; Send Feedback auto-resumes the idle agent |
+| Plan review | yes, auto (ExitPlanMode) | at Stop-in-plan-mode; plan text = closing message + `update_plan` checklist; approve leaves Codex in plan mode | yes, automatic (plugin-injected planning prompt + `paireto_submit_plan` tool) |
+| Approve → auto mode switch | yes | no | yes (agent switch; default `build`) |
+| False-turn-end protection | subagents + background counts | subagent events only | child-session tracking |
+| Process-death cleanup | MCP liveness | MCP stdio liveness (instant when attached; 30-min silence sweep backstop) | plugin socket drop |
+| Session-end telemetry | yes | no (no SessionEnd hook) | yes (session.deleted) |
+| Install | marketplace CLI | `hooks.json` merge + auto-trust hash | global plugin file copy |
+
+Setup notes:
+- **Claude Code:** install the bundled plugin via the marketplace CLI, restart to load hooks + MCP.
+- **Codex:** the installer merges hooks into `~/.codex/hooks.json`, writes the trust hashes into
+  `~/.codex/config.toml`, and ensures `[features] hooks = true` there (Codex's master switch — no
+  hook runs without it), so hooks go live immediately across all repos with no approval step. If the
+  user has explicitly set `hooks = false`, setup leaves it and surfaces that instead of flipping it;
+  fail-open if a Codex release changes the (undocumented) hash algorithm.
+- **OpenCode:** the installer copies one global plugin file (autoloaded for every repo) plus a
+  `paireto-review` command — zero further setup. The plugin instructs the agent itself: a `config`
+  hook scopes `paireto_submit_plan` to planning agents, a system-prompt transform tells a planning
+  session to submit its plan through it, and turn-end review is post-hoc (a `session.idle` gate that
+  injects Send-Feedback as a fresh turn, since OpenCode can't park an idle agent). Approving a plan
+  switches to the target agent (`build` by default).
 
 ---
 
@@ -104,8 +138,9 @@ resolve with the same two actions.
 - Closing the plan tab while it's still pending prompts you to Approve or Send Feedback (dismiss to
   keep reviewing).
 - Approving puts the agent into **auto** mode by default so it proceeds without re-prompting
-  (`paireto.planApprove.mode` — a per-harness object, e.g. `{ "claudecode": "auto" }`; values
-  `auto` / `acceptEdits` / `default` / `plan` / `off`).
+  (`paireto.planApprove.mode.claudecode` — enum `auto` / `acceptEdits` / `default` / `plan` / `off`,
+  default `auto`; `paireto.planApprove.mode.opencode` — the agent to switch to, default `build`,
+  `off` to stay put. Codex has no settable mode, so no key).
 
 ### Code Review
 - **Comment any time:** open any Changes-section diff and add inline comments (Question / Comment /
@@ -167,8 +202,9 @@ resolve with the same two actions.
 ### Welcome / Onboarding
 - A Welcome webview opens **once on first install** (and via **Paireto: Open Welcome**). Two sections:
   - **Set up your agent:** each agent is a card with stacked setup steps, each with its own status +
-    action — **Bridge plugin** (Set up / ✓ Installed; Claude Code installs the bundled plugin, others
-    tagged "Planned") and **Terminal profile** (Configure / ✓ Configured), which adds the agent's
+    action — **Bridge plugin** (Set up / Update / ✓ Installed — Update re-runs the idempotent
+    installer to move a stale version to the shipped one; unsupported agents tagged "Planned") and
+    **Terminal profile** (Configure / ✓ Configured), which adds the agent's
     profile (e.g. `claudecode`) to User settings to power the quick-launch new-terminal-with-profile
     picker.
   - **The Paireto way:** recommended keyboard shortcuts for the terminal-first workflow (focus

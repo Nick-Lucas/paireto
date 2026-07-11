@@ -1,0 +1,34 @@
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
+    ],
+    "UserPromptSubmit": [
+      { "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
+    ],
+    "PreToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
+    ],
+    "PostToolUse": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] },
+      { "matcher": "update_plan", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-plan-stash.js\"", "timeout": 5 }] }
+    ],
+    "PermissionRequest": [
+      { "matcher": "*", "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
+    ],
+    "SubagentStart": [
+      { "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
+    ],
+    "SubagentStop": [
+      { "hooks": [{ "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 }] }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          { "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-event.js\"", "timeout": 5 },
+          { "type": "command", "command": "node \"{{PAIRETO_SCRIPTS}}/on-stop-gate.js\"", "timeout": 345600 }
+        ]
+      }
+    ]
+  }
+}

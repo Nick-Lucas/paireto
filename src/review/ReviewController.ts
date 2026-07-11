@@ -222,6 +222,7 @@ export class ReviewController implements vscode.Disposable {
   async awaitStopOutcome(
     sessionId: string | undefined,
     changedThisTurn: boolean,
+    displayName: string,
     signal: AbortSignal,
   ): Promise<StopGateResult> {
     const who = sessionId?.slice(0, 8) ?? "unknown";
@@ -248,7 +249,7 @@ export class ReviewController implements vscode.Disposable {
     log.info(`review opened for agent ${who}: turn-end (${reason})`);
     this.reviewBusy = true;
     const requestId = newReviewId();
-    this.notifyReviewOpened(requestId);
+    this.notifyReviewOpened(requestId, displayName);
     return this.runReview(requestId, sessionId, signal, (r) =>
       r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false },
     );
@@ -258,12 +259,12 @@ export class ReviewController implements vscode.Disposable {
    * Non-blocking toast announcing an auto-opened turn-end review (only — /paireto-review stays
    * silent), with one-click actions: review it or approve as-is.
    */
-  private notifyReviewOpened(requestId: string): void {
+  private notifyReviewOpened(requestId: string, displayName: string): void {
     const REVIEW = "Start Reviewing";
     const APPROVE = "Approve Immediately";
     void vscode.window
       .showInformationMessage(
-        "Claude finished its turn is waiting for your review.",
+        `${displayName} finished its turn and is waiting for your review.`,
         REVIEW,
         APPROVE,
       )

@@ -1,15 +1,21 @@
 // Shared message + state contracts between the node extension host (WelcomePanel) and the React
 // webview. Type-only — imported as `import type` on both sides, so no runtime code crosses over.
 
+/** Tri-state bridge-plugin install status → the card's action: not-installed → "Set up",
+ *  update-available (present but at a stale version) → "Update", installed → "✓ Installed". */
+export type InstallState = "installed" | "update-available" | "not-installed";
+
 export interface AgentState {
   id: string;
   name: string;
   available: boolean;
-  installed: boolean;
+  installState: InstallState;
   /** Name of the agent's terminal profile, if it defines one. */
   profileName?: string;
   /** True when that terminal profile already exists in the user's settings. */
   profileConfigured: boolean;
+  /** Static setup note shown under the card (e.g. an opt-in feature the user enables themselves). */
+  note?: string;
 }
 
 export interface ShortcutState {

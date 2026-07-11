@@ -600,22 +600,26 @@
           "default": "automatic",
           "description": "When Paireto opens a code Review at the end of an agent's turn."
         },
-        "paireto.planApprove.mode": {
-          "type": "object",
-          "default": {
-            "claudecode": "auto"
-          },
-          "additionalProperties": {
-            "type": "string",
-            "enum": [
-              "auto",
-              "acceptEdits",
-              "default",
-              "plan",
-              "off"
-            ]
-          },
-          "description": "Per-harness permission mode the agent enters when you approve its plan, keyed by harness id (e.g. \"claudecode\"). Values: auto (auto-approve with background safety checks), acceptEdits (auto-approve file edits), default (ask for permission), plan (stay in plan mode), off (leave the mode unchanged)."
+        "paireto.planApprove.mode.claudecode": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "acceptEdits",
+            "default",
+            "plan",
+            "off"
+          ],
+          "default": "auto",
+          "description": "Permission mode Claude Code enters when you approve its plan: auto (auto-approve with background safety checks), acceptEdits (auto-approve file edits), default (ask for permission), plan (stay in plan mode), off (leave the mode unchanged). Codex has no settable plan-approve mode, so there is no key for it."
+        },
+        "paireto.planApprove.mode.opencode": {
+          "type": "string",
+          "enum": [
+            "build",
+            "off"
+          ],
+          "default": "build",
+          "description": "The OpenCode agent to switch to and proceed as when a plan is approved. \"off\" stays on the plan agent; a custom agent name can be typed in settings.json."
         }
       }
     }

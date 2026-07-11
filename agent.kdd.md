@@ -28,6 +28,11 @@
   claude`) to global settings; leaves an existing profile of the same name untouched. Powers the
   quick-launch `newWithProfile` keybinding.
 
+- **Per-agent install status is a tri-state from a version-stamp file** (`<globalStorage>/adapters/
+  <id>/installed-version`): absent → not-installed, equal → installed, stale → update-available. No
+  migration from the old `paireto.pluginInstalledVersion` globalState marker — pre-stamp installs
+  just show "Set up" once more (install is idempotent).
+
 - **The Welcome "Paireto way" section manages built-in VS Code keybindings by editing the user's
   `keybindings.json`** — VS Code exposes no read/write API (no lookup-by-command-id), so we read user
   overrides from the file and fall back to a small hardcoded **known-defaults table** for the commands
@@ -109,35 +114,75 @@
   `{ t, v, ts, harness: "claudecode", repoRoot, event: <raw Claude Code payload> }` (`repoRoot` is
   the bridge's own routing metadata, resolved from `cwd` via `resolveTarget` — not part of Claude's
   payload). `HookEventMessage`/`PlanReviewRequest`/`StopGateRequest` all carry `event:
-  ClaudeCodeHookEvent` (`src/protocol/types.ts`), typed exactly as documented today (Claude Code
+  ClaudeCodeHookEvent` (defined in `ClaudeCodeStrategy.ts` — see the strategy-architecture entries),
+  typed exactly as documented today (Claude Code
   hooks docs' common input fields + the per-event fields we consume — `ClaudeCodePermissionMode`/
   `ClaudeCodeEffortLevel` as literal unions, `ClaudeCodeBackgroundTaskSummary`/
   `ClaudeCodeSessionCronSummary` for the `background_tasks`/`session_crons` arrays) — **no catch-all
   index signature**; an undocumented field simply isn't accessible, on purpose. Every harness-specific
-  type in this file is `ClaudeCode`-prefixed (`ClaudeCodeHookEvent`, `ClaudeCodeHookEventName`,
+  type is `ClaudeCode`-prefixed (`ClaudeCodeHookEvent`, `ClaudeCodeHookEventName`,
   `ClaudeCodeNotificationType`, …) so it reads unambiguously at a call site — only `Harness`/
   `HookEventMessage`/`Envelope`/etc. (the harness-agnostic wire envelope, carrying a `harness: Harness`
   field to say which dialect it holds) stay unprefixed. `ReviewAwaitRequest`/`SessionAttachMessage`
   are NOT hook-script messages (they come from the MCP server/tool) and keep their existing flat shape.
 
-- **A single mapping layer (`src/bridge/normalizeEvent.ts`) converts a harness's raw
-  `ClaudeCodeHookEvent` into one common internal representation, the "app event" (`AppEvent`) —
-  `AgentSession`, `AgentSessionService`, and `PlanReviewController` read ONLY this, never a harness's
-  raw field names.** `transformHarnessEventToAppEvent(harness, event)` dispatches on the `Harness`
-  union (today just `"claudecode"`) to a per-harness mapper; adding a harness means adding a mapper
-  here, not touching every consumer. `AppEventKind` (camelCase: `sessionStart`, `preToolUse`,
-  `subagentStop`, …) replaces Claude's PascalCase `hook_event_name`; `AppNotificationKind`
-  (`permissionPrompt`/`idlePrompt`/`inputNeeded`/`informational`) replaces Claude's raw
-  `notification_type` values, collapsing the informational ones (`auth_success`, `agent_completed`,
-  elicitation bookkeeping) into one bucket up front — `AgentSession.stateForNotification` and
-  `PlanReviewController` never see Claude's own vocabulary. The mapper also does the
-  Claude-specific-field work that used to live inline in `AgentSession`/`PlanReviewController`:
-  counting `background_tasks`/`session_crons` into `backgroundTaskCount`/`sessionCronCount`, and
-  extracting the plan markdown from `tool_input.plan` into `planText`. `AgentSessionService.ingest`
-  and `extension.ts`'s `onPlanReviewRequest`/`onStopGate` handlers call
-  `transformHarnessEventToAppEvent` right at the bridge boundary (the earliest point they have
-  `{ harness, event }`), so everything downstream — including `AgentSession.applyEvent`, now
-  `(event: AppEvent, repoRoot: string)` instead of `(msg: HookEventMessage)` — is harness-agnostic.
+- **All per-harness knowledge lives behind one `AgentStrategy` (`src/harness/`), resolved through an
+  `AgentServiceLocator` registry; everything downstream consumes only the common `AppEvent`.** A
+  strategy owns: raw-event→`AppEvent` mapping (`toAppEvent`, returns `undefined` to drop an
+  irrelevant event), tool classification (`isEditTool`, `planProposal` kind — so the shared state
+  machine never matches a harness tool name), display identity (`displayName`), the plan tool's
+  user-facing wording (`planToolName`), the default plan-approve mode (`defaultPlanApproveMode`), and
+  the debug-log rendering (`describeEvent`). `AppEventKind`/`AppNotificationKind` (camelCase) replace
+  Claude's PascalCase `hook_event_name`/`notification_type`; `AppEvent` carries a `harness` stamp used
+  only for the row label (via the locator) and the per-harness approve mode. The locator takes NO
+  constructor args — it hard-codes the one strategy per harness internally (`{ claudecode, codex,
+  opencode }`, the single place that knows the full set); `activate()` just does
+  `new AgentServiceLocator()`. It's injected into the bridge handlers (transform at
+  the boundary in `onHookEvent`/`onPlanReviewRequest`/`onStopGate` — `undefined` → drop/fail-open,
+  logged at info), `PlanReviewController`, `MainTreeProvider`, and `SocketServer` (via `BridgeManager`)
+  for `createInboundEventLog` (unknown wire harness → logs `msg.t` only). `strategyFor(harness)` is
+  total over the closed `Harness` union (throws on a missing registration = wiring bug);
+  `strategyForWire(name)` tolerates unvalidated wire strings. `AgentSessionService.ingest` is now
+  `(event: AppEvent, repoRoot: string)` — it never sees a raw harness event. **Invariant: every wire
+  event must be self-describing for its mapping** (`toAppEvent` is pure/sync/stateless); any
+  cross-event correlation or async enrichment is plugin-side, before the wire.
+
+- **`Harness` is now `claudecode | codex | opencode`; the wire `event` field is the
+  `HarnessHookEvent` union (`ClaudeCodeHookEvent | CodexHookEvent | OpenCodeForwardedEvent`).**
+  `AgentStrategy.toAppEvent`/`describeEvent` declare the union but each concrete strategy NARROWS its
+  param to its own dialect — allowed only because TS checks method params bivariantly. This is NOT
+  compile-time-sound: the runtime `harness` tag guarantees a strategy only ever gets its own dialect,
+  and per-harness mapper fixture suites (built from empirically-pinned payloads via
+  `src/test/harnessFixtures.ts`) are the safety net. `plan_markdown` (Codex/OpenCode) and
+  `parentSessionID` (OpenCode) are documented as ADAPTER/PLUGIN-injected, not part of the harness's
+  own payload. **Each dialect type is defined IN its strategy file** (`ClaudeCode*` in
+  `ClaudeCodeStrategy.ts`, `Codex*` in `CodexStrategy.ts`, `OpenCode*` in `OpenCodeStrategy.ts`) —
+  agent-specific types belong with their one consumer; `protocol/types.ts` keeps `PLUGIN_VERSION`/
+  `Harness`/the envelope + message types and imports the dialects TYPE-ONLY for the `HarnessHookEvent`
+  union (the resulting cycle is erased at compile time). Every harness-specific type stays
+  `<Harness>`-prefixed so it reads unambiguously at a call site.
+
+- **`AgentStrategy.supportsLiveness` (Claude/OpenCode true, Codex false) drives a silence-based
+  sweep-removal fallback.** `AgentSessionService` takes the locator in its constructor and stamps
+  `supportsLiveness` onto each `AgentSession` at construction. A harness with no process-death signal
+  (no MCP liveness socket, no SessionEnd — Codex) can't be cleaned up on kill, so the existing sweep
+  additionally REMOVES a `supportsLiveness:false` session once it's sat untouched in a non-active
+  state past `LIVENESS_LESS_REMOVE_MS` (30 min). The 120s idle-downgrade runs first, so an active
+  session becomes idle (non-active) before it can qualify. Liveness-capable harnesses are never
+  removed this way.
+
+- **Onboarding is per-agent: `OnboardingAgent.install(ctx)` + `installedProbe(ctx)`,
+  `ctx = { pluginsRoot, stableDir }`** (`stableDir = <globalStorage>/adapters/<id>`, mkdirp'd before
+  install). This replaced WelcomePanel's hardcoded claude-only check and the single globalState
+  marker. Installed-ness is now a per-agent version stamp file in `stableDir`
+  (`readInstalledStamp`/`writeInstalledStamp`); claude's install writes it after a successful CLI
+  install. `installedProbe` returns a **tri-state** `InstallState` (protocol.ts) — `not-installed` /
+  `update-available` (present but a stale version) / `installed` — so the card shows Set up / Update /
+  ✓ Installed; Update just re-runs the idempotent installer. Version-stamp probes (claude/opencode)
+  share `installStateFor(installed, shipped)`; Codex probes by install-path (`codexInstallState`:
+  points at the current versionDir → installed, our marker but a stale path → update-available). An
+  optional static `OnboardingAgent.note` renders under the card for opt-in setup steps (OpenCode's
+  plan gate).
 
 - **`RepoService.current()` anchors on the first workspace folder, using the active editor only for
   `file:`-scheme docs** (extracted pure `pickCurrentRepo`). A mid-review `refresh()` with a virtual
@@ -376,8 +421,10 @@
 
 - **Approving a plan defaults the agent into `auto` mode** via the PermissionRequest decision's
   `updatedPermissions: [{type:"setMode", mode}]` (Claude otherwise restores the pre-plan mode).
-  Overridable by `paireto.planApprove.mode`, a per-harness object (`{ "claudecode": "auto" }`) so
-  future harnesses get their own value (`off` = leave unchanged).
+  Overridable by per-harness config keys `paireto.planApprove.mode.<harness>` (claudecode: enum,
+  default `auto`; opencode: agent name, default `build`; NO codex key — no settable mode). The key's
+  value wins over the strategy's `defaultPlanApproveMode` via `resolvePlanApproveMode`; `off` (or a
+  harness with no key/default) leaves the mode unchanged.
 
 - **Turn-end auto-review is gated by `paireto.review.mode`** (`automatic` default / `manual`): in
   `manual`, `shouldOpenTurnEndReview` ignores `changedThisTurn`, so only queued comments or
@@ -438,3 +485,107 @@
   fresh bind could otherwise be deleted before it's indexed) and logs removals.
   `BridgeManager.isOwnedByLiveServer` now checks PID liveness (`IndexRegistry.isEntryLive`) instead
   of trusting raw index presence.
+
+- **Codex adapter = a self-contained `plugins/codex/` bundle (`adapter.json` + hand-mirrored
+  `bridge.js` + hook scripts), version-locked to `PLUGIN_VERSION`** (a test asserts every
+  `plugins/*` manifest matches). `bridge.js` reads its version from `../adapter.json`; scripts stamp
+  `harness:"codex"`. Adding the harness on the extension side was just `new CodexStrategy()` in the
+  locator — the AgentStrategy seam carries everything else.
+
+- **Codex has no plan/review hooks of its own, so ONE Stop-hook script (`on-stop-gate.js`) forks on
+  `permission_mode`.** `stop_hook_active` → allow (our block's follow-up); `permission_mode==="plan"`
+  → plan gate (deny = `{"decision":"block","reason"}`, allow = emit nothing so the stop proceeds and
+  Codex stays in plan mode — it has no settable approve mode); else the turn-end review gate, exactly
+  like Claude's `on-review-gate.js`. Plan text is COMPOSED plugin-side (self-contained gate event):
+  the Stop payload's `last_assistant_message` prose is primary, with the `update_plan` checklist
+  appended under a `## Plan` heading when present (`on-plan-stash.js`, PostToolUse `update_plan`,
+  renders the step array to `$XDG_STATE/paireto/codex-plans/<session_id>.json`); stash-only when the
+  message is empty. The composed string is injected as `plan_markdown`.
+  `CodexStrategy` maps `Stop`+`permission_mode==="plan"` → `planProposal` (planText = `plan_markdown`);
+  `isEditTool = {"apply_patch"}`; `supportsLiveness:false` (no MCP session id → silence sweep only).
+
+- **The Codex installer auto-trusts by writing the `trusted_hash` itself** — Codex silently skips
+  untrusted hooks and has no non-interactive trust CLI, but the hash is deterministic
+  (`{event_name,[matcher],hooks:[{type,command,timeout(def 600),async:false}]}`, keys sorted, compact
+  JSON, `sha256:` prefix — reproduced + verified against real config.toml vectors). If a Codex
+  release changes the algorithm, hooks skip = Paireto fail-open, not breakage. Install = copy
+  `plugins/codex/` → `<stableDir>/<version>/` (durable, absolute script paths), jsonc-merge our
+  groups into `~/.codex/hooks.json` (dedupe ours by the stableDir marker, APPEND at the tail so
+  foreign group indices — which key their positional trusted_hash — never shift), then
+  existence-checked EOF-append the `[hooks.state."…"]` subtables to `~/.codex/config.toml` (never
+  rewrite foreign content; no TOML parser). Every file-shape step is a pure, unit-tested function.
+
+- **The Codex installer also ensures `[features] hooks = true` in config.toml** — Codex's master
+  switch; with it absent/false NO hook runs (trust hashes are moot). Same string-level, existence-
+  checked policy (`ensureCodexFeaturesHooks`, pure + tested): no `[features]` table → append at EOF;
+  table present with `hooks` set → leave the user's choice ALONE (never flip a deliberate `false`,
+  just surface `hooksDisabled` so the install result / Welcome copy warns); table present without a
+  `hooks` key → insert `hooks = true` after the header.
+
+- **Codex process-death is caught by a stdio-MCP liveness server (`plugins/codex/mcp/liveness.js`),
+  correlated by PPID handoff.** Codex spawns `[mcp_servers.paireto]` at startup and strips its env, so
+  it has no session id: the SessionStart/UserPromptSubmit hooks write `handoff/codex-<codexPid>.json`
+  (codexPid = nearest `codex` ancestor, shared `bridge.codexPid`/`handoffPath`), the server polls it
+  and holds a `session.attach` socket open per session (re-attaching on `/new`). It exits — closing
+  the socket → the generic `detachSession` clears the row — on BOTH stdin EOF (SIGKILL orphans it but
+  closes stdin ~34 ms) and SIGTERM (graceful codex exit). Installer merges the table into config.toml
+  (`upsertCodexMcpServer`, existence-checked/foreign-preserving), injecting `env.XDG_STATE_HOME` ONLY
+  when the extension has it set (Codex strips it; the default `~/.local/state` matches otherwise).
+  `CodexStrategy.supportsLiveness` stays FALSE so the silence sweep remains the backstop for a
+  never-attached session (no window, state-dir divergence). No extension changes — attach/detach is
+  harness-agnostic.
+
+- **OpenCode adapter = one self-contained ES-module plugin (`plugins/opencode/paireto.js` +
+  `adapter.json` + `commands/paireto-review.md`).** Gates on a real git worktree (OpenCode reports
+  `worktree "/"` in a non-git dir → the factory returns `{}`); resolves the per-repo socket from the
+  canonicalized worktree byte-identically to `protocol/paths.ts`. The `event` hook forwards
+  session/permission/file/user-message events fire-and-forget over ONE lazily-reconnected connection
+  (writes serialized), stamping each with the owning `sessionID` and — the one plugin-side
+  correlation — a `parentSessionID` for known child sessions. `tool.execute.before/after` are awaited
+  hooks re-emitted as synthetic events that RETURN IMMEDIATELY. Liveness: a held-open `session.attach`
+  connection per top-level session, closed on `session.deleted`/`server.instance.disposed`
+  (`supportsLiveness:true`). Two custom tools BLOCK the agent via `execute():Promise<string>` —
+  `paireto_review` (turn-end review analog of the Claude MCP tool) and `paireto_submit_plan` (the plan
+  gate — the automation layer below steers the agent onto it, no user instruction needed). Fail-open
+  throughout.
+
+- **`OpenCodeStrategy` models a sub-agent as a full child SESSION.** `session.created` with no
+  `info.parentID` → `sessionStart`; with one → `subagentStart {sessionId: parentID, agentId: childId}`.
+  Any event the plugin tagged with `parentSessionID` routes to the parent row carrying the child id as
+  `agentId` (so the `AgentSessionService` agentId-bailout keeps it off a top-level row); a child's
+  `session.idle`/`deleted` → `subagentStop`. Top-level `session.idle` → `stop`, `session.deleted` →
+  `sessionEnd`. `tool.execute.before(paireto_submit_plan)` and `paireto.plan.submitted` →
+  `planProposal` (planText from the gate event's `plan_markdown`). Top-level `session.idle` also maps
+  to `stop` for the POST-HOC turn-end gate below. On plan approval `nextMode` = the target AGENT to
+  switch to (not a permission mode); `defaultPlanApproveMode = "build"`.
+
+- **OpenCode automation = plugin instructs the agent itself (zero user setup); pure decision helpers
+  exported from `paireto.js` + unit-tested (`openCodeAutomation.test.ts` dynamic-imports the shipped
+  JS).** Why: OpenCode has no ExitPlanMode gate to intercept on 1.15.10, so — mirroring the vendored
+  plannotator plugin — a `config` hook scopes `paireto_submit_plan` to planning agents (`primary_tools`
+  + per-agent allow/deny; in-place permission mutation, never a spread, to dodge the string-vs-object
+  hazard), and `experimental.chat.system.transform` appends a lean planning prompt for a resolved
+  planning-agent session (agent = last user message's `agent`, cached `app.agents`; title-generator
+  prompt skipped). `tool.definition` rewrites a future `plan_exit` tool toward `paireto_submit_plan`
+  (no-op today). Approve → `submit_plan.execute()` switches to `nextMode` via
+  `client.session.prompt({agent, noReply:true})`. The `paireto_submit_plan` `args` MUST be a real
+  zod schema (`{ plan: schema.string() }`) — OpenCode types `args` as ZodRawShape and a bare value
+  (`""`) throws during schema advertisement/validation, so the plan never reaches VS Code. The zod
+  comes from the SDK's `tool.schema`, dynamic-imported inside the factory (`@opencode-ai/plugin`,
+  provided by OpenCode's runtime) so top-level imports stay node-builtins-only and the unit tests
+  still load the pure helpers; `planToolArgs()` fails open to `{}` when the SDK is absent.
+
+- **OpenCode turn-end review is POST-HOC (session.idle can't park an idle agent).** On each TOP-LEVEL
+  `session.idle` the plugin fires a blocking `stop.gate.request` (child idles = subagents finishing,
+  skipped via the `parentOf` map); the extension's `onStopGate` is untouched. `allow` → nothing;
+  `block`+reason → inject the feedback as a fresh user turn (`session.prompt`) to resume the agent.
+  STRICT fail-open: no window / timeout / drop / blank reason inject NOTHING — feedback reaches the
+  agent only on an explicit Send Feedback. Loop safety mirrors Claude (userPromptSubmit resets
+  changedThisTurn; review slot serializes).
+
+- **The OpenCode installer is a plain three-file copy into `~/.config/opencode/`** (`plugin/paireto.js`
+  + `plugin/adapter.json`, `commands/paireto-review.md`) — OpenCode autoloads both dirs, no CLI/config
+  edit. merge-don't-clobber comes for free: only our own filenames are written, foreign files in those
+  shared dirs untouched (no broad dir copy). Probe = the installed `plugin/adapter.json` version
+  matches the shipped one. The copy plan + version parsing are pure, unit-tested; no stableDir staging
+  (OpenCode loads the file in place).

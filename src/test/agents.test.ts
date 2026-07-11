@@ -37,8 +37,9 @@ suite("onboarding agents", () => {
     assert.deepStrictEqual(claude.profile, { name: "claudecode", command: "claude" });
   });
 
-  test("planned agents are not available", () => {
+  test("opencode is available; pi stays planned", () => {
     assert.strictEqual(ONBOARDING_AGENTS.filter((a) => !a.available).length >= 1, true);
-    assert.strictEqual(findAgent("opencode")?.available, false);
+    assert.strictEqual(findAgent("opencode")?.available, true);
+    assert.strictEqual(findAgent("pi")?.available, false);
   });
 });

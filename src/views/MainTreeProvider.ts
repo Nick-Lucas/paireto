@@ -11,6 +11,7 @@ import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { kindColorId, kindIcon, kindLabel } from "../comments/kinds.js";
 import { Commands, Views } from "../config.js";
 import type { GateCoordinator } from "../gate/GateCoordinator.js";
+import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { ChangedFile, FileStatus } from "../git/DiffService.js";
 import type { RepoService } from "../git/RepoService.js";
 import type { PlanReviewController } from "../plan/PlanReviewController.js";
@@ -98,9 +99,10 @@ export function shortSessionId(sessionId: string): string {
   return sessionId.slice(0, 8);
 }
 
-/** The Agents-row label: the harness name + short session id, e.g. `Claude (a1b2c3d4)`. */
-export function agentLabel(sessionId: string): string {
-  return `Claude (${shortSessionId(sessionId)})`;
+/** The Agents-row label: the harness display name + short session id, e.g. `Claude (a1b2c3d4)`. The
+ *  display name comes from the session's harness strategy (via the locator), never a hardcoded name. */
+export function agentLabel(displayName: string, sessionId: string): string {
+  return `${displayName} (${shortSessionId(sessionId)})`;
 }
 
 /** What an agent command receives: the row's own `item.command` passes the raw session, but VS Code
@@ -148,6 +150,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     private readonly plan: PlanReviewController,
     private readonly repoService: RepoService,
     private readonly coordinator: GateCoordinator,
+    private readonly locator: AgentServiceLocator,
     private readonly extensionUri: vscode.Uri,
   ) {
     const fire = (): void => {
@@ -314,7 +317,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const gate = entry
           ? { kind: entry.kind, foreground: this.coordinator.isForeground(entry.id) }
           : undefined;
-        return agentItem(node.session, gate);
+        return agentItem(node.session, this.locator.strategyFor(node.session.harness).displayName, gate);
       }
       case "reviewComment":
         return reviewCommentItem(node.comment);
@@ -500,11 +503,15 @@ function placeholder(label: string): Node {
 
 function agentItem(
   s: AgentSession,
+  displayName: string,
   gate?: { kind: "plan" | "review"; foreground: boolean },
 ): vscode.TreeItem {
   // Label by harness name + short session id — the repo basename was identical for every agent in a
   // repo (and the Agents section is already repo-scoped, so the repo name belongs in the tooltip).
-  const item = new vscode.TreeItem(agentLabel(s.sessionId), vscode.TreeItemCollapsibleState.None);
+  const item = new vscode.TreeItem(
+    agentLabel(displayName, s.sessionId),
+    vscode.TreeItemCollapsibleState.None,
+  );
   const started = new Date(s.startedAt).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",

@@ -8,8 +8,8 @@ import * as vscode from "vscode";
 import { AgentSessionService } from "./agents/AgentSessionService.js";
 import { ActivityPublisher } from "./bridge/ActivityPublisher.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
-import { transformHarnessEventToAppEvent } from "./bridge/transformHarnessEventToAppEvent.js";
 import type { BridgeHandlers } from "./bridge/types.js";
+import { AgentServiceLocator } from "./harness/AgentServiceLocator.js";
 import { registerCommentEditingCommands } from "./comments/CommentSession.js";
 import { resolveCommentAuthor } from "./comments/author.js";
 import { Commands, ContextKeys, Schemes } from "./config.js";
@@ -51,7 +51,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   void vscode.commands.executeCommand("setContext", ContextKeys.planPending, false);
 
   // Core services.
-  const agents = new AgentSessionService();
+  const locator = new AgentServiceLocator();
+  const agents = new AgentSessionService(locator);
   const repoService = new RepoService();
   const worktrees = new WorktreeService();
   const recents = new RecentRepoStore(context.globalState);
@@ -59,7 +60,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const coordinator = new GateCoordinator();
   const planProvider = new PlanContentProvider();
   const planGate = new PlanGateRegistry();
-  const planReview = new PlanReviewController(planProvider, planGate, coordinator);
+  const planReview = new PlanReviewController(planProvider, planGate, coordinator, locator);
   const statusBar = new StatusBarController(repoService, agents);
   const activityPublisher = new ActivityPublisher(agents);
 
@@ -81,6 +82,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     planReview,
     repoService,
     coordinator,
+    locator,
     context.extensionUri,
   );
   const switcher = new RepoSwitcher(repoService, worktrees, recents, context.extensionUri);
@@ -161,10 +163,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Bridge: one socket per open repo, dispatching inbound messages to the services.
   const handlers: BridgeHandlers = {
     onHookEvent: (msg) => {
-      agents.ingest(msg);
+      // Map the raw harness event to the common representation at the boundary; an event the
+      // strategy doesn't recognise (undefined) is simply dropped — nothing downstream sees it.
+      // Render the unmappable event via the strategy (msg.event is the harness-dialect union, so its
+      // fields aren't uniformly accessible here — the strategy knows its own dialect).
+      const strategy = locator.strategyFor(msg.harness);
+      const event = strategy.toAppEvent(msg.event);
+      if (!event) {
+        log.info(`hook event dropped (unmappable ${strategy.describeEvent(msg.event)})`);
+        return;
+      }
+      agents.ingest(event, msg.repoRoot);
     },
     onPlanReviewRequest: (msg, signal) => {
-      const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
+      const strategy = locator.strategyFor(msg.harness);
+      const event = strategy.toAppEvent(msg.event);
+      if (!event) {
+        // Unmappable plan-gate request — fail open (allow) so the agent isn't left blocked.
+        log.info(`plan review allowed (unmappable ${strategy.describeEvent(msg.event)})`);
+        return Promise.resolve({ decision: "allow" });
+      }
       if (agents.isMuted(event.sessionId)) {
         log.info(`plan review skipped for muted session ${event.sessionId.slice(0, 8)}`);
         return Promise.resolve({ decision: "allow" });
@@ -194,7 +212,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     },
     onStopGate: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
-      const event = transformHarnessEventToAppEvent(msg.harness, msg.event);
+      const strategy = locator.strategyFor(msg.harness);
+      const event = strategy.toAppEvent(msg.event);
+      if (!event) {
+        // Unmappable stop-gate request — fail open (allow the stop) so the agent isn't left blocked.
+        log.info(`stop gate allowed (unmappable ${strategy.describeEvent(msg.event)})`);
+        return Promise.resolve({ block: false });
+      }
       // Fires on every turn-end. Resolves "allow" instantly unless a review is warranted for this
       // session (the turn touched files, a deferred review is open, or feedback is queued).
       const sessionId = event.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
@@ -219,7 +243,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         );
         return Promise.resolve({ block: false });
       }
-      return reviewController.awaitStopOutcome(sessionId, turn.changedThisTurn, signal);
+      return reviewController.awaitStopOutcome(
+        sessionId,
+        turn.changedThisTurn,
+        strategy.displayName,
+        signal,
+      );
     },
 
     // The MCP server holds a liveness connection per session; when the last one drops, the agent
@@ -228,7 +257,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     onSessionDetached: (sessionId) => agents.detachSession(sessionId),
   };
 
-  const bridge = new BridgeManager(handlers);
+  const bridge = new BridgeManager(handlers, locator);
   context.subscriptions.push({ dispose: () => bridge.dispose() });
   context.subscriptions.push({ dispose: () => planGate.drain({ decision: "allow" }) });
   context.subscriptions.push({ dispose: () => reviewController.drainGate() });

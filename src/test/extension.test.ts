@@ -9,7 +9,10 @@ import * as vscode from "vscode";
 import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
 import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
-import { transformHarnessEventToAppEvent } from "../bridge/transformHarnessEventToAppEvent.js";
+import { ClaudeCodeStrategy } from "../harness/ClaudeCodeStrategy.js";
+import { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
+import type { AgentStrategy } from "../harness/AgentStrategy.js";
+import type { AppEvent, AppEventKind } from "../harness/appEvent.js";
 import { summarizeActivity } from "../agents/activitySummary.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
 import { branchFromRevParse, gitToplevel } from "../git/gitCli.js";
@@ -29,13 +32,13 @@ import {
   stateForNotification,
   STALE_ACTIVE_MS_FOR_TEST,
 } from "../agents/AgentSessionService.js";
+import type { AnyMessage, Harness, HookEventMessage } from "../protocol/types.js";
 import type {
-  AnyMessage,
   ClaudeCodeBackgroundTaskSummary,
   ClaudeCodeHookEvent,
-  HookEventMessage,
   ClaudeCodeSessionCronSummary,
-} from "../protocol/types.js";
+} from "../harness/ClaudeCodeStrategy.js";
+import { resolvePlanApproveMode } from "../plan/PlanReviewController.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import { NotificationService } from "../notify/NotificationService.js";
 import { createInboundEventLog } from "../bridge/SocketServer.js";
@@ -85,6 +88,23 @@ function mkHookEvent(
     repoRoot,
     event: { hook_event_name: hookEventName, session_id: sessionId, ...rest },
   } as HookEventMessage;
+}
+
+// Typed as the interface so ingestWire dispatches through the union-accepting signature exactly like
+// the production boundary (the concrete method narrows to ClaudeCodeHookEvent — see the bivariance note).
+const claudeStrategy: AgentStrategy = new ClaudeCodeStrategy();
+// The service needs a locator to stamp each session's supportsLiveness; the production locator knows
+// every harness, so one instance serves every suite that ingests Claude (or other-harness) events.
+const claudeLocator = new AgentServiceLocator();
+
+/** Test bridge: map a raw wire HookEventMessage through the Claude strategy, then ingest — so the
+ *  fixtures keep exercising the FULL boundary path (strategy.toAppEvent + AgentSessionService.ingest)
+ *  the extension uses, now that ingest takes an already-mapped AppEvent. */
+function ingestWire(svc: AgentSessionService, msg: HookEventMessage): void {
+  const event = claudeStrategy.toAppEvent(msg.event);
+  if (event) {
+    svc.ingest(event, msg.repoRoot);
+  }
 }
 
 suite("repoKey", () => {
@@ -681,18 +701,18 @@ suite("AgentSessionService.markIdleOnDisconnect", () => {
     mkHookEvent(event, { tool_name: toolName });
 
   test("resets a gated session (awaiting plan / thinking) back to idle on disconnect", () => {
-    const svc = new AgentSessionService();
+    const svc = new AgentSessionService(claudeLocator);
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit"));
-      svc.ingest(ev("PreToolUse", "ExitPlanMode"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit"));
+      ingestWire(svc, ev("PreToolUse", "ExitPlanMode"));
       assert.strictEqual(svc.activityForRepo("/repo").state, "awaitingPlanApproval");
 
       svc.markIdleOnDisconnect("s1");
       assert.strictEqual(svc.activityForRepo("/repo").state, "idle");
 
       // A later event still updates the session (it wasn't removed).
-      svc.ingest(ev("UserPromptSubmit"));
+      ingestWire(svc, ev("UserPromptSubmit"));
       assert.strictEqual(svc.activityForRepo("/repo").state, "thinking");
     } finally {
       svc.dispose();
@@ -700,7 +720,7 @@ suite("AgentSessionService.markIdleOnDisconnect", () => {
   });
 
   test("is a no-op for an unknown session", () => {
-    const svc = new AgentSessionService();
+    const svc = new AgentSessionService(claudeLocator);
     try {
       svc.markIdleOnDisconnect("missing"); // must not throw
       assert.strictEqual(svc.activityForRepo("/repo").state, "idle");
@@ -714,16 +734,16 @@ suite("AgentSessionService.removeSession (agent process died)", () => {
   const ev = (event: string): HookEventMessage => mkHookEvent(event);
 
   test("removes the session entirely (liveness connection dropped)", () => {
-    const svc = new AgentSessionService();
+    const svc = new AgentSessionService(claudeLocator);
     try {
-      svc.ingest(ev("SessionStart"));
+      ingestWire(svc, ev("SessionStart"));
       assert.strictEqual(svc.sessionsForRepo("/repo").length, 1);
 
       svc.removeSession("s1");
       assert.strictEqual(svc.sessionsForRepo("/repo").length, 0);
 
       // A still-alive agent (MCP-only crash) is re-created by its next telemetry event.
-      svc.ingest(ev("UserPromptSubmit"));
+      ingestWire(svc, ev("UserPromptSubmit"));
       assert.strictEqual(svc.sessionsForRepo("/repo").length, 1);
       assert.strictEqual(svc.activityForRepo("/repo").state, "thinking");
     } finally {
@@ -732,7 +752,7 @@ suite("AgentSessionService.removeSession (agent process died)", () => {
   });
 
   test("is a no-op for an unknown session", () => {
-    const svc = new AgentSessionService();
+    const svc = new AgentSessionService(claudeLocator);
     try {
       svc.removeSession("missing"); // must not throw
       assert.strictEqual(svc.sessionsForRepo("/repo").length, 0);
@@ -746,9 +766,9 @@ suite("AgentSessionService liveness ref-counting", () => {
   const ev = (event: string): HookEventMessage => mkHookEvent(event);
 
   test("removes only when the LAST liveness connection detaches", () => {
-    const svc = new AgentSessionService();
+    const svc = new AgentSessionService(claudeLocator);
     try {
-      svc.ingest(ev("SessionStart"));
+      ingestWire(svc, ev("SessionStart"));
       svc.attachSession("s1");
       svc.attachSession("s1"); // e.g. MCP server + an emulator on the same session
       svc.detachSession("s1");
@@ -765,9 +785,9 @@ suite("AgentSessionService liveness ref-counting", () => {
   });
 
   test("a single attach/detach removes the session", () => {
-    const svc = new AgentSessionService();
+    const svc = new AgentSessionService(claudeLocator);
     try {
-      svc.ingest(ev("SessionStart"));
+      ingestWire(svc, ev("SessionStart"));
       svc.attachSession("s1");
       svc.detachSession("s1");
       assert.strictEqual(svc.sessionsForRepo("/repo").length, 0);
@@ -814,9 +834,16 @@ suite("stateForNotification (normalized Notification kinds map onto the state ma
   });
 });
 
-suite("transformHarnessEventToAppEvent (claudecode harness mapping)", () => {
+suite("ClaudeCodeStrategy.toAppEvent (claudecode harness mapping)", () => {
   const raw = (overrides: Partial<ClaudeCodeHookEvent> = {}): ClaudeCodeHookEvent =>
     ({ hook_event_name: "PreToolUse", session_id: "s1", ...overrides }) as ClaudeCodeHookEvent;
+  // The mapper drops unmappable events (undefined); every fixture below maps to a real AppEvent, so
+  // assert that up front and hand the non-null event to the case.
+  const map = (overrides: Partial<ClaudeCodeHookEvent> = {}): AppEvent => {
+    const event = claudeStrategy.toAppEvent(raw(overrides));
+    assert.ok(event, "expected a mapped AppEvent");
+    return event;
+  };
 
   test("maps every ClaudeCodeHookEventName to its normalized kind", () => {
     const cases: Array<[string, string]> = [
@@ -834,48 +861,59 @@ suite("transformHarnessEventToAppEvent (claudecode harness mapping)", () => {
       ["SubagentStop", "subagentStop"],
     ];
     for (const [hookEventName, kind] of cases) {
-      assert.strictEqual(
-        transformHarnessEventToAppEvent(
-          "claudecode",
-          raw({ hook_event_name: hookEventName as never }),
-        ).kind,
-        kind,
-      );
+      assert.strictEqual(map({ hook_event_name: hookEventName as never }).kind, kind);
     }
   });
 
-  test("carries sessionId, agentId, and toolName through", () => {
-    const event = transformHarnessEventToAppEvent(
-      "claudecode",
-      raw({ session_id: "abc", agent_id: "sub-1", tool_name: "Edit" }),
+  test("stamps the harness on every event", () => {
+    assert.strictEqual(map().harness, "claudecode");
+  });
+
+  test("classifies PreToolUse(ExitPlanMode) as a planProposal, plain PreToolUse otherwise", () => {
+    assert.strictEqual(map({ tool_name: "ExitPlanMode" }).kind, "planProposal");
+    assert.strictEqual(map({ tool_name: "Bash" }).kind, "preToolUse");
+    assert.strictEqual(map().kind, "preToolUse");
+  });
+
+  test("flags edit-class tools with isEditTool (false for a read-only tool)", () => {
+    for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
+      assert.strictEqual(map({ tool_name: tool }).isEditTool, true, tool);
+    }
+    assert.strictEqual(map({ tool_name: "Read" }).isEditTool, false);
+    assert.strictEqual(map().isEditTool, false);
+  });
+
+  test("returns undefined for an unrecognized hook_event_name (future-proofing, not a crash)", () => {
+    assert.strictEqual(
+      claudeStrategy.toAppEvent(raw({ hook_event_name: "Bogus" as never })),
+      undefined,
     );
+  });
+
+  test("carries sessionId, agentId, and toolName through", () => {
+    const event = map({ session_id: "abc", agent_id: "sub-1", tool_name: "Edit" });
     assert.strictEqual(event.sessionId, "abc");
     assert.strictEqual(event.agentId, "sub-1");
     assert.strictEqual(event.toolName, "Edit");
   });
 
   test("extracts the plan markdown from tool_input.plan", () => {
-    const event = transformHarnessEventToAppEvent(
-      "claudecode",
-      raw({ hook_event_name: "PermissionRequest", tool_input: { plan: "1. Do the thing" } }),
-    );
+    const event = map({
+      hook_event_name: "PermissionRequest",
+      tool_input: { plan: "1. Do the thing" },
+    });
     assert.strictEqual(event.planText, "1. Do the thing");
   });
 
   test("plan text is undefined when tool_input has no plan field", () => {
-    assert.strictEqual(
-      transformHarnessEventToAppEvent("claudecode", raw({ tool_input: {} })).planText,
-      undefined,
-    );
-    assert.strictEqual(transformHarnessEventToAppEvent("claudecode", raw()).planText, undefined);
+    assert.strictEqual(map({ tool_input: {} }).planText, undefined);
+    assert.strictEqual(map().planText, undefined);
   });
 
   test("collapses notification_type onto the normalized notification-kind set", () => {
     const kindOf = (notificationType: string | undefined) =>
-      transformHarnessEventToAppEvent(
-        "claudecode",
-        raw({ hook_event_name: "Notification", notification_type: notificationType as never }),
-      ).notificationKind;
+      map({ hook_event_name: "Notification", notification_type: notificationType as never })
+        .notificationKind;
     assert.strictEqual(kindOf("permission_prompt"), "permissionPrompt");
     assert.strictEqual(kindOf("idle_prompt"), "idlePrompt");
     assert.strictEqual(kindOf("elicitation_dialog"), "inputNeeded");
@@ -888,17 +926,14 @@ suite("transformHarnessEventToAppEvent (claudecode harness mapping)", () => {
   });
 
   test("counts background_tasks/session_crons, defaulting to zero when absent", () => {
-    const busy = transformHarnessEventToAppEvent(
-      "claudecode",
-      raw({
-        hook_event_name: "Stop",
-        background_tasks: [mkBackgroundTask("t1"), mkBackgroundTask("t2")],
-        session_crons: [mkSessionCron("c1")],
-      }),
-    );
+    const busy = map({
+      hook_event_name: "Stop",
+      background_tasks: [mkBackgroundTask("t1"), mkBackgroundTask("t2")],
+      session_crons: [mkSessionCron("c1")],
+    });
     assert.strictEqual(busy.backgroundTaskCount, 2);
     assert.strictEqual(busy.sessionCronCount, 1);
-    const idle = transformHarnessEventToAppEvent("claudecode", raw({ hook_event_name: "Stop" }));
+    const idle = map({ hook_event_name: "Stop" });
     assert.strictEqual(idle.backgroundTaskCount, 0);
     assert.strictEqual(idle.sessionCronCount, 0);
   });
@@ -922,7 +957,7 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   // settle 0 → the stopped-edge ping fires synchronously in tests. `fired` records each ping's state.
   const mkSvc = (focused = false, settle = 0) => {
     const notifications = new RecordingNotifications();
-    const svc = new AgentSessionService(() => focused, settle, notifications);
+    const svc = new AgentSessionService(claudeLocator, () => focused, settle, notifications);
     return { svc, fired: notifications.fired };
   };
   // Every ping is asynchronous (the gate fires on a macrotask even with settle 0) — tick to observe.
@@ -931,10 +966,10 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("fires once on entering a needs-you state and sets needsAttention", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit"));
       assert.deepStrictEqual(fired, [], "busy states don't notify");
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("Stop"));
       assert.deepStrictEqual(fired, [], "asynchronous — nothing fires inside the same tick");
       await tick();
       assert.deepStrictEqual(fired, ["stopped"]);
@@ -947,9 +982,9 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("does NOT re-fire while staying within needs-you states", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop")); // stopped (needs-you) — fires
-      svc.ingest(ev("PermissionRequest")); // awaitingPermission (still needs-you) — no re-fire
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop")); // stopped (needs-you) — fires
+      ingestWire(svc, ev("PermissionRequest")); // awaitingPermission (still needs-you) — no re-fire
       await tick();
       assert.strictEqual(fired.length, 1, "exactly one ping for the whole needs-you stretch");
       assert.strictEqual(session(svc).needsAttention, true);
@@ -961,13 +996,13 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("clears on going busy/idle and re-arms on the next needs-you transition", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop"));
       await tick();
       assert.strictEqual(session(svc).needsAttention, true);
-      svc.ingest(ev("UserPromptSubmit")); // a new turn — clears
+      ingestWire(svc, ev("UserPromptSubmit")); // a new turn — clears
       assert.strictEqual(session(svc).needsAttention, false);
-      svc.ingest(ev("PreToolUse", "ExitPlanMode")); // awaitingPlanApproval — re-arms + re-fires
+      ingestWire(svc, ev("PreToolUse", "ExitPlanMode")); // awaitingPlanApproval — re-arms + re-fires
       await tick();
       assert.deepStrictEqual(fired, ["stopped", "awaitingPlanApproval"]);
       assert.strictEqual(session(svc).needsAttention, true);
@@ -979,8 +1014,8 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("does NOT mark or fire when this window is focused", async () => {
     const { svc, fired } = mkSvc(true); // user is already looking at the editor
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop"));
       await tick();
       assert.deepStrictEqual(fired, [], "no ping while focused");
       assert.strictEqual(session(svc).needsAttention, false, "no bell while focused");
@@ -995,13 +1030,13 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("subagent events never change headline state or notify", () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit")); // thinking
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit")); // thinking
       // A subagent (e.g. spawned during plan mode) hits a permission prompt / stop / question.
-      svc.ingest(subEv("PermissionRequest"));
-      svc.ingest(subEv("Stop"));
-      svc.ingest(subEv("PreToolUse", "ExitPlanMode"));
-      svc.ingest(subEv("Notification"));
+      ingestWire(svc, subEv("PermissionRequest"));
+      ingestWire(svc, subEv("Stop"));
+      ingestWire(svc, subEv("PreToolUse", "ExitPlanMode"));
+      ingestWire(svc, subEv("Notification"));
       assert.deepStrictEqual(fired, [], "no notifications for subagent activity");
       assert.strictEqual(session(svc).needsAttention, false);
       assert.strictEqual(session(svc).state, "thinking", "headline state untouched by subagents");
@@ -1013,7 +1048,7 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("a subagent event never even creates a parent row", () => {
     const { svc } = mkSvc();
     try {
-      svc.ingest(subEv("PreToolUse", "Read")); // no top-level session has been seen yet
+      ingestWire(svc, subEv("PreToolUse", "Read")); // no top-level session has been seen yet
       assert.deepStrictEqual(svc.allSessions(), [], "subagent events are ignored outright");
     } finally {
       svc.dispose();
@@ -1023,9 +1058,9 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("a Notification (e.g. a question prompt) fires the needs-you ping", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit")); // thinking — not itself a needs-you state
-      svc.ingest(ev("Notification")); // Claude is waiting for the user's input
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit")); // thinking — not itself a needs-you state
+      ingestWire(svc, ev("Notification")); // Claude is waiting for the user's input
       await tick();
       assert.strictEqual(fired.length, 1, "the question prompt pings once");
       assert.strictEqual(session(svc).needsAttention, true);
@@ -1037,9 +1072,9 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("a Notification does not double-fire when already awaiting the user", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("PermissionRequest")); // awaitingPermission — fires once
-      svc.ingest(ev("Notification")); // the matching notification — must not re-ping
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("PermissionRequest")); // awaitingPermission — fires once
+      ingestWire(svc, ev("Notification")); // the matching notification — must not re-ping
       await tick();
       assert.strictEqual(fired.length, 1);
     } finally {
@@ -1050,13 +1085,13 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("a typed Notification lands on the matching state (one ping via the state edge)", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit")); // thinking
-      svc.ingest(mkHookEvent("Notification", { notification_type: "permission_prompt" }));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit")); // thinking
+      ingestWire(svc, mkHookEvent("Notification", { notification_type: "permission_prompt" }));
       await tick();
       assert.strictEqual(session(svc).state, "awaitingPermission");
       assert.strictEqual(fired.length, 1);
-      svc.ingest(ev("PermissionRequest")); // the accompanying hook — same state, no second ping
+      ingestWire(svc, ev("PermissionRequest")); // the accompanying hook — same state, no second ping
       await tick();
       assert.strictEqual(fired.length, 1);
     } finally {
@@ -1067,9 +1102,9 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("an informational Notification changes nothing and never pings", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit")); // thinking
-      svc.ingest(mkHookEvent("Notification", { notification_type: "auth_success" }));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit")); // thinking
+      ingestWire(svc, mkHookEvent("Notification", { notification_type: "auth_success" }));
       await tick();
       assert.deepStrictEqual(fired, []);
       assert.strictEqual(session(svc).state, "thinking");
@@ -1082,8 +1117,8 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("clearAttention drops the marker without a state change", async () => {
     const { svc } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop"));
       await tick();
       assert.strictEqual(session(svc).needsAttention, true);
       svc.clearAttention("s1");
@@ -1097,8 +1132,8 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("markIdleOnDisconnect also clears the marker", async () => {
     const { svc } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("PreToolUse", "ExitPlanMode"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("PreToolUse", "ExitPlanMode"));
       await tick();
       assert.strictEqual(session(svc).needsAttention, true);
       svc.markIdleOnDisconnect("s1");
@@ -1112,9 +1147,9 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("a muted session never pings or sets needsAttention", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
+      ingestWire(svc, ev("SessionStart"));
       svc.setMuted("s1", true);
-      svc.ingest(ev("Stop")); // needs-you edge, but the agent is muted
+      ingestWire(svc, ev("Stop")); // needs-you edge, but the agent is muted
       await tick();
       assert.deepStrictEqual(fired, [], "muted agents don't ping");
       assert.strictEqual(session(svc).needsAttention, false);
@@ -1127,8 +1162,8 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("muting a session with needsAttention=true clears the marker", async () => {
     const { svc } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop"));
       await tick();
       assert.strictEqual(session(svc).needsAttention, true);
       svc.setMuted("s1", true);
@@ -1142,14 +1177,14 @@ suite("AgentSessionService attention (needs-you ping / needsAttention)", () => {
   test("unmuting re-arms the needs-you ping", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
+      ingestWire(svc, ev("SessionStart"));
       svc.setMuted("s1", true);
-      svc.ingest(ev("Stop")); // suppressed while muted
+      ingestWire(svc, ev("Stop")); // suppressed while muted
       await tick();
       assert.deepStrictEqual(fired, []);
       svc.setMuted("s1", false);
-      svc.ingest(ev("UserPromptSubmit")); // a new turn
-      svc.ingest(ev("PreToolUse", "ExitPlanMode")); // needs-you edge — now fires normally
+      ingestWire(svc, ev("UserPromptSubmit")); // a new turn
+      ingestWire(svc, ev("PreToolUse", "ExitPlanMode")); // needs-you edge — now fires normally
       await tick();
       assert.deepStrictEqual(fired, ["awaitingPlanApproval"]);
       assert.strictEqual(session(svc).needsAttention, true);
@@ -1174,14 +1209,14 @@ suite("AgentSessionService.activityForRepo (muted sessions excluded)", () => {
     mkHookEvent(event, { sessionId, tool_name: toolName });
 
   test("excludes a muted session from the busiest-state pick and needsAttention aggregate", () => {
-    const svc = new AgentSessionService(() => false);
+    const svc = new AgentSessionService(claudeLocator, () => false);
     try {
       // s1 is muted while awaiting plan approval (a high-priority, needs-you state).
-      svc.ingest(ev("s1", "SessionStart"));
-      svc.ingest(ev("s1", "PreToolUse", "ExitPlanMode"));
+      ingestWire(svc, ev("s1", "SessionStart"));
+      ingestWire(svc, ev("s1", "PreToolUse", "ExitPlanMode"));
       svc.setMuted("s1", true);
       // s2 is a visible, idle agent.
-      svc.ingest(ev("s2", "SessionStart"));
+      ingestWire(svc, ev("s2", "SessionStart"));
       const act = svc.activityForRepo("/repo");
       assert.strictEqual(act.state, "idle", "the muted agent's state is ignored");
       assert.strictEqual(act.needsAttention, false, "the muted agent's attention is ignored");
@@ -1191,10 +1226,10 @@ suite("AgentSessionService.activityForRepo (muted sessions excluded)", () => {
   });
 
   test("a repo with only muted sessions reports a no-attention idle aggregate", () => {
-    const svc = new AgentSessionService(() => false);
+    const svc = new AgentSessionService(claudeLocator, () => false);
     try {
-      svc.ingest(ev("s1", "SessionStart"));
-      svc.ingest(ev("s1", "PreToolUse", "ExitPlanMode"));
+      ingestWire(svc, ev("s1", "SessionStart"));
+      ingestWire(svc, ev("s1", "PreToolUse", "ExitPlanMode"));
       svc.setMuted("s1", true);
       const act = svc.activityForRepo("/repo");
       assert.strictEqual(act.state, "idle");
@@ -1216,17 +1251,17 @@ suite("AgentSessionService background-agent stop gating", () => {
   // settle 0 → the stopped-edge ping fires synchronously in tests. `fired` records each ping's state.
   const mkSvc = (settle = 0) => {
     const notifications = new RecordingNotifications();
-    const svc = new AgentSessionService(() => false, settle, notifications);
+    const svc = new AgentSessionService(claudeLocator, () => false, settle, notifications);
     return { svc, fired: notifications.fired };
   };
 
   test("a Stop with a background agent running is ignored outright — no ping, no state change", () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit")); // thinking
-      svc.ingest(subEv("SubagentStart"));
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit")); // thinking
+      ingestWire(svc, subEv("SubagentStart"));
+      ingestWire(svc, ev("Stop"));
       assert.deepStrictEqual(fired, [], "no ping while a background agent runs");
       assert.strictEqual(session(svc).needsAttention, false);
       assert.strictEqual(session(svc).state, "thinking", "still working — the agent isn't done");
@@ -1238,17 +1273,17 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("SubagentStop never pings by itself; the agent's own final Stop does", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit"));
-      svc.ingest(subEv("SubagentStart", "sub-1"));
-      svc.ingest(subEv("SubagentStart", "sub-2"));
-      svc.ingest(ev("Stop")); // ignored — two still running
-      svc.ingest(subEv("SubagentStop", "sub-1"));
-      svc.ingest(ev("Stop")); // ignored — one still running
-      svc.ingest(subEv("SubagentStop", "sub-2")); // last one done — still no ping (no deferral)
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit"));
+      ingestWire(svc, subEv("SubagentStart", "sub-1"));
+      ingestWire(svc, subEv("SubagentStart", "sub-2"));
+      ingestWire(svc, ev("Stop")); // ignored — two still running
+      ingestWire(svc, subEv("SubagentStop", "sub-1"));
+      ingestWire(svc, ev("Stop")); // ignored — one still running
+      ingestWire(svc, subEv("SubagentStop", "sub-2")); // last one done — still no ping (no deferral)
       await wait(0);
       assert.deepStrictEqual(fired, [], "only a real Stop pings, never a SubagentStop");
-      svc.ingest(ev("Stop")); // the agent picks back up and emits its true final Stop
+      ingestWire(svc, ev("Stop")); // the agent picks back up and emits its true final Stop
       await wait(0);
       assert.deepStrictEqual(fired, ["stopped"], "final Stop pings once");
       assert.strictEqual(session(svc).needsAttention, true);
@@ -1260,12 +1295,12 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("an ignored Stop doesn't eat the next turn's ping", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(subEv("SubagentStart"));
-      svc.ingest(ev("Stop")); // ignored
-      svc.ingest(ev("UserPromptSubmit")); // new turn while the background agent still runs
-      svc.ingest(subEv("SubagentStop"));
-      svc.ingest(ev("Stop")); // normal turn end
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, subEv("SubagentStart"));
+      ingestWire(svc, ev("Stop")); // ignored
+      ingestWire(svc, ev("UserPromptSubmit")); // new turn while the background agent still runs
+      ingestWire(svc, subEv("SubagentStop"));
+      ingestWire(svc, ev("Stop")); // normal turn end
       await wait(0);
       assert.deepStrictEqual(fired, ["stopped"], "pings exactly once");
     } finally {
@@ -1276,9 +1311,9 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("SubagentStop with no prior start clamps at 0; a plain Stop still pings", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(subEv("SubagentStop")); // clamps at 0, never negative
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, subEv("SubagentStop")); // clamps at 0, never negative
+      ingestWire(svc, ev("Stop"));
       await wait(0);
       assert.deepStrictEqual(fired, ["stopped"]);
     } finally {
@@ -1289,7 +1324,7 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("SubagentStart for an unseen session creates no row", () => {
     const { svc } = mkSvc();
     try {
-      svc.ingest(subEv("SubagentStart"));
+      ingestWire(svc, subEv("SubagentStart"));
       assert.deepStrictEqual(svc.allSessions(), []);
     } finally {
       svc.dispose();
@@ -1299,9 +1334,9 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("SubagentStart doesn't change headline state", () => {
     const { svc } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit")); // thinking
-      svc.ingest(subEv("SubagentStart"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit")); // thinking
+      ingestWire(svc, subEv("SubagentStart"));
       assert.strictEqual(session(svc).state, "thinking");
     } finally {
       svc.dispose();
@@ -1311,11 +1346,11 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("markIdleOnDisconnect zeroes the counter, so a later Stop pings (fail-open)", async () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit"));
-      svc.ingest(subEv("SubagentStart")); // its SubagentStop will never arrive (interrupt)
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit"));
+      ingestWire(svc, subEv("SubagentStart")); // its SubagentStop will never arrive (interrupt)
       svc.markIdleOnDisconnect("s1");
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("Stop"));
       await wait(0);
       assert.deepStrictEqual(fired, ["stopped"], "a wedged counter must not eat future pings");
     } finally {
@@ -1326,10 +1361,10 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("SessionEnd clears active subagents", () => {
     const { svc } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(subEv("SubagentStart", "sub-1"));
-      svc.ingest(subEv("SubagentStart", "sub-2"));
-      svc.ingest(ev("SessionEnd"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, subEv("SubagentStart", "sub-1"));
+      ingestWire(svc, subEv("SubagentStart", "sub-2"));
+      ingestWire(svc, ev("SessionEnd"));
       assert.strictEqual(session(svc).hasActiveSubagents, false);
     } finally {
       svc.dispose();
@@ -1339,12 +1374,12 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("a subagent's own tool activity revives it after a premature SubagentStop", () => {
     const { svc, fired } = mkSvc();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("UserPromptSubmit")); // thinking
-      svc.ingest(subEv("SubagentStart"));
-      svc.ingest(subEv("SubagentStop")); // reported done...
-      svc.ingest(subEv("PreToolUse")); // ...but it's still actually emitting tool activity
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("UserPromptSubmit")); // thinking
+      ingestWire(svc, subEv("SubagentStart"));
+      ingestWire(svc, subEv("SubagentStop")); // reported done...
+      ingestWire(svc, subEv("PreToolUse")); // ...but it's still actually emitting tool activity
+      ingestWire(svc, ev("Stop"));
       assert.deepStrictEqual(fired, [], "revived activity must still gate the stop ping");
       assert.strictEqual(session(svc).state, "thinking");
     } finally {
@@ -1357,8 +1392,8 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("a quiet settle window releases the stop ping", async () => {
     const { svc, fired } = mkSvc(10);
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop"));
       assert.deepStrictEqual(fired, [], "no instant ping — the settle window is still open");
       await wait(50);
       assert.deepStrictEqual(fired, ["stopped"], "quiet window → the ping fires");
@@ -1371,9 +1406,9 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("resumed activity inside the settle window cancels the ping (wake-turn Stop)", async () => {
     const { svc, fired } = mkSvc(30);
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop")); // intermediate stop — the agent picks back up below
-      svc.ingest(ev("PreToolUse", "Task"));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop")); // intermediate stop — the agent picks back up below
+      ingestWire(svc, ev("PreToolUse", "Task"));
       await wait(80);
       assert.deepStrictEqual(fired, [], "the resumed turn cancelled the pending ping");
     } finally {
@@ -1384,15 +1419,15 @@ suite("AgentSessionService background-agent stop gating", () => {
   test("a SubagentStart landing inside the settle window suppresses the ping", async () => {
     const { svc, fired } = mkSvc(30);
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(ev("Stop")); // count is 0 at event time…
-      svc.ingest(subEv("SubagentStart")); // …but the spawn's events overtook the Stop on the socket
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, ev("Stop")); // count is 0 at event time…
+      ingestWire(svc, subEv("SubagentStart")); // …but the spawn's events overtook the Stop on the socket
       await wait(80);
       assert.deepStrictEqual(fired, [], "count > 0 at fire time → skipped");
       // The parent resumes and truly finishes: the next full turn pings normally.
-      svc.ingest(ev("PostToolUse", "Task"));
-      svc.ingest(subEv("SubagentStop"));
-      svc.ingest(ev("Stop"));
+      ingestWire(svc, ev("PostToolUse", "Task"));
+      ingestWire(svc, subEv("SubagentStop"));
+      ingestWire(svc, ev("Stop"));
       await wait(80);
       assert.deepStrictEqual(fired, ["stopped"]);
     } finally {
@@ -1825,15 +1860,15 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
 suite("AgentSessionService.turnState (Stop-gate signal)", () => {
   const ev = (event: string, toolName?: string): HookEventMessage =>
     mkHookEvent(event, { tool_name: toolName });
-  const mk = () => new AgentSessionService(() => false);
+  const mk = () => new AgentSessionService(claudeLocator, () => false);
 
   test("an edit-class tool marks the turn as having touched files", () => {
     const svc = mk();
     try {
-      svc.ingest(ev("UserPromptSubmit"));
+      ingestWire(svc, ev("UserPromptSubmit"));
       assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
-      svc.ingest(ev("PreToolUse", "Edit"));
-      svc.ingest(ev("PostToolUse", "Edit"));
+      ingestWire(svc, ev("PreToolUse", "Edit"));
+      ingestWire(svc, ev("PostToolUse", "Edit"));
       assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
     } finally {
       svc.dispose();
@@ -1843,8 +1878,8 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
   test("a read-only tool does not mark the turn", () => {
     const svc = mk();
     try {
-      svc.ingest(ev("UserPromptSubmit"));
-      svc.ingest(ev("PostToolUse", "Read"));
+      ingestWire(svc, ev("UserPromptSubmit"));
+      ingestWire(svc, ev("PostToolUse", "Read"));
       assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
     } finally {
       svc.dispose();
@@ -1854,9 +1889,9 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
   test("a new turn (UserPromptSubmit) resets the flag", () => {
     const svc = mk();
     try {
-      svc.ingest(ev("PostToolUse", "Write"));
+      ingestWire(svc, ev("PostToolUse", "Write"));
       assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
-      svc.ingest(ev("UserPromptSubmit"));
+      ingestWire(svc, ev("UserPromptSubmit"));
       assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
     } finally {
       svc.dispose();
@@ -1866,11 +1901,11 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
   test("hasPendingWork reflects a Task-tool subagent believed still active", () => {
     const svc = mk();
     try {
-      svc.ingest(ev("SessionStart"));
+      ingestWire(svc, ev("SessionStart"));
       assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
-      svc.ingest(mkHookEvent("SubagentStart", { agent_id: "sub-1" }));
+      ingestWire(svc, mkHookEvent("SubagentStart", { agent_id: "sub-1" }));
       assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
-      svc.ingest(mkHookEvent("SubagentStop", { agent_id: "sub-1" }));
+      ingestWire(svc, mkHookEvent("SubagentStop", { agent_id: "sub-1" }));
       assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
     } finally {
       svc.dispose();
@@ -1883,12 +1918,13 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
     // background_tasks count (Claude Code v2.1.145+) reveals it's still running.
     const svc = mk();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(
+        svc,
         mkHookEvent("Stop", { background_tasks: [mkBackgroundTask("t1"), mkBackgroundTask("t2")] }),
       );
       assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
-      svc.ingest(mkHookEvent("Stop", { background_tasks: [] }));
+      ingestWire(svc, mkHookEvent("Stop", { background_tasks: [] }));
       assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
     } finally {
       svc.dispose();
@@ -1898,8 +1934,8 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
   test("hasPendingWork reflects session_crons on a Stop event", () => {
     const svc = mk();
     try {
-      svc.ingest(ev("SessionStart"));
-      svc.ingest(mkHookEvent("Stop", { session_crons: [mkSessionCron("c1")] }));
+      ingestWire(svc, ev("SessionStart"));
+      ingestWire(svc, mkHookEvent("Stop", { session_crons: [mkSessionCron("c1")] }));
       assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
     } finally {
       svc.dispose();
@@ -1909,7 +1945,7 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
   test("noteBackgroundWork (blocking stop.gate.request path) feeds the same session state", () => {
     const svc = mk();
     try {
-      svc.ingest(ev("SessionStart"));
+      ingestWire(svc, ev("SessionStart"));
       svc.noteBackgroundWork("s1", { backgroundTaskCount: 1, sessionCronCount: 0 });
       assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
     } finally {
@@ -1940,46 +1976,74 @@ suite("PlanGateRegistry (plan auto-mode forwarding)", () => {
 
 suite("describeInbound (bridge debug log line)", () => {
   const base = { v: "1", ts: "t" };
+  const locator = new AgentServiceLocator();
 
   test("hook events show event, agent, and the interesting extras", () => {
     assert.strictEqual(
-      createInboundEventLog({
-        ...base,
-        t: "hook.event",
-        harness: "claudecode",
-        repoRoot: "/x",
-        event: { hook_event_name: "PreToolUse", session_id: "72a4f124-aaaa", tool_name: "Edit" },
-      } as AnyMessage),
+      createInboundEventLog(
+        {
+          ...base,
+          t: "hook.event",
+          harness: "claudecode",
+          repoRoot: "/x",
+          event: { hook_event_name: "PreToolUse", session_id: "72a4f124-aaaa", tool_name: "Edit" },
+        } as AnyMessage,
+        locator,
+      ),
       "hook.event PreToolUse agent=72a4f124 tool=Edit",
     );
   });
 
   test("subagent context and notification type are called out", () => {
     assert.strictEqual(
-      createInboundEventLog({
-        ...base,
-        t: "hook.event",
-        harness: "claudecode",
-        repoRoot: "/x",
-        event: {
-          hook_event_name: "Notification",
-          session_id: "72a4f124-aaaa",
-          agent_id: "abcd1234-bbbb",
-          notification_type: "permission_prompt",
-        },
-      } as AnyMessage),
+      createInboundEventLog(
+        {
+          ...base,
+          t: "hook.event",
+          harness: "claudecode",
+          repoRoot: "/x",
+          event: {
+            hook_event_name: "Notification",
+            session_id: "72a4f124-aaaa",
+            agent_id: "abcd1234-bbbb",
+            notification_type: "permission_prompt",
+          },
+        } as AnyMessage,
+        locator,
+      ),
       "hook.event Notification agent=72a4f124 subagent=abcd1234 type=permission_prompt",
+    );
+  });
+
+  test("an unrecognized harness falls back to the wire type alone (no dialect to render)", () => {
+    // A wire harness value outside the closed Harness union (e.g. an unknown plugin) — strategyForWire
+    // returns undefined, so there's no dialect renderer and we log the wire type alone.
+    assert.strictEqual(
+      createInboundEventLog(
+        {
+          ...base,
+          t: "hook.event",
+          harness: "geminicli",
+          repoRoot: "/x",
+          event: { hook_event_name: "PreToolUse", session_id: "72a4f124-aaaa", tool_name: "Edit" },
+        } as unknown as AnyMessage,
+        locator,
+      ),
+      "hook.event",
     );
   });
 
   test("non-hook messages show the type and agent", () => {
     assert.strictEqual(
-      createInboundEventLog({
-        ...base,
-        t: "session.attach",
-        sessionId: "72a4f124-aaaa",
-        repoRoot: "/x",
-      } as AnyMessage),
+      createInboundEventLog(
+        {
+          ...base,
+          t: "session.attach",
+          sessionId: "72a4f124-aaaa",
+          repoRoot: "/x",
+        } as AnyMessage,
+        locator,
+      ),
       "session.attach agent=72a4f124",
     );
   });
@@ -2012,8 +2076,12 @@ suite("shortSessionId (agent label)", () => {
 });
 
 suite("agentLabel (harness name + short id)", () => {
-  test("prefixes the harness name", () => {
-    assert.strictEqual(agentLabel("a1b2c3d4-e5f6-7890"), "Claude (a1b2c3d4)");
+  test("prefixes the harness display name", () => {
+    assert.strictEqual(agentLabel("Claude", "a1b2c3d4-e5f6-7890"), "Claude (a1b2c3d4)");
+  });
+
+  test("uses whatever display name it's given (a non-Claude harness)", () => {
+    assert.strictEqual(agentLabel("Fake", "a1b2c3d4-e5f6-7890"), "Fake (a1b2c3d4)");
   });
 });
 
@@ -2061,5 +2129,115 @@ suite("pickAuthorName (comment author fallback chain)", () => {
 
   test("ignores blank values", () => {
     assert.strictEqual(pickAuthorName("   ", "  "), "Developer");
+  });
+});
+
+// Proves the shared core (AgentSession state machine + notify path, the locator, plan-approve mode)
+// is genuinely harness-agnostic: driving it with a REAL non-Claude harness (Codex) off synthetic
+// AppEvents — using Codex's own tool names — exercises identical behaviour with no Claude specifics.
+// No fake strategy is registered: the seam is exercised through the production locator's real map.
+suite("AgentStrategy agnosticism (a second, non-Claude harness)", () => {
+  const CODEX: Harness = "codex";
+  const locator = new AgentServiceLocator();
+
+  const mk = (kind: AppEventKind, extra: Partial<AppEvent> = {}): AppEvent => ({
+    kind,
+    harness: CODEX,
+    sessionId: "s1",
+    backgroundTaskCount: 0,
+    sessionCronCount: 0,
+    ...extra,
+  });
+  const mkSvc = (focused = false) => {
+    const notifications = new RecordingNotifications();
+    const svc = new AgentSessionService(locator, () => focused, 0, notifications);
+    return { svc, fired: notifications.fired };
+  };
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test("the same state machine + notify path runs for a non-Claude harness", async () => {
+    const { svc, fired } = mkSvc();
+    try {
+      svc.ingest(mk("sessionStart"), "/repo");
+      svc.ingest(mk("userPromptSubmit"), "/repo");
+      svc.ingest(mk("preToolUse", { toolName: "apply_patch" }), "/repo");
+      const session = svc.sessionsForRepo("/repo")[0];
+      assert.strictEqual(session.state, "toolRunning");
+      assert.strictEqual(session.lastTool, "apply_patch");
+      assert.strictEqual(session.harness, CODEX);
+      svc.ingest(mk("planProposal"), "/repo");
+      assert.strictEqual(session.state, "awaitingPlanApproval");
+      await tick();
+      assert.deepStrictEqual(fired, ["awaitingPlanApproval"]);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("isEditTool marks the turn regardless of the (non-Claude) tool name", () => {
+    const { svc } = mkSvc();
+    try {
+      svc.ingest(mk("userPromptSubmit"), "/repo");
+      svc.ingest(mk("postToolUse", { toolName: "shell", isEditTool: false }), "/repo");
+      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
+      svc.ingest(mk("postToolUse", { toolName: "apply_patch", isEditTool: true }), "/repo");
+      assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("subagent gating works for a non-Claude harness", () => {
+    const { svc } = mkSvc();
+    try {
+      svc.ingest(mk("sessionStart"), "/repo");
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
+      svc.ingest(mk("subagentStart", { agentId: "sub-1" }), "/repo");
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, true);
+      svc.ingest(mk("subagentStop", { agentId: "sub-1" }), "/repo");
+      assert.strictEqual(svc.turnState("s1").hasPendingWork, false);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("a notification maps onto the state machine + pings", async () => {
+    const { svc, fired } = mkSvc();
+    try {
+      svc.ingest(mk("sessionStart"), "/repo");
+      svc.ingest(mk("userPromptSubmit"), "/repo");
+      svc.ingest(mk("notification", { notificationKind: "permissionPrompt" }), "/repo");
+      assert.strictEqual(svc.sessionsForRepo("/repo")[0].state, "awaitingPermission");
+      await tick();
+      assert.deepStrictEqual(fired, ["awaitingPermission"]);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("the locator resolves every registered harness independently", () => {
+    assert.strictEqual(locator.strategyFor("claudecode").displayName, "Claude");
+    assert.strictEqual(locator.strategyFor("codex").displayName, "Codex");
+    assert.strictEqual(locator.strategyFor("opencode").displayName, "OpenCode");
+    assert.strictEqual(locator.strategyForWire("codex")?.displayName, "Codex");
+    assert.strictEqual(locator.strategyForWire("nope"), undefined);
+    // The agent-row label reflects the resolved harness's own display name.
+    assert.strictEqual(
+      agentLabel(locator.strategyFor("codex").displayName, "abcd1234-xyz"),
+      "Codex (abcd1234)",
+    );
+  });
+
+  test("plan-approve mode honors the harness config key, else the strategy default", () => {
+    const claudeDefault = locator.strategyFor("claudecode").defaultPlanApproveMode; // "auto"
+    const codexDefault = locator.strategyFor("codex").defaultPlanApproveMode; // undefined
+    // An explicit per-harness config value wins over the strategy default.
+    assert.strictEqual(resolvePlanApproveMode("default", claudeDefault), "default");
+    // Absent config → the strategy's own default.
+    assert.strictEqual(resolvePlanApproveMode(undefined, claudeDefault), "auto");
+    // "off" → leave the mode unchanged.
+    assert.strictEqual(resolvePlanApproveMode("off", claudeDefault), undefined);
+    // A harness with no settable mode at all (Codex).
+    assert.strictEqual(resolvePlanApproveMode(undefined, codexDefault), undefined);
   });
 });
