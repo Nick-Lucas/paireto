@@ -247,3 +247,12 @@ resolve with the same two actions.
   Claude Code plugin per agent (manual fallback available) and apply recommended keybindings.
 - Restart Claude Code so hooks + the MCP tool load.
 - Requires: VS Code, Claude Code, git.
+
+## Testing
+
+- **Unit tests** (`pnpm test`) cover the framework, mappers, installers, and gate semantics.
+- **E2E** (`pnpm test:e2e`, `src/e2e/`) drives the whole plan → feedback → approve → implement →
+  review loop inside a real VS Code window over the per-repo socket (never terminal scraping).
+  `PAIRETO_E2E_DRIVER=claudecode|codex|opencode` runs the real harness TUI in an isolated temp home
+  (real LLM calls, cents per run); a missing binary/auth SKIPs (never fails). All three harnesses
+  pass the full five-step flow — see `src/e2e/README.md` for setup.

@@ -1,7 +1,7 @@
 {
   "name": "paireto",
   "description": "Bridges Claude Code to the VS Code Paireto extension",
-  "version": "0.5.0",
+  "version": "0.5.2",
   "author": {
     "name": "paireto"
   },

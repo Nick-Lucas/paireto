@@ -1,5 +1,5 @@
 {
   "name": "paireto-codex",
   "description": "Bridges Codex CLI to the VS Code Paireto extension",
-  "version": "0.5.0"
+  "version": "0.5.2"
 }

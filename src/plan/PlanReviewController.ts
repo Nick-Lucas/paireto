@@ -92,7 +92,14 @@ export class PlanReviewController implements vscode.Disposable {
       query: planId,
     });
     const key = PlanGateRegistry.key(sessionId, planId);
-    const review: PlanReview = { id: key, key, sessionId, harness: event.harness, uri, markdown: plan };
+    const review: PlanReview = {
+      id: key,
+      key,
+      sessionId,
+      harness: event.harness,
+      uri,
+      markdown: plan,
+    };
 
     this.provider.set(uri, plan);
     this.plans.set(review.id, review);
@@ -115,7 +122,9 @@ export class PlanReviewController implements vscode.Disposable {
     this.updatePendingContext();
     this.changeEmitter.fire();
     const planTool = this.locator.strategyFor(review.harness).planToolName;
-    log.info(`plan review opened for agent ${sessionId.slice(0, 8)} (${planTool}, repo ${repoRoot})`);
+    log.info(
+      `plan review opened for agent ${sessionId.slice(0, 8)} (${planTool}, repo ${repoRoot})`,
+    );
     this.notifyPlanOpened(review);
 
     // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
@@ -136,7 +145,11 @@ export class PlanReviewController implements vscode.Disposable {
     const APPROVE = "Approve Immediately";
     const name = this.locator.strategyFor(review.harness).displayName;
     void vscode.window
-      .showInformationMessage(`${name} finished a plan and is waiting for your review.`, VIEW, APPROVE)
+      .showInformationMessage(
+        `${name} finished a plan and is waiting for your review.`,
+        VIEW,
+        APPROVE,
+      )
       .then(async (choice) => {
         if (!this.plans.has(review.id)) {
           return; // resolved/dropped while the toast was up
@@ -256,6 +269,10 @@ export class PlanReviewController implements vscode.Disposable {
   /** True while any plan is awaiting review (drives the Plan Review section). */
   hasPendingPlan(): boolean {
     return this.plans.size > 0;
+  }
+
+  planTextForGate(gateId: string): string | undefined {
+    return this.plans.get(gateId)?.markdown;
   }
 
   private planForUri(uri: vscode.Uri): PlanReview | undefined {

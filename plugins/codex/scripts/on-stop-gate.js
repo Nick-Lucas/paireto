@@ -9,10 +9,9 @@
 // Codex Stop decision shape (empirically CONFIRMED Claude-identical, codex-cli 0.144.1):
 //   allow: exit 0 with no output.
 //   block: {"decision":"block","reason":"..."} -> Codex keeps going and addresses the feedback;
-//          the follow-up Stop then carries stop_hook_active:true (guards re-entry).
+//          the follow-up Stop then carries stop_hook_active:true.
 //
 // Fork:
-//   - stop_hook_active === true            -> allow (this Stop is our own block's re-injected follow-up).
 //   - readPlanTurn().isPlanTurn === true   -> PLAN GATE: the ONLY plan-mode signal is the rollout
 //                                             transcript (permission_mode is approval-policy-only and
 //                                             never "plan", last_assistant_message is null, update_plan
@@ -150,11 +149,6 @@ async function main() {
     event = JSON.parse(raw);
   } catch {
     allow(); // malformed input -> fail open
-    return;
-  }
-
-  if (event.stop_hook_active === true) {
-    allow(); // our own block's re-injected follow-up Stop
     return;
   }
 

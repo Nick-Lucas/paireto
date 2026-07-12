@@ -153,6 +153,27 @@ function applyOpenCodeConfig(config, planningAgents) {
   }
 }
 
+/** Whether a `message.updated` is a NEW user turn-start (its first sighting) rather than an OpenCode
+ *  turn-end RE-fire of an already-seen user message. Mutates `seen` (adds the id on first sight).
+ *  OpenCode fires message.updated for the SAME user message again at turn end (finalizing its
+ *  metadata/summary); each one maps downstream to userPromptSubmit, which resets `changedThisTurn` —
+ *  a second reset AFTER the turn's edits hides them from the post-hoc turn-end review. Non-user roles
+ *  are never a turn-start; a user message with no id can't be deduped, so it fails toward forwarding. */
+function isNewUserTurn(seen, info) {
+  if (!info || info.role !== "user") {
+    return false;
+  }
+  const id = info.id;
+  if (typeof id !== "string") {
+    return true;
+  }
+  if (seen.has(id)) {
+    return false;
+  }
+  seen.add(id);
+  return true;
+}
+
 /** True for the internal title-generation prompt (a short LLM call OpenCode makes with no real agent
  *  session) — we must never inject planning steering into it. Matches plannotator's substring check. */
 function isTitleGeneratorPrompt(systemText) {
@@ -411,6 +432,11 @@ function createBridge(worktree) {
   // of cross-event correlation the extension can't do statelessly — enriches every forwarded child
   // event with parentSessionID so it routes to the parent row (see OpenCodeStrategy).
   const parentOf = new Map();
+  // User message ids already forwarded as a turn-start (userPromptSubmit). OpenCode re-fires
+  // `message.updated` for the SAME user message at turn end (finalizing its metadata/summary), and
+  // each one downstream resets `changedThisTurn` — a second reset AFTER the turn's edits hides them
+  // from the post-hoc turn-end review. So a given user message is a turn-start ONLY on first sight.
+  const seenUserMessages = new Set();
   // Held-open liveness connections keyed by top-level sessionID (their close = that agent died).
   const livenessSockets = new Map();
 
@@ -603,6 +629,7 @@ function createBridge(worktree) {
   return {
     repoRoot,
     parentOf,
+    seenUserMessages,
     attachLiveness,
     detachLiveness,
     closeAll,
@@ -657,9 +684,10 @@ function handleEvent(bridge, event) {
       bridge.forwardEvent(type, event);
       return;
     case "message.updated": {
-      // Only the user's own prompt is a turn-start signal downstream; assistant/tool messages are noise.
-      const role = ((event.properties || {}).info || {}).role;
-      if (role === "user") {
+      // Only the user's own prompt is a turn-start signal downstream (assistant/tool messages are
+      // noise) AND only on its FIRST sighting — OpenCode re-fires message.updated for the same user
+      // message at turn end, and a repeat forward would reset changedThisTurn AFTER the turn's edits.
+      if (isNewUserTurn(bridge.seenUserMessages, (event.properties || {}).info)) {
         bridge.forwardEvent(type, event);
       }
       return;
@@ -980,6 +1008,7 @@ export const _internals = Object.assign(async () => ({}), {
   ensurePermission,
   isPrimaryCapableAgent,
   applyOpenCodeConfig,
+  isNewUserTurn,
   isTitleGeneratorPrompt,
   getLastUserAgentFromMessages,
   agentModeFor,

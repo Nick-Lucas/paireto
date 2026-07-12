@@ -429,6 +429,14 @@
   default `auto`; opencode: agent name, default `build`; NO codex key — no settable mode). The key's
   value wins over the strategy's `defaultPlanApproveMode` via `resolvePlanApproveMode`; `off` (or a
   harness with no key/default) leaves the mode unchanged.
+  - **Claude Code emitAllow shape (empirical, CLI 2.1.207 / July 2026):** since ~2.1.199
+    (anthropics/claude-code#74256) the CLI DISCARDS an ExitPlanMode allow unless the decision carries
+    `updatedInput` — a bare `{behavior:"allow"}`, or one carrying only `updatedPermissions`, falls
+    back to the native "Would you like to proceed?" prompt. WITH the tool's own input echoed back
+    unchanged as `updatedInput` (`{plan, planFilePath}`, a schema-valid no-op), the allow is honored
+    AND the `updatedPermissions:[{setMode}]` riding alongside is applied — the fields COMPOSE (same
+    fix as plannotator#1008 / caret#192). `on-plan-gate.js` therefore always echoes `updatedInput`
+    and keeps the `nextMode`→setMode switch. deny was never affected.
 
 - **Turn-end auto-review is gated by `paireto.review.mode`** (`automatic` default / `manual`): in
   `manual`, `shouldOpenTurnEndReview` ignores `changedThisTurn`, so only queued comments or
@@ -497,7 +505,9 @@
   locator — the AgentStrategy seam carries everything else.
 
 - **Codex has no plan/review hooks of its own, so ONE Stop-hook script (`on-stop-gate.js`) serves
-  both.** `stop_hook_active` → allow (our block's follow-up); a plan-mode turn → plan gate (deny =
+  both.** `stop_hook_active` is deliberately NOT short-circuited: the follow-up Stop after our own
+  block carries the revised plan / addressed edits and must re-gate for Send Feedback rounds (loop
+  safety = the extension only blocks on explicit user feedback). A plan-mode turn → plan gate (deny =
   `{"decision":"block","reason"}` so the agent revises; allow = emit nothing so the stop proceeds and
   Codex stays in plan mode — no settable approve mode, and the "Implement this plan?" prompt is a
   hook-invisible TUI selection, so approve only unblocks the Stop); else the turn-end review gate,
@@ -599,7 +609,18 @@
   `block`+reason → inject the feedback as a fresh user turn (`session.prompt`) to resume the agent.
   STRICT fail-open: no window / timeout / drop / blank reason inject NOTHING — feedback reaches the
   agent only on an explicit Send Feedback. Loop safety mirrors Claude (userPromptSubmit resets
-  changedThisTurn; review slot serializes).
+  changedThisTurn; review slot serializes). `changedThisTurn` is set ONLY by the native edit-tool
+  `postToolUse` edge (write/edit/apply_patch); a model that edits via `bash` bypasses detection
+  (ACCEPTED — mitigate by model choice; an EXTENSION-side diff could close it someday). One subtlety
+  kept for turn-end correctness: a user `message.updated` forwards as userPromptSubmit only ONCE per
+  message id (OpenCode re-fires it at turn-end, which would otherwise reset changedThisTurn AFTER the
+  edits).
+
+- **Plugins and hooks are stateless: they do not process data that can be calculated on the
+  extension side.** They forward events as-is and enrich them with additional metadata (envelope
+  `meta`, repoRoot, plan text recovered from a transcript) so the EXTENSION can do the stateful
+  calculations instead. Anything resembling change detection, diffing, or cross-turn state belongs
+  extension-side.
 
 - **The OpenCode installer is a plain three-file copy into `~/.config/opencode/`** (`plugin/paireto.js`
   + `plugin/adapter.json`, `commands/paireto-review.md`) — OpenCode autoloads both dirs, no CLI/config
@@ -607,3 +628,28 @@
   shared dirs untouched (no broad dir copy). Probe = the installed `plugin/adapter.json` version
   matches the shipped one. The copy plan + version parsing are pure, unit-tested; no stableDir staging
   (OpenCode loads the file in place).
+
+- **The E2E suite is socket-anchored: the per-repo unix socket is both the await point (blocking
+  gate requests) and the drive point (real `paireto.gate.*` commands) — never terminal scraping.**
+  The full-flow test (`src/e2e/tests/fullflow.e2e.ts`) runs inside the extension host
+  (`@vscode/test-electron`, `src/e2e/runE2E.ts`); real TUIs run in an EXTERNAL tmux session (send-keys
+  + capture-pane, which Codex's hook-invisible "Implement this plan?" selector requires).
+  `XDG_STATE_HOME` must be a SHORT /tmp path — macOS's ~104-char `sun_path` limit EINVALs long socket
+  paths. Drivers: claudecode/codex/opencode — each costs cents/run and
+  auth-probes → skip; `PAIRETO_E2E_DRIVER` has NO default (unset → runE2E exits asking for one). The
+  opencode driver's model is `openai/gpt-5.5-fast` (a Codex-subscription model via the opencodex
+  plugin). See src/e2e/README.md.
+
+- **The E2E test control plane is env-gated commands, not exported API** (`src/testControlPlane.ts`,
+  `exposeTestControlPlane`, registered only when `PAIRETO_TEST=1`): `paireto.test.inspect` (state
+  snapshot incl. `planTextForGate`) and `paireto.test.addComment` (disposable CommentController + the
+  existing add-comment commands). `activate()` still returns void; zero product surface when unset.
+
+- **RESOLVED E2E finding: OpenCode's post-hoc turn-end review opens on the native edit-tool signal.**
+  OpenCode re-fires `message.updated` for the SAME user message at turn END, so the plugin's
+  `userPromptSubmit` re-fired and reset `changedThisTurn` AFTER the turn's edits → the gate saw
+  `false` and allowed the stop. Fix: forward a user `message.updated` as `userPromptSubmit` only on
+  FIRST sight of its message id (`isNewUserTurn` + `seenUserMessages`). Edits are detected via the
+  native `write`/`edit`/`apply_patch` `postToolUse` edge only — a `bash`-driven edit isn't seen
+  (accepted; mitigate by model choice, no plugin-side git diff). Adapter pinned against opencode
+  1.17.18 (tool ids `edit`/`write`/`apply_patch`, NOT `patch`).

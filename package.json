@@ -31,6 +31,7 @@
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
+    "test:e2e": "pnpm run compile && pnpm run compile-tests && node out/e2e/runE2E.js",
     "emulator": "node scripts/emulator.ts"
   },
   "dependencies": {

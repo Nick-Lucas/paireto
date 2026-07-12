@@ -14,7 +14,11 @@
 // OpenCode's session.idle can't PARK the agent (it's fire-and-forget), so turn-end review is POST-HOC:
 // the plugin fires a stop.gate.request on each top-level idle and, on block+reason, injects the
 // feedback as a fresh user turn to resume the (already-idle) agent — mapped here identically to any
-// other harness's `stop`, the extension's onStopGate logic is untouched. It DOES have a live
+// other harness's `stop`, the extension's onStopGate logic is untouched. The `changedThisTurn` signal
+// that gate reads is set by the edit-tool PostToolUse edge (write/edit/apply_patch); the plugin
+// forwards a user message.updated as userPromptSubmit only ONCE per message id, because OpenCode
+// re-fires it at turn-end and a second userPromptSubmit would reset changedThisTurn AFTER the edits.
+// It DOES have a live
 // process-death signal (the plugin holds a socket open per top-level session), so supportsLiveness is
 // true. On plan approval `nextMode` is the target agent to switch to (default `build`), not a
 // permission mode — see defaultPlanApproveMode.
@@ -103,9 +107,11 @@ export interface OpenCodeForwardedEvent {
 }
 // ------------------------------------------------------------------------------------------------
 
-/** OpenCode tools that edit working-tree files. Best-effort — OpenCode has no turn-end Stop gate, so
- *  this only feeds the (never-parking) changed-this-turn flag; it is not review-critical. */
-const EDIT_TOOLS: ReadonlySet<string> = new Set<string>(["edit", "write", "patch"]);
+/** OpenCode tools that edit working-tree files (real tool ids per `/experimental/tool/ids`, opencode
+ *  1.17.18 — note it's `apply_patch`, not `patch`). This is the turn-end edit signal: a matching
+ *  `postToolUse` sets `changedThisTurn`. A model that edits via `bash` bypasses it (accepted — the
+ *  plugin does no change detection of its own; an extension-side diff could close it someday). */
+const EDIT_TOOLS: ReadonlySet<string> = new Set<string>(["edit", "write", "apply_patch"]);
 
 /** The custom tool whose invocation is a plan proposal (opt-in — the agent must be instructed to call
  *  it). Its blocking round-trip is the plan gate; the tool.execute.before edge is the telemetry. */

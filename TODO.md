@@ -143,6 +143,7 @@ Waiting for the exploration agent to finish mapping the existing session-boot ma
 
 # Feature Ideas:
 
+* Since Claude now allows `updatedInput` to be passed back on plan exit permission, can we use that to support direct manual editing of the plan?
 * Replace the Plan view with a proper WYSIWYG Markdown experience similar to Plannotator
 * Show me / Explain to me skill, prints a whole lesson on how something works with a UI to navigate you though
 * a TODOs and task tracker which you can track and dispatch tasks or grouped of tasks with 

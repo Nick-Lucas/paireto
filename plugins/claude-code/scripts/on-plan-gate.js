@@ -10,9 +10,20 @@
 // we defer to Claude Code's native plan prompt (fail-visible).
 //
 // PermissionRequest decision shape, per the Claude Code hooks API:
-//   allow: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}
+//   allow: {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow","updatedInput":{...}}}}
 //   deny:  {"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"deny","message":"..."}}}
 //   ask:   emit nothing (exit 0) -> defers to Claude Code's native plan-approval prompt.
+//
+// since ~2.1.199 the CLI silently DISCARDS an allow
+// decision for ExitPlanMode unless the decision carries
+// `updatedInput` — a bare `{behavior:"allow"}`, or one carrying only `updatedPermissions`, falls
+// back to the native "Would you like to proceed?" plan prompt (anthropics/claude-code#74256). With
+// the tool's own `tool_input` echoed back UNCHANGED as `updatedInput` (a schema-valid no-op edit),
+// the allow is honored AND any `updatedPermissions:[{type:"setMode",...}]` riding alongside is
+// applied — the two fields COMPOSE (same fix as backnotprop/plannotator#1008 and
+// macintacos/caret#192, which pin exactly this wire shape). So the approve→mode-switch
+// (`nextMode` -> setMode) works again as long as the echo is always present. deny was never
+// affected (no such field).
 
 const crypto = require("node:crypto");
 const bridge = require("./bridge.js");
@@ -22,10 +33,8 @@ const SOFT_TIMEOUT_BUFFER_MS = 5000;
 // Max time the gate blocks waiting for a decision before deferring to the native prompt (~4 days).
 const GATE_TIMEOUT_MS = 345600 * 1000;
 
-function emitAllow(nextMode) {
-  // On allow, optionally set the permission mode the session enters next (e.g. "auto"). Claude Code
-  // otherwise restores whatever mode was active before plan mode; `updatedPermissions` overrides that.
-  const decision = { behavior: "allow" };
+function emitAllow(toolInput, nextMode) {
+  const decision = { behavior: "allow", updatedInput: toolInput || {} };
   if (nextMode) {
     decision.updatedPermissions = [{ type: "setMode", mode: nextMode, destination: "session" }];
   }
@@ -35,7 +44,7 @@ function emitAllow(nextMode) {
         hookEventName: "PermissionRequest",
         decision,
       },
-    })
+    }),
   );
 }
 
@@ -46,7 +55,7 @@ function emitDeny(message) {
         hookEventName: "PermissionRequest",
         decision: { behavior: "deny", message },
       },
-    })
+    }),
   );
 }
 
@@ -77,7 +86,7 @@ async function main() {
 
   const target = bridge.resolveTarget(cwd);
   if (!target) {
-    emitAllow(); // no window listening -> fail open
+    emitAllow(event.tool_input); // no window listening -> fail open
     return;
   }
 
@@ -86,7 +95,7 @@ async function main() {
     const key = bridge.repoKey(target.repoRoot);
     conn = await bridge.connectAndHandshake(target.socketPath, key, CONNECT_TIMEOUT_MS);
   } catch {
-    emitAllow(); // couldn't reach the window -> fail open
+    emitAllow(event.tool_input); // couldn't reach the window -> fail open
     return;
   }
 
@@ -126,7 +135,7 @@ async function main() {
       clearTimeout(timer);
       conn.sock.destroy();
       if (msg.decision === "allow") {
-        emitAllow(msg.nextMode);
+        emitAllow(event.tool_input, msg.nextMode);
       } else {
         emitDeny(msg.reason || "Plan changes requested.");
       }

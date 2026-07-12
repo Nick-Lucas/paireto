@@ -31,6 +31,7 @@ import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
+import { exposeTestControlPlane } from "./testControlPlane.js";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Warm the comment-author cache (signed-in account → OS user → "Developer"); fire-and-forget.
@@ -148,6 +149,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     mainTree.register(),
   );
+
+  // Env-gated E2E test control plane (inert unless PAIRETO_TEST === "1"): read-only inspect + a
+  // comment injector that re-dispatches through the real add-comment commands. Never in production.
+  if (process.env.PAIRETO_TEST === "1") {
+    context.subscriptions.push(
+      exposeTestControlPlane({
+        agents,
+        coordinator,
+        planReview,
+        reviewController,
+        repoService,
+      }),
+    );
+  }
 
   // Tripwire: a review/stop request should only ever arrive for the repo this window serves. A
   // foreign repoRoot means the bridge targeted the wrong socket — log it (behavior unchanged).

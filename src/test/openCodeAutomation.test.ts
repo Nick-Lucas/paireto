@@ -212,6 +212,32 @@ suite("OpenCode adapter automation helpers", () => {
       assert.strictEqual(mod.stopGateInjectionReason(undefined), null);
     });
 
+    test("isNewUserTurn: a user message is a turn-start only on FIRST sight of its id", () => {
+      // OpenCode re-fires message.updated for the SAME user message at turn end; a second forward
+      // would reset changedThisTurn AFTER the turn's edits and hide them from the turn-end review.
+      const seen = new Set<string>();
+      assert.strictEqual(mod.isNewUserTurn(seen, { role: "user", id: "msg_1" }), true);
+      assert.strictEqual(
+        mod.isNewUserTurn(seen, { role: "user", id: "msg_1" }),
+        false,
+        "the turn-end re-fire of the same message is NOT a new turn",
+      );
+      assert.strictEqual(
+        mod.isNewUserTurn(seen, { role: "user", id: "msg_2" }),
+        true,
+        "a genuinely new user message (new id) is a new turn",
+      );
+    });
+
+    test("isNewUserTurn: non-user roles are never a turn-start; an id-less user msg still forwards", () => {
+      const seen = new Set<string>();
+      assert.strictEqual(mod.isNewUserTurn(seen, { role: "assistant", id: "a1" }), false);
+      assert.strictEqual(mod.isNewUserTurn(seen, {}), false);
+      // No id to dedup on → fail toward forwarding (can't tell a re-fire, so treat as a turn-start).
+      assert.strictEqual(mod.isNewUserTurn(seen, { role: "user" }), true);
+      assert.strictEqual(mod.isNewUserTurn(seen, { role: "user" }), true);
+    });
+
     test("isChildSession: true only for a session known to have a parent", () => {
       const parentOf = new Map<string, string>([["child", "parent"]]);
       assert.strictEqual(mod.isChildSession("child", parentOf), true);
