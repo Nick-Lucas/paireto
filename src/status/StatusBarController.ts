@@ -29,18 +29,18 @@ export class StatusBarController implements vscode.Disposable {
   }
 
   render(): void {
-    const repo = this.repoService.current();
+    const repo = this.repoService.currentRoot();
     if (!repo) {
       this.item.hide();
       return;
     }
-    const repoName = path.basename(repo.root.fsPath);
+    const repoName = path.basename(repo.uri.fsPath);
     const branch = repo.branch ?? "detached";
-    const activity = this.agents.activityForRepo(repo.root.fsPath);
+    const activity = this.agents.activityForRepo(repo.uri.fsPath);
     const glyph = activityGlyph(activity);
 
     this.item.text = `$(repo) ${repoName} · ${branch}${glyph}`;
-    this.item.tooltip = buildTooltip(repo.root.fsPath, branch, activity);
+    this.item.tooltip = buildTooltip(repo.uri.fsPath, branch, activity);
     this.item.backgroundColor = activityBackground(activity);
     this.item.show();
   }

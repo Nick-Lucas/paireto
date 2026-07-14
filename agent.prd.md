@@ -66,7 +66,7 @@ Setup notes:
 ## Features
 
 ### Agents
-- Live list of connected Claude sessions **for the current repo/worktree**, with status (idle /
+- Live list of connected agent sessions **across every workspace and Git root in the window**, with status (idle /
   thinking / running tool / awaiting plan / awaiting permission). Rows awaiting a gate show which kind
   (plan/code review) and whether it's foreground (active) or pending. Subagent activity is not tracked
   at all — only the top-level agent's status is shown.
@@ -117,7 +117,7 @@ resolve with the same two actions.
 - Line comments tagged Question / Comment / Problem; **comments are editable and deletable** after
   creation (edit/save/delete on the comment). The author is the VS Code signed-in account, else the OS
   login name, else "Developer".
-- **Switch between agents:** the Agents section is scoped to the current repo/worktree and shows
+- **Switch between agents:** the Agents section is window-wide and shows
   which agents are awaiting which gate (plan vs review) and which is foreground vs pending. Clicking
   an agent brings its gate to the foreground (backgrounding the current one without resolving it), so
   you can flip between several pending plans/reviews and come back. At most one review is pending at a
@@ -167,12 +167,20 @@ resolve with the same two actions.
   **Staged**, **Working Tree**.
   - Committed = files changed since the Compare-To point that aren't already staged/unstaged.
   - Each group title row shows a coloured layer icon plus a muted `N files · +adds -dels` indicator.
+- A single Git repository keeps the compact layout above. With multiple detected repositories, the
+  view adds an expanded folder row per repository (including clean repositories), labelled with its
+  ending directory name, current branch as the secondary label, and an absolute-path tooltip; each
+  row owns its Committed / Staged / Working Tree groups. Nested repositories and submodules remain
+  separate roots. The shared comparison target remains on the Changed Files section row.
 - **Compare To** presets (HEAD, merge-base, default branch (main/master auto-detected), recent refs,
   or any branch/ref via picker) and the **Flat / Tree** layout toggle are inline buttons on the
   Changed Files section row. Every open virtual review file also has its own **Compare To** title
   action (Index, HEAD, merge-base, default branch, recent ref, or any branch/ref); this changes only
   that tab's pinned baseline. Both pickers initially highlight their current value; an arbitrary
   current ref is included explicitly when it is not already a preset/recent item.
+- In a multi-repository view, Compare To is one semantic window-wide choice: HEAD, merge-base, or
+  default branch. Each repository resolves that preset independently. Custom/recent refs remain
+  available in the single-repository picker because a ref is not reliably meaningful across repos.
 - Per-file: open changes (row click), open file (first inline button on every row), stage, unstage,
   discard (confirm) + right-click menu.
 - Browsing diffs are **editable with full LSP** when the file has no change at a lower level
@@ -195,6 +203,8 @@ resolve with the same two actions.
   (while a plan is pending), Feedback (during a review session). Section controls live on their
   section rows / the title bar; the shared gate actions use colored icons whenever a plan or review is
   active — **Approve** (green) until feedback is queued, then **Send Feedback** (amber).
+- The sidebar inventory is stable while navigating files: changing the active editor does not switch
+  its repository context. The status bar and repo/worktree switcher remain active-repository views.
 - Commands exposed in the Command Palette or parent editor UI use the `Paireto: ` prefix; actions
   shown only inside Paireto comment boxes or tree context menus keep concise local labels. The
   comment-controller gutter action is parent UI and remains `Paireto: Add Comment`.

@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 
 import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
 import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
+import { relatedWorkspaceFolder } from "../git/WorkspaceRootCatalog.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
 import { ClaudeCodeStrategy } from "../harness/ClaudeCodeStrategy.js";
 import { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
@@ -47,6 +48,7 @@ import {
   changedFileCount,
   commandSession,
   computeViewBadge,
+  repositoryBranchLabel,
   shortSessionId,
 } from "../views/MainTreeProvider.js";
 import { pickAuthorName } from "../comments/author.js";
@@ -487,6 +489,7 @@ suite("renderPlanFeedback", () => {
 suite("renderReviewFeedback", () => {
   const mk = (over: Partial<ReviewComment>): ReviewComment => ({
     id: "x",
+    repoRoot: "/repo",
     filePath: "src/a.ts",
     side: "modified",
     line: 0,
@@ -510,6 +513,18 @@ suite("renderReviewFeedback", () => {
 
   test("returns empty when there are no comments", () => {
     assert.strictEqual(renderReviewFeedback([]), "");
+  });
+
+  test("qualifies paths by absolute repo root in a multi-repository review", () => {
+    const out = renderReviewFeedback(
+      [
+        mk({ repoRoot: "/workspace/api", filePath: "src/a.ts", body: "api feedback" }),
+        mk({ repoRoot: "/workspace/web", filePath: "src/a.ts", body: "web feedback" }),
+      ],
+      true,
+    );
+    assert.ok(out.includes("/workspace/api/src/a.ts:1"));
+    assert.ok(out.includes("/workspace/web/src/a.ts:1"));
   });
 });
 
@@ -1572,15 +1587,20 @@ suite("reconcileDiffTarget (open-diff re-point after stage/unstage/discard)", ()
 suite("open diff comparison stability", () => {
   test("editing a staged diff moves its tree location without changing its HEAD comparison", () => {
     assert.deepStrictEqual(
-      markOpenDiffEdited({ path: "src/a.ts", group: "staged", baseRef: "HEAD" }),
-      { path: "src/a.ts", group: "unstaged", baseRef: "HEAD" },
+      markOpenDiffEdited({ repoRoot: "/repo", path: "src/a.ts", group: "staged", baseRef: "HEAD" }),
+      { repoRoot: "/repo", path: "src/a.ts", group: "unstaged", baseRef: "HEAD" },
     );
   });
 
   test("editing a committed diff preserves its originally resolved comparison ref", () => {
     assert.deepStrictEqual(
-      markOpenDiffEdited({ path: "src/a.ts", group: "committed", baseRef: "origin/main" }),
-      { path: "src/a.ts", group: "unstaged", baseRef: "origin/main" },
+      markOpenDiffEdited({
+        repoRoot: "/repo",
+        path: "src/a.ts",
+        group: "committed",
+        baseRef: "origin/main",
+      }),
+      { repoRoot: "/repo", path: "src/a.ts", group: "unstaged", baseRef: "origin/main" },
     );
   });
 });
@@ -1690,8 +1710,44 @@ suite("durable review comment attachments", () => {
   });
 });
 
+suite("WorkspaceRootCatalog repository ownership", () => {
+  const folder = (
+    overrides: Partial<{ rawRoot: string; canonicalRoot: string; gitRoot: string }>,
+  ) => ({
+    rawRoot: "/workspace",
+    canonicalRoot: "/workspace",
+    ...overrides,
+  });
+
+  test("admits nested repositories and submodules inside a workspace folder", () => {
+    const workspace = folder({ gitRoot: "/workspace" });
+    assert.strictEqual(
+      relatedWorkspaceFolder("/workspace/packages/api", "/workspace/packages/api", [workspace]),
+      workspace,
+    );
+  });
+
+  test("admits an ancestor only when it is the folder's CLI-authoritative Git root", () => {
+    const workspace = folder({
+      rawRoot: "/repo/packages/api",
+      canonicalRoot: "/repo/packages/api",
+      gitRoot: "/repo",
+    });
+    assert.strictEqual(relatedWorkspaceFolder("/repo", "/repo", [workspace]), workspace);
+  });
+
+  test("rejects a false ancestor that disagrees with a worktree's CLI root", () => {
+    const worktree = folder({
+      rawRoot: "/repo-worktrees/feature",
+      canonicalRoot: "/repo-worktrees/feature",
+      gitRoot: "/repo-worktrees/feature",
+    });
+    assert.strictEqual(relatedWorkspaceFolder("/repo", "/repo", [worktree]), undefined);
+  });
+});
+
 suite("pickCurrentRepo (deterministic repo selection)", () => {
-  const repo = (root: string): RepoInfo => ({ root: vscode.Uri.file(root) });
+  const repo = (root: string): RepoInfo => ({ uri: vscode.Uri.file(root) });
   const fileDoc = (fsPath: string) => ({ scheme: "file", fsPath });
 
   test("BUG REPRO: virtual active doc + workspace anchor picks the window's repo, not repos[0]", () => {
@@ -2098,6 +2154,16 @@ suite("computeViewBadge (activity-bar ticker)", () => {
 
   test("no badge when there are no changes", () => {
     assert.strictEqual(computeViewBadge(0), undefined);
+  });
+});
+
+suite("repositoryBranchLabel", () => {
+  test("shows the repository's current branch", () => {
+    assert.strictEqual(repositoryBranchLabel("feature/multi-root"), "feature/multi-root");
+  });
+
+  test("labels a detached HEAD explicitly", () => {
+    assert.strictEqual(repositoryBranchLabel(undefined), "(detached)");
   });
 });
 

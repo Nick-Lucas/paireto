@@ -72,6 +72,31 @@ export async function pickCompareTo(
   return choice.value;
 }
 
+/** Multi-repository comparison is deliberately semantic: every repo resolves the same preset using
+ * its own default branch/merge-base, so unrelated branch names are never applied across repos. */
+export async function pickMultiCompareTo(current: CompareTo): Promise<CompareTo | undefined> {
+  const normalized = current.kind === "ref" ? ({ kind: "default" } as CompareTo) : current;
+  const items: CompareItem[] = [
+    { label: "$(git-commit) HEAD", description: "working changes only", value: { kind: "head" } },
+    {
+      label: "$(git-pull-request) Merge base",
+      description: "resolve independently per repository",
+      value: { kind: "mergeBase" },
+    },
+    {
+      label: "$(git-branch) Default branch",
+      description: "main/master/origin HEAD per repository",
+      value: { kind: "default" },
+    },
+  ];
+  const choice = await showComparePicker(
+    items,
+    "Compare All Repositories To",
+    (item) => item.value !== undefined && compareToEqual(item.value, normalized),
+  );
+  return choice?.value;
+}
+
 /** The tab-local picker also exposes the index, which is the natural base of Working Tree diffs. */
 export async function pickFileCompareTo(
   repoRoot: string,

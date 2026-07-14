@@ -12,6 +12,8 @@ export interface ReviewAnchor {
 
 export interface ReviewComment {
   id: string;
+  /** Canonical repository root; filePath is relative to this root. */
+  repoRoot: string;
   filePath: string; // repo-relative
   side: "base" | "modified";
   line: number; // 0-based on the side's document

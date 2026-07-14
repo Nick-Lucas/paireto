@@ -60,11 +60,11 @@ export class RepoSwitcher implements vscode.Disposable {
   }
 
   async show(): Promise<void> {
-    const current = this.repoService.current();
+    const current = this.repoService.currentRoot();
     const currentCand: SwitcherCandidate | undefined = current
       ? {
-          fsPath: current.root.fsPath,
-          canonical: canonicalize(current.root.fsPath),
+          fsPath: current.uri.fsPath,
+          canonical: canonicalize(current.uri.fsPath),
           branch: current.branch,
         }
       : undefined;
@@ -72,7 +72,7 @@ export class RepoSwitcher implements vscode.Disposable {
 
     let worktreeCands: SwitcherCandidate[] = [];
     if (current) {
-      const list = await this.worktrees.list(current.root.fsPath);
+      const list = await this.worktrees.list(current.uri.fsPath);
       worktreeCands = list.map((w) => ({
         fsPath: w.path,
         canonical: canonicalize(w.path),

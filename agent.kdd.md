@@ -106,6 +106,19 @@
   ancestor repo's window (wrong refreshes/rows/gates → blank Changes list) and were removed; no live
   socket for the exact toplevel → no target (hook scripts already fail open).
 
+- **A window owns a canonical root catalog, not an active-editor repository.** Raw VS Code workspace
+  folders are agent-addressable roots (including non-Git folders); CLI `git rev-parse --show-toplevel`
+  is authoritative for each folder's owning repo/worktree; vscode.git contributes verified nested
+  repos and submodules. An ancestor vscode.git root that disagrees with the CLI root is rejected to
+  preserve worktree identity. The bridge reconciles one socket per catalog root and tears down its
+  live connections when a root disappears. First-window-wins still applies per socket.
+
+- **Changes state is repository-qualified and window-wide.** Review models, open-diff keys, Git
+  actions, comments, and selection events all carry `repoRoot`. Multiple repos add a repository
+  folder layer in the tree; a single repo keeps the old compact layout. Compare To is shared: multi-
+  repo mode exposes only semantic presets (HEAD / merge-base / default branch), resolved separately
+  by each repo, while single-repo mode retains arbitrary/recent refs.
+
 - **Hook scripts forward Claude Code's raw hook payload as-is; field-specific processing happens in
   the extension, not the plugin.** `on-event.js`/`on-plan-gate.js`/`on-review-gate.js` used to
   hand-pick fields into a bespoke camelCase shape (`sessionId`, `toolName`, `backgroundTaskCount`,
@@ -457,7 +470,9 @@
   (`this.comments`), they do NOT start a review.** A review (started by /paireto-review or the turn-end
   gate) simply consumes whatever is in the bucket; resolving it clears the bucket. Comments anchor on
   the review-scheme side of a locked diff OR the editable working-tree (file:) side of an editable one,
-  so commenting works in both cases.
+  so commenting works in both cases. Every comment also carries its repository root; feedback uses
+  absolute file paths when the window contains multiple Git repos so same-named relative paths are
+  unambiguous to the agent.
 
 - **Editability is purely structural and session-independent** (`isFileEditable`): editable iff the
   file isn't deleted and has no change at a lower git layer. A review never forces a diff read-only;

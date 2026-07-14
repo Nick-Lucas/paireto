@@ -15,8 +15,8 @@ import { resolveCommentAuthor } from "./comments/author.js";
 import { Commands, ContextKeys, Schemes } from "./config.js";
 import { GateCoordinator } from "./gate/GateCoordinator.js";
 import { DiffService } from "./git/DiffService.js";
-import { gitToplevel } from "./git/gitCli.js";
 import { RepoService } from "./git/RepoService.js";
+import { WorkspaceRootCatalog } from "./git/WorkspaceRootCatalog.js";
 import { WorktreeService } from "./git/WorktreeService.js";
 import { log } from "./log.js";
 import { PlanContentProvider } from "./plan/PlanContentProvider.js";
@@ -40,7 +40,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Show the Welcome / onboarding webview once, on first install — the user sets up their agent
   // (installs the bundled plugin) from there. A version string lets a future bump re-show it as a
   // "what's new". Reopenable any time via paireto.openWelcome.
-  const WELCOME_VERSION = "1";
+  const WELCOME_VERSION = "2";
   const welcomeMarker = "paireto.welcomeShownVersion";
   if (context.globalState.get<string>(welcomeMarker) !== WELCOME_VERSION) {
     void context.globalState.update(welcomeMarker, WELCOME_VERSION);
@@ -55,6 +55,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const locator = new AgentServiceLocator();
   const agents = new AgentSessionService(locator);
   const repoService = new RepoService();
+  const roots = new WorkspaceRootCatalog(repoService);
   const worktrees = new WorktreeService();
   const recents = new RecentRepoStore(context.globalState);
   // Shared gate manager: several plans/reviews can be pending, one foreground at a time (switchable).
@@ -70,7 +71,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const reviewContent = new ReviewContentProvider();
   const reviewStore = new ReviewStore(context.workspaceState);
   const reviewController = new ReviewController(
-    repoService,
+    roots,
     diffService,
     reviewStore,
     reviewContent,
@@ -81,7 +82,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     agents,
     reviewController,
     planReview,
-    repoService,
     coordinator,
     locator,
     context.extensionUri,
@@ -108,6 +108,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     { dispose: () => log.dispose() },
     agents,
     repoService,
+    roots,
     coordinator,
     planProvider,
     planReview,
@@ -167,15 +168,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // Tripwire: a review/stop request should only ever arrive for the repo this window serves. A
   // foreign repoRoot means the bridge targeted the wrong socket — log it (behavior unchanged).
   const warnForeignRepo = (repoRoot: string): void => {
-    const mine = repoService.current()?.root.fsPath;
-    if (mine && canonicalize(mine) !== canonicalize(repoRoot)) {
+    const known = roots.agentRoots.some((root) => canonicalize(root) === canonicalize(repoRoot));
+    if (!known) {
       log.info(
-        `review request from foreign repoRoot ${canonicalize(repoRoot)}, this window serves ${canonicalize(mine)}`,
+        `review request from foreign repoRoot ${canonicalize(repoRoot)}, this window does not serve it`,
       );
     }
   };
 
-  // Bridge: one socket per open repo, dispatching inbound messages to the services.
+  // Bridge: one socket per workspace/Git root, dispatching inbound messages to the services.
   const handlers: BridgeHandlers = {
     onHookEvent: (msg) => {
       // Map the raw harness event to the common representation at the boundary; an event the
@@ -223,7 +224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           once: true,
         });
       }
-      return reviewController.startSession(msg.id, sessionId, signal);
+      return reviewController.startSession(msg.id, sessionId, msg.repoRoot, signal);
     },
     onStopGate: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
@@ -262,6 +263,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sessionId,
         turn.changedThisTurn,
         strategy.displayName,
+        msg.repoRoot,
         signal,
       );
     },
@@ -278,53 +280,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push({ dispose: () => reviewController.drainGate() });
 
   await repoService.init();
+  await roots.init();
   void reviewController.refresh("init"); // after init so the first model has a real repo
+  await bridge.reconcileRoots(roots.agentRoots);
 
-  // One socket per open workspace folder, keyed by that folder's REAL git toplevel — resolved
-  // independently via the git CLI (mirroring exactly what the hook scripts compute in
-  // bridge.js's gitToplevel), never trusted from vscode.git's own repository auto-detection. A
-  // mismatch between the two (e.g. a worktree window whose vscode.git reports its main repo's
-  // root) previously bound the wrong socket identity with no diagnostic trail. Toplevel doesn't
-  // change when a repo's working tree does, so this only re-runs on folder add/remove, not on
-  // every repoService change.
-  const servedToplevels = new Map<string, string>(); // workspace folder fsPath -> resolved toplevel
-
-  const serveFolder = async (folder: vscode.WorkspaceFolder): Promise<void> => {
-    const toplevel = await gitToplevel(folder.uri.fsPath);
-    if (!toplevel) {
-      return;
-    }
-    servedToplevels.set(folder.uri.fsPath, toplevel);
-    await bridge.ensureServerFor(toplevel);
-  };
-
-  for (const folder of vscode.workspace.workspaceFolders ?? []) {
-    void serveFolder(folder);
-  }
   context.subscriptions.push(
-    vscode.workspace.onDidChangeWorkspaceFolders((e) => {
-      for (const folder of e.added) {
-        void serveFolder(folder);
-      }
-      for (const folder of e.removed) {
-        const toplevel = servedToplevels.get(folder.uri.fsPath);
-        servedToplevels.delete(folder.uri.fsPath);
-        if (toplevel && ![...servedToplevels.values()].includes(toplevel)) {
-          bridge.removeServerFor(toplevel);
-        }
-      }
+    roots.onDidChange(() => {
+      void bridge.reconcileRoots(roots.agentRoots);
+      void reviewController.refresh("roots");
     }),
-  );
-
-  context.subscriptions.push(
     repoService.onDidChange(() => {
       void reviewController.refresh("git"); // the git extension is our sole working-tree/index signal
     }),
   );
 
-  const current = repoService.current();
+  const current = repoService.currentRoot();
   if (current) {
-    void recents.touch(current.root.fsPath);
+    void recents.touch(current.uri.fsPath);
   }
 
   // (The repo switcher registers its own commands; see RepoSwitcher.)

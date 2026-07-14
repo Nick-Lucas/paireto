@@ -8,7 +8,7 @@ import { canonicalize, isInside } from "../protocol/paths.js";
 import type { API as GitAPI, GitExtension, Repository } from "./vscode-git.js";
 
 export interface RepoInfo {
-  root: vscode.Uri;
+  uri: vscode.Uri;
   branch?: string;
   commit?: string;
 }
@@ -49,7 +49,7 @@ export function pickCurrentRepo(
 function longestContaining(repos: RepoInfo[], target: string): RepoInfo | undefined {
   const canonTarget = canonicalize(target);
   return repos
-    .map((r) => ({ repo: r, root: canonicalize(r.root.fsPath) }))
+    .map((r) => ({ repo: r, root: canonicalize(r.uri.fsPath) }))
     .filter((x) => isInside(x.root, canonTarget))
     .sort((a, b) => b.root.length - a.root.length)[0]?.repo;
 }
@@ -59,9 +59,12 @@ export class RepoService implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private readonly repoSubs = new Map<Repository, vscode.Disposable>();
   private readonly changeEmitter = new vscode.EventEmitter<void>();
+  private readonly repositoriesEmitter = new vscode.EventEmitter<void>();
   private debounce?: ReturnType<typeof setTimeout>;
 
   readonly onDidChange = this.changeEmitter.event;
+  /** Fires only when vscode.git opens or closes a repository (not for ordinary index/HEAD changes). */
+  readonly onDidChangeRepositories = this.repositoriesEmitter.event;
 
   async init(): Promise<void> {
     const ext = vscode.extensions.getExtension<GitExtension>("vscode.git");
@@ -77,11 +80,13 @@ export class RepoService implements vscode.Disposable {
     this.disposables.push(
       this.api.onDidOpenRepository((r) => {
         this.registerRepo(r);
+        this.repositoriesEmitter.fire();
         this.fire();
       }),
       this.api.onDidCloseRepository((r) => {
         this.repoSubs.get(r)?.dispose();
         this.repoSubs.delete(r);
+        this.repositoriesEmitter.fire();
         this.fire();
       }),
     );
@@ -113,15 +118,14 @@ export class RepoService implements vscode.Disposable {
       return [];
     }
     return this.api.repositories.map((r) => ({
-      root: r.rootUri,
+      uri: r.rootUri,
       branch: r.state.HEAD?.name,
       commit: r.state.HEAD?.commit,
     }));
   }
 
-  // TODO: in the future, perhaps we include multi-root vs code workspaces but just returning all active repos and subscribing to them all?
-  /** The repo this window is in: workspace-folder anchored, active editor only for `file:` docs. */
-  current(): RepoInfo | undefined {
+  /** The active repo used by the status bar/switcher; window-wide consumers use WorkspaceRootCatalog. */
+  currentRoot(): RepoInfo | undefined {
     const activeUri = vscode.window.activeTextEditor?.document.uri;
     const activeDoc = activeUri
       ? { scheme: activeUri.scheme, fsPath: activeUri.fsPath }
@@ -142,5 +146,6 @@ export class RepoService implements vscode.Disposable {
       d.dispose();
     }
     this.changeEmitter.dispose();
+    this.repositoriesEmitter.dispose();
   }
 }

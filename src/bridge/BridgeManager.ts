@@ -1,11 +1,12 @@
-// Owns one SocketServer per open repo root, plus the discovery index. The extension calls
-// ensureServerFor() as repos open and removeServerFor() as they close. First-window-wins: if
-// another live window already owns a repo's socket, we skip binding it here.
+// Owns one SocketServer per workspace/Git root, plus the discovery index. The extension reconciles
+// the complete root catalog whenever workspace or vscode.git topology changes. First-window-wins:
+// if another live window already owns a root's socket, we skip binding it here.
 
 import * as crypto from "node:crypto";
 
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import { log } from "../log.js";
+import { canonicalize } from "../protocol/paths.js";
 import { IndexRegistry } from "./IndexRegistry.js";
 import { SocketServer } from "./SocketServer.js";
 import type { BridgeHandlers, IndexEntry } from "./types.js";
@@ -16,6 +17,8 @@ export class BridgeManager {
   private readonly handlers: BridgeHandlers;
   private readonly locator: AgentServiceLocator;
   private readonly windowId = "win-" + crypto.randomBytes(4).toString("hex");
+  private desiredRoots = new Set<string>();
+  private readonly pending = new Map<string, Promise<void>>();
 
   constructor(handlers: BridgeHandlers, locator: AgentServiceLocator) {
     this.handlers = handlers;
@@ -33,6 +36,21 @@ export class BridgeManager {
 
   /** Start serving a repo root (idempotent). No-op if already serving or owned by another window. */
   async ensureServerFor(repoRoot: string): Promise<void> {
+    repoRoot = canonicalize(repoRoot);
+    this.desiredRoots.add(repoRoot);
+    if ([...this.servers.values()].some((server) => server.repoRoot === repoRoot)) {
+      return;
+    }
+    const existing = this.pending.get(repoRoot);
+    if (existing) {
+      return existing;
+    }
+    const attempt = this.bindServer(repoRoot).finally(() => this.pending.delete(repoRoot));
+    this.pending.set(repoRoot, attempt);
+    return attempt;
+  }
+
+  private async bindServer(repoRoot: string): Promise<void> {
     const server = new SocketServer({
       repoRoot,
       handlers: this.handlers,
@@ -50,6 +68,10 @@ export class BridgeManager {
       );
       return;
     }
+    if (!this.desiredRoots.has(repoRoot)) {
+      server.dispose();
+      return;
+    }
     log.info(`bridge: bound socket ${server.socketPath} for repo root ${repoRoot}`);
     this.servers.set(server.socketPath, server);
     const entry: IndexEntry = {
@@ -65,8 +87,10 @@ export class BridgeManager {
   }
 
   removeServerFor(repoRoot: string): void {
+    const canonical = canonicalize(repoRoot);
+    this.desiredRoots.delete(canonical);
     for (const [socketPath, server] of this.servers) {
-      if (server.repoRoot === repoRoot) {
+      if (canonicalize(server.repoRoot) === canonical) {
         server.dispose();
         this.servers.delete(socketPath);
         this.registry.remove(socketPath);
@@ -74,7 +98,20 @@ export class BridgeManager {
     }
   }
 
+  /** Reconcile this window's live socket set against the canonical root catalog. */
+  async reconcileRoots(repoRoots: readonly string[]): Promise<void> {
+    const desired = new Set(repoRoots.map(canonicalize));
+    this.desiredRoots = desired;
+    for (const server of this.servers.values()) {
+      if (!desired.has(canonicalize(server.repoRoot))) {
+        this.removeServerFor(server.repoRoot);
+      }
+    }
+    await Promise.all([...desired].map((root) => this.ensureServerFor(root)));
+  }
+
   dispose(): void {
+    this.desiredRoots.clear();
     for (const [socketPath, server] of this.servers) {
       server.dispose();
       this.registry.remove(socketPath);

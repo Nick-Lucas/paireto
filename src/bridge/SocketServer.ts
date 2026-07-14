@@ -42,6 +42,7 @@ export class SocketServer {
   readonly socketPath: string;
   readonly key: string;
   private server?: net.Server;
+  private readonly connections = new Set<net.Socket>();
   private readonly handlers: BridgeHandlers;
   private readonly locator: AgentServiceLocator;
   private readonly isOwnedByLiveServer: (socketPath: string) => boolean;
@@ -89,6 +90,7 @@ export class SocketServer {
   }
 
   private handleConnection(socket: net.Socket): void {
+    this.connections.add(socket);
     socket.setEncoding("utf8");
     let buffer = "";
     let handshaken = false;
@@ -108,6 +110,7 @@ export class SocketServer {
 
     socket.on("error", () => socket.destroy());
     socket.on("close", () => {
+      this.connections.delete(socket);
       for (const ac of inflight) {
         ac.abort();
       }
@@ -240,6 +243,10 @@ export class SocketServer {
   }
 
   dispose(): void {
+    for (const connection of this.connections) {
+      connection.destroy();
+    }
+    this.connections.clear();
     if (this.server) {
       this.server.close();
       this.server = undefined;

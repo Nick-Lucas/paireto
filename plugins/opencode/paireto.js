@@ -4,7 +4,7 @@
 // and custom `tool` registrations whose `execute()` can BLOCK the agent by returning a Promise<string>.
 //
 // This module bridges those into the same per-repo Unix socket the Claude/Codex adapters use:
-//   - It gates on a real git worktree (OpenCode reports worktree "/" in a non-git dir → no-op).
+//   - It uses the real git worktree when present, otherwise the exact OpenCode project directory.
 //   - The per-repo socket path is derived from the canonicalized worktree, BYTE-IDENTICAL to
 //     src/protocol/paths.ts (realpath both sides before hashing, or the hook talks to the wrong socket).
 //   - `event` forwards session/permission/file/message events fire-and-forget over ONE lazily-(re)opened
@@ -239,6 +239,15 @@ function planToolArgs(schema) {
     return {};
   }
   return { plan: schema.string().describe("The full implementation plan, as markdown.") };
+}
+
+/** Git projects use OpenCode's worktree identity; non-Git projects report worktree "/" and use the
+ * exact project directory that VS Code serves as a workspace-root socket. */
+function resolveOpenCodeRoot(worktree, directory) {
+  const candidate = worktree && worktree !== "/" ? worktree : directory;
+  return typeof candidate === "string" && path.isAbsolute(candidate) && candidate !== "/"
+    ? canonicalize(candidate)
+    : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -786,13 +795,12 @@ function maybeRunStopGate(bridge, client, event) {
 // ---------------------------------------------------------------------------
 
 export const PairetoOpenCode = async ({ worktree, client, directory }) => {
-  // Non-git dirs report worktree "/" (empirically confirmed) — there's no per-repo socket to bridge,
-  // so register nothing. A missing worktree is treated the same.
-  if (!worktree || worktree === "/") {
+  const bridgeRoot = resolveOpenCodeRoot(worktree, directory);
+  if (!bridgeRoot) {
     return {};
   }
 
-  const bridge = createBridge(worktree);
+  const bridge = createBridge(bridgeRoot);
 
   // OpenCode provides `@opencode-ai/plugin` in its own runtime (never bundled with us); its
   // `tool.schema` is the zod instance we need to declare the plan tool's arg. Dynamic import — NOT a
@@ -1016,4 +1024,5 @@ export const _internals = Object.assign(async () => ({}), {
   isChildSession,
   stopGateInjectionReason,
   planToolArgs,
+  resolveOpenCodeRoot,
 });

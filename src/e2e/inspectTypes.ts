@@ -10,6 +10,7 @@ import type { GateKind } from "../gate/GateCoordinator.js";
 export interface InspectSession {
   sessionId: string;
   harness: Harness;
+  repoRoot: string;
   state: AgentState;
   needsAttention: boolean;
 }
@@ -39,6 +40,8 @@ export interface AddCommentArgs {
   surface: "plan" | "review";
   /** Repo-relative file path (review surface only). */
   path?: string;
+  /** Absolute repository root; defaults to the active repository for single-repo tests. */
+  repoRoot?: string;
   /** 0-based line to anchor on (default 0). */
   line?: number;
   kind: "question" | "comment" | "problem";

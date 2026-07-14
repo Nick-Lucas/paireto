@@ -69,6 +69,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       sessions: deps.agents.allSessions().map((s) => ({
         sessionId: s.sessionId,
         harness: s.harness,
+        repoRoot: s.repoRoot,
         state: s.state,
         needsAttention: s.needsAttention,
       })),
@@ -115,7 +116,7 @@ function resolveTargetUri(args: AddCommentArgs, repoService: RepoService): vscod
   if (args.surface === "plan") {
     return findOpenPlanTabUri();
   }
-  const root = repoService.current()?.root.fsPath;
+  const root = args.repoRoot ?? repoService.currentRoot()?.uri.fsPath;
   if (!root || !args.path) {
     return undefined;
   }

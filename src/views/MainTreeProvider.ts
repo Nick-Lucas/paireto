@@ -13,13 +13,19 @@ import { Commands, Views } from "../config.js";
 import type { GateCoordinator } from "../gate/GateCoordinator.js";
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { ChangedFile, FileStatus } from "../git/DiffService.js";
-import type { RepoService } from "../git/RepoService.js";
+import type {
+  RepoChangedFile,
+  RepositoryChangesModel,
+  RepositoryReviewState,
+  ReviewState,
+} from "../review/ReviewController.js";
 import type { PlanReviewController } from "../plan/PlanReviewController.js";
 import type { PlanCommentData } from "../plan/planFeedback.js";
 import type { ReviewController } from "../review/ReviewController.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import type { AgentState, FileGroup } from "../types.js";
+import { repoKey } from "../protocol/paths.js";
 import { buildFileTree, type TreeEntry } from "./fileTree.js";
 
 // Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
@@ -50,16 +56,23 @@ type SectionId = "agents" | "plan" | "files" | "feedback";
 
 type Node =
   | { kind: "section"; id: SectionId; label: string; description?: string }
+  | { kind: "repository"; repository: RepositoryReviewState }
   | {
       kind: "group";
+      repoRoot: string;
       group: FileGroup;
       label: string;
       count: number;
       additions: number;
       deletions: number;
     }
-  | { kind: "folder"; group: FileGroup; entry: Extract<TreeEntry, { type: "folder" }> }
-  | { kind: "file"; file: ChangedFile }
+  | {
+      kind: "folder";
+      repoRoot: string;
+      group: FileGroup;
+      entry: Extract<TreeEntry, { type: "folder" }>;
+    }
+  | { kind: "file"; file: RepoChangedFile }
   | { kind: "agent"; session: AgentSession }
   | { kind: "reviewComment"; comment: ReviewComment }
   | { kind: "planComment"; comment: PlanCommentData }
@@ -136,19 +149,23 @@ export function computeViewBadge(changedFiles: number): vscode.ViewBadge | undef
   return undefined;
 }
 
+/** Repository-row secondary label: the checked-out branch, with an explicit detached fallback. */
+export function repositoryBranchLabel(branch: string | undefined): string {
+  return branch ?? "(detached)";
+}
+
 export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChangeTreeData = this.emitter.event;
   private readonly subs: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
   /** A diff whose row isn't in the tree yet (e.g. the unstaged row before save) — select on arrival. */
-  private pendingReveal?: { group: FileGroup; path: string };
+  private pendingReveal?: { repoRoot: string; group: FileGroup; path: string };
 
   constructor(
     private readonly agents: AgentSessionService,
     private readonly review: ReviewController,
     private readonly plan: PlanReviewController,
-    private readonly repoService: RepoService,
     private readonly coordinator: GateCoordinator,
     private readonly locator: AgentServiceLocator,
     private readonly extensionUri: vscode.Uri,
@@ -166,9 +183,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       }),
       this.plan.onDidChange(fire),
       this.review.onDidChangeActiveDiff((t) => this.syncSelection(t)),
-      // Re-render on repo change (Agents list is scoped to the current repo) and on gate
-      // foreground/queue changes (agent rows show which gate is active/pending).
-      this.repoService.onDidChange(fire),
+      // Re-render when gate foreground/queue changes (agent rows show active/pending ownership).
       this.coordinator.onDidChange(fire),
       vscode.commands.registerCommand(Commands.agentSwitch, (arg: AgentCommandArg) =>
         this.switchToAgent(commandSession(arg)),
@@ -207,12 +222,17 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (!this.view) {
       return;
     }
-    const { staged, unstaged } = this.review.getState().changes;
-    this.view.badge = computeViewBadge(changedFileCount(staged, unstaged));
+    const changed = this.review
+      .getState()
+      .repositories.reduce(
+        (total, repo) => total + changedFileCount(repo.changes.staged, repo.changes.unstaged),
+        0,
+      );
+    this.view.badge = computeViewBadge(changed);
   }
 
   // ── Selection sync: keep the highlighted row pointed at the diff the editor is showing ──
-  private syncSelection(target: { group: FileGroup; path: string }): void {
+  private syncSelection(target: { repoRoot: string; group: FileGroup; path: string }): void {
     if (this.rowFor(target)) {
       void this.revealRow(target);
       this.pendingReveal = undefined;
@@ -228,11 +248,18 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     }
   }
 
-  private rowFor(t: { group: FileGroup; path: string }): ChangedFile | undefined {
-    return this.review.getState().changes[t.group].find((f) => f.path === t.path);
+  private rowFor(t: {
+    repoRoot: string;
+    group: FileGroup;
+    path: string;
+  }): RepoChangedFile | undefined {
+    return this.review
+      .getState()
+      .repositories.find((repo) => repo.repoRoot === t.repoRoot)
+      ?.changes[t.group].find((file) => file.path === t.path);
   }
 
-  private async revealRow(t: { group: FileGroup; path: string }): Promise<void> {
+  private async revealRow(t: { repoRoot: string; group: FileGroup; path: string }): Promise<void> {
     const file = this.rowFor(t);
     if (!file || !this.view) {
       return;
@@ -247,15 +274,25 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   getParent(node: Node): Node | undefined {
     switch (node.kind) {
+      case "repository":
+        return { kind: "section", id: "files", label: "Changed Files" };
       case "group":
+        if (this.review.getState().repositories.length > 1) {
+          const repository = this.repository(node.repoRoot);
+          return repository
+            ? { kind: "repository", repository }
+            : { kind: "section", id: "files", label: "Changed Files" };
+        }
         return { kind: "section", id: "files", label: "Changed Files" };
       case "folder":
         return this.entryParent(
+          node.repoRoot,
           node.group,
           (e) => e.type === "folder" && e.path === node.entry.path,
         );
       case "file":
         return this.entryParent(
+          node.file.repoRoot,
           node.file.group,
           (e) => e.type === "file" && e.file.path === node.file.path,
         );
@@ -271,14 +308,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   }
 
   /** Parent node of a file/folder entry: its containing folder (tree layout) or the group header. */
-  private entryParent(group: FileGroup, matches: (e: TreeEntry) => boolean): Node {
-    const { changes, layout } = this.review.getState();
-    const groupHeader = groupNode(group, GROUP_LABELS[group], changes[group]);
+  private entryParent(
+    repoRoot: string,
+    group: FileGroup,
+    matches: (e: TreeEntry) => boolean,
+  ): Node {
+    const { layout } = this.review.getState();
+    const changes = this.repository(repoRoot)?.changes ?? emptyChanges();
+    const groupHeader = groupNode(repoRoot, group, GROUP_LABELS[group], changes[group]);
     if (layout === "flat") {
       return groupHeader;
     }
     const parent = findEntryParent(buildFileTree(changes[group]), matches);
-    return parent ? { kind: "folder", group, entry: parent } : groupHeader;
+    return parent ? { kind: "folder", repoRoot, group, entry: parent } : groupHeader;
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
@@ -290,9 +332,21 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         item.description = node.description;
         return item;
       }
+      case "repository": {
+        const item = new vscode.TreeItem(
+          node.repository.displayName,
+          vscode.TreeItemCollapsibleState.Expanded,
+        );
+        item.id = `repository:${repoKey(node.repository.repoRoot)}`;
+        item.contextValue = "repository";
+        item.iconPath = vscode.ThemeIcon.Folder;
+        item.description = repositoryBranchLabel(node.repository.branch);
+        item.tooltip = node.repository.repoRoot;
+        return item;
+      }
       case "group": {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
-        item.id = `group:${node.group}`;
+        item.id = `group:${repoKey(node.repoRoot)}:${node.group}`;
         item.contextValue = `group:${node.group}`;
         // No resourceUri here: it would force a (blank) icon slot, gapping the label off the chevron.
         // An explicit coloured icon fills that slot deliberately (see GROUP_ICON).
@@ -304,8 +358,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       }
       case "folder": {
         const item = new vscode.TreeItem(node.entry.name, vscode.TreeItemCollapsibleState.Expanded);
-        item.id = `folder:${node.group}:${node.entry.path}`;
-        item.resourceUri = vscode.Uri.file(node.entry.path);
+        item.id = `folder:${repoKey(node.repoRoot)}:${node.group}:${node.entry.path}`;
+        item.resourceUri = vscode.Uri.file(path.join(node.repoRoot, node.entry.path));
         item.iconPath = vscode.ThemeIcon.Folder;
         item.contextValue = `folder:${node.group}`;
         return item;
@@ -317,7 +371,11 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const gate = entry
           ? { kind: entry.kind, foreground: this.coordinator.isForeground(entry.id) }
           : undefined;
-        return agentItem(node.session, this.locator.strategyFor(node.session.harness).displayName, gate);
+        return agentItem(
+          node.session,
+          this.locator.strategyFor(node.session.harness).displayName,
+          gate,
+        );
       }
       case "reviewComment":
         return reviewCommentItem(node.comment);
@@ -338,20 +396,21 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     switch (node.kind) {
       case "section":
         return this.sectionChildren(node.id);
+      case "repository":
+        return this.repositoryChildren(node.repository);
       case "group":
-        return this.groupChildren(node.group);
+        return this.groupChildren(node.repoRoot, node.group);
       case "folder":
-        return node.entry.children.map((e) => entryToNode(e, node.group));
+        return node.entry.children.map((e) => entryToNode(e, node.repoRoot, node.group));
       default:
         return [];
     }
   }
 
-  /** Sessions for the current repo (the Agents list is scoped to it). */
+  /** Every session delivered to this window, independent of editor/repository focus. */
   private scopedAgents(): AgentSession[] {
-    const root = this.repoService.current()?.root.fsPath;
-    const sessions = root ? this.agents.sessionsForRepo(root) : this.agents.allSessions();
-    return sessions
+    return this.agents
+      .allSessions()
       .filter((s) => s.state !== "ended")
       .sort((a, b) => b.lastEventAt - a.lastEventAt);
   }
@@ -365,7 +424,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       kind: "section",
       id: "files",
       label: "Changed Files",
-      description: this.review.getState().changes.compareLabel,
+      description: changesDescription(this.review.getState()),
     });
 
     if (this.plan.hasPendingPlan()) {
@@ -393,19 +452,13 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
           : [placeholder("No agents connected")];
       }
       case "files": {
-        const { staged, unstaged, committed } = this.review.getState().changes;
-        // Highest layer first, matching the git stack: Committed → Staged → Working Tree.
-        const groups: Node[] = [];
-        if (committed.length) {
-          groups.push(groupNode("committed", GROUP_LABELS.committed, committed));
+        const repositories = this.review.getState().repositories;
+        if (repositories.length > 1) {
+          return repositories.map((repository) => ({ kind: "repository", repository }));
         }
-        if (staged.length) {
-          groups.push(groupNode("staged", GROUP_LABELS.staged, staged));
-        }
-        if (unstaged.length) {
-          groups.push(groupNode("unstaged", GROUP_LABELS.unstaged, unstaged));
-        }
-        return groups.length ? groups : [placeholder("No changes")];
+        return repositories[0]
+          ? this.repositoryChildren(repositories[0])
+          : [placeholder("No changes")];
       }
       case "plan": {
         const comments = this.plan.getComments();
@@ -422,13 +475,33 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     }
   }
 
-  private groupChildren(group: FileGroup): Node[] {
-    const { changes, layout } = this.review.getState();
+  private repositoryChildren(repository: RepositoryReviewState): Node[] {
+    const { changes, repoRoot } = repository;
+    const groups: Node[] = [];
+    if (changes.committed.length) {
+      groups.push(groupNode(repoRoot, "committed", GROUP_LABELS.committed, changes.committed));
+    }
+    if (changes.staged.length) {
+      groups.push(groupNode(repoRoot, "staged", GROUP_LABELS.staged, changes.staged));
+    }
+    if (changes.unstaged.length) {
+      groups.push(groupNode(repoRoot, "unstaged", GROUP_LABELS.unstaged, changes.unstaged));
+    }
+    return groups.length ? groups : [placeholder("No changes")];
+  }
+
+  private groupChildren(repoRoot: string, group: FileGroup): Node[] {
+    const { layout } = this.review.getState();
+    const changes = this.repository(repoRoot)?.changes ?? emptyChanges();
     const files = changes[group];
     if (layout === "flat") {
       return files.map((file) => ({ kind: "file", file }) as Node);
     }
-    return buildFileTree(files).map((e) => entryToNode(e, group));
+    return buildFileTree(files).map((e) => entryToNode(e, repoRoot, group));
+  }
+
+  private repository(repoRoot: string): RepositoryReviewState | undefined {
+    return this.review.getState().repositories.find((repo) => repo.repoRoot === repoRoot);
   }
 
   dispose(): void {
@@ -477,20 +550,49 @@ function findEntryParent(
   return undefined;
 }
 
-function groupNode(group: FileGroup, label: string, files: ChangedFile[]): Node {
+function groupNode(repoRoot: string, group: FileGroup, label: string, files: ChangedFile[]): Node {
   let additions = 0;
   let deletions = 0;
   for (const f of files) {
     additions += f.additions;
     deletions += f.deletions;
   }
-  return { kind: "group", group, label, count: files.length, additions, deletions };
+  return { kind: "group", repoRoot, group, label, count: files.length, additions, deletions };
 }
 
-function entryToNode(entry: TreeEntry, group: FileGroup): Node {
+function emptyChanges(): RepositoryChangesModel {
+  return {
+    staged: [],
+    unstaged: [],
+    committed: [],
+    compareLabel: "HEAD",
+    compareRef: null,
+  };
+}
+
+function changesDescription(state: ReviewState): string | undefined {
+  if (state.repositories.length === 1) {
+    return state.repositories[0].changes.compareLabel;
+  }
+  if (state.repositories.length > 1) {
+    switch (state.compareTo.kind) {
+      case "head":
+        return "HEAD";
+      case "mergeBase":
+        return "Merge Base";
+      case "default":
+        return "Default Branch";
+      case "ref":
+        return state.compareTo.ref;
+    }
+  }
+  return undefined;
+}
+
+function entryToNode(entry: TreeEntry, repoRoot: string, group: FileGroup): Node {
   return entry.type === "folder"
-    ? { kind: "folder", group, entry }
-    : { kind: "file", file: entry.file };
+    ? { kind: "folder", repoRoot, group, entry }
+    : { kind: "file", file: entry.file as RepoChangedFile };
 }
 
 function count(n: number): string | undefined {
@@ -506,8 +608,8 @@ function agentItem(
   displayName: string,
   gate?: { kind: "plan" | "review"; foreground: boolean },
 ): vscode.TreeItem {
-  // Label by harness name + short session id — the repo basename was identical for every agent in a
-  // repo (and the Agents section is already repo-scoped, so the repo name belongs in the tooltip).
+  // Label by harness name + short session id; the absolute root in the tooltip disambiguates agents
+  // from different repositories without making the flat list visually noisy.
   const item = new vscode.TreeItem(
     agentLabel(displayName, s.sessionId),
     vscode.TreeItemCollapsibleState.None,
@@ -517,7 +619,7 @@ function agentItem(
     minute: "2-digit",
   });
   const toolLine = s.lastTool ? `\nLast tool: ${s.lastTool}` : "";
-  const ctx = `${path.basename(s.repoRoot)}\nSession ${s.sessionId}\nStarted ${started}${toolLine}`;
+  const ctx = `${s.repoRoot}\nSession ${s.sessionId}\nStarted ${started}${toolLine}`;
   if (gate) {
     const role = gate.kind === "plan" ? "plan review" : "code review";
     const slot = gate.foreground ? "active" : "pending";
@@ -548,11 +650,11 @@ function agentItem(
   return item;
 }
 
-function fileItem(file: ChangedFile, extensionUri: vscode.Uri): vscode.TreeItem {
+function fileItem(file: RepoChangedFile, extensionUri: vscode.Uri): vscode.TreeItem {
   // Colour only the status indicator (a coloured letter, like git), leaving the filename default —
   // a FileDecoration would instead tint the whole label.
   const item = new vscode.TreeItem(path.basename(file.path), vscode.TreeItemCollapsibleState.None);
-  item.id = `file:${file.group}:${file.path}`;
+  item.id = `file:${repoKey(file.repoRoot)}:${file.group}:${file.path}`;
   item.iconPath = statusIcon(extensionUri, file.status);
   const dir = path.dirname(file.path);
   const counts = `+${file.additions} -${file.deletions}`;
@@ -569,10 +671,11 @@ function reviewCommentItem(c: ReviewComment): vscode.TreeItem {
     vscode.TreeItemCollapsibleState.None,
   );
   const dir = path.dirname(c.filePath);
-  item.description = dir === "." ? c.body : `${dir} · ${c.body}`;
+  const repo = path.basename(c.repoRoot);
+  item.description = dir === "." ? `${repo} · ${c.body}` : `${repo}/${dir} · ${c.body}`;
   item.iconPath = kindThemeIcon(c.kind);
   item.tooltip = new vscode.MarkdownString(
-    `**${kindLabel(c.kind)}** · ${c.filePath}:${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`,
+    `**${kindLabel(c.kind)}** · ${path.join(c.repoRoot, c.filePath)}:${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`,
   );
   item.contextValue = "reviewComment";
   item.command = { command: Commands.reviewRevealComment, title: "Reveal Comment", arguments: [c] };

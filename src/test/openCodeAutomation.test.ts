@@ -45,9 +45,28 @@ suite("OpenCode adapter automation helpers", () => {
         "planToolArgs",
         "stopGateInjectionReason",
         "isChildSession",
+        "resolveOpenCodeRoot",
       ]) {
         assert.strictEqual(typeof full._internals[name], "function", name);
       }
+    });
+  });
+
+  suite("resolveOpenCodeRoot (Git and non-Git workspaces)", () => {
+    test("prefers the real worktree root when OpenCode supplies one", () => {
+      assert.strictEqual(
+        mod.resolveOpenCodeRoot("/workspace/repo", "/workspace/repo/packages/api"),
+        "/workspace/repo",
+      );
+    });
+
+    test("uses the exact OpenCode directory when there is no Git worktree", () => {
+      assert.strictEqual(mod.resolveOpenCodeRoot("/", "/workspace/non-git"), "/workspace/non-git");
+    });
+
+    test("rejects missing or relative fallback directories", () => {
+      assert.strictEqual(mod.resolveOpenCodeRoot("/", undefined), null);
+      assert.strictEqual(mod.resolveOpenCodeRoot("/", "relative/path"), null);
     });
   });
 
@@ -55,10 +74,9 @@ suite("OpenCode adapter automation helpers", () => {
     test("empty config: adds the tool to primary_tools, allows plan, denies build", () => {
       const config: Record<string, unknown> = {};
       mod.applyOpenCodeConfig(config, ["plan"]);
-      assert.deepStrictEqual(
-        (config.experimental as { primary_tools: string[] }).primary_tools,
-        ["paireto_submit_plan"],
-      );
+      assert.deepStrictEqual((config.experimental as { primary_tools: string[] }).primary_tools, [
+        "paireto_submit_plan",
+      ]);
       const agent = config.agent as Record<string, { permission: Record<string, string> }>;
       assert.strictEqual(agent.plan.permission.paireto_submit_plan, "allow");
       assert.strictEqual(agent.build.permission.paireto_submit_plan, "deny");
@@ -69,10 +87,10 @@ suite("OpenCode adapter automation helpers", () => {
         experimental: { primary_tools: ["foo", "foo", "paireto_submit_plan"] },
       };
       mod.applyOpenCodeConfig(config, ["plan"]);
-      assert.deepStrictEqual(
-        (config.experimental as { primary_tools: string[] }).primary_tools,
-        ["foo", "paireto_submit_plan"],
-      );
+      assert.deepStrictEqual((config.experimental as { primary_tools: string[] }).primary_tools, [
+        "foo",
+        "paireto_submit_plan",
+      ]);
     });
 
     test("permission spread hazard: existing per-tool entries survive (in-place, never spread)", () => {
@@ -154,12 +172,18 @@ suite("OpenCode adapter automation helpers", () => {
 
     test("getLastUserAgentFromMessages: undefined when no user agent / bad input", () => {
       assert.strictEqual(mod.getLastUserAgentFromMessages(undefined), undefined);
-      assert.strictEqual(mod.getLastUserAgentFromMessages([{ info: { role: "assistant" } }]), undefined);
+      assert.strictEqual(
+        mod.getLastUserAgentFromMessages([{ info: { role: "assistant" } }]),
+        undefined,
+      );
       assert.strictEqual(mod.getLastUserAgentFromMessages([{ info: { role: "user" } }]), undefined);
     });
 
     test("agentModeFor reads the named agent's mode, or undefined", () => {
-      const agents = [{ name: "plan", mode: "primary" }, { name: "helper", mode: "subagent" }];
+      const agents = [
+        { name: "plan", mode: "primary" },
+        { name: "helper", mode: "subagent" },
+      ];
       assert.strictEqual(mod.agentModeFor("helper", agents), "subagent");
       assert.strictEqual(mod.agentModeFor("plan", agents), "primary");
       assert.strictEqual(mod.agentModeFor("missing", agents), undefined);
