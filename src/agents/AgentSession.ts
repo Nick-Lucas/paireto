@@ -3,9 +3,10 @@
 // AgentSessionService just manages the list of these and aggregates them; it talks back through the
 // AgentSessionHost callbacks.
 
-import type { AppEvent, AppNotificationKind } from "../bridge/transformHarnessEventToAppEvent.js";
+import type { AppEvent, AppNotificationKind } from "../harness/appEvent.js";
 import { log } from "../log.js";
 import type { NotificationService } from "../notify/NotificationService.js";
+import type { Harness } from "../protocol/types.js";
 import type { AgentState } from "../types.js";
 import { createDebouncedStop, type DebouncedStop } from "./debouncedStop.js";
 
@@ -15,6 +16,17 @@ import { createDebouncedStop, type DebouncedStop } from "./debouncedStop.js";
 // session with no telemetry for this long is downgraded to idle. It self-corrects instantly on the
 // next event, so the only cost is a brief wrong-idle during a genuinely silent long operation.
 const STALE_ACTIVE_MS = 120_000;
+
+// A harness with no liveness signal (no MCP liveness socket, no SessionEnd hook — e.g. Codex) can
+// never be cleaned up on process death; its row would otherwise linger forever. So once such a
+// session has sat untouched in a NON-active state (idle/stopped/…) this long, the sweep removes it
+// outright. Active states hit the STALE_ACTIVE_MS idle-downgrade first (they become idle, a
+// non-active state, and only then start accruing toward removal). Liveness-capable harnesses
+// (Claude/OpenCode) are never removed this way — their real process-death signal handles it.
+const LIVENESS_LESS_REMOVE_MS = 1_800_000; // 30 min
+
+/** Exposed for tests. */
+export const LIVENESS_LESS_REMOVE_MS_FOR_TEST = LIVENESS_LESS_REMOVE_MS;
 
 // Backstop only, for the `activeSubagents` set specifically (see AgentSession.hasActiveSubagents).
 // That set tracks the classic Task-tool subagent, where SubagentStart/Stop (and tool calls tagged
@@ -34,14 +46,6 @@ const SUBAGENT_STALE_MS = 600_000;
 /** States that represent the agent actively working (and so can go stale after an interrupt). */
 const ACTIVE_STATES: ReadonlySet<AgentState> = new Set<AgentState>(["thinking", "toolRunning"]);
 
-/** Tools that edit files — running one marks the turn as having touched the working tree. */
-const EDIT_TOOLS: ReadonlySet<string> = new Set<string>([
-  "Edit",
-  "Write",
-  "MultiEdit",
-  "NotebookEdit",
-]);
-
 /** States where the agent has paused and wants the user — entering one of these "finishes" a turn. */
 const NEEDS_ATTENTION: ReadonlySet<AgentState> = new Set<AgentState>([
   "stopped",
@@ -54,7 +58,7 @@ const NEEDS_ATTENTION: ReadonlySet<AgentState> = new Set<AgentState>([
  * Map a normalized Notification kind onto the state machine: user-wanting kinds overlap the
  * hook-driven states (permissionPrompt accompanies PermissionRequest, idlePrompt accompanies Stop),
  * so rather than a second ping channel they land on the state they imply and the ping stays one
- * state-edge decision. "informational" kinds map to nothing. See normalizeEvent.ts for how each
+ * state-edge decision. "informational" kinds map to nothing. See ClaudeCodeStrategy for how each
  * harness's own notification vocabulary collapses into this set.
  */
 export function stateForNotification(
@@ -117,6 +121,13 @@ export interface AgentSessionHost {
 
 export class AgentSession {
   readonly sessionId: string;
+  /** The harness that produced this session's events — used only for the agent-row display name and
+   *  the per-harness plan-approve mode; opaque identity otherwise. */
+  readonly harness: Harness;
+  /** Whether this harness has a process-death signal (see AgentStrategy.supportsLiveness). Stamped at
+   *  construction from the strategy; gates the sweep's silence-based removal (see
+   *  shouldRemoveAfterSilence) — false means "only silence can clean this row up". */
+  readonly supportsLiveness: boolean;
   repoRoot: string;
   state: AgentState = "idle";
   lastTool?: string;
@@ -143,10 +154,14 @@ export class AgentSession {
   constructor(
     sessionId: string,
     repoRoot: string,
+    harness: Harness,
+    supportsLiveness: boolean,
     private readonly host: AgentSessionHost,
     private readonly notifications: NotificationService,
   ) {
     this.sessionId = sessionId;
+    this.harness = harness;
+    this.supportsLiveness = supportsLiveness;
     this.repoRoot = repoRoot;
     this.startedAt = Date.now();
     this.lastEventAt = this.startedAt;
@@ -158,7 +173,7 @@ export class AgentSession {
   }
 
   /** Apply one top-level hook event (already mapped to the common internal representation — see
-   *  normalizeEvent.ts): state machine, then the single notify path. */
+   *  AgentStrategy.toAppEvent): state machine, then the single notify path. */
   applyEvent(event: AppEvent, repoRoot: string): void {
     this.lastEventAt = Date.now();
     this.repoRoot = repoRoot || this.repoRoot;
@@ -173,15 +188,14 @@ export class AgentSession {
         this.changedThisTurn = false; // a new turn begins — reset the "touched files" flag
         break;
       case "preToolUse":
-        if (event.toolName === "ExitPlanMode") {
-          this.state = "awaitingPlanApproval";
-        } else {
-          this.state = "toolRunning";
-          this.lastTool = event.toolName;
-        }
+        this.state = "toolRunning";
+        this.lastTool = event.toolName;
+        break;
+      case "planProposal":
+        this.state = "awaitingPlanApproval";
         break;
       case "postToolUse":
-        if (event.toolName && EDIT_TOOLS.has(event.toolName)) {
+        if (event.isEditTool) {
           this.changedThisTurn = true;
         }
         this.state = "thinking";
@@ -331,6 +345,19 @@ export class AgentSession {
     this.backgroundTaskCount = 0;
     this.sessionCronCount = 0;
     return true;
+  }
+
+  /** True when a liveness-less session (see supportsLiveness) has sat untouched in a non-active state
+   *  past the removal window — the sole cleanup path for a harness with no process-death signal
+   *  (Codex). The service calls this AFTER sweepIfStale, so an active session has already been
+   *  downgraded to idle (a non-active state) and starts accruing toward removal from its last event. */
+  shouldRemoveAfterSilence(now: number): boolean {
+    return (
+      !this.supportsLiveness &&
+      !ACTIVE_STATES.has(this.state) &&
+      this.state !== "ended" &&
+      this.lastEventAt < now - LIVENESS_LESS_REMOVE_MS
+    );
   }
 
   /**

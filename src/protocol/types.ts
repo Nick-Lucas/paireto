@@ -4,6 +4,13 @@
 
 import pluginManifest from "../../plugins/claude-code/.claude-plugin/plugin.json";
 
+// The per-harness raw-event dialects live in their strategy files (agent-specific types belong with
+// the one module that consumes them); this file imports them TYPE-ONLY for the HarnessHookEvent
+// union below. The resulting cycle (strategies import Harness from here) is erased at compile time.
+import type { ClaudeCodeHookEvent } from "../harness/ClaudeCodeStrategy.js";
+import type { CodexHookEvent } from "../harness/CodexStrategy.js";
+import type { OpenCodeForwardedEvent } from "../harness/OpenCodeStrategy.js";
+
 /**
  * Single version for the whole plugin bundle, imported directly from the plugin manifest (the one
  * point of truth — bump it there and every one of the following updates together): the wire
@@ -17,115 +24,26 @@ import pluginManifest from "../../plugins/claude-code/.claude-plugin/plugin.json
 export const PLUGIN_VERSION: string = pluginManifest.version;
 
 /** Agent harness identifiers, carried on every hook-originated message so the extension side knows
- *  which raw-event dialect (see {@link ClaudeCodeHookEvent}) it's receiving — see
- *  `src/bridge/transformHarnessEventToAppEvent.ts` for the per-harness mapping into a common
+ *  which raw-event dialect (see {@link HarnessHookEvent}) it's receiving — see
+ *  `src/harness/AgentStrategy.ts` (and the per-harness strategies) for the mapping into a common
  *  internal representation.
- *  A new harness extends this union and gets its own mapper; nothing else needs to change. */
-export type Harness = "claudecode";
+ *  A new harness extends this union and gets its own strategy; nothing else needs to change. */
+export type Harness = "claudecode" | "codex" | "opencode";
 
-/** Real Claude Code hook events we subscribe to. `MessageDisplay` deliberately omitted (does not exist). */
-export type ClaudeCodeHookEventName =
-  | "SessionStart"
-  | "SessionEnd"
-  | "UserPromptSubmit"
-  | "PreToolUse"
-  | "PostToolUse"
-  | "Stop"
-  | "Notification"
-  | "PermissionRequest"
-  | "CwdChanged"
-  | "FileChanged"
-  // Subagent lifecycle — counted only to gate the parent's turn-end ping
-  | "SubagentStart"
-  | "SubagentStop";
+/** The raw hook/event payload carried on the wire, in whichever harness's dialect the `harness`
+ *  field names. Each strategy consumes only its own member (narrowed at the boundary by the runtime
+ *  `harness` tag — see AgentStrategy's bivariance note). */
+export type HarnessHookEvent = ClaudeCodeHookEvent | CodexHookEvent | OpenCodeForwardedEvent;
 
-/** `notification_type` values of the Notification hook (Claude Code hooks docs). */
-export type ClaudeCodeNotificationType =
-  | "permission_prompt"
-  | "idle_prompt"
-  | "auth_success"
-  | "elicitation_dialog"
-  | "elicitation_complete"
-  | "elicitation_response"
-  | "agent_needs_input"
-  | "agent_completed";
-
-/** `permission_mode` values (Claude Code hooks docs' common input fields). The mode labeled
- *  "Manual" arrives as `"default"`, never `"manual"`. */
-export type ClaudeCodePermissionMode =
-  | "default"
-  | "plan"
-  | "acceptEdits"
-  | "auto"
-  | "dontAsk"
-  | "bypassPermissions";
-
-/** `effort.level` values (Claude Code hooks docs' common input fields). Ultracode is not a distinct
- *  level and reports as `"xhigh"`. */
-export type ClaudeCodeEffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
-
-/** One entry of the Stop/SubagentStop `background_tasks` array (Claude Code v2.1.145+). */
-export interface ClaudeCodeBackgroundTaskSummary {
-  id: string;
-  /** Category of background work, e.g. `"bash"`, `"subagent"`, `"monitor"`, `"cron"`. */
-  type: string;
-  /** Current state, e.g. `"running"`, `"queued"`, `"completed"`. */
-  status: string;
-  description: string;
-  command?: string;
-  agent_type?: string;
-  server?: string;
-  tool?: string;
-  name?: string;
-}
-
-/** One entry of the Stop/SubagentStop `session_crons` array (Claude Code v2.1.145+). */
-export interface ClaudeCodeSessionCronSummary {
-  id: string;
-  schedule: string;
-  recurring: boolean;
-  prompt: string;
-}
-
-/**
- * The raw Claude Code hook payload (its stdin JSON), passed through as-is rather than the plugin
- * hand-picking fields — so a new field Claude Code adds (e.g. `background_tasks`) is available to
- * the extension immediately, without touching the plugin scripts. Typed exactly as documented today
- * (Claude Code hooks docs' common input fields + the per-event fields we consume) — no catch-all
- * index signature, so an undocumented field simply isn't accessible here; snake_case throughout to
- * match Claude Code's own wire format.
- */
-export interface ClaudeCodeHookEvent {
-  hook_event_name: ClaudeCodeHookEventName;
-  session_id: string;
-  /** UUID identifying the user prompt currently being processed. Absent until the first user input
-   *  (Claude Code v2.1.196+). */
-  prompt_id?: string;
-  transcript_path: string;
-  cwd: string;
-  /** Not all events receive this field. */
-  permission_mode?: ClaudeCodePermissionMode;
-  /** Present for events that fire within a tool-use context (PreToolUse, PostToolUse, Stop,
-   *  SubagentStop) when the current model supports the effort parameter. */
-  effort?: { level: ClaudeCodeEffortLevel };
-  /** Present only in subagent context. */
-  agent_id?: string;
-  agent_type?: string;
-  /** Present only on tool events. */
-  tool_name?: string;
-  tool_input?: unknown;
-  /** Notification hook: which kind of notification — maps user-wanting kinds onto agent states;
-   *  informational kinds are ignored. */
-  notification_type?: ClaudeCodeNotificationType;
-  /** Notification hook: the human-readable message text. */
-  message?: string;
-  /** Stop/SubagentStop only (Claude Code v2.1.145+): the session is paused waiting on background
-   *  work (incl. async-launched subagents, which emit no SubagentStart/Stop of their own) when
-   *  nonempty. Absent on older CLI versions. */
-  background_tasks?: ClaudeCodeBackgroundTaskSummary[];
-  /** Stop/SubagentStop only (Claude Code v2.1.145+): a scheduled wakeup is queued when nonempty.
-   *  Absent on older CLI versions. */
-  session_crons?: ClaudeCodeSessionCronSummary[];
+/** Adapter-injected enrichment travelling ALONGSIDE the raw `event`, never merged into it: `event`
+ *  is BY DEFINITION the harness's own untouched payload (the self-describing-events invariant), so
+ *  anything the plugin computes/correlates (a plan recovered from a transcript, a parent-session
+ *  correlation) rides here in a separate object instead. Produced plugin-side; each field is used by
+ *  exactly the harness that needs it (`planMarkdown` = Codex's transcript-recovered plan;
+ *  `parentSessionId` = OpenCode's child→parent routing). NEVER part of any harness's own payload. */
+export interface HarnessEventMeta {
+  planMarkdown?: string;
+  parentSessionId?: string;
 }
 
 /** Message type tags carried in the envelope `t` field. */
@@ -170,13 +88,15 @@ export interface HelloAckMessage extends Envelope {
 }
 
 /** Fire-and-forget telemetry carrying a passive hook event. No `id` — the hook never waits. `event`
- *  is the raw Claude Code payload passed through as-is (see {@link ClaudeCodeHookEvent}); `harness` and
- *  `repoRoot` are the bridge's own envelope metadata, not part of Claude's payload. */
+ *  is the raw harness payload passed through as-is (see {@link HarnessHookEvent}, whichever dialect
+ *  `harness` names); `harness` and `repoRoot` are the bridge's own envelope metadata. */
 export interface HookEventMessage extends Envelope {
   t: "hook.event";
   harness: Harness;
   repoRoot: string;
-  event: ClaudeCodeHookEvent;
+  event: HarnessHookEvent;
+  /** Adapter-injected enrichment kept OUT of `event` (see {@link HarnessEventMeta}). */
+  meta?: HarnessEventMeta;
 }
 
 /**
@@ -192,14 +112,18 @@ export interface SessionAttachMessage extends Envelope {
 }
 
 /** Blocking plan-gate request. Carries an `id`; the hook blocks until the matching response. `event`
- *  is the raw PermissionRequest payload (ExitPlanMode) — see {@link ClaudeCodeHookEvent}; the plan markdown
- *  lives at `event.tool_input.plan`. */
+ *  is the raw harness payload carrying the plan (see {@link HarnessHookEvent}): Claude's ExitPlanMode
+ *  PermissionRequest (`event.tool_input.plan`), or an OpenCode synthetic `paireto.plan.submitted`
+ *  event (the plugin's own dialect). A plan the adapter had to RECOVER (Codex, from its rollout
+ *  transcript) rides in `meta.planMarkdown` — never merged into the raw Codex `event`. */
 export interface PlanReviewRequest extends Envelope {
   t: "plan.review.request";
   id: string;
   harness: Harness;
   repoRoot: string;
-  event: ClaudeCodeHookEvent;
+  event: HarnessHookEvent;
+  /** Adapter-injected enrichment kept OUT of `event` (see {@link HarnessEventMeta}). */
+  meta?: HarnessEventMeta;
 }
 
 export type PlanDecision = "allow" | "deny";
@@ -209,10 +133,13 @@ export interface PlanReviewResponse extends Envelope {
   t: "plan.review.response";
   id: string;
   decision: PlanDecision;
-  /** Feedback surfaced back to Claude on deny. */
+  /** Feedback surfaced back to the agent on deny. */
   reason?: string;
-  /** On allow: the Claude permission mode to enter next (e.g. "auto"). Maps to the hook's
-   *  PermissionRequest `decision.updatedPermissions` setMode. Omitted = leave the mode unchanged. */
+  /** On allow: a per-harness "what next" hint. HARNESS-DEPENDENT meaning: for claudecode it's the
+   *  permission MODE to enter (e.g. "auto"), applied via the PermissionRequest
+   *  `decision.updatedPermissions` setMode; for opencode it's the TARGET AGENT to switch to (e.g.
+   *  "build"), which the plugin's paireto_submit_plan tool prompts into action. Omitted = leave
+   *  things unchanged ("off"). */
   nextMode?: string;
 }
 
@@ -252,7 +179,9 @@ export interface StopGateRequest extends Envelope {
   id: string;
   harness: Harness;
   repoRoot: string;
-  event: ClaudeCodeHookEvent;
+  event: HarnessHookEvent;
+  /** Adapter-injected enrichment kept OUT of `event` (see {@link HarnessEventMeta}). */
+  meta?: HarnessEventMeta;
 }
 
 export type StopDecision = "allow" | "block";

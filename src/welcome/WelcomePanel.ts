@@ -8,10 +8,10 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { readPluginVersion } from "../bridge/PluginInstaller.js";
 import { log } from "../log.js";
 import {
   type AgentTerminalProfile,
+  type InstallContext,
   type OnboardingAgent,
   ONBOARDING_AGENTS,
   buildTerminalProfile,
@@ -29,9 +29,7 @@ import {
   parseKeybindings,
   recommendedKey,
 } from "./keybindings.js";
-import type { AgentState, ShortcutState, WelcomeState } from "./protocol.js";
-
-const PLUGIN_VERSION_MARKER = "paireto.pluginInstalledVersion";
+import type { AgentState, InstallState, ShortcutState, WelcomeState } from "./protocol.js";
 
 export class WelcomePanel {
   private static current: WelcomePanel | undefined;
@@ -139,14 +137,28 @@ export class WelcomePanel {
     return vscode.Uri.joinPath(this.context.extensionUri, "plugins").fsPath;
   }
 
-  private agentInstalled(agent: OnboardingAgent): boolean {
-    if (agent.id !== "claude-code") {
-      return false;
+  /** Per-agent writable dir under globalStorage. Pure path (no mkdir) — probes only read; setupAgent
+   *  mkdirp's it before install. */
+  private stableDirPath(agentId: string): string {
+    return vscode.Uri.joinPath(this.context.globalStorageUri, "adapters", agentId).fsPath;
+  }
+
+  private installContext(agent: OnboardingAgent): InstallContext {
+    return { pluginsRoot: this.pluginsRoot(), stableDir: this.stableDirPath(agent.id) };
+  }
+
+  private agentInstallState(agent: OnboardingAgent): InstallState {
+    if (!agent.available || !agent.installedProbe) {
+      return "not-installed";
     }
-    return (
-      this.context.globalState.get<string>(PLUGIN_VERSION_MARKER) ===
-      readPluginVersion(this.pluginsRoot())
-    );
+    try {
+      return agent.installedProbe(this.installContext(agent));
+    } catch (err) {
+      log.info(
+        `[welcome] installedProbe failed for ${agent.id}: ${err instanceof Error ? err.message : err}`,
+      );
+      return "not-installed";
+    }
   }
 
   /** True when the agent's terminal profile already exists in the user's settings for this platform. */
@@ -178,9 +190,10 @@ export class WelcomePanel {
       id: a.id,
       name: a.name,
       available: a.available,
-      installed: this.agentInstalled(a),
+      installState: this.agentInstallState(a),
       profileName: a.profile?.name,
       profileConfigured: a.profile ? this.isProfileConfigured(a.profile) : false,
+      note: a.note,
     }));
 
     const shortcuts: ShortcutState[] = MANAGED_SHORTCUTS.map((s) => {
@@ -243,11 +256,11 @@ export class WelcomePanel {
       return;
     }
     void this.panel.webview.postMessage({ type: "agentBusy", agentId });
-    const pluginsRoot = this.pluginsRoot();
-    const result = await agent.install(pluginsRoot);
-    if (result.ok) {
-      await this.context.globalState.update(PLUGIN_VERSION_MARKER, readPluginVersion(pluginsRoot));
-    } else if (result.manualCommand) {
+    const ctx = this.installContext(agent);
+    // The installer stages files here and stamps the installed version — mkdirp it first.
+    fs.mkdirSync(ctx.stableDir, { recursive: true });
+    const result = await agent.install(ctx);
+    if (!result.ok && result.manualCommand) {
       const choice = await vscode.window.showWarningMessage(
         `Couldn't set up ${agent.name} automatically. Copy the manual command?`,
         "Copy Command",

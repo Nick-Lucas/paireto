@@ -4,6 +4,7 @@
 
 import * as crypto from "node:crypto";
 
+import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import { log } from "../log.js";
 import { IndexRegistry } from "./IndexRegistry.js";
 import { SocketServer } from "./SocketServer.js";
@@ -13,10 +14,12 @@ export class BridgeManager {
   private readonly servers = new Map<string, SocketServer>();
   private readonly registry = new IndexRegistry();
   private readonly handlers: BridgeHandlers;
+  private readonly locator: AgentServiceLocator;
   private readonly windowId = "win-" + crypto.randomBytes(4).toString("hex");
 
-  constructor(handlers: BridgeHandlers) {
+  constructor(handlers: BridgeHandlers, locator: AgentServiceLocator) {
     this.handlers = handlers;
+    this.locator = locator;
     this.registry.gc();
   }
 
@@ -33,6 +36,7 @@ export class BridgeManager {
     const server = new SocketServer({
       repoRoot,
       handlers: this.handlers,
+      locator: this.locator,
       isOwnedByLiveServer: this.isOwnedByLiveServer,
     });
     if (this.servers.has(server.socketPath)) {

@@ -5,34 +5,24 @@
 import * as fs from "node:fs";
 import * as net from "node:net";
 
+import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import { log } from "../log.js";
 import { repoKey, socketDir, socketPath } from "../protocol/paths.js";
 import { PLUGIN_VERSION } from "../protocol/types.js";
-import type { AnyMessage, ClaudeCodeHookEvent } from "../protocol/types.js";
+import type { AnyMessage } from "../protocol/types.js";
 import type { BridgeHandlers } from "./types.js";
 
-/** The label + extras (agent, subagent, tool, notification type) common to any message carrying a
- *  raw hook event — see {@link createInboundEventLog}. */
-function describeHookEvent(label: string, event: ClaudeCodeHookEvent): string {
-  const agent = event.session_id ? ` agent=${event.session_id.slice(0, 8)}` : "";
-  const extras = [
-    event.agent_id ? `subagent=${event.agent_id.slice(0, 8)}` : "",
-    event.tool_name ? `tool=${event.tool_name}` : "",
-    event.notification_type ? `type=${event.notification_type}` : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return `${label}${agent}${extras ? ` ${extras}` : ""}`;
-}
-
-/** One clean line per inbound bridge message for debug logs: type, event, agent, and the extras
- *  that explain behaviour (tool, subagent context, notification type) — nothing more. */
-export function createInboundEventLog(msg: AnyMessage): string {
-  if (msg.t === "hook.event") {
-    return describeHookEvent(`hook.event ${msg.event.hook_event_name}`, msg.event);
-  }
-  if (msg.t === "plan.review.request" || msg.t === "stop.gate.request") {
-    return describeHookEvent(msg.t, msg.event);
+/** One clean line per inbound bridge message for debug logs: type, then (for a message carrying a
+ *  raw hook event) the harness strategy's rendering of it — event name, agent, and the extras that
+ *  explain behaviour. An unrecognized harness has no strategy to render its dialect, so we log the
+ *  wire type alone. Non-event messages just show the type and agent. */
+export function createInboundEventLog(msg: AnyMessage, locator: AgentServiceLocator): string {
+  if (msg.t === "hook.event" || msg.t === "plan.review.request" || msg.t === "stop.gate.request") {
+    const strategy = locator.strategyForWire(msg.harness);
+    if (!strategy) {
+      return msg.t;
+    }
+    return `${msg.t} ${strategy.describeEvent(msg.event)}`;
   }
   const agent = "sessionId" in msg && msg.sessionId ? ` agent=${msg.sessionId.slice(0, 8)}` : "";
   return `${msg.t}${agent}`;
@@ -41,6 +31,8 @@ export function createInboundEventLog(msg: AnyMessage): string {
 export interface SocketServerOptions {
   repoRoot: string;
   handlers: BridgeHandlers;
+  /** Resolves a harness's strategy for the inbound debug-log rendering. */
+  locator: AgentServiceLocator;
   /** True if another live server already owns this repo's socket. */
   isOwnedByLiveServer: (socketPath: string) => boolean;
 }
@@ -51,11 +43,13 @@ export class SocketServer {
   readonly key: string;
   private server?: net.Server;
   private readonly handlers: BridgeHandlers;
+  private readonly locator: AgentServiceLocator;
   private readonly isOwnedByLiveServer: (socketPath: string) => boolean;
 
   constructor(opts: SocketServerOptions) {
     this.repoRoot = opts.repoRoot;
     this.handlers = opts.handlers;
+    this.locator = opts.locator;
     this.isOwnedByLiveServer = opts.isOwnedByLiveServer;
     this.socketPath = socketPath(opts.repoRoot);
     this.key = repoKey(opts.repoRoot);
@@ -139,7 +133,7 @@ export class SocketServer {
           socket.destroy();
           return;
         }
-        log.debug(`bridge <- ${createInboundEventLog(msg)}`);
+        log.debug(`bridge <- ${createInboundEventLog(msg, this.locator)}`);
         if (!handshaken) {
           if (msg.t === "hello") {
             const accept = msg.v === PLUGIN_VERSION;

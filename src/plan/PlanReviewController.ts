@@ -6,8 +6,9 @@
 
 import * as vscode from "vscode";
 
-import type { AppEvent } from "../bridge/transformHarnessEventToAppEvent.js";
 import type { PlanGateResult } from "../bridge/types.js";
+import type { AppEvent } from "../harness/appEvent.js";
+import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import { CommentSession, commentText, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
@@ -19,11 +20,14 @@ import type { PlanContentProvider } from "./PlanContentProvider.js";
 import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 import { planDocLabel } from "./planTitle.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
+import type { Harness } from "../protocol/types.js";
 
 interface PlanReview {
   id: string;
   key: string;
   sessionId: string;
+  /** The harness that proposed this plan — selects the per-harness approve mode + tool wording. */
+  harness: Harness;
   uri: vscode.Uri;
   markdown: string;
 }
@@ -48,6 +52,7 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly provider: PlanContentProvider,
     private readonly registry: PlanGateRegistry,
     private readonly coordinator: GateCoordinator,
+    private readonly locator: AgentServiceLocator,
   ) {
     this.comments = new CommentSession("paireto.plan", "Paireto: Add Comment", Schemes.plan, {
       prompt: "Add plan feedback",
@@ -87,7 +92,14 @@ export class PlanReviewController implements vscode.Disposable {
       query: planId,
     });
     const key = PlanGateRegistry.key(sessionId, planId);
-    const review: PlanReview = { id: key, key, sessionId, uri, markdown: plan };
+    const review: PlanReview = {
+      id: key,
+      key,
+      sessionId,
+      harness: event.harness,
+      uri,
+      markdown: plan,
+    };
 
     this.provider.set(uri, plan);
     this.plans.set(review.id, review);
@@ -109,7 +121,10 @@ export class PlanReviewController implements vscode.Disposable {
     await this.coordinator.register(entry);
     this.updatePendingContext();
     this.changeEmitter.fire();
-    log.info(`plan review opened for agent ${sessionId.slice(0, 8)} (ExitPlanMode, repo ${repoRoot})`);
+    const planTool = this.locator.strategyFor(review.harness).planToolName;
+    log.info(
+      `plan review opened for agent ${sessionId.slice(0, 8)} (${planTool}, repo ${repoRoot})`,
+    );
     this.notifyPlanOpened(review);
 
     // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
@@ -128,8 +143,13 @@ export class PlanReviewController implements vscode.Disposable {
   private notifyPlanOpened(review: PlanReview): void {
     const VIEW = "View Plan";
     const APPROVE = "Approve Immediately";
+    const name = this.locator.strategyFor(review.harness).displayName;
     void vscode.window
-      .showInformationMessage("Claude finished a plan and is waiting for your review.", VIEW, APPROVE)
+      .showInformationMessage(
+        `${name} finished a plan and is waiting for your review.`,
+        VIEW,
+        APPROVE,
+      )
       .then(async (choice) => {
         if (!this.plans.has(review.id)) {
           return; // resolved/dropped while the toast was up
@@ -183,15 +203,17 @@ export class PlanReviewController implements vscode.Disposable {
         return;
       }
     }
-    // Approving a plan otherwise restores the pre-plan permission mode; default to entering Claude's
-    // auto mode so the agent can proceed without re-prompting. "off" (or an empty setting) leaves the
-    // mode unchanged. The setting is keyed by harness so other harnesses can be configured later;
-    // only Claude Code ("claudecode") exists today (see agentLabel in MainTreeProvider).
-    const byHarness = vscode.workspace
+    // Approving a plan otherwise restores the pre-plan permission mode; default to the harness's own
+    // plan-approve mode (Claude: auto) so the agent proceeds without re-prompting. The setting is a
+    // per-harness key `planApprove.mode.<harness>` (an explicit value wins over the strategy default);
+    // "off" — or a harness with no key/settable mode (Codex) — leaves the mode unchanged.
+    const configured = vscode.workspace
       .getConfiguration("paireto")
-      .get<Record<string, string>>("planApprove.mode", { claudecode: "auto" });
-    const mode = byHarness.claudecode ?? "auto";
-    const nextMode = mode && mode !== "off" ? mode : undefined;
+      .get<string>(`planApprove.mode.${review.harness}`);
+    const nextMode = resolvePlanApproveMode(
+      configured,
+      this.locator.strategyFor(review.harness).defaultPlanApproveMode,
+    );
     log.info(
       `plan review approved for agent ${review.sessionId.slice(0, 8)}` +
         (nextMode ? ` (mode -> ${nextMode})` : ""),
@@ -213,7 +235,11 @@ export class PlanReviewController implements vscode.Disposable {
     log.info(
       `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s)`,
     );
-    this.registry.fulfill(review.key, { decision: "deny", reason: renderPlanFeedback(comments) });
+    const planTool = this.locator.strategyFor(review.harness).planToolName;
+    this.registry.fulfill(review.key, {
+      decision: "deny",
+      reason: renderPlanFeedback(comments, planTool),
+    });
   }
 
   private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
@@ -243,6 +269,10 @@ export class PlanReviewController implements vscode.Disposable {
   /** True while any plan is awaiting review (drives the Plan Review section). */
   hasPendingPlan(): boolean {
     return this.plans.size > 0;
+  }
+
+  planTextForGate(gateId: string): string | undefined {
+    return this.plans.get(gateId)?.markdown;
   }
 
   private planForUri(uri: vscode.Uri): PlanReview | undefined {
@@ -299,11 +329,12 @@ export class PlanReviewController implements vscode.Disposable {
     }
     const APPROVE = "Approve";
     const FEEDBACK = "Send Feedback";
+    const name = this.locator.strategyFor(review.harness).displayName;
     const choice = await vscode.window.showWarningMessage(
-      "Claude is still waiting on this plan.",
+      `${name} is still waiting on this plan.`,
       {
         modal: true,
-        detail: "Closing the tab doesn't answer Claude. Choose an outcome to continue.",
+        detail: `Closing the tab doesn't answer ${name}. Choose an outcome to continue.`,
       },
       APPROVE,
       FEEDBACK,
@@ -371,6 +402,17 @@ export class PlanReviewController implements vscode.Disposable {
     this.plans.clear();
     this.foregroundReview = undefined;
   }
+}
+
+/** The permission mode to enter on plan approval: an explicit per-harness config value wins over the
+ *  harness strategy's default; "off" — or a harness with no settable mode (undefined default) —
+ *  leaves the mode unchanged (undefined). */
+export function resolvePlanApproveMode(
+  configuredMode: string | undefined,
+  defaultMode: string | undefined,
+): string | undefined {
+  const mode = configuredMode ?? defaultMode;
+  return mode && mode !== "off" ? mode : undefined;
 }
 
 /** The highest-priority kind among a thread's comments (problem > question > comment). */

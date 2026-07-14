@@ -150,7 +150,7 @@ function PluginStepAction({
       </button>
     );
   }
-  if (agent.installed) {
+  if (agent.installState === "installed") {
     // Click the "Installed" status to reveal a popover with the Reinstall action.
     return (
       <span className="installed-menu" ref={ref}>
@@ -181,9 +181,11 @@ function PluginStepAction({
       </span>
     );
   }
+  // update-available → "Update" (idempotent re-install of the newer version); else → first "Set up".
+  const label = agent.installState === "update-available" ? "Update" : "Set up";
   return (
     <button type="button" className="btn" onClick={onSetup}>
-      Set up
+      {label}
     </button>
   );
 }
@@ -227,6 +229,7 @@ function AgentRow({
           </div>
         )}
       </div>
+      {!!agent.note && <div className="agent-note">{agent.note}</div>}
     </div>
   );
 }

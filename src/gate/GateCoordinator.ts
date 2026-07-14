@@ -70,6 +70,12 @@ export class GateCoordinator implements vscode.Disposable {
     return this.entries.filter((e) => e.repoRoot === repoRoot);
   }
 
+  /** Read-only snapshot of every pending gate. Used by the env-gated E2E inspect seam to enumerate
+   *  gates without knowing repo roots (which are canonicalized inconsistently across gate kinds). */
+  allEntries(): readonly GateEntry[] {
+    return [...this.entries];
+  }
+
   /** The pending gate owned by an agent session, if any. */
   entryForSession(sessionId: string): GateEntry | undefined {
     return this.entries.find((e) => e.sessionId === sessionId);
