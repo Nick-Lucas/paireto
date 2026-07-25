@@ -10,6 +10,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { getRecordContext } from "../recorder/recordContext.js";
+import { buildClaudeRecordPluginDir } from "../recorder/recordSandbox.js";
 import { buildClaudeHome, probeClaude, type HarnessHome } from "../sandbox.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
 import { TmuxSession, tmuxAvailable } from "./tmux.js";
@@ -50,7 +52,7 @@ export class ClaudeDriver implements HarnessDriver {
   launch(ctx: DriverContext): Promise<void> {
     this.ctx = ctx;
     this.home = buildClaudeHome();
-    const pluginDir = path.join(repoRoot(), "plugins", "claude-code");
+    const pluginDir = this.pluginDir();
     const env = { ...baseHarnessEnv(), ...this.home.env };
     const command = [
       "claude",
@@ -64,6 +66,25 @@ export class ClaudeDriver implements HarnessDriver {
     this.log(`launch: ${command}`);
     this.tmux.launch({ cwd: ctx.repoRoot, env, command });
     return Promise.resolve();
+  }
+
+  /** The `--plugin-dir` to load: the real plugin, or (record mode) a generated copy whose hooks.json +
+   *  .mcp.json point at the recording shims (which still spawn the REAL scripts). */
+  private pluginDir(): string {
+    const realPluginDir = path.join(repoRoot(), "plugins", "claude-code");
+    const rc = getRecordContext();
+    if (!rc) {
+      return realPluginDir;
+    }
+    const dir = buildClaudeRecordPluginDir({
+      workDir: rc.workDir,
+      realPluginDir,
+      hookShim: rc.hookShim,
+      procShim: rc.procShim,
+      repoRoot: rc.repoRoot,
+    });
+    this.log(`record: --plugin-dir points at shim copy ${dir}`);
+    return dir;
   }
 
   enterPlanMode(): Promise<void> {

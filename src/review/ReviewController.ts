@@ -4,7 +4,7 @@
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
-import { basename, join, relative } from "node:path";
+import { basename, join } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -23,7 +23,7 @@ import {
   type ChangesModel,
   type ContentRef,
 } from "../git/DiffService.js";
-import type { WorkspaceRootCatalog } from "../git/WorkspaceRootCatalog.js";
+import { repoRelativePath, type WorkspaceRootCatalog } from "../git/WorkspaceRootCatalog.js";
 import { currentBranch } from "../git/gitCli.js";
 import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
@@ -1088,7 +1088,7 @@ export class ReviewController implements vscode.Disposable {
     if (!root) {
       return false;
     }
-    const rel = relative(root.repoRoot, uri.fsPath);
+    const rel = repoRelativePath(root.repoRoot, uri.fsPath);
     return this.allFiles(root.repoRoot).some((f) => f.path === rel);
   }
 
@@ -1181,7 +1181,7 @@ export class ReviewController implements vscode.Disposable {
       return {
         repoRoot: root.repoRoot,
         side: "modified",
-        relPath: relative(root.repoRoot, uri.fsPath),
+        relPath: repoRelativePath(root.repoRoot, uri.fsPath),
       };
     }
     return undefined;

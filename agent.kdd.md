@@ -686,8 +686,9 @@
   (`@vscode/test-electron`, `src/e2e/runE2E.ts`); real TUIs run in an EXTERNAL tmux session (send-keys
   + capture-pane, which Codex's hook-invisible "Implement this plan?" selector requires).
   `XDG_STATE_HOME` must be a SHORT /tmp path — macOS's ~104-char `sun_path` limit EINVALs long socket
-  paths. Drivers: claudecode/codex/opencode — each costs cents/run and
-  auth-probes → skip; `PAIRETO_E2E_DRIVER` has NO default (unset → runE2E exits asking for one). The
+  paths. Drivers: claudecode/codex/opencode — each costs cents/run in record and hard-fails if the
+  harness is missing; replay (the default) auth-probes nothing and skips only when a tape is absent.
+  `PAIRETO_E2E_DRIVER` has NO default (unset → runE2E exits asking for one). The
   opencode driver's model is `openai/gpt-5.5-fast` (a Codex-subscription model via the opencodex
   plugin). See src/e2e/README.md.
 
@@ -715,3 +716,39 @@
   shared path let concurrent runs rm-rf each other's live workspace) and sets `PAIRETO_TEST=1` so
   extension-host tests can drive the activated extension's real commands and assert internals via
   `paireto.test.inspect` (which now includes per-reason refresh counts).
+
+- **E2E recorder boundary = harness ↔ hooks, never the socket.** The socket is not the boundary
+  because the plugin hook scripts are part of the logic under test — recording sits at the
+  harness↔hooks seam: the shims (GENERATED into the
+  sandbox from TS template strings at record time — never committed .js) spawn the REAL repo
+  scripts/server and report to a tiny in-test unix-socket recorder service; the extension + socket stay
+  fully real. A tape (`recordings/fullflow.<harness>.json`) is the ordered event stream —
+  `hook.start`/`hook.end` pairs (env allowlist + stdin + stdout + exit) for claude/codex, `proc.start`/
+  `proc.stop` for the claude MCP liveness server, `plugin.load`/`plugin.hook`/`plugin.tool.*`/
+  `client.call` for opencode — plus `driver` checkpoints and per-completion `fs` deltas. Machine paths
+  placeholder-normalized (`{{V}}` = current `PLUGIN_VERSION`; codex transcript tails → `{{FILE:n}}` aux
+  files; ids/plan-text verbatim). Record mode HARD-FAILS on a missing harness (never skips) and refuses
+  to write an empty tape (guards a silently-skipped shim, e.g. a wrong codex trust hash). The claude
+  sandbox uses a generated `--plugin-dir` copy (rewritten hooks.json → shim, .mcp.json → proc shim);
+  codex hashes the exact shim command strings into its trust keys; opencode installs a wrapper that
+  imports the real `paireto.js` as a SIBLING copy under the sandbox configDir (`paireto-real.js` +
+  `adapter.json`) so its `@opencode-ai/plugin` SDK resolves from configDir's node_modules — importing
+  from the repo tree loses that and the plan tool would advertise no `plan` arg. ZERO product-code
+  changes — recorder is test-side only. See `src/e2e/recordings/README.md`.
+
+- **Replay re-drives the REAL plugin against the REAL extension, emulating only the harness from the
+  tape** (`HookHarnessEmulator` for claude/codex, `OpenCodePluginHost` for opencode, behind
+  `ReplayDriver`, over a shared `TapeExecutor`). Hook emulator: spawns each recorded hook script as a
+  `node` child (materialize `{{FILE:n}}`, denormalize env/stdin so `bridge.js` dials the REAL socket),
+  DON'T await — a blocking gate hook's `hook.end` parks the loop while the test's driveUntil fires
+  `paireto.gate.*`; compare normalized stdout + exit. Plugin host: dynamic-imports the real `paireto.js`
+  with a fake ctx (tape-backed `client` stub, inert `$`), invokes hooks/tools, compares config/
+  system-transform mutation deltas + tool/client results. `TapeExecutor` owns the sequential loop,
+  driver-checkpoint rendezvous, and divergence diff; on a passing
+  run `recorderAfterRun` asserts the tape fully replayed. Needs only node + VS Code + system git (no
+  harness/auth) — a stripped-PATH box runs it. **OpenCode non-causal order:** the plugin forwards events
+  fire-and-forget over one serial socket, so a tape's event order isn't strictly causal — replay matches
+  `client.call`s PER PATH (not one FIFO) and parks after each `session.idle` event hook until the
+  post-hoc review gate it opened resolves (`reviewPending` probe), reproducing the record-time
+  separation of the two review gates. `RecordingDriver.dispose` drains the recorder to quiescence before
+  sealing so a streaming turn's backlog (incl. the trailing idle) isn't lost.

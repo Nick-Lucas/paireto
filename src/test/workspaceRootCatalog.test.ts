@@ -1,12 +1,17 @@
 import * as assert from "node:assert";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import * as vscode from "vscode";
 
 import type { RepoInfo } from "../git/RepoService.js";
 import {
   WorkspaceRootCatalog,
+  repoRelativePath,
   type WorkspaceRootCatalogEnvironment,
 } from "../git/WorkspaceRootCatalog.js";
+import { canonicalize } from "../protocol/paths.js";
 
 interface CatalogFixture {
   catalog: WorkspaceRootCatalog;
@@ -237,5 +242,31 @@ suite("WorkspaceRootCatalog", () => {
       { repoRoot: "/fast", displayName: "fast", workspaceIndex: 0 },
     ]);
     assert.deepStrictEqual(catalog.agentRoots, ["/fast"]);
+  });
+});
+
+suite("repoRelativePath (canonicalization skew)", () => {
+  test("a symlinked target path still resolves repo-relative (no ../ traversal)", () => {
+    // Catalog roots are canonical (realpath'd), but VS Code reports raw fsPaths — on macOS the
+    // tmpdir itself is a symlink (/var -> /private/var), so relative(canonicalRoot, rawPath)
+    // walks out of the root. Reproduce with an explicit symlink so the test bites on any OS.
+    const real = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "pai-real-"));
+    const link = path.join(fs.realpathSync(os.tmpdir()), `pai-link-${path.basename(real)}`);
+    fs.symlinkSync(real, link);
+    try {
+      // The commented file always exists (it's a changed working-tree file) — and canonicalize only
+      // resolves symlinks for paths that exist, so the fixture must too.
+      fs.writeFileSync(path.join(real, "hello.txt"), "hi");
+      fs.mkdirSync(path.join(real, "a"));
+      fs.writeFileSync(path.join(real, "a", "b.txt"), "b");
+      const canonicalRoot = canonicalize(real);
+      const viaSymlink = path.join(link, "hello.txt");
+      assert.strictEqual(repoRelativePath(canonicalRoot, viaSymlink), "hello.txt");
+      // Plain files keep working too.
+      assert.strictEqual(repoRelativePath(canonicalRoot, path.join(real, "a", "b.txt")), path.join("a", "b.txt"));
+    } finally {
+      fs.rmSync(link, { force: true });
+      fs.rmSync(real, { recursive: true, force: true });
+    }
   });
 });

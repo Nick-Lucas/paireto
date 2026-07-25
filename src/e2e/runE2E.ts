@@ -26,6 +26,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  // Two recorder modes only (default replay): record = real harness behind recording shims + tape
+  // capture; replay (stage 2) re-drives the real plugin emulating only the harness. Forwarded below.
+  const recorderMode = process.env.PAIRETO_E2E_RECORDER_MODE ?? "replay";
+  console.log(`E2E: driver=${driver} recorderMode=${recorderMode}`);
+
   const sandbox = createSandbox();
   try {
     await runTests({
@@ -39,6 +44,7 @@ async function main(): Promise<void> {
         PAIRETO_E2E_SANDBOX: sandbox.repoRoot,
         PAIRETO_REPO_ROOT: repoRoot,
         XDG_STATE_HOME: sandbox.stateHome,
+        PAIRETO_E2E_RECORDER_MODE: recorderMode,
         // The runner runs under real node (process.execPath), but the extension host runs under
         // Electron — so the real-TUI drivers can't derive node's dir from their own execPath. Pass it
         // through so they can PIN it first on the tmux PATH (claude/codex hooks exec `node <script>`

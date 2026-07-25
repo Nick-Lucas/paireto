@@ -262,7 +262,11 @@ resolve with the same two actions.
 
 - **Unit tests** (`pnpm test`) cover the framework, mappers, installers, and gate semantics.
 - **E2E** (`pnpm test:e2e`, `src/e2e/`) drives the whole plan → feedback → approve → implement →
-  review loop inside a real VS Code window over the per-repo socket (never terminal scraping).
-  `PAIRETO_E2E_DRIVER=claudecode|codex|opencode` runs the real harness TUI in an isolated temp home
-  (real LLM calls, cents per run); a missing binary/auth SKIPs (never fails). All three harnesses
+  review loop inside a real VS Code window over the per-repo socket (never terminal scraping),
+  exercising the real `plugins/**` + extension. Runs default to **replay** mode
+  (`PAIRETO_E2E_RECORDER_MODE`), which re-drives the real plugin + extension while emulating only the
+  harness from a committed tape — no harness/tmux/credentials (CI-capable, ~4s); a missing tape SKIPs,
+  never fails. `record` refreshes the committed tapes from a live
+  `PAIRETO_E2E_DRIVER=claudecode|codex|opencode` run (real harness TUI in an isolated temp home, real
+  LLM calls, cents per run) and HARD-FAILS if the harness binary/auth is missing. All three harnesses
   pass the full five-step flow — see `src/e2e/README.md` for setup.

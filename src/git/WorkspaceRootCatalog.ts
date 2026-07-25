@@ -214,3 +214,10 @@ export class WorkspaceRootCatalog implements vscode.Disposable {
     this.emitter.dispose();
   }
 }
+
+/** Repo-relative form of `target` under a catalog root. Catalog roots are CANONICAL (realpath'd),
+ *  but VS Code reports raw fsPaths (macOS: /var vs /private/var) — a plain `relative()` across the
+ *  two forms walks out of the root (`../../..<abs>`), so canonicalize the target first. */
+export function repoRelativePath(repoRoot: string, target: string): string {
+  return path.relative(repoRoot, canonicalize(target));
+}

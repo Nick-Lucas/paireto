@@ -17,6 +17,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { openCodeInstallPlan } from "../../bridge/OpenCodeInstaller.js";
+import { getRecordContext } from "../recorder/recordContext.js";
 import { buildOpenCodeHome, probeOpenCode, type HarnessHome } from "../sandbox.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
 import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
@@ -111,6 +112,23 @@ export class OpenCodeDriver implements HarnessDriver {
     for (const copy of openCodeInstallPlan(path.join(repoRoot(), "plugins"), configDir)) {
       fs.mkdirSync(path.dirname(copy.to), { recursive: true });
       fs.copyFileSync(copy.from, copy.to);
+    }
+    // Record mode: replace the plain plugin with the recording wrapper (it imports the REAL paireto.js
+    // and reports the plugin's harness-facing surface to the recorder service). The wrapper imports a
+    // SIBLING `../paireto-real.js` (at configDir root, OUT of plugin/ so OpenCode doesn't load it as a
+    // second plugin) — placed here so the real file resolves @opencode-ai/plugin from configDir's
+    // node_modules, which the repo tree lacks (see recordSandbox.generateShims).
+    const rc = getRecordContext();
+    if (rc) {
+      const pluginPath = path.join(configDir, "plugin", "paireto.js");
+      fs.copyFileSync(rc.opencodeWrapper, pluginPath);
+      // The sibling real copy needs its OWN adapter.json next to it (paireto.js reads its version from
+      // `./adapter.json` via import.meta.url) — copy both to configDir root, where node_modules also
+      // resolves the @opencode-ai/plugin SDK.
+      const realDir = path.join(repoRoot(), "plugins", "opencode");
+      fs.copyFileSync(path.join(realDir, "paireto.js"), path.join(configDir, "paireto-real.js"));
+      fs.copyFileSync(path.join(realDir, "adapter.json"), path.join(configDir, "adapter.json"));
+      this.log(`record: installed recording wrapper at ${pluginPath} (+ sibling paireto-real.js)`);
     }
     this.log(`staged config at ${configDir}`);
   }

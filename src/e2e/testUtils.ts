@@ -2,8 +2,20 @@
 // the timeout elapses, then throws with the step description AND a failure dump (inspect snapshot +
 // driver screen) so a stall is diagnosable from the runner's stdout alone. Pure node — no vscode.
 
+import { resolveRecorderMode } from "./recorder/mode.js";
+
+/** Default step budget by recorder mode: replay has no LLM latency and detects divergence the
+ *  instant a message arrives, so a tight budget fails fast; a live record run keeps the generous
+ *  LLM budget. */
+export function defaultStepTimeoutMs(): number {
+  if (resolveRecorderMode() === "replay") {
+    return 30_000;
+  }
+  return 120_000;
+}
+
 export interface WaitOptions {
-  /** Overall budget before failing (default 15s; LLM-driver steps pass 120s). */
+  /** Overall budget before failing (defaults per recorder mode — see defaultStepTimeoutMs). */
   timeoutMs?: number;
   /** Poll interval (default 100ms). */
   intervalMs?: number;
@@ -17,7 +29,7 @@ export async function waitFor<T>(
   fn: () => Promise<T | undefined | null | false> | T | undefined | null | false,
   opts: WaitOptions = {},
 ): Promise<T> {
-  const timeoutMs = opts.timeoutMs ?? 15_000;
+  const timeoutMs = opts.timeoutMs ?? defaultStepTimeoutMs();
   const intervalMs = opts.intervalMs ?? 100;
   const deadline = Date.now() + timeoutMs;
   let lastErr: unknown;

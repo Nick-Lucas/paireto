@@ -32,6 +32,12 @@
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
     "test:e2e": "pnpm run compile && pnpm run compile-tests && node out/e2e/runE2E.js",
+    "test:e2e:claudecode": "PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e",
+    "test:e2e:claudecode:record": "PAIRETO_E2E_RECORDER_MODE=record pnpm test:e2e:claudecode",
+    "test:e2e:codex": "PAIRETO_E2E_DRIVER=codex pnpm test:e2e",
+    "test:e2e:codex:record": "PAIRETO_E2E_RECORDER_MODE=record pnpm test:e2e:codex",
+    "test:e2e:opencode": "PAIRETO_E2E_DRIVER=opencode pnpm test:e2e",
+    "test:e2e:opencode:record": "PAIRETO_E2E_RECORDER_MODE=record pnpm test:e2e:opencode",
     "emulator": "node scripts/emulator.ts"
   },
   "dependencies": {

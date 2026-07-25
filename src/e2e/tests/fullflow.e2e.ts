@@ -14,6 +14,7 @@ import { ClaudeDriver } from "../drivers/claude.js";
 import { CodexDriver } from "../drivers/codex.js";
 import { OpenCodeDriver } from "../drivers/opencode.js";
 import type { HarnessDriver } from "../drivers/types.js";
+import { wrapDriverForRecorder } from "../recorder/index.js";
 import type { InspectGate, InspectSnapshot } from "../inspectTypes.js";
 import { waitFor } from "../testUtils.js";
 
@@ -34,7 +35,6 @@ export async function runFullFlow(): Promise<void> {
     console.log(`E2E: SKIP driver "${harness}" — ${availability}`);
     return;
   }
-  const stepTimeout = 120_000;
   const sessionId = `${harness}-${crypto.randomBytes(4).toString("hex")}`;
   const log: string[] = [];
 
@@ -50,7 +50,7 @@ export async function runFullFlow(): Promise<void> {
     return `--- inspect ---\n${snap}\n--- driver screen ---\n${await driver.screen()}`;
   };
   const wait = <T>(desc: string, fn: () => Promise<T | undefined | false>): Promise<T> =>
-    waitFor(desc, fn, { timeoutMs: stepTimeout, onFail: dump });
+    waitFor(desc, fn, { onFail: dump });
   // A gate becomes foreground-visible a beat BEFORE its blocking request parks on awaitDecision, so a
   // decision command fired in that window is silently dropped. Re-drive the command each poll until
   // the gate resolves. Two guards keep it off the WRONG gate: check the predicate BEFORE dispatching
@@ -221,7 +221,13 @@ function addComment(args: {
   return vscode.commands.executeCommand("paireto.test.addComment", args);
 }
 
+// The recorder wraps the real driver: record wraps it to capture the tape, replay ignores the thunk
+// entirely (no harness). In record's passthrough (stage 1) this is byte-identical to today's run.
 function makeDriver(harness: string): HarnessDriver {
+  return wrapDriverForRecorder(harness, () => realDriverFor(harness));
+}
+
+function realDriverFor(harness: string): HarnessDriver {
   switch (harness) {
     case "claudecode":
       return new ClaudeDriver();

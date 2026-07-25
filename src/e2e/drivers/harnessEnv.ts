@@ -36,5 +36,7 @@ export function baseHarnessEnv(): NodeJS.ProcessEnv {
   env.GIT_CONFIG_SYSTEM = "/dev/null";
   env.GIT_TERMINAL_PROMPT = "0";
   // XDG_STATE_HOME (socket dir) is inherited from process.env untouched — the runner set the short one.
+  // In record mode the harness's hooks dial the REAL socket directly (the recording shims tee to the
+  // recorder service out-of-band), so there is no second state home to redirect to.
   return env;
 }

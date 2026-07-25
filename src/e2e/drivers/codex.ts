@@ -19,6 +19,8 @@ import {
   mergeCodexHooks,
   resolveCodexGroups,
 } from "../../bridge/CodexInstaller.js";
+import { getRecordContext } from "../recorder/recordContext.js";
+import { shimHookCommand } from "../recorder/recordSandbox.js";
 import { buildCodexHome, probeCodex, type HarnessHome } from "../sandbox.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
 import { TmuxSession, tmuxAvailable } from "./tmux.js";
@@ -65,17 +67,21 @@ export class CodexDriver implements HarnessDriver {
   }
 
   async enterPlanMode(): Promise<void> {
-    await delay(2500); // let the TUI boot before the key registers
-    this.tmux.sendKeys("BTab"); // Shift-Tab cycles to plan mode
-    const deadline = Date.now() + 15_000;
+    await delay(4000); // let the TUI fully boot before the first key registers
+    // Shift-Tab TOGGLES Default↔Plan. A keystroke sent before the TUI is interactive is silently
+    // lost, so re-send until the footer confirms "Plan mode" — checking BEFORE each send so a
+    // registered toggle is never undone by an extra press. (codex-cli 0.144.4: footer shows
+    // "Plan mode (shift+tab to cycle)".)
+    const deadline = Date.now() + 30_000;
     while (Date.now() < deadline) {
       if (PLAN_MODE.test(this.tmux.capture())) {
         this.log("enterPlanMode: plan mode confirmed");
         return;
       }
-      await delay(500);
+      this.tmux.sendKeys("BTab");
+      await delay(1500); // let the footer settle before re-checking
     }
-    this.log("enterPlanMode: 'plan mode' not seen in footer within 15s (continuing anyway)");
+    this.log("enterPlanMode: 'plan mode' not seen in footer within 30s (continuing anyway)");
   }
 
   async prompt(text: string): Promise<void> {
@@ -115,7 +121,10 @@ export class CodexDriver implements HarnessDriver {
       path.join(repoRoot(), "plugins", "codex", "hooks.json"),
       "utf8",
     );
-    const groups = resolveCodexGroups(template, scriptsDir);
+    const resolved = resolveCodexGroups(template, scriptsDir);
+    // Record mode: rewrite each command to run under the hook shim (which spawns the REAL script). The
+    // trust hashes below are then computed over the EXACT shim command strings, so Codex trusts them.
+    const groups = this.wireRecordShims(resolved);
     const hooksPath = path.join(codexHome, "hooks.json");
     // Fresh home → empty source; marker is the scripts dir (identifies OUR groups on a re-merge).
     const { text: hooksText, placements } = mergeCodexHooks("", groups, scriptsDir);
@@ -130,6 +139,25 @@ export class CodexDriver implements HarnessDriver {
     this.log(`wrote hooks.json (${placements.length} groups) + config.toml (project trusted)`);
   }
 
+  /** In record mode, rewrite every hook command to `node <shim> <repo-relative-script>` so the shim
+   *  spawns the REAL script; a no-op otherwise. The command strings are hashed verbatim into the trust
+   *  keys, so Codex trusts the shim commands exactly. */
+  private wireRecordShims(
+    groups: ReturnType<typeof resolveCodexGroups>,
+  ): ReturnType<typeof resolveCodexGroups> {
+    const rc = getRecordContext();
+    if (!rc) {
+      return groups;
+    }
+    return groups.map((group) => ({
+      ...group,
+      hooks: group.hooks.map((handler) => ({
+        ...handler,
+        command: recordCommand(handler.command, rc.hookShim, rc.repoRoot),
+      })),
+    }));
+  }
+
   private log(line: string): void {
     this.ctx?.log.push(`${new Date().toISOString()} [codex] ${line}`);
   }
@@ -138,6 +166,16 @@ export class CodexDriver implements HarnessDriver {
 /** The extension repo root (where the shipped plugins/ live). */
 function repoRoot(): string {
   return process.env.PAIRETO_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
+}
+
+/** Rewrite a resolved `node "<absScript>"` command to run under the record hook shim. Leaves an
+ *  unexpected command shape untouched (fail-safe). */
+function recordCommand(command: string, hookShim: string, repoRoot: string): string {
+  const m = /^node "(.+)"$/.exec(command);
+  if (!m) {
+    return command;
+  }
+  return shimHookCommand(m[1], { hookShim, repoRoot });
 }
 
 /** TOML basic (double-quoted) key — escape `\` and `"` so any path stays valid TOML. */
