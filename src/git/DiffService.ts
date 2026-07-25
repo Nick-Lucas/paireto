@@ -68,16 +68,83 @@ export class DiffService {
   /** Build the grouped Changes model for the given Compare-To point. */
   async getChanges(repoRoot: string, compareTo: CompareTo): Promise<ChangesModel> {
     const resolved = await this.resolveCompareTo(repoRoot, compareTo);
+    const { staged, unstaged, committed } = await this.scan(repoRoot, resolved.ref);
+    const sort = (a: ChangedFile, b: ChangedFile): number => a.path.localeCompare(b.path);
+    return {
+      staged: staged.sort(sort),
+      unstaged: unstaged.sort(sort),
+      committed: committed.sort(sort),
+      compareLabel: resolved.label,
+      compareRef: resolved.ref,
+    };
+  }
 
-    const staged = await this.collect(repoRoot, ["diff", "--cached"], "staged");
-    const unstaged = await this.collect(repoRoot, ["diff"], "unstaged");
+  /**
+   * The scoped equivalent of {@link getChanges} for ONE file: the current entries for the given
+   * paths (matched by path, or a rename's old path), against an already-resolved compare ref. Lets
+   * openDiff sync a single file without the full model rebuild.
+   */
+  async changesForPath(
+    repoRoot: string,
+    relPaths: string[],
+    compareRef: string | null,
+  ): Promise<ChangedFile[]> {
+    const { staged, unstaged, committed } = await this.scan(repoRoot, compareRef, relPaths);
+    return [...staged, ...unstaged, ...committed];
+  }
 
-    // Untracked files are working-tree changes → Unstaged group.
+  /**
+   * The one working-state scan behind {@link getChanges} and {@link changesForPath} — shared so the
+   * group a path lands in (notably the committed-while-also-staged/unstaged suppression) can never
+   * diverge between the tree's model and openDiff's scoped sync. Optional `paths` scope the result
+   * to the given files.
+   */
+  private async scan(
+    repoRoot: string,
+    compareRef: string | null,
+    paths: string[] = [],
+  ): Promise<{ staged: ChangedFile[]; unstaged: ChangedFile[]; committed: ChangedFile[] }> {
+    // Tracked diffs are NEVER pathspec-limited: git pairs a rename only when BOTH sides are inside
+    // the pathspec, so scoping to one side degrades the R into a phantom D/A the full scan would
+    // never report. Run them whole and filter afterwards.
+    const stagedAll = await this.collect(repoRoot, ["diff", "--cached"], "staged");
+    const unstagedAll = await this.collect(repoRoot, ["diff"], "unstaged");
+
+    // Committed = changed between Compare-To and HEAD, minus anything already staged/unstaged (the
+    // `here` filter below). A bad/unresolvable compare ref is a persistent condition, so degrade to
+    // empty here rather than failing the whole model (staged/unstaged failures, by contrast,
+    // propagate and keep last-good).
+    let committedAll: ChangedFile[] = [];
+    if (compareRef) {
+      try {
+        committedAll = await this.collect(repoRoot, ["diff", compareRef, "HEAD"], "committed");
+      } catch {
+        committedAll = [];
+      }
+    }
+
+    // A scoped scan must return EVERY entry mergeChangesForPath will count as affected: a matched
+    // rename widens the scope with its other half, which can itself match further entries (an edit
+    // at the rename's new path, a chained rename) — so widen to a fixpoint. An entry at a widened
+    // path missing from the result would be dropped from the merged model with no replacement.
+    const scoped = widenAcrossRenames(paths, [...stagedAll, ...unstagedAll, ...committedAll]);
+    const scope = (files: ChangedFile[]): ChangedFile[] =>
+      scoped === undefined ? files : files.filter((f) => matchesPaths(f, scoped));
+    const staged = scope(stagedAll);
+    const unstaged = scope(unstagedAll);
+
+    // Untracked files are working-tree changes → Unstaged group. ls-files keeps the (widened)
+    // pathspec — untracked files can't be rename halves, and the untracked walk is the expensive
+    // call here. `:(literal)` so a path starting with ':' (pathspec magic) or holding glob
+    // characters still matches itself exactly.
+    const pathspec =
+      scoped === undefined ? [] : ["--", ...[...scoped].map((p) => `:(literal)${p}`)];
     const untrackedOut = await gitSafe(repoRoot, [
       "ls-files",
       "--others",
       "--exclude-standard",
       "-z",
+      ...pathspec,
     ]);
     for (const p of splitNul(untrackedOut)) {
       unstaged.push({
@@ -89,29 +156,11 @@ export class DiffService {
       });
     }
 
-    // Committed = changed between Compare-To and HEAD, minus anything already staged/unstaged.
-    // A bad/unresolvable compare ref is a persistent condition, so degrade to empty here rather than
-    // failing the whole model (staged/unstaged failures, by contrast, propagate and keep last-good).
-    let committed: ChangedFile[] = [];
-    if (resolved.ref) {
-      try {
-        const here = new Set([...staged, ...unstaged].map((f) => f.path));
-        committed = (
-          await this.collect(repoRoot, ["diff", resolved.ref, "HEAD"], "committed")
-        ).filter((f) => !here.has(f.path));
-      } catch {
-        committed = [];
-      }
-    }
-
-    const sort = (a: ChangedFile, b: ChangedFile): number => a.path.localeCompare(b.path);
-    return {
-      staged: staged.sort(sort),
-      unstaged: unstaged.sort(sort),
-      committed: committed.sort(sort),
-      compareLabel: resolved.label,
-      compareRef: resolved.ref,
-    };
+    // The widened scope keeps this suppression in full-scan parity: a committed entry in scope has
+    // both rename halves in scope, so any staged/unstaged/untracked change at its path is in `here`.
+    const here = new Set([...staged, ...unstaged].map((f) => f.path));
+    const committed = scope(committedAll).filter((f) => !here.has(f.path));
+    return { staged, unstaged, committed };
   }
 
   /** Run a name-status diff + numstat for one group and merge the line counts.
@@ -256,6 +305,34 @@ export class DiffService {
     }
     return { kind: "ref", ref };
   }
+}
+
+/** True when the file is in the scoped repo-relative path set — by its path or, for a rename, its
+ *  old path (so either half of a rename pair matches). */
+function matchesPaths(file: ChangedFile, paths: ReadonlySet<string>): boolean {
+  return paths.has(file.path) || (file.oldPath !== undefined && paths.has(file.oldPath));
+}
+
+/** The scoped scan's effective path set: the requested paths plus, to a fixpoint, BOTH halves of
+ *  every rename entry the set matches. `undefined` = unscoped. */
+function widenAcrossRenames(paths: string[], entries: ChangedFile[]): Set<string> | undefined {
+  if (paths.length === 0) {
+    return undefined;
+  }
+  const widened = new Set(paths);
+  const renamePairs = entries.flatMap((f) => (f.oldPath === undefined ? [] : [[f.path, f.oldPath]]));
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const [a, b] of renamePairs) {
+      const matched = widened.has(a) || widened.has(b);
+      if (matched && !(widened.has(a) && widened.has(b))) {
+        widened.add(a);
+        widened.add(b);
+        grew = true;
+      }
+    }
+  }
+  return widened;
 }
 
 /** Deleted files have no modified side; everything else uses the given sides. */

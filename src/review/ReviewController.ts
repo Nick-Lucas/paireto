@@ -31,6 +31,7 @@ import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
 import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
+import { ReviewPath } from "./ReviewPath.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
 import { relocateReviewAnchor } from "./commentAnchors.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
@@ -141,6 +142,18 @@ export class ReviewController implements vscode.Disposable {
   private readonly openDiffs = new Map<string, OpenDiffState>();
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private readonly refreshSeq = new Map<string, number>();
+  /** Narrow seam `openDiff` syncs through (one scoped git check, not the full refresh). */
+  private readonly openDiffSync: OpenDiffSync = {
+    changesForPath: (repoRoot, relPaths, compareRef) =>
+      this.diff.changesForPath(repoRoot, relPaths, compareRef),
+    getRepository: (repoRoot) => this.repositoryStates.get(repoRoot),
+    setRepository: (state) => this.repositoryStates.set(state.repoRoot, state),
+    getRefreshSeq: (repoRoot) => this.refreshSeq.get(repoRoot) ?? 0,
+    fullRefresh: (reason) => this.refresh(reason),
+    fireChange: () => this.changeEmitter.fire(),
+  };
+  /** Per-reason refresh() tally, read by the env-gated test control plane (nothing else). */
+  private readonly refreshCounts = new Map<string, number>();
 
   constructor(
     private readonly roots: WorkspaceRootCatalog,
@@ -401,6 +414,12 @@ export class ReviewController implements vscode.Disposable {
     return this.activeRequestId !== undefined;
   }
 
+  /** Per-reason refresh() tally for `paireto.test.inspect` — lets a test pin that a flow (e.g.
+   *  openDiff's scoped sync) never ran the full refresh. */
+  getRefreshCounts(): Record<string, number> {
+    return Object.fromEntries(this.refreshCounts);
+  }
+
   private async setReviewContext(foreground: boolean): Promise<void> {
     await vscode.commands.executeCommand("setContext", ContextKeys.reviewSessionActive, foreground);
   }
@@ -457,6 +476,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   async refresh(reason = "manual"): Promise<void> {
+    this.refreshCounts.set(reason, (this.refreshCounts.get(reason) ?? 0) + 1);
     const roots = this.roots.gitRoots;
     if (roots.length > 1 && this.compareTo.kind === "ref") {
       this.compareTo = { kind: "default" };
@@ -633,6 +653,7 @@ export class ReviewController implements vscode.Disposable {
       trackedGroup: open.group,
       viewColumn: located?.viewColumn,
       preserveFocus: false,
+      preview: located?.preview ?? true,
     });
     await closeTabsWhere((tab) => reviewTabKey(tab.input) === oldTabKey);
     this.openDiffs.delete(oldTabKey);
@@ -788,6 +809,7 @@ export class ReviewController implements vscode.Disposable {
           },
           viewColumn: located?.viewColumn,
           preserveFocus: !located?.active,
+          preview: located?.preview ?? true,
           suppressActiveDiffEvent: true,
           skipRefresh: true,
         });
@@ -796,14 +818,14 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  /** The open review tab whose virtual URI matches `tabKey`: its column and active state. */
+  /** The open review tab whose virtual URI matches `tabKey`: its column, active and preview state. */
   private locateReviewTab(
     tabKey: string,
-  ): { viewColumn: vscode.ViewColumn; active: boolean } | undefined {
+  ): { viewColumn: vscode.ViewColumn; active: boolean; preview: boolean } | undefined {
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
         if (reviewTabKey(tab.input) === tabKey) {
-          return { viewColumn: group.viewColumn, active: tab.isActive };
+          return { viewColumn: group.viewColumn, active: tab.isActive, preview: tab.isPreview };
         }
       }
     }
@@ -918,16 +940,22 @@ export class ReviewController implements vscode.Disposable {
       trackedGroup?: FileGroup;
       /** Internal: a caller that has just refreshed can avoid repeating the git scan. */
       skipRefresh?: boolean;
+      /** Tab preview state. Defaults to true (recycled, like explorer/native-git-panel opens); the
+       *  re-point callers pass the prior tab's state so a kept tab never comes back as a preview —
+       *  reopening two kept diffs as previews would collapse them into one recycled tab. */
+      preview?: boolean;
       /** Set when silently re-pointing an already-open tab after a git write (stage/unstage/
        *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
       suppressActiveDiffEvent?: boolean;
     },
   ): Promise<OpenedReviewFile | undefined> {
     const repoRoot = requestedFile.repoRoot;
-    // Opening is a synchronization boundary. Refresh both the model and, below, the exact URIs that
+    // Opening is a synchronization boundary, but a SCOPED one: re-check just this file against git
+    // (never the full multi-root getChanges scan or a refreshAllOpen() re-fire of every open review
+    // URI — that made opening laggy in large projects), then, below, invalidate the exact URIs that
     // are about to open; the provider may still cache a URI from a previously closed tab.
     if (!show?.skipRefresh) {
-      await this.refresh("open-diff");
+      await syncFileForOpenDiff(this.openDiffSync, repoRoot, requestedFile);
     }
     const changes = this.changesFor(repoRoot);
     if (!changes) {
@@ -965,13 +993,13 @@ export class ReviewController implements vscode.Disposable {
       baseLabel,
     };
     this.openDiffFile = open;
-    const baseUri = ReviewContentProvider.buildUri(
-      this.reviewId,
-      "base",
-      file.path,
-      baseRef,
+    const baseUri = ReviewPath.create({
+      reviewId: this.reviewId,
+      side: "base",
+      relPath: file.path,
+      ref: baseRef,
       repoRoot,
-    );
+    }).toUri();
     // When editable, the modified side is the real working-tree file: it gets LSP + editing, and
     // edits land in the lowest (unstaged) level. Otherwise it's a read-only virtual document (the
     // paireto-review FileSystemProvider is registered read-only, so it genuinely can't be typed into).
@@ -979,13 +1007,13 @@ export class ReviewController implements vscode.Disposable {
     this.debug(`openDiff: ${file.path} group=${file.group} editable=${editable}`);
     const modUri = editable
       ? vscode.Uri.file(join(repoRoot, file.path))
-      : ReviewContentProvider.buildUri(
-          this.reviewId,
-          "modified",
-          file.path,
-          DiffService.encodeRef(sides.modified),
+      : ReviewPath.create({
+          reviewId: this.reviewId,
+          side: "modified",
+          relPath: file.path,
+          ref: DiffService.encodeRef(sides.modified),
           repoRoot,
-        );
+        }).toUri();
 
     // Invalidate the exact documents before VS Code asks for them. refreshAllOpen() cannot clear a
     // cached URI left behind by a closed tab, which was the source of stale content on first open.
@@ -1011,7 +1039,7 @@ export class ReviewController implements vscode.Disposable {
         this.openDiffs.set(paneUri.toString(), open);
       }
       await vscode.commands.executeCommand("vscode.open", paneUri, {
-        preview: !editable,
+        preview: show?.preview ?? true,
         viewColumn: show?.viewColumn,
         preserveFocus: show?.preserveFocus,
       });
@@ -1026,13 +1054,15 @@ export class ReviewController implements vscode.Disposable {
     if (editable && (await isTextFile(join(repoRoot, file.path)))) {
       // Open the real working-tree file as a normal document first so the TypeScript server attaches
       // it to the workspace's configured project. Opening it only as a diff's modified side can leave
-      // it in an inferred single-file project, so imported types resolve to `any`. Non-preview so the
-      // editable tab isn't recycled out from under an edit. Skipped for binary files (images, etc.) —
-      // pre-opening them as text would force a text model and defeat VS Code's image diff.
+      // it in an inferred single-file project, so imported types resolve to `any`. Skipped for binary
+      // files (images, etc.) — pre-opening them as text would force a text model and defeat VS Code's
+      // image diff.
       await vscode.workspace.openTextDocument(modUri);
     }
+    // Preview (recycled by the next open) like the explorer and the native git panel — safe for
+    // editable diffs too, because VS Code pins a preview tab the moment its document goes dirty.
     await vscode.commands.executeCommand("vscode.diff", baseUri, modUri, title, {
-      preview: !editable,
+      preview: show?.preview ?? true,
       viewColumn: show?.viewColumn,
       preserveFocus: show?.preserveFocus,
     });
@@ -1133,20 +1163,18 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
-   * Map a comment thread's URI to (side, relPath). The thread sits on either a `paireto-review://` diff
-   * side (`/base/<path>` or `/modified/<path>`) or the editable working-tree file (its modified side).
+   * Map a comment thread's URI to (side, relPath). The thread sits on either a `paireto-review://`
+   * diff side (side + path in the query) or the editable working-tree file (its modified side).
    */
   private resolveCommentAnchor(
     uri: vscode.Uri,
   ): { repoRoot: string; side: "base" | "modified"; relPath: string } | undefined {
     if (uri.scheme === Schemes.review) {
-      const encoded = new URLSearchParams(uri.query).get("repo");
-      const repoRoot = encoded ? decodeURIComponent(encoded) : undefined;
+      const { repoRoot, side, relPath } = ReviewPath.fromUri(uri);
       if (!repoRoot) {
         return undefined;
       }
-      const side = uri.path.replace(/^\//, "").split("/")[0] as "base" | "modified";
-      return { repoRoot, side, relPath: uri.path.replace(/^\/(base|modified)\//, "") };
+      return { repoRoot, side, relPath };
     }
     const root = uri.scheme === "file" ? this.roots.gitRootForPath(uri.fsPath) : undefined;
     if (root) {
@@ -1304,13 +1332,14 @@ export class ReviewController implements vscode.Disposable {
       candidates.push(vscode.Uri.parse(c.attachment.sourceUri));
     }
     candidates.push(currentThreadUri);
-    const historicalBase = ReviewContentProvider.buildUri(
-      this.reviewId,
-      "base",
-      c.filePath,
-      c.attachment?.baseRef && c.attachment.baseRef !== "EMPTY" ? c.attachment.baseRef : "HEAD",
-      c.repoRoot,
-    );
+    const historicalBase = ReviewPath.create({
+      reviewId: this.reviewId,
+      side: "base",
+      relPath: c.filePath,
+      ref:
+        c.attachment?.baseRef && c.attachment.baseRef !== "EMPTY" ? c.attachment.baseRef : "HEAD",
+      repoRoot: c.repoRoot,
+    }).toUri();
     candidates.push(historicalBase);
 
     const seen = new Set<string>();
@@ -1548,6 +1577,115 @@ export function selectCommentFile(
 /** Only historical/current-file fallbacks need an editor open; review targets are already visible. */
 export function shouldOpenStandaloneCommentTarget(surface: "review" | "fallback"): boolean {
   return surface === "fallback";
+}
+
+/** What `syncFileForOpenDiff` needs from the controller — injectable so tests can prove openDiff
+ *  never runs the full multi-root scan. */
+export interface OpenDiffSync {
+  changesForPath(
+    repoRoot: string,
+    relPaths: string[],
+    compareRef: string | null,
+  ): Promise<ChangedFile[]>;
+  getRepository(repoRoot: string): RepositoryReviewState | undefined;
+  setRepository(state: RepositoryReviewState): void;
+  /** The repo's refresh() sequence (bumped synchronously at every refresh() start) — read around
+   *  the scoped git call to detect a competing refresh starting mid-flight. */
+  getRefreshSeq(repoRoot: string): number;
+  fullRefresh(reason: "open-diff" | "open-diff-superseded"): Promise<void>;
+  fireChange(): void;
+}
+
+/**
+ * openDiff's scoped sync: re-check ONE file against git and merge the result into that repo's
+ * in-memory model, so a file that moved layers or disappeared since the tree rendered is still
+ * handled — without the full refresh (getChanges + currentBranch per root + refreshAllOpen), which
+ * made opening a diff laggy in large projects. Falls back to the full refresh only when the repo has
+ * no model yet, or when a competing refresh() started mid-sync (the rare race; a complete model is
+ * the only safe answer then); a failed git check keeps the last-good model, like refresh().
+ */
+export async function syncFileForOpenDiff(
+  deps: OpenDiffSync,
+  repoRoot: string,
+  file: { path: string; oldPath?: string },
+): Promise<void> {
+  const snapshot = deps.getRepository(repoRoot);
+  if (!snapshot) {
+    await deps.fullRefresh("open-diff");
+    return;
+  }
+  const seq = deps.getRefreshSeq(repoRoot);
+  const relPaths = file.oldPath ? [file.path, file.oldPath] : [file.path];
+  let fresh: ChangedFile[];
+  try {
+    fresh = await deps.changesForPath(repoRoot, relPaths, snapshot.changes.compareRef);
+  } catch {
+    return;
+  }
+  if (deps.getRefreshSeq(repoRoot) !== seq) {
+    // A refresh() STARTED while the scoped git call was in flight: its data is at least as fresh
+    // and it may still be running, so a scoped write now could fight it — and openDiff still needs
+    // this file present in the model, so bailing silently isn't an option either. Defer to one
+    // complete refresh. (The sync never claims the seq itself: superseding a complete in-flight
+    // refresh would discard its whole model with nothing re-delivering the other paths' updates.)
+    await deps.fullRefresh("open-diff-superseded");
+    return;
+  }
+  // Merge into the LIVE model, never the pre-await snapshot — a refresh() already in flight when
+  // this sync began may have landed during the git call, and writing the snapshot back would
+  // silently revert every other path it updated.
+  const state = deps.getRepository(repoRoot);
+  if (!state) {
+    return;
+  }
+  if (state.changes.compareRef !== snapshot.changes.compareRef) {
+    // A refresh() already in flight when this sync began (its seq bump predates the read above)
+    // landed a model with a DIFFERENT compare ref: the scoped result was computed against the old
+    // one, so merging it would inject a stale committed entry into (or drop a legitimate one from)
+    // the new model. Defer to one complete refresh, like the superseded path.
+    await deps.fullRefresh("open-diff-superseded");
+    return;
+  }
+  const merged = mergeChangesForPath(state.changes, repoRoot, relPaths, fresh);
+  if (merged.changed) {
+    deps.setRepository({ ...state, changes: merged.changes });
+    deps.fireChange();
+  }
+}
+
+/** Replace one path's entries in a repo model with a scoped git result, leaving the rest alone. */
+function mergeChangesForPath(
+  changes: RepositoryChangesModel,
+  repoRoot: string,
+  relPaths: string[],
+  fresh: ChangedFile[],
+): { changes: RepositoryChangesModel; changed: boolean } {
+  // Affected = the queried paths plus every path the scoped result touches, INCLUDING a rename's
+  // old path — and stale entries match by their old path too, so a rename entry keyed by its new
+  // path is still replaced when queried by the old one. The scoped scan widens its own path set
+  // across rename pairs to a fixpoint, so it is always a superset of `affected` — anything dropped
+  // here that still exists in git comes back via `fresh`.
+  const affected = new Set(relPaths);
+  for (const f of fresh) {
+    affected.add(f.path);
+    if (f.oldPath !== undefined) {
+      affected.add(f.oldPath);
+    }
+  }
+  const touches = (f: ChangedFile): boolean =>
+    affected.has(f.path) || (f.oldPath !== undefined && affected.has(f.oldPath));
+  const next = { ...changes };
+  let changed = false;
+  for (const group of ["staged", "unstaged", "committed"] as FileGroup[]) {
+    const kept = changes[group].filter((f) => !touches(f));
+    const replacement = fresh.filter((f) => f.group === group).map((f) => ({ ...f, repoRoot }));
+    const merged = [...kept, ...replacement].sort((a, b) => a.path.localeCompare(b.path));
+    if (!groupEqual(changes[group], merged)) {
+      next[group] = merged;
+      changed = true;
+    }
+  }
+  return { changes: next, changed };
 }
 
 /**

@@ -83,6 +83,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       reviewActive: deps.reviewController.isSessionActive(),
       commentBucketCount: deps.reviewController.getComments().length,
       gateHasFeedback: deps.coordinator.current?.hasFeedback() ?? false,
+      refreshCounts: deps.reviewController.getRefreshCounts(),
     };
   };
 

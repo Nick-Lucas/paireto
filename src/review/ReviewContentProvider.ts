@@ -1,10 +1,8 @@
 // Serves base/modified file content for review diffs under the paireto-review:// scheme as a READ-ONLY
 // FileSystemProvider. A read-only FS provider is what actually makes the virtual sides non-editable
 // — a TextDocumentContentProvider doc placed on a diff's *modified* side stays editable-in-buffer
-// (you can type; Save just prompts "Save As"). The URI carries the repo root, side, path, and a
-// `ref` token resolved here to the right git blob, the index, the working-tree file, or empty.
-//
-//   paireto-review://<reviewId>/<side>/<relPath>?ref=<EMPTY|WORKING|INDEX|gitref>&repo=<encodedRoot>
+// (you can type; Save just prompts "Save As"). The URI shape is owned by ReviewPath; the `ref` it
+// carries is resolved here to the right git blob, the index, the working-tree file, or empty.
 
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
@@ -12,6 +10,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { gitSafeBytes } from "../git/gitCli.js";
+import { ReviewPath } from "./ReviewPath.js";
 import { Schemes } from "../config.js";
 
 const EMPTY = new Uint8Array(0);
@@ -121,10 +120,7 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
   }
 
   private async resolveContent(uri: vscode.Uri): Promise<Uint8Array> {
-    const params = new URLSearchParams(uri.query);
-    const ref = params.get("ref") ?? "EMPTY";
-    const repoRoot = params.get("repo") ? decodeURIComponent(params.get("repo")!) : "";
-    const relPath = stripSide(uri.path);
+    const { ref, repoRoot, relPath } = ReviewPath.fromUri(uri);
     if (ref === "EMPTY" || !repoRoot || !relPath) {
       return EMPTY;
     }
@@ -141,31 +137,7 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
     return gitSafeBytes(repoRoot, ["show", `${ref}:${relPath}`]);
   }
 
-  /** Build a content URI for one side of a file diff. */
-  static buildUri(
-    reviewId: string,
-    side: "base" | "modified",
-    relPath: string,
-    ref: string,
-    repoRoot: string,
-  ): vscode.Uri {
-    const query = new URLSearchParams({ ref, repo: encodeURIComponent(repoRoot) }).toString();
-    return vscode.Uri.from({
-      scheme: Schemes.review,
-      authority: reviewId,
-      path: `/${side}/${relPath}`,
-      query,
-    });
-  }
-
   dispose(): void {
     this.emitter.dispose();
   }
-}
-
-function stripSide(uriPath: string): string {
-  // uriPath is "/base/<rel>" or "/modified/<rel>"
-  const trimmed = uriPath.replace(/^\//, "");
-  const slash = trimmed.indexOf("/");
-  return slash === -1 ? "" : trimmed.slice(slash + 1);
 }
