@@ -14,6 +14,7 @@ import {
   type ChangedFile,
 } from "../git/DiffService.js";
 import { ReviewContentProvider } from "../review/ReviewContentProvider.js";
+import { ReviewPath } from "../review/ReviewPath.js";
 
 // A tiny 1x1 PNG: contains bytes (0x89, 0xFF, 0x00) that are not valid standalone UTF-8 and so are
 // destroyed by a read-as-utf8 → re-encode-as-utf8 round trip.
@@ -39,17 +40,27 @@ suite("binary diff content", () => {
   });
 
   test("readFile returns the working-tree file's exact bytes", async () => {
-    const uri = ReviewContentProvider.buildUri("rev1", "modified", "pixel.png", "WORKING", dir);
+    const uri = pixelUri(dir);
     const bytes = await provider.readFile(uri);
     assert.deepStrictEqual(Buffer.from(bytes), PNG_1x1, "binary bytes must round-trip unchanged");
   });
 
   test("stat reports the true byte length, not the utf8 re-encoding length", async () => {
-    const uri = ReviewContentProvider.buildUri("rev1", "modified", "pixel.png", "WORKING", dir);
+    const uri = pixelUri(dir);
     const stat = await provider.stat(uri);
     assert.strictEqual(stat.size, PNG_1x1.length);
   });
 });
+
+function pixelUri(repoRoot: string) {
+  return ReviewPath.create({
+    reviewId: "rev1",
+    side: "modified",
+    relPath: "pixel.png",
+    ref: "WORKING",
+    repoRoot,
+  }).toUri();
+}
 
 // Adds/deletes have an empty side, so they must open a SINGLE editor (like the git panel) rather than
 // a two-pane diff with a broken/empty pane — an image viewer can't render the empty side at all.

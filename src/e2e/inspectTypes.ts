@@ -33,6 +33,8 @@ export interface InspectSnapshot {
   reviewActive: boolean;
   commentBucketCount: number;
   gateHasFeedback: boolean;
+  /** Per-reason ReviewController.refresh() tally (e.g. proves openDiff never ran the full refresh). */
+  refreshCounts: Record<string, number>;
 }
 
 /** Argument to the `paireto.test.addComment` command. */

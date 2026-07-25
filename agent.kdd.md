@@ -369,6 +369,22 @@
   `TextDocumentContentProvider`** — a content-provider doc on a diff's modified side stays
   editable-in-buffer (Save → "Save As"), so it wasn't actually read-only.
 
+- **`activationEvents` includes `onFileSystem:paireto-review`** — `onStartupFinished` fires AFTER
+  the workbench restores editors, so a restored review diff tab resolved with no provider registered
+  and showed an error until "Try Again". `onFileSystem:<scheme>` makes VS Code fire activation and
+  wait for the provider registration before completing the read (a manifest test locks the event).
+
+- **Review URIs put the workspace-relative file path in the URI path; side + relPath + ref + repo
+  all ride in the query** — VS Code renders breadcrumbs/tab paths from URI path segments, so the old
+  `/<side>/<relPath>` shape showed "modified / src / …". Display path mirrors `asRelativePath`
+  (folder name prefixed only in multi-root, CLOSEST containing folder wins, both sides canonicalized
+  so a symlinked folder path still matches the git-canonical repoRoot; falls back to repo-relative
+  outside the workspace); `side` in the query keeps a diff's two URIs distinct. One class owns both
+  directions: `ReviewPath` (`src/review/ReviewPath.ts`) — `fromFile`/`fromUri` in, `toUri`/
+  `displayPath` out; nothing else builds or parses the shape. No backward compatibility with the
+  pre-breadcrumb shape (user decision): a diff tab restored across that upgrade renders empty and is
+  simply reopened.
+
 - **Diffs/Open File support ANY file type (images, etc.), like the git panel.** The review provider
   serves raw bytes (`gitSafeBytes` + binary `fs.readFile`, never a UTF-8 round-trip that mangles
   binary blobs); "Open File" uses `vscode.open` (not `showTextDocument`) so VS Code picks the editor;
@@ -420,11 +436,31 @@
 
 - **Diffs sync with git via one funnel: `refresh()` → `ReviewContentProvider.refreshAllOpen()`.** Do
   NOT add a custom `**/*` FileSystemWatcher (an earlier one pinned the CPU on autosave churn) — the
-  VS Code git extension's `onDidChange` is the sole background sync trigger. `openDiff()` additionally
-  awaits `refresh("open-diff")` and invalidates its exact base/modified URIs before opening, because
-  `refreshAllOpen()` cannot clear provider cache entries left by a previously closed tab. Provider
-  cache entries are generation-guarded so a pre-refresh async read cannot finish late and overwrite
-  fresh content. `log.info` records decisions.
+  VS Code git extension's `onDidChange` is the sole background sync trigger. `openDiff()` does NOT
+  run that full refresh (getChanges + currentBranch per root + refreshAllOpen re-running git show per
+  open URI made opening laggy in large projects): it awaits a scoped per-file sync instead
+  (`syncFileForOpenDiff` → `DiffService.changesForPath`; tracked diffs run WHOLE and are filtered to
+  the path afterwards — a pathspec holding one side of a rename pair makes git report a phantom D/A
+  instead of the R — pathspec only on the untracked `ls-files` walk, with the `:(literal)` magic
+  prefix so a leading-':' / glob-charactered filename still matches itself; the scoped path set is widened
+  across rename pairs to a fixpoint (`widenAcrossRenames`) so it covers everything the merge drops as
+  affected — a rename's other half can carry its own changes, which would otherwise vanish from the
+  model with no replacement; one shared
+  `DiffService.scan` behind both so a path's group can't diverge between the tree and the sync) that
+  merges the one path's current groups into the in-memory model — so a layer move/disappearance since
+  the tree rendered is still handled — falling back to a full refresh only when the repo has no model
+  yet. The sync participates in the refreshSeq protocol by OBSERVING, never claiming (claiming would
+  discard a complete in-flight refresh's model): it merges into the LIVE model — so a refresh() that
+  landed mid-sync is never reverted — and a refresh() that STARTS mid-sync supersedes it (defer to a
+  full refresh, reason `open-diff-superseded`; a scoped write could fight the newer data, and bailing
+  would leave openDiff a stale model that makes the open fall through). A refresh already in flight
+  when the sync began passes the seq check, so a live-vs-snapshot `compareRef` mismatch also defers
+  to the full refresh — the scoped result was computed against the old ref and merging it would
+  inject/drop committed entries in the new model. It
+  still invalidates its exact base/modified URIs before opening, because `refreshAllOpen()` cannot
+  clear provider cache entries left by a previously closed tab. Provider cache entries are
+  generation-guarded so a pre-refresh async read cannot finish late and overwrite fresh content.
+  `log.info` records decisions.
 
 - **Folder rows reuse the file stage/unstage/discard commands** — a folder's `contextValue` is
   `folder:<group>` and handlers flatten it to descendant files. Committed rows are read-only.
@@ -668,3 +704,14 @@
   native `write`/`edit`/`apply_patch` `postToolUse` edge only — a `bash`-driven edit isn't seen
   (accepted; mitigate by model choice, no plugin-side git diff). Adapter pinned against opencode
   1.17.18 (tool ids `edit`/`write`/`apply_patch`, NOT `patch`).
+
+- **Changes-list diffs open as PREVIEW tabs by default, but the internal re-point callers preserve
+  the tab's prior preview/kept state** (`show.preview` on openDiff, captured via
+  `locateReviewTab().preview`) — user-driven opens match the explorer/native git panel (safe for
+  editable diffs: VS Code pins a preview tab the moment its document goes dirty), while
+  reconcile-after-stage and per-tab Compare To must not downgrade a kept tab: VS Code keeps one
+  preview per group, so reopening two kept diffs as previews collapses them into one recycled tab.
+  The test harness (`.vscode-test.mjs`) opens a per-run mkdtemp fixture git workspace (a fixed
+  shared path let concurrent runs rm-rf each other's live workspace) and sets `PAIRETO_TEST=1` so
+  extension-host tests can drive the activated extension's real commands and assert internals via
+  `paireto.test.inspect` (which now includes per-reason refresh counts).

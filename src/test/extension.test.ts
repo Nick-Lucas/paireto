@@ -7,6 +7,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
+import { Schemes } from "../config.js";
 import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { relatedWorkspaceFolder } from "../git/WorkspaceRootCatalog.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
@@ -144,11 +145,23 @@ suite("command manifest", () => {
   const manifest = JSON.parse(
     fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"),
   ) as {
+    activationEvents: string[];
     contributes: {
       commands: Array<{ command: string; title: string }>;
       menus: { commandPalette: Array<{ command: string; when?: string }> };
     };
   };
+
+  test("the review scheme pulls activation on demand (onFileSystem)", () => {
+    // onStartupFinished fires AFTER the workbench restores editors, so a restored
+    // paireto-review:// diff tab resolves with no FileSystemProvider registered and shows an error
+    // until retried. onFileSystem:<scheme> makes VS Code fire activation and WAIT for the provider
+    // registration before completing the read.
+    assert.ok(
+      manifest.activationEvents.includes(`onFileSystem:${Schemes.review}`),
+      `activationEvents must include onFileSystem:${Schemes.review}: ${manifest.activationEvents.join(", ")}`,
+    );
+  });
 
   test("every command exposed in the Command Palette is namespaced as Paireto", () => {
     const paletteHidden = new Set(
