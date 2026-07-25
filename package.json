@@ -626,7 +626,8 @@
     }
   },
   "activationEvents": [
-    "onStartupFinished"
+    "onStartupFinished",
+    "onFileSystem:paireto-review"
   ],
   "icon": "media/PairetoAppIcon@2x.png",
   "engines": {

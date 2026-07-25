@@ -369,6 +369,11 @@
   `TextDocumentContentProvider`** — a content-provider doc on a diff's modified side stays
   editable-in-buffer (Save → "Save As"), so it wasn't actually read-only.
 
+- **`activationEvents` includes `onFileSystem:paireto-review`** — `onStartupFinished` fires AFTER
+  the workbench restores editors, so a restored review diff tab resolved with no provider registered
+  and showed an error until "Try Again". `onFileSystem:<scheme>` makes VS Code fire activation and
+  wait for the provider registration before completing the read (a manifest test locks the event).
+
 - **Review URIs put the workspace-relative file path in the URI path; side + relPath + ref + repo
   all ride in the query** — VS Code renders breadcrumbs/tab paths from URI path segments, so the old
   `/<side>/<relPath>` shape showed "modified / src / …". Display path mirrors `asRelativePath`
