@@ -15,7 +15,8 @@ import { CodexDriver } from "../drivers/codex.js";
 import { OpenCodeDriver } from "../drivers/opencode.js";
 import type { HarnessDriver } from "../drivers/types.js";
 import type { InspectGate, InspectSnapshot } from "../inspectTypes.js";
-import { waitFor } from "../testUtils.js";
+import { readReplayMiss } from "../replayMiss.js";
+import { STEP_TIMEOUT_MS, StopPolling, waitFor } from "../testUtils.js";
 
 const PLAN_PROMPT =
   "Plan how to add a file hello.txt containing 'hi'. Keep the plan to one short step. " +
@@ -28,13 +29,12 @@ export async function runFullFlow(): Promise<void> {
   const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
   const harness = requireEnv("PAIRETO_E2E_DRIVER");
   const driver = makeDriver(harness);
-  // A harness whose auth / binary / tmux is missing SKIPS with a visible reason — never fails.
+  // You picked this driver, so if it can't run (missing auth / binary / tmux) that's a hard FAIL with
+  // the reason — never a silent skip.
   const availability = await driver.isAvailable();
   if (availability !== true) {
-    console.log(`E2E: SKIP driver "${harness}" — ${availability}`);
-    return;
+    throw new Error(`E2E: FAIL — driver "${harness}" cannot run: ${availability}`);
   }
-  const stepTimeout = 120_000;
   const sessionId = `${harness}-${crypto.randomBytes(4).toString("hex")}`;
   const log: string[] = [];
 
@@ -49,8 +49,20 @@ export async function runFullFlow(): Promise<void> {
     }
     return `--- inspect ---\n${snap}\n--- driver screen ---\n${await driver.screen()}`;
   };
+  // Poll the driver's health first, so a background watcher that finds the harness in a state a
+  // user's run would never reach aborts here, naming the cause.
   const wait = <T>(desc: string, fn: () => Promise<T | undefined | false>): Promise<T> =>
-    waitFor(desc, fn, { timeoutMs: stepTimeout, onFail: dump });
+    waitFor(
+      desc,
+      async () => {
+        const fatal = driver.fatalError?.() ?? readReplayMiss();
+        if (fatal) {
+          throw new StopPolling(`aborted while waiting for ${desc}: ${fatal}`);
+        }
+        return fn();
+      },
+      { timeoutMs: STEP_TIMEOUT_MS, onFail: dump },
+    );
   // A gate becomes foreground-visible a beat BEFORE its blocking request parks on awaitDecision, so a
   // decision command fired in that window is silently dropped. Re-drive the command each poll until
   // the gate resolves. Two guards keep it off the WRONG gate: check the predicate BEFORE dispatching
@@ -145,7 +157,7 @@ export async function runFullFlow(): Promise<void> {
       async () => !planGates(await inspect()).some((g) => g.id === secondPlan.id),
       "the revised plan gate to resolve on approve",
     );
-    await driver.afterPlanApprove();
+    await driver.afterPlanApprove?.();
     await wait("hello.txt + bye.txt to be written", () =>
       Promise.resolve(fileIs("hello.txt", "hi") && fileIs("bye.txt", "bye")),
     );

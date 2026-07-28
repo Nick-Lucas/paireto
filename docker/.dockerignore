@@ -1,0 +1,3 @@
+# The image only needs entrypoint.sh — keep the build context tiny and never ship staged secrets.
+*
+!entrypoint.sh

@@ -4,7 +4,7 @@
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
-import { basename, join, relative } from "node:path";
+import { basename, join } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -14,6 +14,7 @@ import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
+import { repoRelativePath } from "../protocol/paths.js";
 import { closeTabsWhere } from "../gate/tabs.js";
 import {
   DiffService,
@@ -1088,7 +1089,7 @@ export class ReviewController implements vscode.Disposable {
     if (!root) {
       return false;
     }
-    const rel = relative(root.repoRoot, uri.fsPath);
+    const rel = repoRelativePath(root.repoRoot, uri.fsPath);
     return this.allFiles(root.repoRoot).some((f) => f.path === rel);
   }
 
@@ -1181,7 +1182,7 @@ export class ReviewController implements vscode.Disposable {
       return {
         repoRoot: root.repoRoot,
         side: "modified",
-        relPath: relative(root.repoRoot, uri.fsPath),
+        relPath: repoRelativePath(root.repoRoot, uri.fsPath),
       };
     }
     return undefined;

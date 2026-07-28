@@ -123,7 +123,14 @@ async function repointStaleMarketplace(bin: string, pluginsRoot: string): Promis
   if (path.resolve(existing.path) === path.resolve(pluginsRoot)) {
     return; // already pointing at the right place
   }
-  const removed = await run(bin, ["plugin", "marketplace", "remove", MARKETPLACE_NAME, "--scope", "user"]);
+  const removed = await run(bin, [
+    "plugin",
+    "marketplace",
+    "remove",
+    MARKETPLACE_NAME,
+    "--scope",
+    "user",
+  ]);
   if (removed.code === 0) {
     log.info(
       `plugin marketplace "${MARKETPLACE_NAME}" was stale (${existing.path}) — removed so it repoints to ${pluginsRoot}`,

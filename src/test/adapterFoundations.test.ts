@@ -210,6 +210,30 @@ suite("mapper-fixture helper (claudecode parity demo)", () => {
       expect: { kind: "planProposal", planText: "do the thing" },
     },
     {
+      // ExitPlanMode's `plan` argument is optional; the plugin recovers it from the plan file into
+      // meta.planMarkdown, alongside the raw event.
+      name: "PreToolUse ExitPlanMode with empty input → planProposal from meta.planMarkdown",
+      raw: {
+        ...base,
+        hook_event_name: "PreToolUse",
+        tool_name: "ExitPlanMode",
+        tool_input: {},
+      } as ClaudeCodeHookEvent,
+      meta: { planMarkdown: "recovered from the plan file" },
+      expect: { kind: "planProposal", planText: "recovered from the plan file" },
+    },
+    {
+      name: "PreToolUse ExitPlanMode → the tool's own plan wins over meta",
+      raw: {
+        ...base,
+        hook_event_name: "PreToolUse",
+        tool_name: "ExitPlanMode",
+        tool_input: { plan: "do the thing" },
+      } as ClaudeCodeHookEvent,
+      meta: { planMarkdown: "stale file contents" },
+      expect: { kind: "planProposal", planText: "do the thing" },
+    },
+    {
       name: "PreToolUse Edit → preToolUse, isEditTool true",
       raw: {
         ...base,

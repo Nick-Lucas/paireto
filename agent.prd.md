@@ -40,8 +40,8 @@ OpenCode reach it where the harness allows and degrade gracefully where it doesn
 |---|---|---|---|
 | Live status / agent list | yes | yes (TUI; awaiting-permission is TUI-only) | yes |
 | Turn-end blocking review | yes | yes | post-hoc — not parked; Send Feedback auto-resumes the idle agent |
-| Plan review | yes, auto (ExitPlanMode) | at Stop-in-plan-mode (detected via the rollout transcript); plan text = the transcript's Plan-item markdown; approve unblocks the Stop but the implement/stay choice stays in the TUI | yes, automatic (plugin-injected planning prompt + `paireto_submit_plan` tool) |
-| Approve → auto mode switch | yes | no | yes (agent switch; default `build`) |
+| Plan review | yes, auto (ExitPlanMode) | yes, native Plan mode through Stop | yes, automatic (plugin-injected planning prompt + `paireto_submit_plan` tool) |
+| Approve → automatic implementation | yes | no — user must select Codex's native approve-and-switch action | yes (agent switch; default `build`) |
 | False-turn-end protection | subagents + background counts | subagent events only | child-session tracking |
 | Process-death cleanup | MCP liveness | MCP stdio liveness (instant when attached; 30-min silence sweep backstop) | plugin socket drop |
 | Session-end telemetry | yes | no (no SessionEnd hook) | yes (session.deleted) |
@@ -129,16 +129,18 @@ resolve with the same two actions.
   Immediately**. `/paireto-review` never notifies.
 
 ### Plan Review
-- When the agent finishes a plan (ExitPlanMode), the plan opens in VS Code automatically, the bottom
+- When the agent submits a plan, it opens in VS Code automatically, the bottom
   panel (terminal) is hidden, and the agent blocks waiting for a decision. The plan tab is named
   `PLAN: <first line of the plan> - <datetime>`.
 - On any resolution the plan tab auto-closes and the terminal panel is restored.
 - Closing the plan tab while it's still pending prompts you to Approve or Send Feedback (dismiss to
   keep reviewing).
-- Approving puts the agent into **auto** mode by default so it proceeds without re-prompting
+- Approving puts supported agents into **auto** mode by default so they proceed without re-prompting
   (`paireto.planApprove.mode.claudecode` — enum `auto` / `acceptEdits` / `default` / `plan` / `off`,
   default `auto`; `paireto.planApprove.mode.opencode` — the agent to switch to, default `build`,
-  `off` to stay put. Codex has no settable mode, so no key).
+  `off` to stay put). Codex's reviewed-plan skill deliberately stays in Default mode: approval is a
+  blocking Stop-hook continuation that tells the same turn to implement. Native Codex `/plan` still
+  cannot be approved by a hook and is not used for Paireto-reviewed planning.
 
 ### Code Review
 - **Comment any time:** open any Changes-section diff and add inline comments (Question / Comment /
@@ -229,8 +231,10 @@ resolve with the same two actions.
 **Plan approval**
 1. Agent presents a plan → it opens in VS Code (terminal panel hidden), agent waits.
 2. You read it, optionally comment (comments are editable).
-3. Approve (agent continues, in auto mode by default) or Send Feedback (agent revises). The tab
-   auto-closes and the terminal returns.
+3. Approve or Send Feedback. Feedback revises the plan through a Stop-hook continuation. Claude Code
+   and OpenCode can continue automatically after approval; Codex returns to its native
+   "Implement this plan?" selector, where the user must choose the approve-and-switch action because
+   Stop-hook output cannot change collaboration mode. The Paireto tab auto-closes and the terminal returns.
 
 **Code review**
 1. Comment on the diffs whenever you like (the first comment starts a review), or run `/paireto-review`
@@ -262,5 +266,27 @@ resolve with the same two actions.
 - **E2E** (`pnpm test:e2e`, `src/e2e/`) drives the whole plan → feedback → approve → implement →
   review loop inside a real VS Code window over the per-repo socket (never terminal scraping).
   `PAIRETO_E2E_DRIVER=claudecode|codex|opencode` runs the real harness TUI in an isolated temp home
-  (real LLM calls, cents per run); a missing binary/auth SKIPs (never fails). All three harnesses
-  pass the full five-step flow — see `src/e2e/README.md` for setup.
+  (real LLM calls, cents per run); you picked the driver, so a missing binary/auth is a hard FAIL with
+  the reason (never a silent skip). All three drivers must pass the full flow; the Codex driver enters
+  native Plan mode and, after Paireto approval releases the Stop hook, selects Codex's native
+  approve-and-switch action as the simulated user — see `src/e2e/README.md` for setup. Drivers answer
+  the harness's own prompts the way a user would and never steer it into a state a user wouldn't be
+  in; a driver that finds the harness in such a state aborts the run immediately with the reason
+  (`fatalError`) rather than continuing. A **live native** run deliberately keeps each harness's real
+  permission boundary (Codex's approvals + sandbox), so that path is exercised somewhere.
+- **Provider replay** (`PAIRETO_E2E_MODE=record|check`, default `live`) routes the harness's LLM traffic
+  through a MockServer container acting as a transparent MITM proxy (no base-URL/config change). `record`
+  captures against your real **subscription** (all three harnesses); `check` replays the committed fixture
+  **with no credentials and no network** (strict VCR — an unrecorded request fails loud). Both still run
+  the real harness + plugin + hooks. The proxy's long-lived CA/leaf identity is generated once per
+  machine in the ignored `src/e2e/proxy/certs/` directory and automatically reused; private keys are
+  never committed or created at install time. Replay matches strictly on user prompts, model messages,
+  tool calls and file contents, and keeps Paireto's own tool names + schemas in the match key so a
+  regression in what Paireto offers the agent fails replay; only provider-side churn (descriptions,
+  built-in schemas, account/environment metadata) is canonicalized. Fixtures are identity-scrubbed and
+  stamped with the agent CLI version they were recorded against, so drift is reported as such.
+  `pnpm e2e:record` / `pnpm e2e:check` / `pnpm e2e:check:docker`.
+- **Headless in Docker** (`pnpm test:docker` / `pnpm test:e2e:docker`, `docker/`) runs either suite
+  in a persistent Linux container with a virtual display (`xvfb`) so no VS Code window pops up on
+  macOS — boot once, exec repeatedly. Claude credentials are auto-extracted from the macOS keychain
+  (no manual API key) — see `docker/README.md`.

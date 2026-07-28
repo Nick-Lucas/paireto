@@ -27,6 +27,7 @@
 
 const crypto = require("node:crypto");
 const bridge = require("./bridge.js");
+const { resolvePlanMarkdown } = require("./plan-file.js");
 
 const CONNECT_TIMEOUT_MS = 3000;
 const SOFT_TIMEOUT_BUFFER_MS = 5000;
@@ -143,7 +144,10 @@ async function main() {
   });
 
   // Pass the raw hook payload through as-is (the plan markdown lives at event.tool_input.plan) —
-  // field-specific processing happens in the extension, not here.
+  // field-specific processing happens in the extension, not here. When the model omitted the plan
+  // from the tool arguments, the markdown recovered from Claude's own plan file rides alongside the
+  // untouched event in `meta`, matching the Codex adapter.
+  const planMarkdown = resolvePlanMarkdown(event);
   bridge.sendLine(conn.sock, {
     t: "plan.review.request",
     v: bridge.PLUGIN_VERSION,
@@ -152,6 +156,7 @@ async function main() {
     harness: "claudecode",
     repoRoot: target.repoRoot,
     event,
+    ...(planMarkdown ? { meta: { planMarkdown } } : {}),
   });
 }
 

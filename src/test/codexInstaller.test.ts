@@ -21,7 +21,7 @@ suite("Codex bundled plugin contract", () => {
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "adapter.json")));
   });
 
-  test("ships native hooks, MCP, and the Paireto review skill without installer placeholders", () => {
+  test("ships native hooks, MCP, and the review skill without installer placeholders", () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.join(bundledPlugin, ".codex-plugin", "plugin.json"), "utf8"),
     ) as { name: string; skills: string; mcpServers: string };
@@ -47,12 +47,11 @@ suite("Codex bundled plugin contract", () => {
       "utf8",
     );
     assert.ok(skill.includes("`mcp__paireto__paireto_review`"));
+    assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "paireto-plan", "SKILL.md")));
     const server = fs.readFileSync(path.join(bundledPlugin, "mcp", "liveness.js"), "utf8");
     assert.ok(server.includes('name: "paireto_review"'));
     assert.ok(
-      !fs.existsSync(
-        path.join(bundledPlugin, "skills", "paireto-review", "scripts", "review.js"),
-      ),
+      !fs.existsSync(path.join(bundledPlugin, "skills", "paireto-review", "scripts", "review.js")),
     );
   });
 });

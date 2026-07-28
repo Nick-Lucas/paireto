@@ -27,7 +27,7 @@ export async function ensureCommentingVisible(): Promise<void> {
     'Editor commenting is turned off ("comments.visible"), so the gutter "+" to comment on plans and reviews won\'t appear. Enable it?',
     enableWorkspace,
     enableGlobal,
-    "Dismiss"
+    "Dismiss",
   );
   if (choice === enableWorkspace) {
     await cfg.update("visible", true, vscode.ConfigurationTarget.Workspace);

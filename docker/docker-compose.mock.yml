@@ -1,0 +1,25 @@
+# Provider-replay flow: run the full E2E suite against recorded provider fixtures. Compose adds a
+# `mockserver` service (the tests container has no Docker, so it can't spin one up itself — it connects
+# via the preset PAIRETO_MOCK_URL) and defaults to credential-free strict check mode. The record script
+# combines the credential overlay and explicitly selects record mode.
+# Overlay onto the base compose file: `-f docker-compose.yml -f docker-compose.mock.yml`.
+services:
+  tests:
+    environment:
+      PAIRETO_E2E_DRIVER: "${PAIRETO_E2E_DRIVER:-}"
+      PAIRETO_E2E_MODE: "check"
+      # The tests container reaches the sibling service by name; the controller drives its MCP endpoint
+      # and the harness uses this as its HTTP(S) proxy (CA trusted via the vendored cert in the repo
+      # mount). Readiness is polled by the controller.
+      PAIRETO_MOCK_URL: "http://mockserver:1080"
+    depends_on:
+      - mockserver
+
+  mockserver:
+    image: mockserver/mockserver:mockserver-7.4.0
+    environment:
+      MOCKSERVER_LOG_LEVEL: "INFO"
+      MOCKSERVER_STREAMING_RESPONSES_ENABLED: "true"
+      MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES: "8388608"
+      MOCKSERVER_REDACT_SECRETS_IN_LOG: "true"
+      MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS: "true"

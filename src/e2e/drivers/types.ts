@@ -5,12 +5,8 @@
 
 /** What each step must branch on — verified per-harness. */
 export interface DriverCaps {
-  /** Send-Feedback on a plan re-opens a fresh plan gate in VS Code (all current drivers: true). */
-  planFeedbackReopens: boolean;
   /** Whether the turn-end review gate blocks the agent (claude/codex) or is post-hoc (opencode). */
   turnEndReview: "blocking" | "post-hoc";
-  /** What the agent does once the plan is approved. */
-  afterApprove: "auto" | "tui-select" | "agent-switch";
 }
 
 /** Everything a driver needs to launch its agent against the sandbox repo. */
@@ -28,14 +24,17 @@ export interface HarnessDriver {
   isAvailable(): Promise<boolean | string>;
   /** Start the agent (connect the wire / spawn the TUI). */
   launch(ctx: DriverContext): Promise<void>;
-  /** Enter plan mode (harness-specific; a no-op for launch-flag harnesses). */
+  /** Activate the harness-specific reviewed-plan workflow. */
   enterPlanMode(): Promise<void>;
   /** Submit the initial user prompt — kicks off the plan flow. Returns once the request is in flight
    *  (it does NOT wait for the gate decision; the driver reacts to decisions on its own thereafter). */
   prompt(text: string): Promise<void>;
-  /** After the plan is approved: drive whatever "start implementing" step the harness needs (codex
-   *  selector, claude native-prompt fallback). */
-  afterPlanApprove(): Promise<void>;
+  /** Complete a harness-native post-approval transition that hooks cannot express. Codex uses this
+   *  to select its Plan-mode approve-and-switch UI; other harnesses continue automatically. */
+  afterPlanApprove?(): Promise<void>;
+  /** A reason the run can no longer be trusted to mirror a user's session. Background driver watchers
+   *  detect these outside the step's await chain, so the test polls this and aborts at the cause. */
+  fatalError?(): string | undefined;
   /** Current screen / wire-log snapshot for failure artifacts. */
   screen(): Promise<string>;
   /** Tear down (kill the TUI / close the socket) and clean up any temp state. */

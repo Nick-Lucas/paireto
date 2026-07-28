@@ -469,6 +469,14 @@
   repo basename — the basename was identical for every agent in a repo; repo/start-time/tool live in
   the tooltip.
 
+- **A comment's repo-relative path canonicalizes BOTH sides (`repoRelativePath`).** A repo root comes
+  from git and is symlink-free; a `file:` URI keeps whatever path the workspace was opened with. On
+  macOS a repo under `/tmp` (a symlink to `/private/tmp`) made the raw subtraction escape the repo,
+  so review feedback told the agent to fix `../../../tmp/<repo>/hello.txt` instead of `hello.txt` —
+  and `isChangedFileDoc` failed to recognise its own changed files. This reaches any user whose repo
+  path contains a symlink, not just the E2E sandbox. Found by the strict-replay diff: the Docker
+  recording said `hello.txt:1` where a native run sent the escaped path.
+
 - **Comment author = signed-in account → OS user → "Developer"** (`comments/author.ts`, cached; the VS
   Code `authentication.getSession` lookup is async+silent so it's resolved once at activation).
 
@@ -486,6 +494,18 @@
     AND the `updatedPermissions:[{setMode}]` riding alongside is applied — the fields COMPOSE (same
     fix as plannotator#1008 / caret#192). `on-plan-gate.js` therefore always echoes `updatedInput`
     and keeps the `nextMode`→setMode switch. deny was never affected.
+  - **ExitPlanMode's `plan` argument is OPTIONAL and routinely absent — recover it from the plan FILE
+    (`plugins/claude-code/scripts/plan-file.js`).** Empirically confirmed in recorded live API
+    traffic: the model streams `ExitPlanMode` with `input:{}` (one empty `input_json_delta`), and the
+    CLI itself back-fills `{plan, planFilePath}` from the file it wrote for the NEXT request. Our
+    PermissionRequest hook fires at call time, before that back-fill, so without recovery the plan
+    review opens EMPTY. This is intended CLI design (the plan lives in a file), not a bug awaiting an
+    upstream fix. `resolvePlanMarkdown` prefers `tool_input.planFilePath`, else the newest `.md` in
+    `CLAUDE_CONFIG_DIR ?? ~/.claude` + `/plans` written within `PLAN_FILE_MAX_AGE_MS` (60s) — the
+    freshness window is load-bearing: that directory is shared by EVERY session and repo, so
+    newest-wins alone could hand this gate another agent's plan. Recovery rides in
+    `meta.planMarkdown` ALONGSIDE the untouched event (never merged into `tool_input`), exactly like
+    Codex's transcript recovery; `ClaudeCodeStrategy` reads `tool_input.plan ?? meta.planMarkdown`.
 
 - **Turn-end auto-review is gated by `paireto.review.mode`** (`automatic` default / `manual`): in
   `manual`, `shouldOpenTurnEndReview` ignores `changedThisTurn`, so only queued comments or
@@ -556,25 +576,25 @@
   manifest; scripts stamp `harness:"codex"`. Adding the harness on the extension side was just
   `new CodexStrategy()` in the locator — the AgentStrategy seam carries everything else.
 
-- **Codex has no plan/review hooks of its own, so ONE Stop-hook script (`on-stop-gate.js`) serves
-  both.** `stop_hook_active` is deliberately NOT short-circuited: the follow-up Stop after our own
-  block carries the revised plan / addressed edits and must re-gate for Send Feedback rounds (loop
-  safety = the extension only blocks on explicit user feedback). A plan-mode turn → plan gate (deny =
-  `{"decision":"block","reason"}` so the agent revises; allow = emit nothing so the stop proceeds and
-  Codex stays in plan mode — no settable approve mode, and the "Implement this plan?" prompt is a
-  hook-invisible TUI selection, so approve only unblocks the Stop); else the turn-end review gate,
-  like Claude's `on-review-gate.js`. Plan-mode detection is via the ROLLOUT TRANSCRIPT
-  (`bridge.readPlanTurn`, matched on the Stop's `turn_id`), NOT `permission_mode` — that field is
-  approval-policy-only and NEVER carries "plan" (source-verified codex-rs rust-v0.144.1); a plan-mode
-  Stop's `last_assistant_message` is null and `update_plan` is rejected in plan mode (the old
-  `on-plan-stash.js` was thus dead weight — removed). Transcript records (both turn_id-keyed, flushed
-  before Stop): `event_msg`/`item_completed` with `item.type=="Plan"` carries the plan markdown
-  (primary, near the file end so a tail read catches it); `turn_context.collaboration_mode.mode=="plan"`
-  corroborates (written at turn start, may miss a tail window). The Plan item's `item.text` rides in
-  the envelope's `meta.planMarkdown` (ALONGSIDE the untouched raw Stop event, never merged in) — by
-  `on-stop-gate.js` for the gate and `on-event.js` for the forwarded telemetry — and its PRESENCE is
-  the edge. `CodexStrategy` maps `Stop` + `meta.planMarkdown` present → `planProposal` (planText =
-  `meta.planMarkdown`); `isEditTool = {"apply_patch"}`;
+- **Codex has no dedicated plan-review event, so ONE Stop-hook script (`on-stop-gate.js`) serves
+  plan and turn-end review gates.** The supported Stop contract is deliberately narrow: it receives
+  `permission_mode` as input; `decision:"block"` creates a new continuation prompt from `reason`;
+  exiting successfully with no output lets the turn finish. Stop has no output for changing
+  collaboration mode. `PermissionRequest` can allow or deny a tool escalation, but cannot approve
+  native Plan mode. Therefore Send Feedback blocks Stop and Codex revises the plan, while Approve
+  allows Stop and Codex presents its own "Implement this plan?" approve-and-switch selector. The user
+  must select it; only the E2E driver presses Enter as the simulated user. Unlike Claude Code, Paireto
+  cannot fully move Codex from planning into implementation through a hook response. Contract source:
+  https://developers.openai.com/codex/hooks/.
+  `stop_hook_active` is deliberately NOT short-circuited: the follow-up Stop after feedback carries
+  the revised plan / addressed edits and must re-gate (loop safety = the extension only blocks on an
+  explicit decision). Plan markdown comes from the ROLLOUT TRANSCRIPT (`bridge.readPlanTurn`, matched
+  on the Stop's `turn_id`): `permission_mode` can identify Plan mode but does not contain the plan,
+  and `last_assistant_message` is null there. `event_msg`/`item_completed` with `item.type=="Plan"`
+  carries the markdown; `turn_context.collaboration_mode.mode=="plan"` corroborates it. Strict replay
+  may serialize the same native plan as a `<proposed_plan>` response/task-complete item. The recovered
+  text rides in `meta.planMarkdown` alongside the untouched raw Stop event. `CodexStrategy` maps
+  `Stop` + `meta.planMarkdown` present → `planProposal`; `isEditTool = {"apply_patch"}`;
   `supportsLiveness:false` (no MCP session id → silence sweep only).
 
 - **The Codex installer uses only the public native plugin CLI for the live integration.** It copies
@@ -583,7 +603,7 @@
   `codex plugin marketplace add` + `codex plugin add paireto@paireto`. The stable marketplace path
   survives VSIX upgrades while Codex owns caching, component namespacing, enablement, and its normal
   one-time hook trust review. The installer does not read or mutate Codex's global hook, MCP, or
-  skill configuration.
+  skill configuration; the self-contained plugin bundles only its reusable review skill.
 
 - **Codex process-death is caught by a plugin-scoped stdio-MCP liveness server
   (`plugins/codex/mcp/liveness.js`), correlated by PPID handoff.** Codex spawns the bundled `.mcp.json`
@@ -673,15 +693,46 @@
   (OpenCode loads the file in place).
 
 - **The E2E suite is socket-anchored: the per-repo unix socket is both the await point (blocking
-  gate requests) and the drive point (real `paireto.gate.*` commands) — never terminal scraping.**
+  gate requests) and the drive point (real `paireto.gate.*` commands).**
   The full-flow test (`src/e2e/tests/fullflow.e2e.ts`) runs inside the extension host
-  (`@vscode/test-electron`, `src/e2e/runE2E.ts`); real TUIs run in an EXTERNAL tmux session (send-keys
-  + capture-pane, which Codex's hook-invisible "Implement this plan?" selector requires).
+  (`@vscode/test-electron`, `src/e2e/runE2E.ts`); real TUIs run in an EXTERNAL tmux session where a
+  harness requires one. Drivers perform setup and only user actions their harness cannot express via
+  hooks. Claude approval continues from its hook-provided mode switch; an OpenCode plan-tool miss
+  fails the original run instead of silently retrying; Codex waits for the native "Implement this
+  plan?" selector and presses Enter as the simulated user. Absence of that selector fails the test.
+  All plan/review state assertions remain socket-based; Codex pane capture is limited to confirming
+  and operating this real native transition.
   `XDG_STATE_HOME` must be a SHORT /tmp path — macOS's ~104-char `sun_path` limit EINVALs long socket
-  paths. Drivers: claudecode/codex/opencode — each costs cents/run and
-  auth-probes → skip; `PAIRETO_E2E_DRIVER` has NO default (unset → runE2E exits asking for one). The
-  opencode driver's model is `openai/gpt-5.5-fast` (a Codex-subscription model via the opencodex
-  plugin). See src/e2e/README.md.
+  paths. Drivers: claudecode/codex/opencode — each costs cents/run; a selected driver whose binary/auth
+  is missing is a hard FAIL with the reason (never a silent skip — you asked for that driver).
+  `PAIRETO_E2E_DRIVER` has NO default (unset → runE2E exits asking for one). The
+  Codex and OpenCode drivers pin `gpt-5.6-luna` (OpenCode names it `openai/gpt-5.6-luna`) to keep
+  live runs cheap. Codex's root TOML settings must be written before installer-owned tables;
+  appending them after `[plugins]` silently scopes them to that table, falls back to the account's
+  default model, and enables WebSocket GET attempts that record as 405s. Its custom provider sets
+  `supports_websockets = false`, leaving only replayable Responses-over-SSE POSTs.
+  See src/e2e/README.md.
+
+- **Mock E2E proxy keys are long-lived machine-local resources, not repository assets or install artifacts.**
+  The first record/check invocation generates a ten-year CA and leaf identity under the ignored,
+  mode-0700 `src/e2e/proxy/certs/` directory; later invocations validate and reuse it. A missing,
+  mismatched, corrupt, SAN-incomplete, or near-expiry identity is replaced automatically. Only the
+  mode-0600 leaf key remains after generation — the CA signing key and build intermediates are deleted.
+  Generation stays tied to E2E use rather than `postinstall`, and the only committed trust material is
+  MockServer's fixed public CA certificate.
+
+- **Codex E2E scopes every config override; only the model pin is unconditional
+  (`renderCodexRuntimeConfig(existing, project, {mock, docker})`).** A LIVE NATIVE run must still look
+  like a real Codex user, so it keeps Codex's own provider, default transport, approval policy and
+  sandbox — that run is the only coverage those paths get. Scoped off it: the custom
+  `paireto_openai` provider + `supports_websockets = false` + `enable_request_compression = false`
+  (mock only — they exist purely to make traffic replayable), and `approval_policy = "never"` +
+  `sandbox_mode = "danger-full-access"` (docker-or-mock only). Docker additionally passes
+  `--dangerously-bypass-approvals-and-sandbox` (`codexLaunchCommand`): the container is already the
+  security boundary and cannot create the unprivileged user namespace Codex's bundled bubblewrap
+  needs, so leaving `workspace-write` active makes even a read-only planning command fail into a
+  native approval selector. Root settings are rendered BEFORE installer-owned tables — appending
+  `model` after `[plugins]` silently scopes it to that table.
 
 - **The E2E test control plane is env-gated commands, not exported API** (`src/testControlPlane.ts`,
   `exposeTestControlPlane`, registered only when `PAIRETO_TEST=1`): `paireto.test.inspect` (state
@@ -707,3 +758,199 @@
   shared path let concurrent runs rm-rf each other's live workspace) and sets `PAIRETO_TEST=1` so
   extension-host tests can drive the activated extension's real commands and assert internals via
   `paireto.test.inspect` (which now includes per-reason refresh counts).
+
+- **Docker headless test runner (`docker/`) exists to keep VS Code windows off the macOS host.** Both
+  suites launch a real Electron window; a Linux container + `xvfb` runs them headless. `PAIRETO_DOCKER=1`
+  (set in compose) gates a `--no-sandbox`/`--disable-gpu` launch arg in BOTH runners (`.vscode-test.mjs`,
+  `runE2E.ts`) — required because Electron runs as root with no usable Docker sandbox; inert on native
+  macOS. The container is **persistent** (`command: sleep infinity`): `up -d --wait` boots it once (the
+  entrypoint installs Linux deps + starts Xvfb, then `touch /tmp/paireto-ready` flips a compose
+  healthcheck so `--wait` can't race the install), and the npm scripts `docker compose exec` each suite
+  in — no rebuild/reboot per run. `node_modules` + `.vscode-test` are container-local named volumes (host
+  macOS native binaries — esbuild/oxlint/oxfmt — and the macOS VS Code download can't be reused). Build
+  context is `docker/` (only `entrypoint.sh` COPYed; repo bind-mounted). Gotchas the setup pins around:
+  (1) **pnpm pinned to the host's 10.24.0** — corepack's default (pnpm 11) stopped honoring
+  `onlyBuiltDependencies` and exits non-zero on the resulting "ignored build scripts"; (2) **Xvfb is
+  started directly**, not via `xvfb-run` (its USR1 readiness handshake hangs in-container); (3) **Xvfb
+  needs `-ac`** (disable X access control) — an exec'd client is a different session with no XAUTHORITY
+  cookie, so without it Electron dies with "Authorization required" and SIGSEGVs; (4) **`DISPLAY=:99` is
+  an image `ENV`** so exec'd commands (which skip the entrypoint) inherit it.
+  - **E2E in Docker** adds `docker-compose.e2e.yml` (via `test:e2e:docker`): mounts codex/opencode auth
+    from `$HOME` and a host-staged Claude secret. **Claude auth is auto-injected** — `prepare-e2e.sh`
+    (host) extracts `~/.claude.json` + the keychain OAuth credential into gitignored `docker/.secrets`
+    (mounted at `/paireto-secrets`); `buildClaudeHome`/`probeClaude` read them via `PAIRETO_CLAUDE_CONFIG`/
+    `PAIRETO_CLAUDE_CREDENTIALS` (no manual `ANTHROPIC_API_KEY`, though it still wins if set). A selected
+    driver that can't run (missing binary/auth) is a hard FAIL with the reason everywhere — native and
+    Docker alike — never a silent skip (`fullflow.e2e.ts` throws; there is no skip path).
+
+- **Provider-replay E2E routes the harness's LLM traffic through MockServer as a TRANSPARENT MITM
+  forward proxy** (`src/e2e/mockserver/`), NOT via a base-URL/provider-config redirect and NOT between
+  the harness and its hooks (the abandoned recorder). The harness keeps its real provider host + real
+  OAuth token, so the SUBSCRIPTION records for ALL THREE harnesses (base-URL redirect couldn't record
+  codex/opencode's OAuth); no CLIProxyAPI, no static-key upstream. Drivers just set HTTP(S)_PROXY/
+  ALL_PROXY=MockServer + NODE_EXTRA_CA_CERTS/SSL_CERT_FILE=CA + NO_PROXY=localhost (`mockProxyEnv`);
+  the CA is MockServer's fixed embedded cert, VENDORED at `src/e2e/mockserver/mockserver-ca.pem` (works
+  in compose where the tests container has no docker). `PAIRETO_E2E_MODE=record` → `set_operating_mode
+  CAPTURE` (proxy forwards+records) then `promote_recordings`+`raw_retrieve ACTIVE_EXPECTATIONS` (NOT
+  `record_llm_fixtures` — it NPEs on proxy recordings) → normalize + commit. `check` → load fixture
+  strict + `SIMULATE` (599 on miss, never forwards); `live` unchanged. All control is MCP-only
+  (`McpClient` over `POST /mockserver/mcp`). Keep MockServer as the VCR engine: it owns transparent
+  upstream capture, promotion, expectation storage/loading, strict misses, and replay. The host-side
+  normalizing proxy is deliberately only a transport adapter around it (stable request match keys plus
+  SSE header/EOF repair); replacing MockServer would mean rebuilding those VCR and MITM responsibilities,
+  not merely removing an extra hop. Non-obvious pins (verified against the real image): the
+  fixtures dir mounts at `/tmp/fixtures` (server file sandbox) for check's `load_expectations_from_file`;
+  `stripVolatileRequestMatchers` reduces each matcher to `{method,path,body}` — else the recorded
+  volatile Host/http2 headers 599 every replay; `normalizeRequestBodyFields` drops volatile body fields
+  (Claude `metadata`+`system`). Validated end-to-end (record→snapshot→check→replay) against
+  `mockserver-7.4.0`. Open risks (need a real harness+creds): codex rustls may ignore SSL_CERT_FILE
+  (MITM CA trust), and check-mode auth seeding for codex/opencode.
+
+- **The match key REDUCES the tool inventory, it never erases it (`normalizeToolInventory`).** Nulling
+  `tools`/`mcp_servers` outright (and stripping every OpenCode tool's `parameters`) made replay blind
+  to the one thing this project owns: a regression that stopped offering Paireto's tools, or shipped a
+  broken schema for one, would still have matched and replayed green — and a broken
+  `paireto_submit_plan` zod schema is a bug this repo has already shipped. So every tool keeps its
+  NAME (sorted — order varies run to run), Paireto's own tools (`isPairetoTool`, matched loosely
+  across `paireto_submit_plan` / `mcp__paireto__…` / `mcp__plugin_paireto_bridge__…`) keep their full
+  schema, and only the provider's free-text descriptions and built-in schemas are dropped.
+
+- **Every host a harness contacts must be in the proxy cert's SAN list, even ones the run does not
+  need.** An unlisted host fails the TLS handshake, and a transport error is not the strict-replay
+  599 the harness treats as a survivable miss — OpenCode hung with no inference traffic at all,
+  intermittently, depending on whether it resolved its model catalogue from `models.dev` (listed) or
+  `models.opencode.ai` (not). Changing `HOSTS` invalidates the machine-local identity, which
+  `ensureTestCertificates` then regenerates on its own.
+
+- **OpenCode npm-installs its plugin SDK AT RUNTIME, so a credential-free `check` run silently loses
+  `paireto_submit_plan`'s schema — the E2E must pre-stage the SDK.** `check` has no network (strict VCR
+  599s everything), so OpenCode's background `@opencode-ai/plugin` install fails, our plugin's dynamic
+  `import` fails, and `planToolArgs()` fails open to `{}` — advertising the plan tool with NO `plan`
+  parameter. The model then cannot submit a plan at all, and the only symptom is an unexplained "plan
+  gate never opened" timeout. The Docker image pre-installs the SDK at `PAIRETO_OPENCODE_SDK`
+  (`/opt/opencode-sdk`) and `OpenCodeDriver.stagePluginSdk` copies it into the temp config dir for BOTH
+  mock modes, so record stops depending on npm too and the two exercise the same plugin surface.
+  This was found only because the match key now KEEPS Paireto's own tool schemas
+  (`normalizeToolInventory`): under the old blanket `delete parameters` the degraded schema was
+  invisible. **The `planToolArgs()` fail-open remains a real product weakness** — a user whose SDK
+  install fails (offline, proxy, registry outage) gets a silently useless plan tool.
+
+- **`runE2E` exits explicitly on BOTH paths** (`main().then(exit 0).catch(exit 1)`). An unsettled
+  teardown promise drains the event loop and Node exits **0 with the failure unreported** — a failing
+  E2E that claims success. The trigger was the shim's `stop()`: `server.close()` waits for in-flight
+  connections and a harness killed mid-request leaves some that never end, so `stop()` now calls
+  `closeAllConnections()` and settles on a deadline. The explicit exit is the backstop for the whole
+  class.
+
+- **A strict-VCR miss reports a DIFF against the cassette entry it came closest to matching**
+  (`src/e2e/bodyDiff.ts`). A miss is nearly always a small substitution inside a ~50KB body, so a
+  digest, the body, or MockServer's own rendering of the unmatched request says nothing actionable —
+  the changed lines do. The runner picks the entry for the same method+path sharing the longest
+  prefix, pretty-prints both, and emits the differing hunks with context (capped, long lines
+  truncated); the two-pointer walk resyncs after an inserted block so one insertion doesn't report
+  everything after it as changed. MockServer's `docker logs` dump on teardown was removed — that was
+  the wall of text this replaces.
+
+- **Anything that makes the flow unable to complete ends the run at the cause, via
+  `HarnessDriver.fatalError()`.** Waiting out a 120s step budget hides the reason in a log and blames
+  whatever step happened to be waiting. All three drivers report: a TUI that exits mid-flow (the pane
+  watch reads the keepalive's exit marker), OpenCode auto-rejecting a permission request
+  (`openCodeRunFatal` — the agent blocks on a denied tool call and never retries), and an
+  `opencode run` that exits without writing the implement marker (a plan-tool miss). Each fatal
+  carries the offending line, and `screen()` prefixes it so the dump leads with the cause.
+
+- **A tmux pane's keepalive is BOUNDED (900s) and stale `pai-e2e-*` servers are swept at launch.**
+  The pane is held open past the TUI's exit so a startup failure stays capturable, but `dispose()`
+  never runs when a run is killed — an unbounded keeper then leaks a live agent process (and its API
+  session) for as long as it lasts. Observed: 16 orphaned servers, two alive over two hours, each
+  holding a `claude` process.
+
+- **A strict-VCR miss ends the run at the miss (`src/e2e/replayMiss.ts`).** The harness treats a 599
+  as a transport error and retries the same unmatched request for tens of seconds, so the failure used
+  to surface as whatever step was waiting on it — a 120s "plan gate never opened" timeout naming
+  neither the endpoint nor the cassette. The shim now records the FIRST miss to a file the runner
+  names (`PAIRETO_REPLAY_MISS_FILE`; the shim runs host-side, the test in the extension host), the
+  test's step wait reads it and aborts, and `runE2E` prefers it over the version-drift hint. Scoped to
+  the harness's own inference endpoints (the profile's `fixturePaths`): offline 599s on incidental
+  traffic — a model catalogue, a package registry — are expected and survivable, and OpenCode's check
+  passes with several.
+
+- **An E2E run streams the agent's screen to stdout by default, and its tmux session is attachable
+  read-only** (`src/e2e/drivers/watch.ts`, `PAIRETO_E2E_WATCH=0` to silence). The stream emits the
+  lines past the longest common prefix with the previous capture (`newPaneLines`), so appended output
+  appears once and a repainting TUI region re-emits as it changes; a whole check run is ~75 lines.
+  The printed attach command uses `-r`, since a writable client shares the pane with the driver and a
+  stray keystroke would land in the agent's prompt, and `launch()` pins `window-size manual` so
+  attaching from a smaller terminal cannot reflow the pane the driver's screen reads depend on.
+
+- **A driver's realism assertions must be phase-independent — never assert a permission MODE, because
+  Paireto changes it by design.** The Claude driver answers the plan-file permission prompt with "1"
+  (allow this edit), the way a user in plan mode would, and a background watcher checks the answer
+  landed. The first version asserted "still in plan mode" afterwards and aborted a perfectly good run:
+  approving a plan sets `nextMode` (auto/acceptEdits), so the footer legitimately stops saying "plan
+  mode on". The invariant that actually holds in every phase is that the PROMPT DISMISSES — Claude
+  blocks while one is pending, so a prompt still on screen after the budget means the answer didn't
+  land and the agent is stuck. Fatals are reported via `HarnessDriver.fatalError()`, which the test's
+  `wait` polls and turns into an immediate `StopPolling` abort instead of an unrelated step timeout.
+
+- **Mock runs live under `/private/tmp` (`mockTmpRoot`) — the one root that is canonical on macOS AND
+  creatable-canonical in the Linux container.** A sandbox at `/tmp/...` is spelled `/private/tmp/...`
+  once macOS resolves it, so a cassette recorded in the container disagreed with a native run in the
+  request bodies AND in the harness's own path checks: OpenCode rejected its own worktree as
+  `external_directory` and the run died with no VCR miss at all. Normalizing the match key could never
+  have fixed that — only a genuinely identical path could. This retired a pile of per-symptom
+  workarounds and made native opencode/claudecode replay pass. Falls back to `/tmp` where `/private`
+  can't be created, which costs cross-platform replay but keeps the run working.
+
+- **A cassette records the PLATFORM it was captured on (`recordedOn`, checked like the version
+  stamp).** With paths solved the remaining divergence is host-specific COMMAND OUTPUT: an agent that
+  verifies its work with `od` gets BSD column padding on macOS and GNU's on Linux, and that output is
+  fed back as the next request. It is content the model reasons about, so normalizing it would
+  falsify the recording. Native claudecode/opencode replay; native codex does not. Docker stays
+  authoritative and the stamp explains a native mismatch up front.
+
+- **A cassette must replay on a DIFFERENT machine than it was recorded on, so host-dependent content
+  is normalized too.** Recordings are made in the Linux container; a native macOS `e2e:check` differs
+  in ways that have nothing to do with Paireto: OpenCode's built-in tool descriptions state the host
+  OS and shell (`OS: darwin, Shell: zsh`), and Codex's `<skills_instructions>` enumerates whichever
+  SKILL.md files that host can see, with their locators. Both are dropped/normalized; Paireto's own
+  tool descriptions and schemas are still matched. Separately, `PAIRETO_OPENCODE_SDK` only exists in
+  the image, so `stagePluginSdk` also falls back to the user's own opencode config `node_modules` —
+  without it a native check silently loses `paireto_submit_plan`'s `plan` parameter. Native codex and
+  opencode checks had never been run before this and failed on all three counts.
+
+- **Per-run identifiers in a request body must be renumbered, not blanked** (`canonicalizeItemIds`).
+  Codex stamps a fresh `msg_<uuidv7>` on every conversation item plus `call_id`s pairing a tool call
+  with its output, so a replayed body can never match verbatim. Blanking them all to one value would
+  lose the pairing, so each distinct id maps to `paireto-id-<n>` in first-appearance order: distinct
+  ids stay distinct, the pairing survives, the run-specific value goes. This surfaced only after the
+  strict-miss fail-fast made the failure legible.
+
+- **A check run's request is not identical to the record run's, so the match key must be insensitive
+  to environment-dependent COUNTS, not just contents.** Empirically: a credential-free `check` run
+  gets ONE FEWER `<system-reminder>` in Claude's first user message than the subscription `record`
+  run. Stripping each reminder's text left an EMPTY content block behind, so the content array's
+  LENGTH still encoded the reminder count and every replay 599'd on the very first conversation turn
+  (the title-generation request matched, so the failure looked like a plan-gate timeout, not a VCR
+  miss). `dropEmptyTextBlocks` removes blank text blocks after the strip. Debug aid for the next one:
+  `PAIRETO_SHIM_DUMP=<dir>` makes the shim write each normalized match key to a file, so it can be
+  diffed against the cassette's — that's how this was found.
+
+- **Identity scrubbing is two-sided and backed by a scan, not a denylist.** `promote_recordings`'
+  redaction and the response-header whitelist only cover headers/cookies, so a provider endpoint that
+  returns the recorder's email/account id in its BODY (Codex's usage endpoint does) got committed
+  verbatim. Requests are scrubbed inside `normalizeRequestBody` (`scrubIdentity`) so the cassette and
+  the live request are scrubbed IDENTICALLY and matching is unaffected; responses are scrubbed at
+  write time (`scrubCapturedResponses`) since they're never matched on. The GUARANTEE is
+  `fixturePrivacy.test.ts`, which scans every committed cassette for anything email- or account-id-
+  shaped — a denylist always misses the next new field, a scan doesn't.
+
+- **Cassettes are stamped with the harness version they were recorded against
+  (`{recordedWith, expectations}`) and the stamp is REQUIRED — no legacy bare-array shape.** The
+  Docker image installs the agent CLIs UNPINNED on purpose — running against latest is the point — so
+  harness drift is expected, and a strict-VCR miss otherwise surfaces as an opaque step timeout.
+  `readFixture` rejects an unstamped cassette (or one stamped for a different driver) with a
+  re-record instruction, and `record` refuses to WRITE one when it can't read the CLI version:
+  tolerating an unstamped file would reintroduce the exact opaque failure the stamp exists to
+  explain. `prepareCheck` compares the stamp to the installed CLI and `runE2E` appends the resulting
+  `versionDriftNote` to any failure ("recorded with X, running Y — re-record").

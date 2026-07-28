@@ -3,7 +3,7 @@
 // raw-event debug line. This is the ONLY module that knows Claude Code's wire dialect (beyond the
 // wire types themselves) — the rest of the extension sees only AppEvent.
 
-import type { Harness } from "../protocol/types.js";
+import type { Harness, HarnessEventMeta } from "../protocol/types.js";
 import type { AppEvent, AppEventKind, AppNotificationKind } from "./appEvent.js";
 import type { AgentStrategy } from "./AgentStrategy.js";
 
@@ -151,7 +151,7 @@ export class ClaudeCodeStrategy implements AgentStrategy {
   // is detected directly — no silence-based sweep removal needed.
   readonly supportsLiveness = true;
 
-  toAppEvent(event: ClaudeCodeHookEvent): AppEvent | undefined {
+  toAppEvent(event: ClaudeCodeHookEvent, meta?: HarnessEventMeta): AppEvent | undefined {
     const kind = kindFor(event);
     if (!kind) {
       return undefined;
@@ -163,7 +163,9 @@ export class ClaudeCodeStrategy implements AgentStrategy {
       agentId: event.agent_id,
       toolName: event.tool_name,
       isEditTool: EDIT_TOOLS.has(event.tool_name ?? ""),
-      planText: extractPlanText(event.tool_input),
+      // ExitPlanMode's `plan` argument is optional: the plan lives in a file, and the plugin
+      // recovers it from there into meta.planMarkdown (see plan-file.js).
+      planText: extractPlanText(event.tool_input) ?? meta?.planMarkdown,
       notificationKind: transformNotification(event.notification_type),
       backgroundTaskCount: event.background_tasks?.length ?? 0,
       sessionCronCount: event.session_crons?.length ?? 0,

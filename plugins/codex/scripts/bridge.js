@@ -251,18 +251,17 @@ function readStdin() {
 // ---------------------------------------------------------------------------
 // Plan-mode detection via the rollout transcript (Codex-only)
 // ---------------------------------------------------------------------------
-// The Codex Stop hook payload carries NO usable plan-mode signal: `permission_mode` is derived
-// exclusively from the approval policy and never emits "plan", `last_assistant_message` is null in
-// plan mode, and `update_plan` is REJECTED in plan mode (so nothing is ever stashed) — all
-// source-verified against codex-rs rust-v0.144.1 (see the codex-plangate empirical findings). The
-// ONLY discriminator is the rollout JSONL at `transcript_path`, whose records are keyed by the Stop's
-// `turn_id` and flushed BEFORE the Stop hook fires. Two records matter:
+// The Stop payload's `permission_mode` can report `plan`, but it is input-only and carries no plan
+// markdown. `last_assistant_message` is null in Plan mode, so the plan content comes from the rollout
+// JSONL at `transcript_path`, whose records are keyed by the Stop's `turn_id` and flushed before the
+// hook fires. Native Plan mode uses two records:
 //   (B, PRIMARY) event_msg / item_completed with item.type=="Plan" — item.text is the full plan
 //     markdown; produced ONLY in plan mode (ProposedPlanItemState, gated on collaboration_mode.mode
 //     == Plan) and written near the END of the turn, so a tail window reliably catches it.
 //   (A, CORROBORATION) turn_context with collaboration_mode.mode=="plan" — written at turn START, so
 //     it can fall OUTSIDE a tail window; its presence confirms plan mode, its absence proves nothing.
-// The Plan item near the file end is why a bounded tail read is safe. Fail-closed on any doubt:
+// Replayed native Plan output can also appear as an explicit `<proposed_plan>` response/task-complete
+// item. The near-end response/Plan items are why a bounded tail read is safe. Fail-closed on doubt:
 // missing path / no turn_id / any stat/read/parse error -> {isPlanTurn:false}, and the caller then
 // treats it as an ordinary turn-end (fail-open into the review gate).
 
@@ -271,10 +270,8 @@ const PLAN_TRANSCRIPT_MAX_BYTES = 8 * 1024 * 1024;
 const PLAN_TRANSCRIPT_TAIL_BYTES = 4 * 1024 * 1024;
 
 /**
- * Inspect a Codex rollout transcript to decide whether the just-ended turn was a plan-mode turn and,
- * if so, recover its plan markdown. Returns { isPlanTurn, planMarkdown } — planMarkdown is the latest
- * matching Plan item's text (undefined when the turn is plan-mode by corroboration alone or produced
- * no plan). Any missing input / IO / parse error -> { isPlanTurn: false }.
+ * Inspect a Codex rollout transcript to decide whether the just-ended turn proposed a plan and, if
+ * so, recover its markdown. Any missing input / IO / parse error -> { isPlanTurn: false }.
  */
 function readPlanTurn(transcriptPath, turnId) {
   if (!transcriptPath || !turnId) {
@@ -300,8 +297,9 @@ function readPlanTurn(transcriptPath, turnId) {
     return { isPlanTurn: false };
   }
 
-  let planMarkdown; // (B) latest matching Plan item's text
+  let planMarkdown; // latest matching native Plan item or replayed proposed-plan wrapper
   let sawPlanContext = false; // (A) turn_context.collaboration_mode.mode === "plan"
+  let inTargetTurn = false;
   for (const line of text.split("\n")) {
     const trimmed = line.trim();
     if (trimmed === "") {
@@ -315,7 +313,21 @@ function readPlanTurn(transcriptPath, turnId) {
       continue;
     }
     const payload = rec && rec.payload;
-    if (!payload || payload.turn_id !== turnId) {
+    if (!payload) {
+      continue;
+    }
+    if (rec.type === "turn_context") {
+      inTargetTurn = payload.turn_id === turnId;
+    }
+    // Response items inherit the preceding turn_context. Strict replay can serialize native Plan
+    // output as a proposed-plan wrapper rather than an item_completed/Plan record.
+    if (inTargetTurn && rec.type === "response_item" && payload.type === "message") {
+      const proposedPlan = proposedPlanFrom(payload);
+      if (payload.role === "assistant" && proposedPlan !== undefined) {
+        planMarkdown = proposedPlan;
+      }
+    }
+    if (payload.turn_id !== turnId) {
       continue;
     }
     if (
@@ -333,12 +345,51 @@ function readPlanTurn(transcriptPath, turnId) {
     ) {
       planMarkdown = payload.item.text; // latest wins
     }
+    // Codex 0.145 can serialize a replayed plan as the matching turn's task_complete message rather
+    // than an item_completed/Plan record. The explicit wrapper is emitted only for a proposed plan,
+    // so it is a safe plan-mode discriminator while retaining the same strict turn-id check.
+    if (payload.type === "task_complete" && typeof payload.last_agent_message === "string") {
+      const proposed = PROPOSED_PLAN.exec(payload.last_agent_message);
+      if (proposed) {
+        planMarkdown = proposed[1];
+      }
+    }
   }
 
   if (planMarkdown !== undefined || sawPlanContext) {
     return { isPlanTurn: true, planMarkdown };
   }
   return { isPlanTurn: false };
+}
+
+/** A message that IS a proposed plan: the wrapper spans the whole text. An implementation turn that
+ *  quotes the agreed plan back is therefore still treated as an ordinary turn. */
+const PROPOSED_PLAN = /^\s*<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>\s*$/i;
+
+/** Find an explicit proposed-plan wrapper in a response-item payload. */
+function proposedPlanFrom(value) {
+  if (typeof value === "string") {
+    const match = PROPOSED_PLAN.exec(value);
+    return match ? match[1] : undefined;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = proposedPlanFrom(item);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    return undefined;
+  }
+  if (value && typeof value === "object") {
+    for (const item of Object.values(value)) {
+      const found = proposedPlanFrom(item);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+  }
+  return undefined;
 }
 
 module.exports = {

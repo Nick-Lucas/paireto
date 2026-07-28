@@ -46,7 +46,7 @@ export class ReviewStore {
     repoRoot: string,
     reviewId: string,
     compareLabel: string,
-    comments: ReviewComment[]
+    comments: ReviewComment[],
   ): Promise<string> {
     const dir = path.join(repoRoot, ".vscode", "agent-reviews");
     await fs.mkdir(dir, { recursive: true });

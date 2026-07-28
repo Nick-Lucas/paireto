@@ -26,6 +26,9 @@ function prepareFixtureWorkspace() {
 export default defineConfig({
 	files: 'out/test/**/*.test.js',
 	workspaceFolder: prepareFixtureWorkspace(),
+	// In Docker (see docker/README.md) VS Code runs as root under xvfb, so Electron needs --no-sandbox;
+	// inert on a native macOS run where PAIRETO_DOCKER is unset.
+	launchArgs: process.env.PAIRETO_DOCKER ? ['--no-sandbox', '--disable-gpu'] : [],
 	// Registers the read-only `paireto.test.inspect` control plane so extension-host tests can
 	// assert on internal counters (e.g. that openDiff never runs the full refresh).
 	env: { PAIRETO_TEST: '1' },

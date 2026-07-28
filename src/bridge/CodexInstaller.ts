@@ -71,10 +71,7 @@ export function readCodexPluginVersion(pluginsRoot: string): string {
 }
 
 /** Stable local marketplace layout staged below the extension's globalStorage directory. */
-export function codexMarketplacePlan(
-  pluginsRoot: string,
-  stableDir: string,
-): CodexMarketplacePlan {
+export function codexMarketplacePlan(pluginsRoot: string, stableDir: string): CodexMarketplacePlan {
   const marketplaceRoot = path.join(stableDir, "marketplace");
   return {
     sourcePlugin: path.join(pluginsRoot, "codex"),
@@ -192,12 +189,18 @@ async function repointStaleMarketplace(
   if (result.code !== 0) {
     return;
   }
-  const existing = parseMarketplaceList(result.stdout).find((entry) => entry.name === MARKETPLACE_NAME);
+  const existing = parseMarketplaceList(result.stdout).find(
+    (entry) => entry.name === MARKETPLACE_NAME,
+  );
   const configuredRoot = existing?.marketplaceSource?.source ?? existing?.root;
   if (!configuredRoot || path.resolve(configuredRoot) === path.resolve(marketplaceRoot)) {
     return;
   }
-  const removed = await run(bin, ["plugin", "marketplace", "remove", MARKETPLACE_NAME, "--json"], env);
+  const removed = await run(
+    bin,
+    ["plugin", "marketplace", "remove", MARKETPLACE_NAME, "--json"],
+    env,
+  );
   if (removed.code === 0) {
     log.info(`[codex] repointed stale Paireto marketplace from ${configuredRoot}`);
   }
@@ -210,8 +213,7 @@ export async function installCodex(
 ): Promise<InstallResult> {
   const plan = codexMarketplacePlan(ctx.pluginsRoot, ctx.stableDir);
   const manualCommand =
-    `codex plugin marketplace add "${plan.marketplaceRoot}" && ` +
-    `codex plugin add ${PLUGIN_ID}`;
+    `codex plugin marketplace add "${plan.marketplaceRoot}" && ` + `codex plugin add ${PLUGIN_ID}`;
   try {
     const version = readCodexPluginVersion(ctx.pluginsRoot);
     fs.rmSync(plan.stagedPlugin, { recursive: true, force: true });

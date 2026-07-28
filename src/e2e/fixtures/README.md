@@ -1,0 +1,46 @@
+# E2E provider-replay fixtures
+
+Committed MockServer cassettes, one file per **(test case, driver)** — `<case>.<driver>.json` (the case
+defaults to `fullflow`, set via `PAIRETO_E2E_CASE`; one case per run):
+
+- `fullflow.claudecode.json`
+- `fullflow.codex.json`
+- `fullflow.opencode.json`
+
+Each records the provider HTTP/SSE traffic of that case (the full plan → feedback → approve → implement →
+review run) so `PAIRETO_E2E_MODE=check` can replay it with **no credentials and no network** (see
+`src/e2e/README.md` and `src/e2e/mockserver/`).
+
+## How they're produced
+
+Recorded inside the Docker `tests` service by whoever has provider access, using their **local
+subscription**:
+
+```sh
+PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker
+```
+
+Record routes the harness's traffic through MockServer as a transparent MITM proxy — the harness keeps
+its real provider host + real OAuth token, so all three harnesses record against the subscription with
+no config change. After the run the captured traffic is promoted to expectations, **normalized**
+(volatile request headers, capture-only streaming metadata, and narrowly scoped body fields stripped),
+and written here.
+
+A cassette is `{recordedWith, expectations}` — `recordedWith` stamps the agent CLI version it was
+captured against, so a later check failure can name the drift instead of surfacing as a bare timeout.
+The stamp is **required**: an unstamped cassette (or one stamped for another driver) is rejected at
+load with a re-record instruction, and `record` refuses to write one if it can't read the CLI version.
+
+## Before committing
+
+- Audit the file for authorization headers, cookies, bearer/JWT/API-key patterns, and unexpected
+  endpoints. Request headers are discarded and response headers are whitelisted to `Content-Type`,
+  while MockServer redaction remains defense in depth; fixtures must never contain real credentials.
+- **Personal identity** (email, provider user/account/org ids) is scrubbed automatically — requests via
+  the shared normalizer, responses at write time — because provider _bodies_ carry it and header
+  redaction doesn't reach them. `src/test/fixturePrivacy.test.ts` re-scans every committed cassette and
+  fails the build on anything email- or account-id-shaped. If it fires after a re-record, extend
+  `IDENTITY_PATTERNS`/`IDENTITY_FIELDS` in `src/e2e/proxy/normalize.ts` and re-record — never hand-edit
+  the value out and leave the scrubber blind to it.
+- Fixtures are large but text; they diff. Re-record when the plugin's wire shape or the driver prompts
+  change and a Docker check starts 599-ing (the strict-VCR "no fixture matched" signal).

@@ -5,3 +5,10 @@ node_modules
 *.vsix
 examples/
 .DS_STORE
+docker/.secrets/
+src/e2e/proxy/certs/
+# Staging dir for proxy cert generation; holds a CA private key until the run removes it.
+src/e2e/proxy/.paireto-certs-*/
+.pnpm-store
+# Shim match-key dumps (PAIRETO_SHIM_DUMP), written when debugging a strict-VCR miss.
+.shimdump/

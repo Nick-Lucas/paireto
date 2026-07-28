@@ -320,7 +320,9 @@ function widenAcrossRenames(paths: string[], entries: ChangedFile[]): Set<string
     return undefined;
   }
   const widened = new Set(paths);
-  const renamePairs = entries.flatMap((f) => (f.oldPath === undefined ? [] : [[f.path, f.oldPath]]));
+  const renamePairs = entries.flatMap((f) =>
+    f.oldPath === undefined ? [] : [[f.path, f.oldPath]],
+  );
   for (let grew = true; grew; ) {
     grew = false;
     for (const [a, b] of renamePairs) {
