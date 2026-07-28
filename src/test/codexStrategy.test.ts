@@ -81,9 +81,9 @@ suite("CodexStrategy mapper fixtures", () => {
       expect: { kind: "postToolUse", isEditTool: true },
     },
     {
-      name: "PermissionRequest → permissionRequest (TUI-only awaiting-permission edge)",
+      name: "PermissionRequest → dropped (cannot distinguish auto-review from a user prompt)",
       raw: { ...base, hook_event_name: "PermissionRequest" } as CodexHookEvent,
-      expect: { kind: "permissionRequest" },
+      expect: null,
     },
     {
       name: "SubagentStart → subagentStart",

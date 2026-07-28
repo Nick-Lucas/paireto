@@ -90,7 +90,9 @@ const CODEX_KIND: Partial<Record<CodexHookEventName, AppEventKind>> = {
   PreToolUse: "preToolUse",
   PostToolUse: "postToolUse",
   Stop: "stop",
-  PermissionRequest: "permissionRequest",
+  // PermissionRequest intentionally omitted: Codex fires it before deciding whether auto-review
+  // can handle it or knowing whether permission actually needs granting by the user. Forwarding it
+  // causes false notifications until this is fixed: https://github.com/openai/codex/issues/23465.
   SubagentStart: "subagentStart",
   SubagentStop: "subagentStop",
 };
