@@ -172,7 +172,7 @@ export function buildClaudeHome(): HarnessHome {
 /**
  * Build an isolated codex home: temp CODEX_HOME with ~/.codex/auth.json copied in, hooks enabled,
  * and the project trusted. The hooks.json + trust-hash + trust-level wiring is the driver's job (it
- * uses the real CodexInstaller pure functions); this only lays down the isolated home + auth.
+ * uses the real native Codex plugin installer); this only lays down the isolated home + auth.
  */
 export function buildCodexHome(): HarnessHome {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-codex-"));

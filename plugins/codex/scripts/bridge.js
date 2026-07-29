@@ -1,10 +1,10 @@
 "use strict";
 
-// Shared helpers for the paireto Codex hook scripts.
+// Shared helpers for Paireto's Codex hook scripts.
 //
 // Plain-JS, zero-dependency mirror of src/protocol/{paths,types}.ts and a near-copy of the
 // Claude adapter's bridge.js — the ONLY differences are where the version is read from
-// (../adapter.json instead of ../.claude-plugin/plugin.json) and that the hook scripts stamp
+// (../.codex-plugin/plugin.json instead of ../.claude-plugin/plugin.json) and that the hook scripts stamp
 // harness:"codex". The repoKey + state-dir + socket-resolution logic MUST stay byte-for-byte
 // equivalent to the TypeScript side (src/protocol/paths.ts) and to the Claude adapter, or hooks
 // resolve the wrong socket.
@@ -17,8 +17,8 @@ const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 
 // Single source of truth for every version this adapter reports (wire `v`, hello `pluginVersion`),
-// read straight from the adapter manifest — the version-lockstep test asserts it === PLUGIN_VERSION.
-const PLUGIN_VERSION = require("../adapter.json").version;
+// read straight from the plugin manifest — the version-lockstep test asserts it === PLUGIN_VERSION.
+const PLUGIN_VERSION = require("../.codex-plugin/plugin.json").version;
 const APP_DIR = "paireto";
 
 // ---------------------------------------------------------------------------
@@ -94,10 +94,12 @@ function codexPid() {
   return process.ppid; // fallback: the direct parent is empirically the codex process
 }
 
-/** The handoff file for one codex pid. Derives from stateDir() so it honours the injected
- *  XDG_STATE_HOME exactly like socketPathFor — socket + handoff always resolve to the same base. */
+/** The handoff file for one codex pid. Keep this rendezvous under HOME rather than XDG_STATE_HOME:
+ *  Codex deliberately filters the environment inherited by MCP servers, so a plugin-scoped MCP
+ *  process may not see the hook process's custom XDG state root. The hook records the exact socket
+ *  path in this file, which lets the MCP process connect without reconstructing that state root. */
 function handoffPath(pid) {
-  return path.join(stateDir(), "handoff", `codex-${pid}.json`);
+  return path.join(os.homedir(), ".local", "state", APP_DIR, "handoff", `codex-${pid}.json`);
 }
 
 // ---------------------------------------------------------------------------

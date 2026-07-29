@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paireto Review"
+  short_description: "Review code changes interactively in VS Code"
+  default_prompt: "Use $paireto-review to review my current changes in VS Code."

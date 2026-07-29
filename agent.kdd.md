@@ -196,8 +196,8 @@
   install. `installedProbe` returns a **tri-state** `InstallState` (protocol.ts) — `not-installed` /
   `update-available` (present but a stale version) / `installed` — so the card shows Set up / Update /
   ✓ Installed; Update just re-runs the idempotent installer. Version-stamp probes (claude/opencode)
-  share `installStateFor(installed, shipped)`; Codex probes by install-path (`codexInstallState`:
-  points at the current versionDir → installed, our marker but a stale path → update-available). An
+  share `installStateFor(installed, shipped)`; Codex probes its public native plugin registry with
+  `codex plugin list --json`. An
   optional static `OnboardingAgent.note` renders under the card for opt-in setup steps (OpenCode's
   plan gate).
 
@@ -549,11 +549,12 @@
   `BridgeManager.isOwnedByLiveServer` now checks PID liveness (`IndexRegistry.isEntryLive`) instead
   of trusting raw index presence.
 
-- **Codex adapter = a self-contained `plugins/codex/` bundle (`adapter.json` + hand-mirrored
-  `bridge.js` + hook scripts), version-locked to `PLUGIN_VERSION`** (a test asserts every
-  `plugins/*` manifest matches). `bridge.js` reads its version from `../adapter.json`; scripts stamp
-  `harness:"codex"`. Adding the harness on the extension side was just `new CodexStrategy()` in the
-  locator — the AgentStrategy seam carries everything else.
+- **Codex adapter = a native, self-contained plugin sourced from `plugins/codex/`**
+  (`.codex-plugin/plugin.json`,
+  `hooks/hooks.json`, `.mcp.json`, `skills/`, scripts), version-locked to `PLUGIN_VERSION` (a test
+  asserts every `plugins/*` manifest matches). `bridge.js` reads its version from the native plugin
+  manifest; scripts stamp `harness:"codex"`. Adding the harness on the extension side was just
+  `new CodexStrategy()` in the locator — the AgentStrategy seam carries everything else.
 
 - **Codex has no plan/review hooks of its own, so ONE Stop-hook script (`on-stop-gate.js`) serves
   both.** `stop_hook_active` is deliberately NOT short-circuited: the follow-up Stop after our own
@@ -576,33 +577,24 @@
   `meta.planMarkdown`); `isEditTool = {"apply_patch"}`;
   `supportsLiveness:false` (no MCP session id → silence sweep only).
 
-- **The Codex installer auto-trusts by writing the `trusted_hash` itself** — Codex silently skips
-  untrusted hooks and has no non-interactive trust CLI, but the hash is deterministic
-  (`{event_name,[matcher],hooks:[{type,command,timeout(def 600),async:false}]}`, keys sorted, compact
-  JSON, `sha256:` prefix — reproduced + verified against real config.toml vectors). If a Codex
-  release changes the algorithm, hooks skip = Paireto fail-open, not breakage. Install = copy
-  `plugins/codex/` → `<stableDir>/<version>/` (durable, absolute script paths), jsonc-merge our
-  groups into `~/.codex/hooks.json` (dedupe ours by the stableDir marker, APPEND at the tail so
-  foreign group indices — which key their positional trusted_hash — never shift), then
-  existence-checked EOF-append the `[hooks.state."…"]` subtables to `~/.codex/config.toml` (never
-  rewrite foreign content; no TOML parser). Every file-shape step is a pure, unit-tested function.
+- **The Codex installer uses only the public native plugin CLI for the live integration.** It copies
+  the bundle into `<stableDir>/marketplace/plugins/paireto`, writes the marketplace contract at
+  `<stableDir>/marketplace/.agents/plugins/marketplace.json`, then runs
+  `codex plugin marketplace add` + `codex plugin add paireto@paireto`. The stable marketplace path
+  survives VSIX upgrades while Codex owns caching, component namespacing, enablement, and its normal
+  one-time hook trust review. The installer does not read or mutate Codex's global hook, MCP, or
+  skill configuration.
 
-- **The Codex installer also ensures `[features] hooks = true` in config.toml** — Codex's master
-  switch; with it absent/false NO hook runs (trust hashes are moot). Same string-level, existence-
-  checked policy (`ensureCodexFeaturesHooks`, pure + tested): no `[features]` table → append at EOF;
-  table present with `hooks` set → leave the user's choice ALONE (never flip a deliberate `false`,
-  just surface `hooksDisabled` so the install result / Welcome copy warns); table present without a
-  `hooks` key → insert `hooks = true` after the header.
-
-- **Codex process-death is caught by a stdio-MCP liveness server (`plugins/codex/mcp/liveness.js`),
-  correlated by PPID handoff.** Codex spawns `[mcp_servers.paireto]` at startup and strips its env, so
+- **Codex process-death is caught by a plugin-scoped stdio-MCP liveness server
+  (`plugins/codex/mcp/liveness.js`), correlated by PPID handoff.** Codex spawns the bundled `.mcp.json`
+  server at startup and strips its env, so
   it has no session id: the SessionStart/UserPromptSubmit hooks write `handoff/codex-<codexPid>.json`
   (codexPid = nearest `codex` ancestor, shared `bridge.codexPid`/`handoffPath`), the server polls it
   and holds a `session.attach` socket open per session (re-attaching on `/new`). It exits — closing
   the socket → the generic `detachSession` clears the row — on BOTH stdin EOF (SIGKILL orphans it but
-  closes stdin ~34 ms) and SIGTERM (graceful codex exit). Installer merges the table into config.toml
-  (`upsertCodexMcpServer`, existence-checked/foreign-preserving), injecting `env.XDG_STATE_HOME` ONLY
-  when the extension has it set (Codex strips it; the default `~/.local/state` matches otherwise).
+  closes stdin ~34 ms) and SIGTERM (graceful codex exit). The handoff always uses a HOME-based
+  rendezvous and records the exact socket path computed by the hook, so the MCP child never needs
+  the filtered XDG_STATE_HOME.
   `CodexStrategy.supportsLiveness` stays FALSE so the silence sweep remains the backstop for a
   never-attached session (no window, state-dir divergence). No extension changes — attach/detach is
   harness-agnostic.

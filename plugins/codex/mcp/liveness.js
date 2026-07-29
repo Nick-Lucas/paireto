@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// Codex liveness MCP stdio server bundled with the paireto Codex adapter.
+// Codex bridge MCP stdio server bundled with the Paireto Codex plugin.
 //
 // Codex gives MCP servers NO session identity in env (the env is stripped to a fixed allowlist), so
 // this server learns the active session_id from a PPID-keyed handoff file the SessionStart/
@@ -12,20 +12,32 @@
 //   - SIGKILL of codex -> we are orphaned but stdin closes (EOF ~34 ms) -> exit on stdin 'end';
 //   - graceful codex exit -> codex actively SIGTERMs us -> exit on SIGTERM.
 // On a `/new` the handoff's session_id changes -> detach the old socket, attach the new. Fail-open
-// everywhere (no socket / no handoff -> serve MCP quietly, no liveness). Minimal MCP: answer
-// initialize + tools/list (empty) so codex keeps us alive; no tools exposed (Codex reviews via the
-// on-stop-gate hook, not an MCP tool).
+// everywhere (no socket / no handoff -> serve MCP quietly, with liveness unavailable).
+//
+// Also exposes `paireto_review`. MCP servers run outside Codex's command sandbox, so this process can
+// use the same Unix socket as the hooks. A skill helper launched as a shell command cannot: Codex
+// rejects its connection to ~/.local/state with EPERM even though socket discovery succeeds.
 //
 // MCP stdio transport = newline-delimited JSON-RPC 2.0 (no embedded newlines in a message).
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 
 const bridge = require("../scripts/bridge.js");
 
 const SERVER_INFO = { name: "paireto-codex", version: bridge.PLUGIN_VERSION };
 const CONNECT_TIMEOUT_MS = 3000;
 const HANDOFF_POLL_MS = 500; // fs.watch is flaky on macOS rename; poll as the reliable backstop
+
+const REVIEW_TOOL = {
+  name: "paireto_review",
+  description:
+    "Open an interactive code review in the connected VS Code window and wait for the user to " +
+    "submit feedback. Blocks until the user clicks Send Feedback or Cancel, then returns the " +
+    "review comments (file:line, kind, note) to act on. Call this when the user asks for a review.",
+  inputSchema: { type: "object", properties: {}, additionalProperties: false },
+};
 
 // ---------------------------------------------------------------------------
 // Minimal MCP JSON-RPC over stdio
@@ -39,7 +51,15 @@ function reply(id, result) {
   write({ jsonrpc: "2.0", id, result });
 }
 
-function handle(msg) {
+function replyError(id, code, message) {
+  write({ jsonrpc: "2.0", id, error: { code, message } });
+}
+
+function textResult(text, isError = false) {
+  return { content: [{ type: "text", text }], ...(isError ? { isError: true } : {}) };
+}
+
+async function handle(msg) {
   const { id, method, params } = msg;
   switch (method) {
     case "initialize":
@@ -55,11 +75,23 @@ function handle(msg) {
       reply(id, {});
       return;
     case "tools/list":
-      reply(id, { tools: [] }); // liveness-only; no tools exposed
+      reply(id, { tools: [REVIEW_TOOL] });
       return;
+    case "tools/call": {
+      if (!params || params.name !== REVIEW_TOOL.name) {
+        replyError(id, -32602, `Unknown tool: ${params && params.name}`);
+        return;
+      }
+      try {
+        reply(id, await runReview());
+      } catch (err) {
+        reply(id, textResult(`Review failed: ${(err && err.message) || err}`, true));
+      }
+      return;
+    }
     default:
       if (id !== undefined) {
-        write({ jsonrpc: "2.0", id, error: { code: -32601, message: `Method not found: ${method}` } });
+        replyError(id, -32601, `Method not found: ${method}`);
       }
   }
 }
@@ -71,6 +103,9 @@ function handle(msg) {
 let currentSessionId = null;
 let currentSock = null;
 let connecting = false;
+let handoffPid = null;
+let latestHandoff = null;
+let handoffWatcher = null;
 
 function detach() {
   if (currentSock) {
@@ -83,8 +118,7 @@ function detach() {
   }
 }
 
-function attach(sessionId, repoRoot) {
-  const socketPath = bridge.socketPathFor(repoRoot);
+function attach(sessionId, repoRoot, socketPath) {
   if (!fs.existsSync(socketPath)) {
     return; // no listening window yet — a later poll tick retries
   }
@@ -126,22 +160,27 @@ function attach(sessionId, repoRoot) {
 
 /** Reconcile the held socket with the latest handoff: re-attach on a session change, and retry the
  *  attach when we saw the session but no window was up yet. */
-function sync(sessionId, repoRoot) {
+function sync(sessionId, repoRoot, socketPath) {
   if (sessionId !== currentSessionId) {
     detach();
     currentSessionId = sessionId;
-    attach(sessionId, repoRoot);
+    attach(sessionId, repoRoot, socketPath);
     return;
   }
   if (!currentSock && !connecting) {
-    attach(sessionId, repoRoot); // same session, not yet attached (no window earlier) — retry
+    attach(sessionId, repoRoot, socketPath); // same session, not yet attached (no window earlier) — retry
   }
 }
 
 function readHandoff(pid) {
   try {
     const h = JSON.parse(fs.readFileSync(bridge.handoffPath(pid), "utf8"));
-    if (h && typeof h.sessionId === "string" && typeof h.repoRoot === "string") {
+    if (
+      h &&
+      typeof h.sessionId === "string" &&
+      typeof h.repoRoot === "string" &&
+      typeof h.socketPath === "string"
+    ) {
       return h;
     }
   } catch {
@@ -150,12 +189,81 @@ function readHandoff(pid) {
   return null;
 }
 
+// Use the hook handoff for reviews too. Besides carrying the session id, it contains the exact
+// socket path that successfully received this Codex process's hook traffic, avoiding any ambiguity
+// between a worktree and its main checkout.
+async function runReview() {
+  const handoff =
+    (handoffPid !== null ? readHandoff(handoffPid) : null) || latestHandoff;
+  if (!handoff) {
+    return textResult(
+      "Paireto could not identify this Codex session. Send another prompt after the Paireto " +
+        "extension and plugin are active, then try the review again.",
+      true,
+    );
+  }
+  latestHandoff = handoff;
+  if (!fs.existsSync(handoff.socketPath)) {
+    return textResult(
+      "No VS Code Paireto is listening for this repository. Open the project in VS Code " +
+        "with the Paireto extension active and try again.",
+      true,
+    );
+  }
+
+  let conn;
+  try {
+    conn = await bridge.connectAndHandshake(
+      handoff.socketPath,
+      bridge.repoKey(handoff.repoRoot),
+      CONNECT_TIMEOUT_MS,
+    );
+  } catch (err) {
+    const detail = err && err.message ? ` (${err.message})` : "";
+    return textResult(`Could not connect to the VS Code Paireto bridge${detail}.`, true);
+  }
+
+  const id = crypto.randomUUID();
+  return await new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      conn.sock.destroy();
+      resolve(result);
+    };
+    conn.sock.on("close", () => finish(textResult("Review session closed.")));
+    bridge.readMessages(conn.sock, conn.residual, (msg) => {
+      if (!msg || msg.t !== "review.await.response" || msg.id !== id) {
+        return;
+      }
+      if (msg.status === "submitted" && msg.feedback) {
+        finish(textResult(msg.feedback));
+      } else {
+        finish(textResult("Review approved — proceeding with no changes."));
+      }
+    });
+    bridge.sendLine(conn.sock, {
+      t: "review.await.request",
+      v: bridge.PLUGIN_VERSION,
+      id,
+      ts: bridge.nowIso(),
+      cwd: handoff.repoRoot,
+      repoRoot: handoff.repoRoot,
+      sessionId: handoff.sessionId,
+    });
+  });
+}
+
 function watchHandoff() {
-  const pid = bridge.codexPid();
+  handoffPid = bridge.codexPid();
   const tick = () => {
-    const h = readHandoff(pid);
+    const h = readHandoff(handoffPid);
     if (h) {
-      sync(h.sessionId, h.repoRoot);
+      latestHandoff = h;
+      sync(h.sessionId, h.repoRoot, h.socketPath);
     }
   };
   tick(); // the handoff may already exist (a UserPromptSubmit could precede our first tick)
@@ -165,9 +273,14 @@ function watchHandoff() {
   }
   // fs.watch is a best-effort accelerator on top of the poll; the dir may not exist yet.
   try {
-    const dir = path.dirname(bridge.handoffPath(pid));
+    const dir = path.dirname(bridge.handoffPath(handoffPid));
     fs.mkdirSync(dir, { recursive: true });
-    fs.watch(dir, () => tick());
+    handoffWatcher = fs.watch(dir, () => tick());
+    // Resource exhaustion can arrive asynchronously after fs.watch returns. Polling remains the
+    // reliable path, so swallow that accelerator-only failure instead of crashing the MCP server.
+    handoffWatcher.on("error", () => {
+      handoffWatcher = null;
+    });
   } catch {
     /* poll still covers it */
   }
@@ -178,6 +291,10 @@ function watchHandoff() {
 // ---------------------------------------------------------------------------
 
 function shutdown() {
+  if (handoffWatcher) {
+    handoffWatcher.close();
+    handoffWatcher = null;
+  }
   process.exit(0); // ends the process -> held socket closes -> extension clears the agent row
 }
 
@@ -203,7 +320,7 @@ function main() {
       } catch {
         continue;
       }
-      handle(msg);
+      void handle(msg);
     }
   });
   process.stdin.on("end", shutdown); // SIGKILL of codex orphans us but closes stdin (~34 ms)

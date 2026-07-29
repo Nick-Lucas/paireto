@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "paireto": {
+      "command": "node",
+      "args": ["./mcp/liveness.js"],
+      "cwd": ".",
+      "tool_timeout_sec": 86400
+    }
+  }
+}

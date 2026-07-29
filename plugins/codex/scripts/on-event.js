@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// Passive telemetry hook entry for Codex. Fire-and-forget: build a hook.event message, push it over
+// Passive Paireto telemetry hook for Codex. Fire-and-forget: build a hook.event message, push it over
 // the socket, exit 0. Never blocks the agent and never emits a decision — any failure is swallowed.
 // Registered on Codex's SessionStart / UserPromptSubmit / Pre|PostToolUse / PermissionRequest /
 // SubagentStart|Stop. (PermissionRequest is TUI-only telemetry — the awaiting-permission edge; it
@@ -36,6 +36,7 @@ function writeHandoff(event, repoRoot, pid) {
     pid,
     sessionId: event.session_id,
     repoRoot,
+    socketPath: bridge.socketPathFor(repoRoot),
     harness: "codex",
     ts: bridge.nowIso(),
   });

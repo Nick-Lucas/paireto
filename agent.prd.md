@@ -45,15 +45,13 @@ OpenCode reach it where the harness allows and degrade gracefully where it doesn
 | False-turn-end protection | subagents + background counts | subagent events only | child-session tracking |
 | Process-death cleanup | MCP liveness | MCP stdio liveness (instant when attached; 30-min silence sweep backstop) | plugin socket drop |
 | Session-end telemetry | yes | no (no SessionEnd hook) | yes (session.deleted) |
-| Install | marketplace CLI | `hooks.json` merge + auto-trust hash | global plugin file copy |
+| Install | marketplace CLI | native plugin marketplace CLI | global plugin file copy |
 
 Setup notes:
 - **Claude Code:** install the bundled plugin via the marketplace CLI, restart to load hooks + MCP.
-- **Codex:** the installer merges hooks into `~/.codex/hooks.json`, writes the trust hashes into
-  `~/.codex/config.toml`, and ensures `[features] hooks = true` there (Codex's master switch — no
-  hook runs without it), so hooks go live immediately across all repos with no approval step. If the
-  user has explicitly set `hooks = false`, setup leaves it and surfaces that instead of flipping it;
-  fail-open if a Codex release changes the (undocumented) hash algorithm.
+- **Codex:** the installer stages a stable local Paireto marketplace and runs the public native
+  plugin CLI. The self-contained plugin bundles its hooks, liveness MCP server, and review skill;
+  Codex owns caching, enablement, and the normal one-time hook trust review.
 - **OpenCode:** the installer copies one global plugin file (autoloaded for every repo) plus a
   `paireto-review` command — zero further setup. The plugin instructs the agent itself: a `config`
   hook scopes `paireto_submit_plan` to planning agents, a system-prompt transform tells a planning
