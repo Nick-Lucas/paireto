@@ -8,7 +8,7 @@ import * as path from "node:path";
 import {
   codexInstalledProbe,
   installCodex,
-  readCodexAdapterVersion,
+  readCodexPluginVersion,
 } from "../bridge/CodexInstaller.js";
 import {
   installOpenCode,
@@ -76,7 +76,7 @@ export function writeInstalledStamp(stableDir: string, version: string): void {
 
 /** Tri-state install status from a version-string comparison: no installed marker → not-installed;
  *  equal → installed; present but different (stale) → update-available. Shared by the version-stamp
- *  probes (claude/opencode); Codex probes by install-path instead (see codexInstallState). */
+ *  probes (claude/opencode); Codex asks its native plugin registry instead. */
 export function installStateFor(installed: string | undefined, shipped: string): InstallState {
   if (installed === undefined) {
     return "not-installed";
@@ -106,13 +106,12 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     id: "codex",
     name: "Codex TUI",
     available: true,
-    // Merges the adapter's hooks into ~/.codex and writes the trusted_hash entries so they run
-    // immediately (Codex silently skips untrusted hooks; no CLI to trust them). Stamps the version
-    // for parity with claude-code, though the probe reads the merged hooks.json directly.
+    // Stages a stable local marketplace and installs Paireto through Codex's native plugin CLI.
+    // Codex owns skills, MCP, hook discovery, and the one-time hook trust review.
     install: async (ctx) => {
       const result = await installCodex(ctx);
       if (result.ok) {
-        writeInstalledStamp(ctx.stableDir, readCodexAdapterVersion(ctx.pluginsRoot));
+        writeInstalledStamp(ctx.stableDir, readCodexPluginVersion(ctx.pluginsRoot));
       }
       return result;
     },

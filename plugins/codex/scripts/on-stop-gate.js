@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// The Codex turn-end fork, registered on the Stop hook (alongside the passive on-event.js). Codex
+// The Codex turn-end fork for Paireto, registered on Stop alongside the passive on-event.js. Codex
 // has no ExitPlanMode/PermissionRequest plan event and no separate review gate, so ONE script serves
 // both surfaces off the Stop payload. Fails OPEN everywhere (any socket / timeout / malformed error
 // lets the agent stop) so a normal turn-end is never stalled.

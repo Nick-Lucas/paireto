@@ -1,0 +1,21 @@
+{
+  "name": "paireto",
+  "version": "0.5.3",
+  "description": "Pair-programming for Codex in VS Code.",
+  "author": {
+    "name": "Paireto"
+  },
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Paireto",
+    "shortDescription": "Pair-programming for Codex in VS Code",
+    "longDescription": "Paireto brings pair-programming to Codex in VS Code in one engineer-grade workflow.",
+    "developerName": "Paireto",
+    "category": "Developer Tools",
+    "capabilities": [],
+    "defaultPrompt": [
+      "Use $paireto-review to review my current changes in VS Code."
+    ]
+  }
+}

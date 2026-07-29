@@ -13,7 +13,6 @@
 !LICENSE.md
 !CHANGELOG.md
 
-# Bundled Claude Code plugin: ship the whole folder verbatim — it IS the
-# distributed artifact the installer points Claude at. Dev tooling (the
-# emulator + its tsconfig) lives in repo-root scripts/, outside this tree.
+# Bundled agent plugins: ship the whole folder verbatim — these are the distributed artifacts the
+# installers stage/register. Dev tooling lives in repo-root scripts/, outside this tree.
 !plugins/**

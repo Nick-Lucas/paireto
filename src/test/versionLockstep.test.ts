@@ -1,8 +1,8 @@
 // Every shipped adapter manifest MUST carry the same version as PLUGIN_VERSION (the wire-protocol
 // marker checked for strict equality in the hello handshake). A drifted adapter version means its
 // hooks handshake against a mismatched extension and get rejected — so this test locks all bundles
-// to the single source of truth. Scans `plugins/*` for either a Claude-style `.claude-plugin/
-// plugin.json` or an `adapter.json`, so a new adapter is covered automatically.
+// to the single source of truth. Scans `plugins/*` for native Claude/Codex manifests or an
+// `adapter.json`, so a new adapter is covered automatically.
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
@@ -15,6 +15,7 @@ const pluginsRoot = path.resolve(__dirname, "../../plugins");
 function manifestVersion(dir: string): string | undefined {
   const candidates = [
     path.join(dir, ".claude-plugin", "plugin.json"),
+    path.join(dir, ".codex-plugin", "plugin.json"),
     path.join(dir, "adapter.json"),
   ];
   for (const file of candidates) {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// Codex liveness MCP stdio server bundled with the paireto Codex adapter.
+// Codex liveness MCP stdio server bundled with the Paireto Codex plugin.
 //
 // Codex gives MCP servers NO session identity in env (the env is stripped to a fixed allowlist), so
 // this server learns the active session_id from a PPID-keyed handoff file the SessionStart/
@@ -83,8 +83,7 @@ function detach() {
   }
 }
 
-function attach(sessionId, repoRoot) {
-  const socketPath = bridge.socketPathFor(repoRoot);
+function attach(sessionId, repoRoot, socketPath) {
   if (!fs.existsSync(socketPath)) {
     return; // no listening window yet — a later poll tick retries
   }
@@ -126,22 +125,27 @@ function attach(sessionId, repoRoot) {
 
 /** Reconcile the held socket with the latest handoff: re-attach on a session change, and retry the
  *  attach when we saw the session but no window was up yet. */
-function sync(sessionId, repoRoot) {
+function sync(sessionId, repoRoot, socketPath) {
   if (sessionId !== currentSessionId) {
     detach();
     currentSessionId = sessionId;
-    attach(sessionId, repoRoot);
+    attach(sessionId, repoRoot, socketPath);
     return;
   }
   if (!currentSock && !connecting) {
-    attach(sessionId, repoRoot); // same session, not yet attached (no window earlier) — retry
+    attach(sessionId, repoRoot, socketPath); // same session, not yet attached (no window earlier) — retry
   }
 }
 
 function readHandoff(pid) {
   try {
     const h = JSON.parse(fs.readFileSync(bridge.handoffPath(pid), "utf8"));
-    if (h && typeof h.sessionId === "string" && typeof h.repoRoot === "string") {
+    if (
+      h &&
+      typeof h.sessionId === "string" &&
+      typeof h.repoRoot === "string" &&
+      typeof h.socketPath === "string"
+    ) {
       return h;
     }
   } catch {
@@ -155,7 +159,7 @@ function watchHandoff() {
   const tick = () => {
     const h = readHandoff(pid);
     if (h) {
-      sync(h.sessionId, h.repoRoot);
+      sync(h.sessionId, h.repoRoot, h.socketPath);
     }
   };
   tick(); // the handoff may already exist (a UserPromptSubmit could precede our first tick)

@@ -9,7 +9,7 @@
 //
 // merge-don't-clobber: those dirs are SHARED with the user's other plugins/commands, but we only ever
 // write our own three filenames — every foreign file is left untouched. The plan is a PURE function
-// (unit-tested); the IO wrapper stays thin. No stableDir staging (unlike Codex, whose hooks.json
+// (unit-tested); the IO wrapper stays thin. No stableDir staging (unlike Codex, whose local plugin
 // points at absolute paths): OpenCode loads the copied file in place, so a durable dir isn't needed.
 
 import * as fs from "node:fs";

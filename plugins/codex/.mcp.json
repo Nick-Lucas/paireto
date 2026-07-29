@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "paireto": {
+      "command": "node",
+      "args": ["./mcp/liveness.js"],
+      "cwd": "."
+    }
+  }
+}
