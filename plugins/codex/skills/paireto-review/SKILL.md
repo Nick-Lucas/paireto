@@ -5,10 +5,9 @@ description: Start an interactive Paireto code review of the current changes in 
 
 # Paireto Review
 
-Resolve `scripts/review.js` relative to this `SKILL.md`, then run `node <absolute-script-path>` with
-the user's repository as the command's working directory. The command opens Paireto's review panels
-in the connected VS Code window and blocks until the user submits feedback or approves the changes.
-Wait for it to return.
+Call the Paireto MCP tool `mcp__paireto__paireto_review` now. It opens Paireto's review panels in the
+connected VS Code window and blocks until the user submits feedback or approves the changes. Wait
+for it to return.
 
 When it returns:
 
@@ -16,4 +15,4 @@ When it returns:
   each `COMMENT` unless it does not make sense; explain any suggestion you do not apply.
 - If the review was approved or closed without feedback, acknowledge that briefly and continue.
 
-Do not ask the user to paste feedback manually; the command returns it directly.
+Do not run a shell helper or ask the user to paste feedback manually; the tool returns it directly.

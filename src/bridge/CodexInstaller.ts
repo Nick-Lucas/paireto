@@ -14,7 +14,6 @@ import type { InstallResult } from "./PluginInstaller.js";
 const MARKETPLACE_NAME = "paireto";
 const PLUGIN_NAME = "paireto";
 const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
-const OBSOLETE_PLUGIN_IDS = ["codex@paireto"];
 
 export interface CodexMarketplacePlan {
   sourcePlugin: string;
@@ -215,11 +214,6 @@ export async function installCodex(
     `codex plugin add ${PLUGIN_ID}`;
   try {
     const version = readCodexPluginVersion(ctx.pluginsRoot);
-    // Remove the pre-rename staged folder so it cannot be mistaken for another marketplace plugin.
-    fs.rmSync(path.join(plan.marketplaceRoot, "plugins", "codex"), {
-      recursive: true,
-      force: true,
-    });
     fs.rmSync(plan.stagedPlugin, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(plan.stagedPlugin), { recursive: true });
     fs.cpSync(plan.sourcePlugin, plan.stagedPlugin, { recursive: true });
@@ -251,20 +245,6 @@ export async function installCodex(
 
     const listed = await run(bin, ["plugin", "list", "--json"], baseEnv);
     const installedPlugins = parsePluginList(listed.stdout);
-    for (const obsoleteId of OBSOLETE_PLUGIN_IDS) {
-      if (!installedPlugins.some((entry) => entry.pluginId === obsoleteId)) {
-        continue;
-      }
-      const removed = await run(bin, ["plugin", "remove", obsoleteId, "--json"], baseEnv);
-      if (removed.code !== 0) {
-        return {
-          ok: false,
-          detail: `obsolete plugin removal failed: ${(removed.stderr || removed.stdout).trim().slice(0, 240)}`,
-          manualCommand,
-        };
-      }
-    }
-
     const existing = installedPlugins.find((entry) => entry.pluginId === PLUGIN_ID);
     if (existing && existing.version !== version) {
       const removed = await run(bin, ["plugin", "remove", PLUGIN_ID, "--json"], baseEnv);

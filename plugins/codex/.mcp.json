@@ -3,7 +3,8 @@
     "paireto": {
       "command": "node",
       "args": ["./mcp/liveness.js"],
-      "cwd": "."
+      "cwd": ".",
+      "tool_timeout_sec": 86400
     }
   }
 }

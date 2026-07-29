@@ -1,6 +1,6 @@
 {
   "name": "paireto",
-  "version": "0.5.3",
+  "version": "0.5.6",
   "description": "Pair-programming for Codex in VS Code.",
   "author": {
     "name": "Paireto"

@@ -17,7 +17,7 @@ const bundledPlugin = path.resolve(__dirname, "../../plugins/codex");
 suite("Codex bundled plugin contract", () => {
   test("reads its version from the native manifest, not the removed adapter manifest", () => {
     const pluginsRoot = path.dirname(bundledPlugin);
-    assert.strictEqual(readCodexPluginVersion(pluginsRoot), "0.5.3");
+    assert.strictEqual(readCodexPluginVersion(pluginsRoot), "0.5.6");
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "adapter.json")));
   });
 
@@ -34,17 +34,26 @@ suite("Codex bundled plugin contract", () => {
     assert.ok(!hooks.includes("{{PAIRETO_SCRIPTS}}"));
 
     const mcp = JSON.parse(fs.readFileSync(path.join(bundledPlugin, ".mcp.json"), "utf8")) as {
-      mcpServers: { paireto: { args: string[]; cwd: string } };
+      mcpServers: { paireto: { args: string[]; cwd: string; tool_timeout_sec: number } };
+      mcp_servers?: unknown;
     };
+    assert.strictEqual(mcp.mcp_servers, undefined);
     assert.deepStrictEqual(mcp.mcpServers.paireto.args, ["./mcp/liveness.js"]);
     assert.strictEqual(mcp.mcpServers.paireto.cwd, ".");
+    assert.strictEqual(mcp.mcpServers.paireto.tool_timeout_sec, 86_400);
 
-    assert.ok(fs.existsSync(path.join(bundledPlugin, "skills", "paireto-review", "SKILL.md")));
-    const helper = fs.readFileSync(
-      path.join(bundledPlugin, "skills", "paireto-review", "scripts", "review.js"),
+    const skill = fs.readFileSync(
+      path.join(bundledPlugin, "skills", "paireto-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(helper.includes('require("../../../scripts/bridge.js")'));
+    assert.ok(skill.includes("`mcp__paireto__paireto_review`"));
+    const server = fs.readFileSync(path.join(bundledPlugin, "mcp", "liveness.js"), "utf8");
+    assert.ok(server.includes('name: "paireto_review"'));
+    assert.ok(
+      !fs.existsSync(
+        path.join(bundledPlugin, "skills", "paireto-review", "scripts", "review.js"),
+      ),
+    );
   });
 });
 
@@ -85,30 +94,30 @@ suite("Codex native plugin probe", () => {
       installed: [
         {
           pluginId: "paireto@paireto",
-          version: "0.5.3",
+          version: "0.5.6",
           installed: true,
           enabled: true,
         },
       ],
     });
-    assert.strictEqual(codexPluginInstallState(list, "0.5.3"), "installed");
+    assert.strictEqual(codexPluginInstallState(list, "0.5.6"), "installed");
   });
 
   test("reports an old native plugin as update available", () => {
     const list = JSON.stringify({
       installed: [{ pluginId: "paireto@paireto", version: "0.5.2", installed: true }],
     });
-    assert.strictEqual(codexPluginInstallState(list, "0.5.3"), "update-available");
+    assert.strictEqual(codexPluginInstallState(list, "0.5.6"), "update-available");
   });
 
   test("does not confuse foreign plugins or malformed output for Paireto", () => {
     assert.strictEqual(
       codexPluginInstallState(
-        JSON.stringify({ installed: [{ pluginId: "codex@someone-else", version: "0.5.3" }] }),
-        "0.5.3",
+        JSON.stringify({ installed: [{ pluginId: "codex@someone-else", version: "0.5.6" }] }),
+        "0.5.6",
       ),
       "not-installed",
     );
-    assert.strictEqual(codexPluginInstallState("not json", "0.5.3"), "not-installed");
+    assert.strictEqual(codexPluginInstallState("not json", "0.5.6"), "not-installed");
   });
 });
