@@ -140,6 +140,7 @@ Waiting for the exploration agent to finish mapping the existing session-boot ma
 * Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
 * support a paireto-review-consume skill which consumes the already added comments instead of starting a blocking review
 * When staging a file with unsaved changes, the file is currently closed and prompts to save. If you choose to save you should also commit the unsaved changes
+* Enter on a changes entry support renaming of the file
 
 # Feature Ideas:
 
