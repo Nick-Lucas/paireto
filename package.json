@@ -37,7 +37,6 @@
     "e2e:check:docker": "docker compose -f docker/docker-compose.yml -f docker/docker-compose.mock.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mock.yml exec -T tests pnpm e2e:check",
     "e2e:record:docker": "bash docker/prepare-e2e.sh && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mock.yml -f docker/docker-compose.e2e.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mock.yml -f docker/docker-compose.e2e.yml exec -T tests pnpm e2e:record",
     "docker:build": "docker compose -f docker/docker-compose.yml build",
-    "docker:up": "docker compose -f docker/docker-compose.yml up -d --wait",
     "docker:down": "docker compose -f docker/docker-compose.yml down",
     "docker:shell": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec tests bash",
     "test:docker": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec -T tests pnpm test",

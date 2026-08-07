@@ -44,22 +44,12 @@ export function recordReplayMiss(file: string | undefined, miss: ReplayMiss): vo
   }
 }
 
-/** The recorded miss as an operator-facing line, or undefined while replay is matching. */
+/** The recorded miss as an operator-facing line, or undefined while replay is matching. A file that
+ *  exists but cannot be parsed is still a miss — the shim only writes it when one happened. */
 export function readReplayMiss(file = process.env[MISS_FILE_ENV]): string | undefined {
-  if (!file) {
-    return undefined;
+  const miss = loadReplayMiss(file);
+  if (miss) {
+    return `strict VCR miss: no cassette entry matched ${miss.method} ${miss.path}`;
   }
-  let raw: string;
-  try {
-    raw = fs.readFileSync(file, "utf8");
-  } catch {
-    return undefined;
-  }
-  let miss: ReplayMiss;
-  try {
-    miss = JSON.parse(raw) as ReplayMiss;
-  } catch {
-    return `strict VCR miss (unreadable detail: ${raw.slice(0, 200)})`;
-  }
-  return `strict VCR miss: no cassette entry matched ${miss.method} ${miss.path}`;
+  return file && fs.existsSync(file) ? "strict VCR miss (detail unreadable)" : undefined;
 }

@@ -6,8 +6,8 @@ import * as assert from "node:assert";
 import { openCodeRunFatal } from "../e2e/drivers/opencode.js";
 import {
   attachCommand,
+  createPaneWatch,
   newPaneLines,
-  startPaneWatch,
   watchEnabled,
   WATCH_ENV,
 } from "../e2e/drivers/watch.js";
@@ -93,20 +93,48 @@ suite("E2E fail-fast signals", () => {
   test("a TUI that exits mid-flow is reported once, not per poll", () => {
     const reasons: string[] = [];
     let exited: number | undefined;
-    const pane = {
-      captureHistory: () => "screen",
-      attachTarget: () => ({ label: "pai-e2e-x", session: "main" }),
-      exitStatus: () => exited,
-    };
-    const stop = startPaneWatch("claudecode", pane, (reason) => reasons.push(reason));
-    try {
-      exited = 1;
-      // Two polls' worth of the same dead pane must produce one report.
-      const watcher = pane.exitStatus;
-      assert.strictEqual(typeof watcher, "function");
-    } finally {
-      stop();
-    }
-    assert.ok(reasons.length <= 1);
+    const watch = createPaneWatch(
+      "claudecode",
+      {
+        captureHistory: () => "screen",
+        attachTarget: () => ({ label: "pai-e2e-x", session: "main" }),
+        exitStatus: () => exited,
+      },
+      (reason) => reasons.push(reason),
+    );
+    assert.ok(watch);
+
+    watch.poll();
+    assert.deepStrictEqual(reasons, [], "a live pane reports nothing");
+
+    // The pane keeps reporting the same exit status while the keepalive holds it open.
+    exited = 1;
+    watch.poll();
+    watch.poll();
+    watch.poll();
+
+    assert.strictEqual(reasons.length, 1);
+    assert.match(reasons[0], /claudecode TUI exited \(status 1\)/);
+    watch.stop();
+  });
+
+  test("a live pane with nothing to report still streams, but never reports fatal", () => {
+    const reasons: string[] = [];
+    const watch = createPaneWatch(
+      "codex",
+      {
+        captureHistory: () => "still working",
+        attachTarget: () => ({ label: "pai-e2e-y", session: "main" }),
+        exitStatus: () => undefined,
+      },
+      (reason) => reasons.push(reason),
+    );
+    assert.ok(watch);
+
+    watch.poll();
+    watch.poll();
+
+    assert.deepStrictEqual(reasons, []);
+    watch.stop();
   });
 });

@@ -128,10 +128,12 @@ How it works:
 - Request matchers discard provider headers and narrowly canonicalize account/environment metadata,
   prompt-cache controls, and deterministic workflow tool-result wording. User prompts, model messages,
   tool names/calls/arguments, and file contents remain strict.
-- The tool inventory is **reduced, not erased**: every tool keeps its name (sorted), and **Paireto's
-  own tools keep their full schema**, so a regression that stopped offering them — or shipped a broken
-  `paireto_submit_plan` schema — fails replay instead of quietly matching. Only the provider's
-  free-text descriptions and built-in schemas are dropped.
+- The tool inventory is **reduced, not erased**: every tool keeps its name (sorted, because the
+  advertised order varies between runs), and **Paireto's own tools are kept whole — description and
+  schema** — so a regression that stopped offering them, or shipped a broken `paireto_submit_plan`
+  schema, fails replay instead of quietly matching. Every other tool is reduced to its name, since
+  provider descriptions and built-in schemas churn each CLI release. One normalizer serves all three
+  harnesses, so none of them can drift from this.
 - Stored response headers use a whitelist: only canonical `Content-Type` is retained. All cookie
   headers and any future provider-specific headers are discarded before a fixture is written.
 - **Identity is scrubbed on both sides.** Requests go through `scrubIdentity` inside the shared
@@ -167,11 +169,17 @@ are never written.
 ## Running headless in Docker
 
 The Linux container supplies the virtual display and is the supported test entry point — see
-[`docker/README.md`](../../docker/README.md):
+[`docker/README.md`](../../docker/README.md) for the container itself (volumes, boot, shell access):
 
 ```sh
-pnpm docker:build
-PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker
+pnpm docker:build                                    # once
+
+PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker   # live, against your subscription
+PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker # re-record the cassette
+PAIRETO_E2E_DRIVER=claudecode pnpm e2e:check:docker  # strict offline replay, no credentials
+
+pnpm test:docker                                     # the unit suite
+pnpm docker:down                                     # stop the container
 ```
 
 Live/record credentials are mounted or staged read-only. Claude's keychain OAuth credential is staged

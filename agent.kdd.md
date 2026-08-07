@@ -812,8 +812,14 @@
   broken schema for one, would still have matched and replayed green — and a broken
   `paireto_submit_plan` zod schema is a bug this repo has already shipped. So every tool keeps its
   NAME (sorted — order varies run to run), Paireto's own tools (`isPairetoTool`, matched loosely
-  across `paireto_submit_plan` / `mcp__paireto__…` / `mcp__plugin_paireto_bridge__…`) keep their full
-  schema, and only the provider's free-text descriptions and built-in schemas are dropped.
+  across `paireto_submit_plan` / `mcp__paireto__…` / `mcp__plugin_paireto_bridge__…`) are kept WHOLE
+  (description and schema — both are this project's surface to the agent, and both are host-stable
+  because they are literals in our own source), and every other tool is reduced to its name, because
+  provider descriptions and built-in schemas churn each CLI release and can state the host OS/shell.
+  **ONE normalizer serves every harness.** OpenCode originally had its own inline copy that deleted
+  `parameters`/`description` in place and did NOT sort — so the very property the sort exists for
+  (advertised order varies run to run) was missing on the one harness whose tools ride in the request
+  body, leaving OpenCode replay able to 599 intermittently for a reason nothing would explain.
 
 - **Every host a harness contacts must be in the proxy cert's SAN list, even ones the run does not
   need.** An unlisted host fails the TLS handshake, and a transport error is not the strict-replay

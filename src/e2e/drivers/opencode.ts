@@ -30,7 +30,8 @@ const PLAN_AGENT = "plan";
 /** The first file the implement step writes — its presence means the run engaged the plan gate and
  *  got past approve, so an exit is normal completion rather than a plan-tool miss. */
 const IMPLEMENT_MARKER = "hello.txt";
-const MOCK_HOME_DIR = mockPath("pai-e2e-opencode-home");
+/** Resolved lazily: mockPath touches the filesystem, which a live run has no reason to do. */
+const mockHomeDir = (): string => mockPath("pai-e2e-opencode-home");
 
 /**
  * A line of `opencode run` output that means the flow can no longer complete, or undefined for
@@ -81,7 +82,7 @@ export class OpenCodeDriver implements HarnessDriver {
     this.mockUrl = process.env[MOCK_URL_ENV];
     this.home = buildOpenCodeHome({
       checkMode: this.mode === "check",
-      homeDir: this.mode === "live" ? undefined : MOCK_HOME_DIR,
+      homeDir: this.mode === "live" ? undefined : mockHomeDir(),
     });
     this.env = { ...baseHarnessEnv(), ...this.home.env };
     if (this.mockUrl) {

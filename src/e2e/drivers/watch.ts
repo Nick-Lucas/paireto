@@ -53,7 +53,15 @@ export interface WatchablePane {
   exitStatus?(): number | undefined;
 }
 
+/** Each poll spawns a `tmux capture-pane` subprocess, so keep the cadence human-scale. */
 const POLL_MS = 1_000;
+
+export interface PaneWatch {
+  /** One poll: emit what changed, and report a TUI that has exited. Exposed so a test can drive the
+   *  watch deterministically rather than waiting out real intervals. */
+  poll(): void;
+  stop(): void;
+}
 
 /**
  * Stream a TUI's output to the run's stdout and announce how to attach to it. Returns a stop().
@@ -64,8 +72,26 @@ export function startPaneWatch(
   pane: WatchablePane,
   onFatal?: (reason: string) => void,
 ): () => void {
-  if (!watchEnabled() && !onFatal) {
+  const watch = createPaneWatch(harness, pane, onFatal);
+  if (!watch) {
     return () => {};
+  }
+  const timer = setInterval(() => watch.poll(), POLL_MS);
+  return () => {
+    clearInterval(timer);
+    watch.stop();
+  };
+}
+
+/** The watch's behaviour without its timer. Undefined when there is nothing to do — neither
+ *  streaming nor fatal reporting is wanted. */
+export function createPaneWatch(
+  harness: string,
+  pane: WatchablePane,
+  onFatal?: (reason: string) => void,
+): PaneWatch | undefined {
+  if (!watchEnabled() && !onFatal) {
+    return undefined;
   }
   if (watchEnabled()) {
     const { label, session } = pane.attachTarget();
@@ -73,26 +99,35 @@ export function startPaneWatch(
   }
   let previous: string[] = [];
   let reportedExit = false;
-  const timer = setInterval(() => {
-    const current = pane.captureHistory().split("\n");
-    if (watchEnabled()) {
-      for (const line of newPaneLines(previous, current)) {
-        emit(harness, line);
+  let stopped = false;
+  return {
+    poll(): void {
+      if (stopped) {
+        return;
       }
-    }
-    previous = current;
-    // The TUI ending mid-flow is terminal: nothing will drive the rest of the run, so say so now
-    // rather than let every later step wait out its budget.
-    const status = pane.exitStatus?.();
-    if (status !== undefined && !reportedExit && onFatal) {
-      reportedExit = true;
-      onFatal(
-        `the ${harness} TUI exited (status ${status}) before the flow completed — its last screen is ` +
-          "in the driver dump below",
-      );
-    }
-  }, POLL_MS);
-  return () => clearInterval(timer);
+      const current = pane.captureHistory().split("\n");
+      if (watchEnabled()) {
+        for (const line of newPaneLines(previous, current)) {
+          emit(harness, line);
+        }
+      }
+      previous = current;
+      // The TUI ending mid-flow is terminal: nothing will drive the rest of the run, so say so now
+      // rather than let every later step wait out its budget. Reported once — the pane keeps
+      // reporting the same exit status for as long as the keepalive holds it open.
+      const status = pane.exitStatus?.();
+      if (status !== undefined && !reportedExit && onFatal) {
+        reportedExit = true;
+        onFatal(
+          `the ${harness} TUI exited (status ${status}) before the flow completed — its last screen is ` +
+            "in the driver dump below",
+        );
+      }
+    },
+    stop(): void {
+      stopped = true;
+    },
+  };
 }
 
 /** Stream a child process's output line by line (drivers without a TUI). */

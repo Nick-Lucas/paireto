@@ -55,24 +55,37 @@ suite("cassette platform", () => {
 suite("cassette envelope", () => {
   const one = { httpRequest: { method: "POST", path: "/v1/messages" } };
 
+  const stamped = {
+    recordedWith: { claudecode: "2.1.224" },
+    recordedOn: "linux",
+    expectations: [one],
+  };
+
   test("reads a stamped cassette", () => {
-    const fixture = readFixture(
-      { recordedWith: { claudecode: "2.1.224" }, expectations: [one] },
-      "claudecode",
-    );
+    const fixture = readFixture(stamped, "claudecode");
     assert.deepStrictEqual(fixture.recordedWith, { claudecode: "2.1.224" });
+    assert.strictEqual(fixture.recordedOn, "linux");
     assert.deepStrictEqual(fixture.expectations, [one]);
   });
 
-  // The stamp is what lets a replay miss be attributed to harness drift, so it is required.
+  // The stamps are what let a replay miss be attributed to harness or platform drift, so both are
+  // required rather than tolerated as absent.
   test("rejects an unstamped cassette instead of tolerating it", () => {
     assert.throws(() => readFixture([one], "claudecode"), /re-record/i);
     assert.throws(() => readFixture({ expectations: [one] }, "claudecode"), /re-record/i);
   });
 
+  test("rejects a cassette with no platform stamp", () => {
+    assert.throws(
+      () =>
+        readFixture({ recordedWith: { claudecode: "2.1.224" }, expectations: [one] }, "claudecode"),
+      /re-record/i,
+    );
+  });
+
   test("rejects a cassette stamped for a different driver", () => {
     assert.throws(
-      () => readFixture({ recordedWith: { codex: "0.147.0" }, expectations: [one] }, "claudecode"),
+      () => readFixture({ ...stamped, recordedWith: { codex: "0.147.0" } }, "claudecode"),
       /re-record/i,
     );
   });

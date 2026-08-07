@@ -319,13 +319,14 @@ function readPlanTurn(transcriptPath, turnId) {
     if (rec.type === "turn_context") {
       inTargetTurn = payload.turn_id === turnId;
     }
-    // Response items inherit the preceding turn_context. Strict replay can serialize native Plan
-    // output as a proposed-plan wrapper rather than an item_completed/Plan record.
-    if (inTargetTurn && rec.type === "response_item" && payload.type === "message") {
-      const proposedPlan = proposedPlanFrom(payload);
-      if (payload.role === "assistant" && proposedPlan !== undefined) {
-        planMarkdown = proposedPlan;
-      }
+    // A response item carries no turn_id of its own; it belongs to the preceding turn_context.
+    if (
+      inTargetTurn &&
+      rec.type === "response_item" &&
+      payload.type === "message" &&
+      payload.role === "assistant"
+    ) {
+      planMarkdown = proposedPlanIn(payload.content) ?? planMarkdown;
     }
     if (payload.turn_id !== turnId) {
       continue;
@@ -345,14 +346,10 @@ function readPlanTurn(transcriptPath, turnId) {
     ) {
       planMarkdown = payload.item.text; // latest wins
     }
-    // Codex 0.145 can serialize a replayed plan as the matching turn's task_complete message rather
-    // than an item_completed/Plan record. The explicit wrapper is emitted only for a proposed plan,
-    // so it is a safe plan-mode discriminator while retaining the same strict turn-id check.
-    if (payload.type === "task_complete" && typeof payload.last_agent_message === "string") {
-      const proposed = PROPOSED_PLAN.exec(payload.last_agent_message);
-      if (proposed) {
-        planMarkdown = proposed[1];
-      }
+    // task_complete is keyed on turn_id, so it recovers the plan even when the tail window starts
+    // past this turn's turn_context and the response-item path above never arms.
+    if (payload.type === "task_complete") {
+      planMarkdown = proposedPlanIn(payload.last_agent_message) ?? planMarkdown;
     }
   }
 
@@ -366,15 +363,16 @@ function readPlanTurn(transcriptPath, turnId) {
  *  quotes the agreed plan back is therefore still treated as an ordinary turn. */
 const PROPOSED_PLAN = /^\s*<proposed_plan>\s*([\s\S]*?)\s*<\/proposed_plan>\s*$/i;
 
-/** Find an explicit proposed-plan wrapper in a response-item payload. */
-function proposedPlanFrom(value) {
+/** The plan markdown inside a message's content, which Codex serializes as a plain string or as
+ *  nested content parts. Undefined when the content is not itself a proposed plan. */
+function proposedPlanIn(value) {
   if (typeof value === "string") {
     const match = PROPOSED_PLAN.exec(value);
     return match ? match[1] : undefined;
   }
   if (Array.isArray(value)) {
     for (const item of value) {
-      const found = proposedPlanFrom(item);
+      const found = proposedPlanIn(item);
       if (found !== undefined) {
         return found;
       }
@@ -383,7 +381,7 @@ function proposedPlanFrom(value) {
   }
   if (value && typeof value === "object") {
     for (const item of Object.values(value)) {
-      const found = proposedPlanFrom(item);
+      const found = proposedPlanIn(item);
       if (found !== undefined) {
         return found;
       }

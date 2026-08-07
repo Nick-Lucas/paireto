@@ -27,6 +27,19 @@ export interface TmuxLaunch {
   height?: number;
 }
 
+/** The TmuxSession surface a TUI driver uses, so a test can substitute a plain object for it. */
+export type DriverTmux = Pick<
+  TmuxSession,
+  | "attachTarget"
+  | "capture"
+  | "captureHistory"
+  | "exitStatus"
+  | "kill"
+  | "launch"
+  | "sendKeys"
+  | "typeLine"
+>;
+
 /** Is tmux on PATH? Used by driver availability probes. */
 export function tmuxAvailable(): boolean {
   try {

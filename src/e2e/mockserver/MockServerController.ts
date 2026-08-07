@@ -34,6 +34,31 @@ interface HarnessProfile {
   fixturePaths: RegExp[];
 }
 
+const jsonResponse = (body: unknown): unknown => ({
+  statusCode: 200,
+  headers: { "content-type": ["application/json"] },
+  body: JSON.stringify(body),
+});
+
+/** Startup calls a harness makes that carry no conversation and are answered locally, so they never
+ *  need recording. Anything not listed here falls through to the strict 599 catch-all. */
+const LOCAL_BOOTSTRAP: Record<string, unknown[]> = {
+  claudecode: [
+    { httpRequest: { method: "GET", path: "/api/hello" }, httpResponse: jsonResponse({}) },
+    { httpRequest: { method: "GET", path: "/v1/oauth/hello" }, httpResponse: jsonResponse({}) },
+    {
+      httpRequest: { method: "GET", path: "/api/oauth/profile" },
+      httpResponse: jsonResponse({
+        account: {
+          uuid: "00000000-0000-4000-8000-0000000000c4",
+          email: "paireto-e2e@example.invalid",
+        },
+        organization: { uuid: "00000000-0000-4000-8000-0000000000c5" },
+      }),
+    },
+  ],
+};
+
 const PROFILES: Record<string, HarnessProfile> = {
   // `/v1/messages` carries the whole conversation; everything else Claude Code talks to is telemetry
   // or account bootstrap, answered locally in check (see prepareCheck).
@@ -192,40 +217,11 @@ export class MockServerController {
       this.log(`MockServer[check]: WARNING — ${this.driftNote}`);
     }
     for (const expectation of expectations) {
-      await putExpectation(this.mockBaseUrl, cleanExpectationForReplay(expectation, driver));
+      await putExpectation(this.mockBaseUrl, cleanExpectationForReplay(expectation));
     }
-    const bootstrapCount = driver === "claudecode" ? 3 : 0;
-    if (driver === "claudecode") {
-      await putExpectation(this.mockBaseUrl, {
-        httpRequest: { method: "GET", path: "/api/hello" },
-        httpResponse: {
-          statusCode: 200,
-          headers: { "content-type": ["application/json"] },
-          body: "{}",
-        },
-      });
-      await putExpectation(this.mockBaseUrl, {
-        httpRequest: { method: "GET", path: "/v1/oauth/hello" },
-        httpResponse: {
-          statusCode: 200,
-          headers: { "content-type": ["application/json"] },
-          body: "{}",
-        },
-      });
-      await putExpectation(this.mockBaseUrl, {
-        httpRequest: { method: "GET", path: "/api/oauth/profile" },
-        httpResponse: {
-          statusCode: 200,
-          headers: { "content-type": ["application/json"] },
-          body: JSON.stringify({
-            account: {
-              uuid: "00000000-0000-4000-8000-0000000000c4",
-              email: "paireto-e2e@example.invalid",
-            },
-            organization: { uuid: "00000000-0000-4000-8000-0000000000c5" },
-          }),
-        },
-      });
+    const bootstrap = LOCAL_BOOTSTRAP[driver] ?? [];
+    for (const expectation of bootstrap) {
+      await putExpectation(this.mockBaseUrl, expectation);
     }
     // Standard expectation loading preserves recorded SSE bodies. The MCP file loader in 7.4 drops
     // their response framing, so strictness is supplied explicitly as the lowest-priority fallback.
@@ -237,7 +233,7 @@ export class MockServerController {
     });
     await this.mcp.callTool("set_operating_mode", { mode: "SIMULATE" });
     this.log(
-      `MockServer[check]: loaded ${fixtureName} strict + SIMULATE (${expectations.length} exchanges + ${bootstrapCount} local bootstrap + catch-all)`,
+      `MockServer[check]: loaded ${fixtureName} strict + SIMULATE (${expectations.length} exchanges + ${bootstrap.length} local bootstrap + catch-all)`,
     );
   }
 
@@ -379,17 +375,18 @@ function normalizeBodyValue(body: unknown, driver: string): unknown {
   return body;
 }
 
-/** A committed cassette: the expectations plus the harness version they were recorded against. */
+/** A committed cassette: the expectations plus where and what they were recorded against. */
 export interface Fixture {
   recordedWith: Record<string, string>;
   /** `process.platform` of the machine that recorded it; a cassette replays only on that platform. */
-  recordedOn?: string;
+  recordedOn: string;
   expectations: FixtureExpectation[];
 }
 
 /**
- * Parse a committed cassette. The version stamp is required so that a replay miss caused by an
- * unpinned CLI upgrade can be reported as harness drift.
+ * Parse a committed cassette. Both stamps are required: they are what turns a replay miss caused by
+ * an unpinned CLI upgrade, or by replaying on another platform, into a named cause instead of an
+ * opaque step timeout. writeNormalizedFixture always writes both, so a cassette missing one is stale.
  */
 export function readFixture(raw: unknown, driver: string): Fixture {
   const wrapped = raw as {
@@ -397,16 +394,17 @@ export function readFixture(raw: unknown, driver: string): Fixture {
     recordedOn?: string;
     expectations?: unknown;
   } | null;
-  const recorded = wrapped?.recordedWith?.[driver];
-  if (!recorded || !wrapped?.expectations) {
+  const recordedWith = wrapped?.recordedWith;
+  const recordedOn = wrapped?.recordedOn;
+  if (!recordedWith?.[driver] || !recordedOn || !wrapped?.expectations) {
     throw new Error(
-      `cassette for "${driver}" is not a stamped {recordedWith, expectations} fixture — ` +
+      `cassette for "${driver}" is not a stamped {recordedWith, recordedOn, expectations} fixture — ` +
         `re-record it with PAIRETO_E2E_DRIVER=${driver} PAIRETO_E2E_MODE=record`,
     );
   }
   return {
-    recordedWith: wrapped.recordedWith!,
-    recordedOn: wrapped.recordedOn,
+    recordedWith,
+    recordedOn,
     expectations: unwrapExpectations(wrapped.expectations),
   };
 }
@@ -483,8 +481,8 @@ function closestCassetteEntry(
     if (request?.method !== miss.method || request.path !== miss.path) {
       return;
     }
-    const body =
-      typeof request.body === "string" ? normalizeRequestBody(driver, request.body) : undefined;
+    // The stored body IS the normalized match key, so it compares directly against the miss.
+    const body = typeof request.body === "string" ? request.body : undefined;
     if (body === undefined) {
       return;
     }
@@ -559,22 +557,15 @@ async function putExpectation(baseUrl: string, expectation: unknown): Promise<vo
   await response.text();
 }
 
-function cleanExpectationForReplay(
-  expectation: FixtureExpectation,
-  driver: string,
-): FixtureExpectation {
+/** Strip the bookkeeping MockServer adds to a retrieved expectation, and spell Content-Type the way
+ *  it expects on the way back in. The body is already the normalized match key — writeNormalizedFixture
+ *  applies the shared normalizer once, at record time, and the shim applies it to the live request. */
+function cleanExpectationForReplay(expectation: FixtureExpectation): FixtureExpectation {
   const clean = structuredClone(expectation) as FixtureExpectation & Record<string, unknown>;
   delete clean.id;
   delete clean.priority;
   delete clean.timeToLive;
   delete clean.times;
-  if (typeof clean.httpRequest?.body === "string") {
-    clean.httpRequest.body = normalizeRequestBody(driver, clean.httpRequest.body);
-  }
-  if (clean.httpResponse && (clean.httpRequest?.path ?? "").endsWith("/responses")) {
-    clean.httpResponse.headers = { "content-type": ["text/event-stream; charset=utf-8"] };
-    return clean;
-  }
   const headers = clean.httpResponse?.headers;
   const contentType = headers?.["Content-Type"];
   if (headers && contentType !== undefined) {

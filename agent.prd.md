@@ -281,7 +281,7 @@ resolve with the same two actions.
   the real harness + plugin + hooks. The proxy's long-lived CA/leaf identity is generated once per
   machine in the ignored `src/e2e/proxy/certs/` directory and automatically reused; private keys are
   never committed or created at install time. Replay matches strictly on user prompts, model messages,
-  tool calls and file contents, and keeps Paireto's own tool names + schemas in the match key so a
+  tool calls and file contents, and keeps Paireto's own tool definitions in the match key so a
   regression in what Paireto offers the agent fails replay; only provider-side churn (descriptions,
   built-in schemas, account/environment metadata) is canonicalized. Fixtures are identity-scrubbed and
   stamped with the agent CLI version they were recorded against, so drift is reported as such.

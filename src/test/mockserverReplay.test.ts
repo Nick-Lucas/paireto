@@ -34,6 +34,19 @@ const codexBridge = require("../../plugins/codex/scripts/bridge.js") as {
   ) => { isPlanTurn: boolean; planMarkdown?: string };
 };
 
+interface NormalizedTool {
+  description?: string;
+  parameters?: unknown;
+}
+
+/** A normalized body's tools keyed by name — the inventory is sorted, so position means nothing. */
+function toolsByName(normalizedBody: string): Map<string, NormalizedTool> {
+  const { tools } = JSON.parse(normalizedBody) as {
+    tools?: Array<NormalizedTool & { name: string }>;
+  };
+  return new Map((tools ?? []).map((tool) => [tool.name, tool]));
+}
+
 suite("provider-replay: mode parsing", () => {
   test("defaults to live when unset", () => {
     assert.strictEqual(resolveMode({}), "live");
@@ -230,10 +243,11 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(normalized.metadata, null);
     assert.strictEqual(normalized.system, null);
     // The inventory is REDUCED, not erased: every tool keeps its name (sorted, since order varies),
-    // and Paireto's own tool keeps its schema so a broken definition still fails replay.
+    // and Paireto's own tool is kept whole so a broken definition still fails replay.
     assert.deepStrictEqual(normalized.tools, [
       {
         name: "mcp__paireto__paireto_review",
+        description: "prose",
         input_schema: { type: "object", properties: { reviewId: { type: "string" } } },
       },
       { name: "new-cli-tool" },
@@ -378,13 +392,37 @@ suite("provider-replay: fixture normalization", () => {
       ],
       input: [{ role: "user", content: [{ type: "input_text", text: "plan" }] }],
     });
-    const normalized = JSON.parse(normalizeOpenCodeBody(raw));
+    const tools = toolsByName(normalizeOpenCodeBody(raw));
     // A broken paireto_submit_plan schema must still fail replay.
-    assert.strictEqual(normalized.tools[0].name, "paireto_submit_plan");
-    assert.deepStrictEqual(normalized.tools[0].parameters, pairetoSchema);
-    assert.strictEqual(normalized.tools[1].name, "bash");
-    assert.strictEqual(normalized.tools[1].parameters, undefined);
-    assert.deepStrictEqual(JSON.parse(normalizeCodexBody(raw)).tools[0].parameters, pairetoSchema);
+    assert.deepStrictEqual(tools.get("paireto_submit_plan")?.parameters, pairetoSchema);
+    assert.ok(tools.has("bash"));
+    assert.strictEqual(tools.get("bash")?.parameters, undefined);
+    assert.deepStrictEqual(
+      toolsByName(normalizeCodexBody(raw)).get("paireto_submit_plan")?.parameters,
+      pairetoSchema,
+    );
+  });
+
+  // The advertised order varies between runs, so a match key that preserved it would 599
+  // intermittently. The Claude path has always sorted; OpenCode must too.
+  test("sorts the OpenCode tool inventory, so a reordered advertisement still matches", () => {
+    const tool = (name: string): unknown => ({
+      type: "function",
+      name,
+      description: "prose",
+      parameters: { type: "object" },
+    });
+    const body = (names: string[]): string => JSON.stringify({ tools: names.map(tool) });
+
+    assert.strictEqual(
+      normalizeOpenCodeBody(body(["bash", "paireto_submit_plan", "write"])),
+      normalizeOpenCodeBody(body(["write", "bash", "paireto_submit_plan"])),
+    );
+    // A tool that stops being offered must still break replay.
+    assert.notStrictEqual(
+      normalizeOpenCodeBody(body(["bash", "write"])),
+      normalizeOpenCodeBody(body(["bash", "paireto_submit_plan", "write"])),
+    );
   });
 
   // A cassette recorded on one machine has to replay on another: built-in descriptions state the
@@ -400,13 +438,13 @@ suite("provider-replay: fixture normalization", () => {
 
     assert.strictEqual(normalizeOpenCodeBody(body("linux")), normalizeOpenCodeBody(body("darwin")));
 
-    const tools = (
-      JSON.parse(normalizeOpenCodeBody(body("linux"))) as {
-        tools: Array<{ name: string; description?: string }>;
-      }
-    ).tools;
-    assert.strictEqual(tools[0].description, undefined, "built-in description dropped");
-    assert.strictEqual(tools[1].description, "Open plan review", "Paireto's is kept");
+    const tools = toolsByName(normalizeOpenCodeBody(body("linux")));
+    assert.strictEqual(tools.get("bash")?.description, undefined, "built-in description dropped");
+    assert.strictEqual(
+      tools.get("paireto_submit_plan")?.description,
+      "Open plan review",
+      "Paireto's is kept",
+    );
   });
 
   test("normalizes Codex's host-dependent skills block", () => {
@@ -444,111 +482,98 @@ suite("provider-replay: fixture normalization", () => {
 });
 
 suite("provider-replay: Codex replay turn correlation", () => {
-  test("does not reuse a stale Plan item for a later implementation Stop", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-transcript-"));
+  let dir: string;
+
+  setup(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-transcript-"));
+  });
+  teardown(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  /** Write a rollout transcript and read the plan turn out of it. */
+  function readPlanTurn(records: unknown[], turnId: string): unknown {
     const transcript = path.join(dir, "rollout.jsonl");
-    const previousMode = process.env.PAIRETO_E2E_MODE;
-    try {
-      fs.writeFileSync(
-        transcript,
+    fs.writeFileSync(transcript, records.map((record) => JSON.stringify(record)).join("\n"));
+    return codexBridge.readPlanTurn(transcript, turnId);
+  }
+
+  const turnContext = (turnId: string, mode = "default"): unknown => ({
+    type: "turn_context",
+    payload: { turn_id: turnId, collaboration_mode: { mode } },
+  });
+  const assistantMessage = (content: string): unknown => ({
+    type: "response_item",
+    payload: { type: "message", role: "assistant", content },
+  });
+
+  test("does not reuse a stale Plan item for a later implementation Stop", () => {
+    const stalePlan = {
+      type: "event_msg",
+      payload: { type: "item_completed", item: { type: "Plan", text: "stale plan" } },
+    };
+
+    assert.deepStrictEqual(
+      readPlanTurn(
         [
-          JSON.stringify({
-            type: "event_msg",
-            payload: { type: "item_completed", item: { type: "Plan", text: "stale plan" } },
-          }),
-          JSON.stringify({
-            type: "turn_context",
-            payload: {
-              turn_id: "implementation-turn",
-              collaboration_mode: { mode: "default" },
-            },
-          }),
-          JSON.stringify({
-            type: "response_item",
-            payload: { type: "message", role: "assistant", content: "implementation complete" },
-          }),
-        ].join("\n"),
-      );
-      process.env.PAIRETO_E2E_MODE = "check";
-      assert.deepStrictEqual(codexBridge.readPlanTurn(transcript, "implementation-turn"), {
-        isPlanTurn: false,
-      });
-    } finally {
-      if (previousMode === undefined) {
-        delete process.env.PAIRETO_E2E_MODE;
-      } else {
-        process.env.PAIRETO_E2E_MODE = previousMode;
-      }
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+          stalePlan,
+          turnContext("implementation-turn"),
+          assistantMessage("implementation complete"),
+        ],
+        "implementation-turn",
+      ),
+      { isPlanTurn: false },
+    );
   });
 
   test("accepts an explicit proposed-plan wrapper inside the target replay turn", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-transcript-"));
-    const transcript = path.join(dir, "rollout.jsonl");
-    const previousMode = process.env.PAIRETO_E2E_MODE;
-    try {
-      fs.writeFileSync(
-        transcript,
+    assert.deepStrictEqual(
+      readPlanTurn(
         [
-          JSON.stringify({
-            type: "turn_context",
-            payload: { turn_id: "plan-turn", collaboration_mode: { mode: "default" } },
-          }),
-          JSON.stringify({
-            type: "response_item",
-            payload: {
-              type: "message",
-              role: "assistant",
-              content: "<proposed_plan>one safe step</proposed_plan>",
-            },
-          }),
-        ].join("\n"),
-      );
-      process.env.PAIRETO_E2E_MODE = "check";
-      assert.deepStrictEqual(codexBridge.readPlanTurn(transcript, "plan-turn"), {
-        isPlanTurn: true,
-        planMarkdown: "one safe step",
-      });
-    } finally {
-      if (previousMode === undefined) {
-        delete process.env.PAIRETO_E2E_MODE;
-      } else {
-        process.env.PAIRETO_E2E_MODE = previousMode;
-      }
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+          turnContext("plan-turn"),
+          assistantMessage("<proposed_plan>one safe step</proposed_plan>"),
+        ],
+        "plan-turn",
+      ),
+      { isPlanTurn: true, planMarkdown: "one safe step" },
+    );
   });
 
   test("does not treat a message that merely QUOTES a plan as a new plan proposal", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-transcript-"));
-    const transcript = path.join(dir, "rollout.jsonl");
-    try {
-      fs.writeFileSync(
-        transcript,
+    assert.deepStrictEqual(
+      readPlanTurn(
         [
-          JSON.stringify({
-            type: "turn_context",
-            payload: { turn_id: "implementation-turn", collaboration_mode: { mode: "default" } },
-          }),
-          JSON.stringify({
-            type: "response_item",
+          turnContext("implementation-turn"),
+          // An implementation turn recapping the agreed plan, which belongs at a review gate.
+          assistantMessage(
+            "As agreed: <proposed_plan>one safe step</proposed_plan> — implementation done.",
+          ),
+        ],
+        "implementation-turn",
+      ),
+      { isPlanTurn: false },
+    );
+  });
+
+  // turn_context is written at turn START, so a long transcript's tail read can miss it. The
+  // task_complete path is keyed on turn_id directly and must still recover the plan.
+  test("recovers a proposed plan from task_complete without a preceding turn_context", () => {
+    assert.deepStrictEqual(
+      readPlanTurn(
+        [
+          {
+            type: "event_msg",
             payload: {
-              type: "message",
-              role: "assistant",
-              // An implementation turn recapping the agreed plan, which belongs at a review gate.
-              content:
-                "As agreed: <proposed_plan>one safe step</proposed_plan> — implementation done.",
+              turn_id: "plan-turn",
+              type: "task_complete",
+              last_agent_message: "<proposed_plan>one safe step</proposed_plan>",
             },
-          }),
-        ].join("\n"),
-      );
-      assert.deepStrictEqual(codexBridge.readPlanTurn(transcript, "implementation-turn"), {
-        isPlanTurn: false,
-      });
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
-    }
+          },
+        ],
+        "plan-turn",
+      ),
+      { isPlanTurn: true, planMarkdown: "one safe step" },
+    );
   });
 });
 

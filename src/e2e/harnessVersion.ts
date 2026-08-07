@@ -41,10 +41,10 @@ export function harnessVersion(driver: string): string | undefined {
  */
 export function platformDriftNote(
   driver: string,
-  recorded: string | undefined,
+  recorded: string,
   running: string = process.platform,
 ): string | undefined {
-  if (!recorded || recorded === running) {
+  if (recorded === running) {
     return undefined;
   }
   return (

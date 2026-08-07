@@ -10,14 +10,15 @@ import { mockProxyEnv } from "../mockserver/proxyEnv.js";
 import { buildClaudeHome, mockPath, probeClaude, type HarnessHome } from "../sandbox.js";
 import { STEP_TIMEOUT_MS } from "../testUtils.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
-import { TmuxSession, tmuxAvailable } from "./tmux.js";
+import { TmuxSession, tmuxAvailable, type DriverTmux } from "./tmux.js";
 import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
 import { startPaneWatch } from "./watch.js";
 
 const MODEL = "claude-haiku-4-5";
 /** Fixed home + session id in mock modes → the config-dir path and any session-derived values (e.g. the
- *  plan-file slug) Claude embeds in messages are the SAME in record and check, so bodies match. */
-const MOCK_HOME_DIR = mockPath("pai-e2e-claude-home");
+ *  plan-file slug) Claude embeds in messages are the SAME in record and check, so bodies match.
+ *  Resolved lazily: mockPath touches the filesystem, which a live run has no reason to do. */
+const mockHomeDir = (): string => mockPath("pai-e2e-claude-home");
 const MOCK_SESSION_ID = "00000000-0000-4000-8000-0000000000c1";
 // A fresh CLAUDE_CONFIG_DIR shows first-run interstitials that swallow a typed prompt AND leave the
 // session out of plan mode if the prompt lands too early. Each needs a DIFFERENT keystroke: the
@@ -36,17 +37,6 @@ const PERMISSION_POLL_MS = 500;
 /** A live run's prompt takes a beat to clear. A fraction of the step budget covers that while
  *  staying inside the step this serves. */
 const PROMPT_ACCEPT_TIMEOUT_MS = STEP_TIMEOUT_MS / 4;
-type ClaudeTmux = Pick<
-  TmuxSession,
-  | "attachTarget"
-  | "capture"
-  | "captureHistory"
-  | "exitStatus"
-  | "kill"
-  | "launch"
-  | "sendKeys"
-  | "typeLine"
->;
 
 export class ClaudeDriver implements HarnessDriver {
   readonly harness = "claudecode";
@@ -62,7 +52,7 @@ export class ClaudeDriver implements HarnessDriver {
    *  The test polls fatalError() and aborts. */
   private fatal?: string;
 
-  constructor(private readonly tmux: ClaudeTmux = new TmuxSession()) {}
+  constructor(private readonly tmux: DriverTmux = new TmuxSession()) {}
 
   isAvailable(): Promise<boolean | string> {
     if (!tmuxAvailable()) {
@@ -77,7 +67,7 @@ export class ClaudeDriver implements HarnessDriver {
     const mockUrl = process.env[MOCK_URL_ENV];
     this.home = buildClaudeHome({
       checkMode: mode === "check",
-      homeDir: mockUrl ? MOCK_HOME_DIR : undefined,
+      homeDir: mode === "live" ? undefined : mockHomeDir(),
     });
     const pluginDir = path.join(repoRoot(), "plugins", "claude-code");
     const env = { ...baseHarnessEnv(), ...this.home.env };

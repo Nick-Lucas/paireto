@@ -184,9 +184,12 @@ export function isPairetoTool(name: string): boolean {
  * Reduce a tool/server inventory to a stable match key that still fails on a Paireto regression.
  *
  * Every tool keeps its name, sorted because the advertised order varies between runs, so a tool that
- * stops being offered breaks replay. Paireto's own tools additionally keep their schema, so a broken
- * tool definition breaks replay too — this caught `paireto_submit_plan` losing its `plan` parameter.
- * Provider descriptions and built-in schemas are dropped because they change every CLI release.
+ * stops being offered breaks replay. Paireto's own tools are kept WHOLE — description and schema —
+ * because they are this project's surface to the agent, so a regression in either must break replay;
+ * this caught `paireto_submit_plan` losing its `plan` parameter. Everything else is reduced to a
+ * name: provider descriptions and built-in schemas churn every CLI release, and a built-in
+ * description can state the host OS and shell, which differs between the recording and replaying
+ * machines.
  */
 export function normalizeToolInventory(value: unknown): unknown {
   if (!Array.isArray(value)) {
@@ -199,11 +202,7 @@ export function normalizeToolInventory(value: unknown): unknown {
       }
       const tool = entry as Record<string, unknown>;
       const name = typeof tool.name === "string" ? tool.name : "";
-      if (isPairetoTool(name)) {
-        const { description: _description, ...rest } = tool;
-        return rest;
-      }
-      return { name };
+      return isPairetoTool(name) ? tool : { name };
     })
     .sort((left, right) => keyOf(left).localeCompare(keyOf(right)));
 }
@@ -312,8 +311,8 @@ function canonicalizeItemIds(body: Record<string, unknown>): void {
   });
 }
 
-/** Paireto's own tools (paireto_submit_plan, paireto_review) keep their schema so a broken tool
- *  definition fails replay. Built-in tool schemas are dropped because they churn provider-side. */
+/** OpenCode advertises its tools on the Responses body, so the same inventory reduction the Claude
+ *  path applies is what keeps a reordered or churned advertisement matching. */
 export function normalizeOpenCodeBody(raw: string): string {
   const normalized = normalizeCodexBody(raw);
   let obj: unknown;
@@ -325,22 +324,11 @@ export function normalizeOpenCodeBody(raw: string): string {
   if (!obj || typeof obj !== "object") {
     return normalized;
   }
-  const tools = (obj as Record<string, unknown>).tools;
-  if (Array.isArray(tools)) {
-    for (const value of tools) {
-      if (value && typeof value === "object") {
-        const tool = value as Record<string, unknown>;
-        const name = typeof tool.name === "string" ? tool.name : "";
-        if (!isPairetoTool(name)) {
-          delete tool.parameters;
-          // Built-in descriptions state the host OS and shell ("OS: darwin, Shell: zsh"), so they
-          // differ between the machine that recorded and the machine replaying.
-          delete tool.description;
-        }
-      }
-    }
+  const body = obj as Record<string, unknown>;
+  if ("tools" in body) {
+    body.tools = normalizeToolInventory(body.tools);
   }
-  return JSON.stringify(obj);
+  return JSON.stringify(body);
 }
 
 /** Apply the harness-specific matcher transform. Record forwarding never calls this function. */

@@ -16,26 +16,16 @@ import { MOCK_CA_ENV, MOCK_URL_ENV, resolveMode } from "../mockserver/mode.js";
 import { mockProxyEnv } from "../mockserver/proxyEnv.js";
 import { buildCodexHome, mockPath, probeCodex, type HarnessHome } from "../sandbox.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
-import { TmuxSession, tmuxAvailable } from "./tmux.js";
+import { TmuxSession, tmuxAvailable, type DriverTmux } from "./tmux.js";
 import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
 import { startPaneWatch } from "./watch.js";
 
-const MOCK_HOME_DIR = mockPath("pai-e2e-codex-home");
+/** Resolved lazily: mockPath touches the filesystem, which a live run has no reason to do. */
+const mockHomeDir = (): string => mockPath("pai-e2e-codex-home");
 /** Pinned in every mode to keep live runs cheap and replay deterministic. */
 const CODEX_MODEL = "gpt-5.6-luna";
 const IMPLEMENT_SELECTOR = /implement this plan\?/i;
 const PLAN_MODE = /plan mode/i;
-type CodexTmux = Pick<
-  TmuxSession,
-  | "attachTarget"
-  | "capture"
-  | "captureHistory"
-  | "exitStatus"
-  | "kill"
-  | "launch"
-  | "sendKeys"
-  | "typeLine"
->;
 type PlanApprovalTmux = Pick<TmuxSession, "capture" | "sendKeys">;
 
 export class CodexDriver implements HarnessDriver {
@@ -50,7 +40,7 @@ export class CodexDriver implements HarnessDriver {
   /** Set by the pane watch when the TUI dies; the test polls fatalError() and aborts. */
   private fatal?: string;
 
-  constructor(private readonly tmux: CodexTmux = new TmuxSession()) {}
+  constructor(private readonly tmux: DriverTmux = new TmuxSession()) {}
 
   isAvailable(): Promise<boolean | string> {
     if (!tmuxAvailable()) {
@@ -65,7 +55,7 @@ export class CodexDriver implements HarnessDriver {
     const mockUrl = process.env[MOCK_URL_ENV];
     this.home = buildCodexHome({
       checkMode: mode === "check",
-      homeDir: mode === "live" ? undefined : MOCK_HOME_DIR,
+      homeDir: mode === "live" ? undefined : mockHomeDir(),
     });
     // Canonicalize the temp CODEX_HOME: Codex trusts hooks by their canonical hooks.json path, so the
     // trust-key path we compute must match what Codex resolves (os.tmpdir() is a /var symlink on mac).
