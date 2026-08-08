@@ -12,8 +12,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 const planFile = require("../../plugins/claude-code/scripts/plan-file.js") as {
-  PLAN_FILE_MAX_AGE_MS: number;
-  claudePlansDir: (env: NodeJS.ProcessEnv) => string | undefined;
   resolvePlanMarkdown: (
     event: unknown,
     env?: NodeJS.ProcessEnv,
@@ -41,20 +39,6 @@ function writePlan(dir: string, name: string, text: string, ageMs = 0): string {
 }
 
 suite("Claude plan-file recovery", () => {
-  test("resolves the plans directory from HOME when CLAUDE_CONFIG_DIR is unset (the real-user case)", () => {
-    assert.strictEqual(
-      planFile.claudePlansDir({ HOME: "/home/dev" }),
-      path.join("/home/dev", ".claude", "plans"),
-    );
-  });
-
-  test("prefers CLAUDE_CONFIG_DIR when it is set (the E2E sandbox case)", () => {
-    assert.strictEqual(
-      planFile.claudePlansDir({ HOME: "/home/dev", CLAUDE_CONFIG_DIR: "/tmp/sandbox" }),
-      path.join("/tmp/sandbox", "plans"),
-    );
-  });
-
   test("returns nothing when the tool call already carried the plan", () => {
     const { home, plansDir, cleanup } = makeHome();
     try {
@@ -70,7 +54,7 @@ suite("Claude plan-file recovery", () => {
     }
   });
 
-  test("recovers the plan named by planFilePath, even outside the plans directory", () => {
+  test("recovers the plan named by the event's planFilePath", () => {
     const { home, cleanup } = makeHome();
     try {
       const elsewhere = writePlan(home, "plan-named.md", PLAN);
@@ -85,12 +69,23 @@ suite("Claude plan-file recovery", () => {
     }
   });
 
-  test("recovers a just-written plan with NO CLAUDE_CONFIG_DIR and empty tool arguments", () => {
+  test("recovers the plan path written in the event's own session transcript", () => {
     const { home, plansDir, cleanup } = makeHome();
     try {
-      writePlan(plansDir, "plan-fresh.md", PLAN);
+      const named = writePlan(plansDir, "plan-this-session.md", PLAN);
+      const transcript = path.join(home, "session.jsonl");
+      fs.writeFileSync(
+        transcript,
+        `${JSON.stringify({
+          message: {
+            content: [
+              { type: "tool_use", name: "Write", input: { file_path: named, content: PLAN } },
+            ],
+          },
+        })}\n`,
+      );
       const recovered = planFile.resolvePlanMarkdown(
-        { tool_input: {} },
+        { transcript_path: transcript, tool_input: {} },
         { HOME: home },
         Date.now(),
       );
@@ -100,10 +95,10 @@ suite("Claude plan-file recovery", () => {
     }
   });
 
-  test("ignores a stale plan file — the plans directory is shared across sessions and repos", () => {
+  test("does not recover an uncorrelated plan from the shared plans directory", () => {
     const { home, plansDir, cleanup } = makeHome();
     try {
-      writePlan(plansDir, "plan-someone-elses.md", PLAN, planFile.PLAN_FILE_MAX_AGE_MS + 60_000);
+      writePlan(plansDir, "plan-fresh.md", PLAN);
       const recovered = planFile.resolvePlanMarkdown(
         { tool_input: {} },
         { HOME: home },
@@ -115,7 +110,22 @@ suite("Claude plan-file recovery", () => {
     }
   });
 
-  test("picks the newest of several fresh plan files", () => {
+  test("ignores a stale plan file — the plans directory is shared across sessions and repos", () => {
+    const { home, plansDir, cleanup } = makeHome();
+    try {
+      writePlan(plansDir, "plan-someone-elses.md", PLAN, 120_000);
+      const recovered = planFile.resolvePlanMarkdown(
+        { tool_input: {} },
+        { HOME: home },
+        Date.now(),
+      );
+      assert.strictEqual(recovered, undefined);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test("does not pick either of two fresh plans from unrelated sessions", () => {
     const { home, plansDir, cleanup } = makeHome();
     try {
       writePlan(plansDir, "plan-older.md", "# Older plan\n", 5_000);
@@ -125,7 +135,7 @@ suite("Claude plan-file recovery", () => {
         { HOME: home },
         Date.now(),
       );
-      assert.strictEqual(recovered, PLAN);
+      assert.strictEqual(recovered, undefined);
     } finally {
       cleanup();
     }

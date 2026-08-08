@@ -12,17 +12,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { installCodex } from "../../bridge/CodexInstaller.js";
-import { MOCK_CA_ENV, MOCK_URL_ENV, resolveMode } from "../mockserver/mode.js";
-import { mockProxyEnv } from "../mockserver/proxyEnv.js";
+import { resolveMode } from "../mockserver/mode.js";
+import { resolveMockProxy } from "../mockserver/proxyEnv.js";
 import { buildCodexHome, mockPath, probeCodex, type HarnessHome } from "../sandbox.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
 import { TmuxSession, tmuxAvailable, type DriverTmux } from "./tmux.js";
 import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
 import { startPaneWatch } from "./watch.js";
 
-/** Resolved lazily: mockPath touches the filesystem, which a live run has no reason to do. */
+/** Resolved lazily so importing the driver does not touch the filesystem. */
 const mockHomeDir = (): string => mockPath("pai-e2e-codex-home");
-/** Pinned in every mode to keep live runs cheap and replay deterministic. */
+/** Pinned to keep recordings cheap and replay deterministic. */
 const CODEX_MODEL = "gpt-5.6-luna";
 const IMPLEMENT_SELECTOR = /implement this plan\?/i;
 const PLAN_MODE = /plan mode/i;
@@ -52,10 +52,10 @@ export class CodexDriver implements HarnessDriver {
   async launch(ctx: DriverContext): Promise<void> {
     this.ctx = ctx;
     const mode = resolveMode(process.env);
-    const mockUrl = process.env[MOCK_URL_ENV];
+    const proxy = resolveMockProxy();
     this.home = buildCodexHome({
       checkMode: mode === "check",
-      homeDir: mode === "live" ? undefined : mockHomeDir(),
+      homeDir: mockHomeDir(),
     });
     // Canonicalize the temp CODEX_HOME: Codex trusts hooks by their canonical hooks.json path, so the
     // trust-key path we compute must match what Codex resolves (os.tmpdir() is a /var symlink on mac).
@@ -71,17 +71,12 @@ export class CodexDriver implements HarnessDriver {
     if (!result.ok) {
       throw new Error(result.detail);
     }
-    this.writeRuntimeConfig(codexHome, ctx.repoRoot, {
-      mock: mode !== "live",
-      docker: process.env.PAIRETO_DOCKER === "1",
-    });
+    this.writeRuntimeConfig(codexHome, ctx.repoRoot);
 
     const env = { ...baseHarnessEnv(), ...this.home.env };
-    if (mockUrl) {
-      Object.assign(env, mockProxyEnv(mockUrl, process.env[MOCK_CA_ENV]!));
-      env.CODEX_CA_CERTIFICATE = process.env[MOCK_CA_ENV]!;
-      this.log(`mock mode=${mode}: HTTPS_PROXY=${mockUrl} (+CA trust)`);
-    }
+    Object.assign(env, proxy.env);
+    env.CODEX_CA_CERTIFICATE = proxy.caPath;
+    this.log(`mode=${mode}: HTTPS_PROXY=${proxy.url} (+CA trust)`);
     const command = codexLaunchCommand(ctx.repoRoot, process.env.PAIRETO_DOCKER === "1");
     this.log(`launch: ${command} (CODEX_HOME=${codexHome})`);
     this.tmux.launch({ cwd: ctx.repoRoot, env, command });
@@ -133,19 +128,12 @@ export class CodexDriver implements HarnessDriver {
 
   /** Pin the E2E model, scope the replay/permission overrides, and trust the project, leaving
    *  Codex's native plugin registry alone. */
-  private writeRuntimeConfig(
-    codexHome: string,
-    sandboxRepo: string,
-    opts: CodexRuntimeOptions,
-  ): void {
+  private writeRuntimeConfig(codexHome: string, sandboxRepo: string): void {
     const configPath = path.join(codexHome, "config.toml");
     const existing = fs.existsSync(configPath) ? fs.readFileSync(configPath, "utf8") : "";
-    const config = renderCodexRuntimeConfig(existing, sandboxRepo, opts);
+    const config = renderCodexRuntimeConfig(existing, sandboxRepo);
     fs.writeFileSync(configPath, config, "utf8");
-    this.log(
-      `installed native plugin + trusted sandbox project (mock=${opts.mock} docker=${opts.docker}` +
-        `${opts.mock || opts.docker ? "" : "; Codex's own approvals + sandbox left intact"})`,
-    );
+    this.log("installed native plugin + replayable provider + trusted sandbox project");
   }
 
   private log(line: string): void {
@@ -153,48 +141,31 @@ export class CodexDriver implements HarnessDriver {
   }
 }
 
-export interface CodexRuntimeOptions {
-  /** record/check: routes Responses-over-SSE through MockServer via a custom provider. */
-  mock: boolean;
-  /** The container is already the security boundary and cannot nest Codex's bubblewrap sandbox. */
-  docker: boolean;
-}
-
 /**
  * Render the E2E config. Root settings come before installer-owned TOML tables: appending `model`
  * after a `[plugins]` table would make it a plugin-table property, and Codex would fall back to the
  * account default model and WebSocket transport.
  *
- * The model/effort pin is unconditional, for cost control. The custom provider and
- * `supports_websockets = false` are mock-only, existing to make traffic replayable. The
- * approval/sandbox bypass is docker-or-mock only. A live native run therefore keeps Codex's own
- * provider, transport, approval policy and sandbox, which is where that path gets covered.
+ * The custom provider and `supports_websockets = false` make every request visible to the HTTP proxy.
+ * E2E homes always bypass approval and the inner sandbox; the disposable repo is the test boundary.
  */
-export function renderCodexRuntimeConfig(
-  existing: string,
-  project: string,
-  opts: CodexRuntimeOptions,
-): string {
-  const bypassPermissions = opts.docker || opts.mock;
+export function renderCodexRuntimeConfig(existing: string, project: string): string {
   const rootSettings = [
     `model = "${CODEX_MODEL}"`,
     'model_reasoning_effort = "low"',
-    ...(opts.mock ? ['model_provider = "paireto_openai"'] : []),
-    ...(bypassPermissions
-      ? ['approval_policy = "never"', 'sandbox_mode = "danger-full-access"']
-      : []),
+    'model_provider = "paireto_openai"',
+    'approval_policy = "never"',
+    'sandbox_mode = "danger-full-access"',
   ].join("\n");
-  const providerTable = opts.mock
-    ? `\n[model_providers.paireto_openai]\nname = "OpenAI"\n` +
-      `base_url = "https://chatgpt.com/backend-api/codex"\nwire_api = "responses"\n` +
-      `requires_openai_auth = true\nsupports_websockets = false\n`
-    : "";
-  // Keep the run hermetic in every mode; request compression is replay-specific (it would make the
-  // recorded bodies opaque to matching).
+  const providerTable =
+    `\n[model_providers.paireto_openai]\nname = "OpenAI"\n` +
+    `base_url = "https://chatgpt.com/backend-api/codex"\nwire_api = "responses"\n` +
+    `requires_openai_auth = true\nsupports_websockets = false\n`;
+  // Request compression would make recorded bodies opaque to matching.
   const features =
     `\n[features]\napps = false\nplugins = true\nbrowser_use = false\n` +
     `in_app_browser = false\ncomputer_use = false\nimage_generation = false\n` +
-    (opts.mock ? "enable_request_compression = false\n" : "");
+    "enable_request_compression = false\n";
   const installerConfig = existing.trim() === "" ? "" : `${existing.trimEnd()}\n\n`;
   return (
     `${rootSettings}\n${providerTable}${features}\n` +

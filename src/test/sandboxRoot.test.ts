@@ -5,8 +5,17 @@
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
-import { createSandbox, mockPath, mockTmpRoot } from "../e2e/sandbox.js";
+import {
+  buildClaudeHome,
+  buildCodexHome,
+  buildOpenCodeHome,
+  createSandbox,
+  mockPath,
+  mockTmpRoot,
+} from "../e2e/sandbox.js";
 
 suite("E2E sandbox root", () => {
   test("hands out a symlink-resolved repo root", () => {
@@ -19,10 +28,12 @@ suite("E2E sandbox root", () => {
   });
 
   test("resolves a fixed mock-mode root too", () => {
-    const sandbox = createSandbox({ fixedRepoRoot: "/tmp/paireto-sandbox-root-test" });
+    const sandbox = createSandbox({
+      fixedRepoRoot: mockPath("paireto-e2e-sandbox-root-test"),
+    });
     try {
       assert.strictEqual(sandbox.repoRoot, fs.realpathSync(sandbox.repoRoot));
-      assert.ok(sandbox.repoRoot.endsWith("paireto-sandbox-root-test"));
+      assert.ok(sandbox.repoRoot.endsWith("paireto-e2e-sandbox-root-test"));
     } finally {
       sandbox.cleanup();
     }
@@ -43,5 +54,27 @@ suite("mock-run tmp root", () => {
 
   test("builds fixed paths under that root", () => {
     assert.strictEqual(mockPath("pai-e2e-claude-home"), `${mockTmpRoot()}/pai-e2e-claude-home`);
+  });
+
+  test("rejects names outside the owned mock-run namespace", () => {
+    assert.throws(() => mockPath("x/../../../Users/example"), /mock-run namespace/i);
+    assert.throws(() => mockPath("../outside"), /mock-run namespace/i);
+    assert.throws(() => mockPath("/tmp/outside"), /mock-run namespace/i);
+    assert.throws(() => mockPath("paireto-e2e-unknown"), /mock-run namespace/i);
+  });
+
+  test("refuses every fixed deletion target outside the owned mock-run namespace", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "pai-fixed-path-guard-"));
+    const marker = path.join(outside, "keep.txt");
+    fs.writeFileSync(marker, "keep\n");
+    try {
+      assert.throws(() => createSandbox({ fixedRepoRoot: outside }), /mock-run namespace/i);
+      for (const buildHome of [buildClaudeHome, buildCodexHome, buildOpenCodeHome]) {
+        assert.throws(() => buildHome({ homeDir: outside }), /mock-run namespace/i);
+      }
+      assert.strictEqual(fs.readFileSync(marker, "utf8"), "keep\n");
+    } finally {
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });

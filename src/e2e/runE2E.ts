@@ -14,11 +14,11 @@ import { MockServerController } from "./mockserver/MockServerController.js";
 import {
   CASE_ENV,
   fixtureFileName,
-  isMockMode,
   MOCK_CA_ENV,
   MODE_ENV,
   MOCK_URL_ENV,
   resolveCase,
+  resolveDriver,
   resolveMode,
 } from "./mockserver/mode.js";
 import { ensureTestCertificates } from "./proxy/testCertificates.js";
@@ -27,7 +27,7 @@ import { createSandbox, mockPath } from "./sandbox.js";
 
 /** Hard ceiling on a whole run. Every phase has its own timeout, but a hang OUTSIDE them (a harness
  *  that never exits, an MCP call that never answers) would otherwise wait forever with no output.
- *  Generous enough for a live record, which pays for real model turns. */
+ *  Generous enough for a recording, which pays for real model turns. */
 const RUN_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** The phase the watchdog names if it fires, so a hang points at what was in flight. */
@@ -39,28 +39,19 @@ const at = (next: string): void => {
 // The pinned VS Code the repo's test cache already holds (see .vscode-test/); avoids a fresh download.
 const VSCODE_VERSION = "1.128.0";
 
-const DRIVERS = ["claudecode", "codex", "opencode"];
-
 async function main(): Promise<void> {
   // out/e2e/runE2E.js -> repo root two levels up (this is the extension-development path + repo root).
   const repoRoot = path.resolve(__dirname, "..", "..");
   const extensionTestsPath = path.resolve(__dirname, "index.js");
-  const driver = process.env.PAIRETO_E2E_DRIVER;
-  if (!driver) {
-    console.error(`E2E: FAIL — pick a driver: PAIRETO_E2E_DRIVER=${DRIVERS.join("|")}`);
-    process.exit(1);
-  }
+  const driver = resolveDriver();
 
   at("sandbox setup");
   const mode = resolveMode();
   const testCase = resolveCase();
   const log = (line: string): void => console.log(`[runE2E] ${line}`);
 
-  // Mock modes pin the repo to a fixed path so a harness's embedded cwd matches between record and
-  // check; live mode keeps the classic random dir.
-  const sandbox = createSandbox(
-    isMockMode(mode) ? { fixedRepoRoot: mockPath(`paireto-e2e-${driver}`) } : {},
-  );
+  // Pin the repo so a harness's embedded cwd matches between record and check.
+  const sandbox = createSandbox({ fixedRepoRoot: mockPath(`paireto-e2e-${driver}`) });
   const fixturesHostDir = path.join(repoRoot, "src", "e2e", "fixtures");
   const certsDir = path.join(repoRoot, "src", "e2e", "proxy", "certs");
   if (mode === "check") {
@@ -84,30 +75,28 @@ async function main(): Promise<void> {
 
   let mock: MockServerController | undefined;
   try {
-    if (isMockMode(mode)) {
-      const testCertificates = ensureTestCertificates(certsDir);
-      log(
-        testCertificates.created
-          ? `generated machine-local TLS identity in ${certsDir}`
-          : `reusing machine-local TLS identity in ${certsDir}`,
-      );
-      mock = await MockServerController.launch({
-        mode,
-        driver,
-        fixturesHostDir,
-        log,
-        mockServerCaPath: path.join(repoRoot, "src", "e2e", "mockserver", "mockserver-ca.pem"),
-        shimCaPath: testCertificates.caPath,
-        shimCertPath: testCertificates.certPath,
-        shimKeyPath: testCertificates.keyPath,
-        missFilePath,
-      });
-      at(mode === "check" ? "loading the cassette" : "arming the recorder");
-      if (mode === "check") {
-        await mock.prepareCheck(testCase, driver);
-      } else {
-        await mock.prepareRecord();
-      }
+    const testCertificates = ensureTestCertificates(certsDir);
+    log(
+      testCertificates.created
+        ? `generated machine-local TLS identity in ${certsDir}`
+        : `reusing machine-local TLS identity in ${certsDir}`,
+    );
+    mock = await MockServerController.launch({
+      mode,
+      driver,
+      fixturesHostDir,
+      log,
+      mockServerCaPath: path.join(repoRoot, "src", "e2e", "mockserver", "mockserver-ca.pem"),
+      shimCaPath: testCertificates.caPath,
+      shimCertPath: testCertificates.certPath,
+      shimKeyPath: testCertificates.keyPath,
+      missFilePath,
+    });
+    at(mode === "check" ? "loading the cassette" : "arming the recorder");
+    if (mode === "check") {
+      await mock.prepareCheck(testCase, driver);
+    } else {
+      await mock.prepareRecord();
     }
     at("the E2E flow (VS Code + harness)");
     await runTests({
@@ -120,9 +109,9 @@ async function main(): Promise<void> {
         PAIRETO_E2E_DRIVER: driver,
         [MODE_ENV]: mode,
         [CASE_ENV]: testCase,
-        // Mock modes: the proxy URL the harness uses (MockServer in record, the normalizing shim in
-        // check) + the CA to trust for it (resolved by the controller per mode).
-        ...(mock ? { [MOCK_URL_ENV]: mock.proxyUrl, [MOCK_CA_ENV]: mock.caPath } : {}),
+        // Every run sends provider traffic through the normalizing shim, then MockServer.
+        [MOCK_URL_ENV]: mock.proxyUrl,
+        [MOCK_CA_ENV]: mock.caPath,
         ...(mode === "check" ? { [MISS_FILE_ENV]: missFilePath } : {}),
         PAIRETO_E2E_SANDBOX: sandbox.repoRoot,
         PAIRETO_REPO_ROOT: repoRoot,
@@ -134,7 +123,7 @@ async function main(): Promise<void> {
         PAIRETO_NODE_DIR: path.dirname(process.execPath),
       },
     });
-    if (mode === "record" && mock) {
+    if (mode === "record") {
       at("writing the cassette");
       await mock.snapshotFixture(testCase, driver);
     }

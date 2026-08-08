@@ -59,7 +59,7 @@ suite("replay miss handoff", () => {
     assert.doesNotMatch(note, /\/second/);
   });
 
-  test("recording is a no-op without a file, so live and record runs are unaffected", () => {
+  test("recording is a no-op without a file, so record runs are unaffected", () => {
     assert.doesNotThrow(() =>
       recordReplayMiss(undefined, { method: "POST", path: "/x", bodyDigest: "d", body: "{}" }),
     );

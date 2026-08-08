@@ -1,7 +1,6 @@
-// Harness-side MITM shim (host-runner only). In check mode it normalizes Claude's volatile request
-// bodies before forwarding them to MockServer. Codex/OpenCode also use it in record mode because
-// MockServer 7.4 drops the Responses endpoint's `text/event-stream` content type while proxying; the
-// shim restores that header so those harnesses accept the otherwise-complete SSE stream.
+// Harness-side MITM shim (host-runner only). Every driver and mode uses this path. Record forwards
+// request bodies unchanged; check applies the selected driver's normalizer before MockServer matching.
+// The shim also restores a missing Responses `text/event-stream` content type.
 //
 // The shim handles CONNECT (the only thing an HTTPS proxy client sends), routes the raw socket into an
 // https server for TLS, and streams the (possibly SSE) response back unbuffered.
@@ -12,6 +11,7 @@ import * as http from "node:http";
 import * as https from "node:https";
 import type { Socket } from "node:net";
 
+import type { E2EDriver } from "../mockserver/mode.js";
 import { recordReplayMiss } from "../replayMiss.js";
 import { normalizeRequestBody } from "./normalize.js";
 
@@ -19,6 +19,11 @@ import { normalizeRequestBody } from "./normalize.js";
 const STRICT_MISS_STATUS = 599;
 /** Upper bound on shutdown, so teardown can never hold the run open. */
 const STOP_TIMEOUT_MS = 2_000;
+
+export function isEventStreamContentType(value: string | string[] | undefined): boolean {
+  const values = Array.isArray(value) ? value : value ? [value] : [];
+  return values.some((item) => item.split(";", 1)[0].trim().toLowerCase() === "text/event-stream");
+}
 
 /** Hop-by-hop headers that must not be forwarded verbatim. */
 const HOP_BY_HOP = new Set([
@@ -40,8 +45,8 @@ export interface NormalizingProxyOptions {
   mockBaseUrl: string;
   /** MockServer's CA, used for the shim's TLS hop into the forward proxy. */
   mockCaPath: string;
-  /** Harness name in check mode; undefined in record, where the original request must be untouched. */
-  normalizeDriver?: string;
+  /** Selected driver in check; undefined in record, where the original request must be untouched. */
+  normalizeDriver?: E2EDriver;
   /** Endpoints whose replay miss ends the run. Scoped to the harness's inference traffic, because a
    *  miss on incidental traffic (a model catalogue, a registry) is survivable and expected offline. */
   fatalMissPaths?: RegExp[];
@@ -176,7 +181,7 @@ function forwardThroughMockServer(args: {
         if (
           args.opts.normalizeDriver &&
           /\/responses(?:\?|$)/.test(args.req.url ?? "") &&
-          outHeaders["content-type"] === "text/event-stream"
+          isEventStreamContentType(outHeaders["content-type"])
         ) {
           closeAfterCompletedEvent(upstreamRes, args.res, resolve, reject, args.opts.log);
           return;

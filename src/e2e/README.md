@@ -30,7 +30,8 @@ PAIRETO_E2E_DRIVER=codex      pnpm test:e2e:docker
 PAIRETO_E2E_DRIVER=opencode   pnpm test:e2e:docker
 ```
 
-`test:e2e` = `pnpm compile` + `pnpm compile-tests` + `node out/e2e/runE2E.js`. The default unit suite
+`test:e2e` records the provider traffic and replaces that driver's cassette after a passing run. It
+runs `pnpm compile` + `pnpm compile-tests` + `PAIRETO_E2E_MODE=record node out/e2e/runE2E.js`. The default unit suite
 (`pnpm test`) globs `out/test/**` and never picks up `out/e2e/**`, so the two stay independent.
 
 ## Where check runs
@@ -80,7 +81,7 @@ Attach **read-only** (`-r`, as printed). A writable client shares the pane with 
 stray keystroke lands in the agent's prompt. The session is pinned to `window-size manual`, so
 attaching from a smaller terminal cannot reflow the pane the driver reads.
 
-Each live run **uses the selected subscription** and takes ~1–3 min. You picked the driver, so if its
+Each recording run **uses the selected subscription** and takes ~1–3 min. You picked the driver, so if its
 binary/auth is missing the run **FAILs** with the reason (`E2E: FAIL — driver "<x>" cannot run:
 <reason>`) — never a silent skip.
 
@@ -96,11 +97,10 @@ PermissionRequest input/output contracts.
 
 ## Provider replay: record once, check forever (no creds)
 
-`PAIRETO_E2E_MODE` (default `live`) routes the harness's LLM traffic through a **MockServer** container
-acting as a **transparent MITM forward proxy** (`src/e2e/mockserver/`). The harness keeps talking to its
-real provider with its real credentials — MockServer just sits in the network path — so recording uses
-your **local subscription** and needs no config change, and replay runs with **no credentials and no
-network**:
+`PAIRETO_E2E_MODE` supports `record` (the default) and `check`. Every run routes the harness through a
+native Node.js **normalizing shim**, then a **MockServer** container acting as a transparent MITM
+forward proxy (`src/e2e/mockserver/`). The harness keeps talking to its real provider host. Recording
+uses your real credentials and **local subscription**; replay uses no credentials and no network:
 
 ```sh
 PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker # real provider → record fixture
@@ -109,7 +109,7 @@ PAIRETO_E2E_DRIVER=claudecode pnpm e2e:check:docker  # strict offline replay, fa
 
 How it works:
 
-- Drivers set `HTTP(S)_PROXY`/`ALL_PROXY` to a test-only MITM shim and trust its CA via
+- Drivers always set `HTTP(S)_PROXY`/`ALL_PROXY` to the test-only MITM shim and trust its CA via
   `NODE_EXTRA_CA_CERTS` / `SSL_CERT_FILE`. The first mock run generates a ten-year CA and leaf identity
   in the ignored, private `src/e2e/proxy/certs/` directory; later runs validate and reuse it, replacing
   it automatically only when it is unusable or near expiry. The CA signing key is deleted immediately,
@@ -120,11 +120,13 @@ How it works:
   subscription OAuth while forcing replayable SSE instead of WebSocket attempts.
 - **record** = `CAPTURE` (proxy forwards each request to its real host and records it), then
   `promote_recordings` → retrieve the expectations → strip volatile matchers → commit the fixture.
-  Works against the OAuth subscription for **all three** harnesses.
+  The shim passes request bodies through unchanged. This works against the OAuth subscription for
+  **all three** harnesses.
 - **check** = load `fixtures/fullflow.<driver>.json` plus local startup responses, add a lowest-priority
   599 catch-all, then enable `SIMULATE`. The check compose overlay mounts no user credentials; each
   harness gets syntactically valid, far-future fake OAuth state. Drift fails loud and cannot hit a
-  real API. The sandbox repo and harness homes use fixed `/tmp` paths so request bodies reproduce.
+  real API. The shim applies the selected driver's normalizer before matching. The sandbox repo and
+  harness homes use fixed `/tmp` paths so request bodies reproduce.
 - Request matchers discard provider headers and narrowly canonicalize account/environment metadata,
   prompt-cache controls, and deterministic workflow tool-result wording. User prompts, model messages,
   tool names/calls/arguments, and file contents remain strict.
@@ -137,7 +139,7 @@ How it works:
 - Stored response headers use a whitelist: only canonical `Content-Type` is retained. All cookie
   headers and any future provider-specific headers are discarded before a fixture is written.
 - **Identity is scrubbed on both sides.** Requests go through `scrubIdentity` inside the shared
-  normalizer (so cassette and live request are scrubbed identically and matching is unaffected);
+  normalizer (so cassette and replay request are scrubbed identically and matching is unaffected);
   response bodies are scrubbed at write time. The guarantee isn't the denylist — `fixturePrivacy.test.ts`
   scans every committed cassette for anything email- or account-id-shaped and fails the build.
 - **Cassettes record the harness version they were captured with.** The Docker image installs the
@@ -147,7 +149,8 @@ How it works:
   MockServer capture-only chunk metadata, restores `text/event-stream`, and closes after the complete
   `response.completed` block so both Codex and OpenCode terminate reliably.
 - MockServer runs as its official Docker image (no host JVM); native runs `docker run` it, the Docker
-  flow uses a compose service (`docker/docker-compose.mock.yml`). See `src/e2e/fixtures/README.md`.
+  flow uses a compose service (`docker/docker-compose.mockserver.yml`). The shim itself is a Node.js server
+  in the E2E runner process. See `src/e2e/fixtures/README.md`.
 
 ## Prerequisites / setup
 
@@ -163,8 +166,7 @@ are never written.
 
 - `claudecode` / `codex` need **tmux** on PATH for startup keystrokes and failure-screen capture.
 - `opencode` runs a persistent `opencode serve` + one `opencode run --attach` turn with
-  `openai/gpt-5.6-luna`. Record/check use an empty temporary config plus only the bundled Paireto
-  plugin; live mode may copy the user's config.
+  `openai/gpt-5.6-luna`. Both modes use an empty temporary config plus only the bundled Paireto plugin.
 
 ## Running headless in Docker
 
@@ -174,14 +176,14 @@ The Linux container supplies the virtual display and is the supported test entry
 ```sh
 pnpm docker:build                                    # once
 
-PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker   # live, against your subscription
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker # re-record the cassette
+PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker   # record and replace the cassette
+PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker # explicit alias for the same recording run
 PAIRETO_E2E_DRIVER=claudecode pnpm e2e:check:docker  # strict offline replay, no credentials
 
 pnpm test:docker                                     # the unit suite
 pnpm docker:down                                     # stop the container
 ```
 
-Live/record credentials are mounted or staged read-only. Claude's keychain OAuth credential is staged
+Record credentials are mounted or staged read-only. Claude's keychain OAuth credential is staged
 by `docker/prepare-e2e.sh`; Codex and OpenCode receive their read-only auth files from the E2E overlay.
 `e2e:check:docker` deliberately omits those mounts and uses fake local auth only.

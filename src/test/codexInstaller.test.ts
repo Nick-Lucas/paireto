@@ -17,7 +17,7 @@ const bundledPlugin = path.resolve(__dirname, "../../plugins/codex");
 suite("Codex bundled plugin contract", () => {
   test("reads its version from the native manifest, not the removed adapter manifest", () => {
     const pluginsRoot = path.dirname(bundledPlugin);
-    assert.strictEqual(readCodexPluginVersion(pluginsRoot), "0.5.6");
+    assert.strictEqual(readCodexPluginVersion(pluginsRoot), "0.5.7");
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "adapter.json")));
   });
 
@@ -93,30 +93,30 @@ suite("Codex native plugin probe", () => {
       installed: [
         {
           pluginId: "paireto@paireto",
-          version: "0.5.6",
+          version: "0.5.7",
           installed: true,
           enabled: true,
         },
       ],
     });
-    assert.strictEqual(codexPluginInstallState(list, "0.5.6"), "installed");
+    assert.strictEqual(codexPluginInstallState(list, "0.5.7"), "installed");
   });
 
   test("reports an old native plugin as update available", () => {
     const list = JSON.stringify({
       installed: [{ pluginId: "paireto@paireto", version: "0.5.2", installed: true }],
     });
-    assert.strictEqual(codexPluginInstallState(list, "0.5.6"), "update-available");
+    assert.strictEqual(codexPluginInstallState(list, "0.5.7"), "update-available");
   });
 
   test("does not confuse foreign plugins or malformed output for Paireto", () => {
     assert.strictEqual(
       codexPluginInstallState(
         JSON.stringify({ installed: [{ pluginId: "codex@someone-else", version: "0.5.6" }] }),
-        "0.5.6",
+        "0.5.7",
       ),
       "not-installed",
     );
-    assert.strictEqual(codexPluginInstallState("not json", "0.5.6"), "not-installed");
+    assert.strictEqual(codexPluginInstallState("not json", "0.5.7"), "not-installed");
   });
 });

@@ -64,16 +64,46 @@ export function mockTmpRoot(): string {
   }
 }
 
+const FIXED_MOCK_NAMES = new Set([
+  "paireto-e2e-claudecode",
+  "paireto-e2e-codex",
+  "paireto-e2e-opencode",
+  "paireto-e2e-sandbox-root-test",
+  "pai-e2e-claude-home",
+  "pai-e2e-codex-home",
+  "pai-e2e-opencode-home",
+]);
+
 /** A fixed, cross-platform-stable path for a mock run's sandbox or harness home. */
 export function mockPath(name: string): string {
+  if (!FIXED_MOCK_NAMES.has(name)) {
+    throw new Error(`fixed E2E path is outside the owned mock-run namespace: ${name}`);
+  }
   return path.join(mockTmpRoot(), name);
+}
+
+function assertFixedMockPath(target: string): void {
+  const root = mockTmpRoot();
+  const resolved = path.resolve(target);
+  if (path.dirname(resolved) !== root || !FIXED_MOCK_NAMES.has(path.basename(resolved))) {
+    throw new Error(`fixed E2E path is outside the owned mock-run namespace: ${target}`);
+  }
+  if (fs.existsSync(resolved) && fs.realpathSync(resolved) !== resolved) {
+    throw new Error(`fixed E2E path must not follow a symlink: ${target}`);
+  }
+}
+
+function prepareFixedMockDir(target: string): void {
+  assertFixedMockPath(target);
+  fs.rmSync(target, { recursive: true, force: true });
+  fs.mkdirSync(target, { recursive: true });
 }
 
 export interface SandboxOptions {
   /**
    * Pin the repo to a FIXED path instead of a random mkdtemp one. Required for record/check runs:
    * harnesses embed the absolute cwd in their provider requests, so a stable path is what lets a
-   * recorded fixture match on replay. `undefined` keeps the classic random dir (live mode).
+   * recorded fixture match on replay. `undefined` is available for isolated unit tests.
    */
   fixedRepoRoot?: string;
 }
@@ -82,8 +112,7 @@ export function createSandbox(opts: SandboxOptions = {}): Sandbox {
   // Repo can live anywhere (only its hash keys the socket); the STATE dir is what must be short.
   const created = opts.fixedRepoRoot ?? fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-repo-"));
   if (opts.fixedRepoRoot) {
-    fs.rmSync(opts.fixedRepoRoot, { recursive: true, force: true });
-    fs.mkdirSync(opts.fixedRepoRoot, { recursive: true });
+    prepareFixedMockDir(opts.fixedRepoRoot);
   }
   // ONE spelling of the project path for the whole run. `git rev-parse` and the harnesses resolve
   // symlinks (macOS /tmp -> /private/tmp), so handing anyone the unresolved form makes the agent's
@@ -114,6 +143,9 @@ export function createSandbox(opts: SandboxOptions = {}): Sandbox {
   const cleanup = (): void => {
     for (const dir of [repoRoot, stateHome, userDataDir]) {
       try {
+        if (opts.fixedRepoRoot && dir === repoRoot) {
+          assertFixedMockPath(dir);
+        }
         fs.rmSync(dir, { recursive: true, force: true });
       } catch {
         /* best-effort */
@@ -239,8 +271,8 @@ function seedFakeClaudeConfig(destDir: string): void {
 }
 
 // In `check` mode the harness talks only to MockServer (fixture replay), so NO provider credential is
-// needed — availability is just the binary being on PATH. Record/live still require real auth.
-export function probeClaude(mode: E2EMode = "live"): Availability {
+// needed — availability is just the binary being on PATH. Record still requires real auth.
+export function probeClaude(mode: E2EMode = "record"): Availability {
   if (!onPath("claude")) {
     return "claude binary not on PATH";
   }
@@ -256,7 +288,7 @@ export function probeClaude(mode: E2EMode = "live"): Availability {
   return true;
 }
 
-export function probeCodex(mode: E2EMode = "live"): Availability {
+export function probeCodex(mode: E2EMode = "record"): Availability {
   if (!onPath("codex")) {
     return "codex binary not on PATH";
   }
@@ -268,7 +300,7 @@ export function probeCodex(mode: E2EMode = "live"): Availability {
     : "no ~/.codex/auth.json";
 }
 
-export function probeOpenCode(mode: E2EMode = "live"): Availability {
+export function probeOpenCode(mode: E2EMode = "record"): Availability {
   if (!onPath("opencode")) {
     return "opencode binary not on PATH";
   }
@@ -287,23 +319,21 @@ export function probeOpenCode(mode: E2EMode = "live"): Availability {
  * `--plugin-dir <repo>/plugins/claude-code`.
  */
 export function buildClaudeHome(opts: { checkMode?: boolean; homeDir?: string } = {}): HarnessHome {
-  // Mock modes pin CLAUDE_CONFIG_DIR to a fixed path (rm+recreate) so the config-dir path Claude embeds
-  // in plan-mode reminders is stable between record and check; live keeps a random temp home.
+  // Pin CLAUDE_CONFIG_DIR when requested so its embedded path is stable between record and check.
   const dir = opts.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-claude-"));
   if (opts.homeDir) {
-    fs.rmSync(opts.homeDir, { recursive: true, force: true });
-    fs.mkdirSync(opts.homeDir, { recursive: true });
+    prepareFixedMockDir(opts.homeDir);
   }
   const env: NodeJS.ProcessEnv = { CLAUDE_CONFIG_DIR: dir };
   // check mode: hermetic config + a FAKE far-future OAuth credential so Claude is "logged in" and sends
   // the requests the fixture answers, while the proxy + MockServer SIMULATE keep it fully offline (the
-  // real backend is never reached). Durable and credential-free; record/live below use the real OAuth
+  // real backend is never reached). Durable and credential-free; record below uses the real OAuth
   // subscription.
   if (opts.checkMode) {
     seedClaudeConfig(dir);
     seedFakeClaudeConfig(dir);
     seedFakeClaudeCredentials(dir);
-    return { env, cleanup: () => rm(dir) };
+    return { env, cleanup: () => rm(dir, Boolean(opts.homeDir)) };
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     seedClaudeConfig(dir);
@@ -327,7 +357,7 @@ export function buildClaudeHome(opts: { checkMode?: boolean; homeDir?: string } 
       }
     }
   }
-  return { env, cleanup: () => rm(dir) };
+  return { env, cleanup: () => rm(dir, Boolean(opts.homeDir)) };
 }
 
 /**
@@ -338,8 +368,7 @@ export function buildClaudeHome(opts: { checkMode?: boolean; homeDir?: string } 
 export function buildCodexHome(opts: { checkMode?: boolean; homeDir?: string } = {}): HarnessHome {
   const dir = opts.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-codex-"));
   if (opts.homeDir) {
-    fs.rmSync(opts.homeDir, { recursive: true, force: true });
-    fs.mkdirSync(opts.homeDir, { recursive: true });
+    prepareFixedMockDir(opts.homeDir);
   }
   const authPath = path.join(dir, "auth.json");
   if (opts.checkMode) {
@@ -374,7 +403,7 @@ export function buildCodexHome(opts: { checkMode?: boolean; homeDir?: string } =
       copySecret(srcAuth, authPath);
     }
   }
-  return { env: { CODEX_HOME: dir }, cleanup: () => rm(dir) };
+  return { env: { CODEX_HOME: dir }, cleanup: () => rm(dir, Boolean(opts.homeDir)) };
 }
 
 /**
@@ -386,8 +415,7 @@ export function buildOpenCodeHome(
 ): HarnessHome {
   const dir = opts.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-opencode-"));
   if (opts.homeDir) {
-    fs.rmSync(opts.homeDir, { recursive: true, force: true });
-    fs.mkdirSync(opts.homeDir, { recursive: true });
+    prepareFixedMockDir(opts.homeDir);
   }
   const configHome = path.join(dir, "config");
   const dataHome = path.join(dir, "data");
@@ -417,7 +445,7 @@ export function buildOpenCodeHome(
   }
   return {
     env: { XDG_CONFIG_HOME: configHome, XDG_DATA_HOME: dataHome },
-    cleanup: () => rm(dir),
+    cleanup: () => rm(dir, Boolean(opts.homeDir)),
   };
 }
 
@@ -428,8 +456,11 @@ function fakeJwt(payload: Record<string, unknown>): string {
   return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.paireto-e2e`;
 }
 
-function rm(dir: string): void {
+function rm(dir: string, fixed = false): void {
   try {
+    if (fixed) {
+      assertFixedMockPath(dir);
+    }
     fs.rmSync(dir, { recursive: true, force: true });
   } catch {
     /* best-effort */

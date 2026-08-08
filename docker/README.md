@@ -22,12 +22,12 @@ pnpm test:docker           # boots the container (if needed) and runs the unit s
 pnpm docker:shell          # a bash shell inside the running container
 pnpm docker:down           # stop the persistent container
 
-# E2E — pick a driver (there is no default). Credentials are staged/mounted automatically (see below).
+# E2E recording — pick a driver. The passing run replaces that driver's cassette.
 PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker
 PAIRETO_E2E_DRIVER=codex      pnpm test:e2e:docker
 PAIRETO_E2E_DRIVER=opencode   pnpm test:e2e:docker
 
-# Provider recording / strict credential-free replay — also runs in the tests service.
+# The explicit recording alias and strict credential-free replay.
 PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker
 PAIRETO_E2E_DRIVER=claudecode pnpm e2e:check:docker
 ```
@@ -53,7 +53,7 @@ so a test exec never races the install.
   needs more than Docker's default 64MB `/dev/shm`), `PAIRETO_DOCKER=1`, and a readiness healthcheck.
 - `docker-compose.e2e.yml` — E2E-only overlay: mounts the staged Claude secret (`./.secrets`, read-only
   at `/paireto-secrets`) plus `~/.codex`, `~/.local/share/opencode`, `~/.config/opencode`.
-- `docker-compose.mock.yml` — adds MockServer for provider recording/replay. Record combines this with
+- `docker-compose.mockserver.yml` — adds MockServer for every E2E run. Record combines this with
   the credential overlay; check deliberately does not, seeds fake auth, installs a strict 599 catch-all,
   and runs with MockServer in `SIMULATE` mode so a fixture miss cannot reach a provider.
 - `prepare-e2e.sh` — host-side; stages `~/.claude.json` + the keychain OAuth credential into `./.secrets`

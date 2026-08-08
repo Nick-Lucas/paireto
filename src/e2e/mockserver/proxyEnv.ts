@@ -1,16 +1,15 @@
-// Shared harness env for routing a harness's LLM traffic through MockServer as a TRANSPARENT MITM
-// forward proxy — the same in record and check. The harness keeps talking to its REAL provider host
+// Shared harness env for routing a harness's LLM traffic through the normalizing shim and MockServer
+// as transparent MITM proxies — the same in record and check. The harness keeps its real provider host
 // (api.anthropic.com, the ChatGPT backend, …) with its REAL credentials, so the subscription/OAuth
 // flow is untouched; MockServer just sits in the network path (record: forwards + captures; check:
 // replays a fixture). This is why we DON'T touch ANTHROPIC_BASE_URL or a provider's base_url.
 //
-// MockServer officially documents this exact recipe (its boot log prints it): point the standard proxy
-// env vars at it and trust its CA. The CA is MockServer's fixed embedded cert, vendored at
-// mockserver-ca.pem. Node harnesses (claude, opencode) read NODE_EXTRA_CA_CERTS; SSL_CERT_FILE covers
-// OpenSSL-backed clients (curl, some Rust builds — codex's rustls default may not honour it; that's the
-// one CA-trust risk to validate on a first codex record).
+// The normalizing shim accepts the standard proxy variables and presents the generated test CA. Node
+// harnesses (claude, opencode) read NODE_EXTRA_CA_CERTS; SSL_CERT_FILE covers OpenSSL-backed clients.
 
-/** Proxy + CA env every mock-mode harness process merges on top of its base env. */
+import { MOCK_CA_ENV, MOCK_URL_ENV } from "./mode.js";
+
+/** Proxy + CA env every harness process merges on top of its base env. */
 export function mockProxyEnv(mockUrl: string, caPath: string): NodeJS.ProcessEnv {
   return {
     HTTP_PROXY: mockUrl,
@@ -25,4 +24,22 @@ export function mockProxyEnv(mockUrl: string, caPath: string): NodeJS.ProcessEnv
     NODE_EXTRA_CA_CERTS: caPath,
     SSL_CERT_FILE: caPath,
   };
+}
+
+export interface ResolvedMockProxy {
+  url: string;
+  caPath: string;
+  env: NodeJS.ProcessEnv;
+}
+
+export function resolveMockProxy(source: NodeJS.ProcessEnv = process.env): ResolvedMockProxy {
+  const url = source[MOCK_URL_ENV]?.trim();
+  const caPath = source[MOCK_CA_ENV]?.trim();
+  if (!url || !caPath) {
+    const missing = [!url ? MOCK_URL_ENV : undefined, !caPath ? MOCK_CA_ENV : undefined]
+      .filter(Boolean)
+      .join(" and ");
+    throw new Error(`E2E requires ${missing}`);
+  }
+  return { url, caPath, env: mockProxyEnv(url, caPath) };
 }

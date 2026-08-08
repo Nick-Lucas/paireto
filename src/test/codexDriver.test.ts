@@ -18,7 +18,7 @@ suite("Codex E2E launch permissions", () => {
     assert.match(command, /--cd "\/tmp\/repo"/);
   });
 
-  test("keeps native host runs on Codex's configured permission boundary", () => {
+  test("keeps the Docker-only CLI bypass out of native host runs", () => {
     const command = codexLaunchCommand("/tmp/repo", false);
 
     assert.match(command, /--dangerously-bypass-hook-trust/);
@@ -27,13 +27,9 @@ suite("Codex E2E launch permissions", () => {
 });
 
 suite("Codex E2E runtime config", () => {
-  const MOCK_NATIVE = { mock: true, docker: false };
-  const LIVE_NATIVE = { mock: false, docker: false };
-  const LIVE_DOCKER = { mock: false, docker: true };
-
   test("pins Luna and disables WebSockets before installer-owned TOML tables", () => {
     const existing = `[plugins]\nenabled = true\n`;
-    const config = renderCodexRuntimeConfig(existing, "/tmp/repo", MOCK_NATIVE);
+    const config = renderCodexRuntimeConfig(existing, "/tmp/repo");
 
     assert.ok(config.indexOf('model = "gpt-5.6-luna"') < config.indexOf("[plugins]"));
     assert.ok(config.indexOf('model_provider = "paireto_openai"') < config.indexOf("[plugins]"));
@@ -41,38 +37,24 @@ suite("Codex E2E runtime config", () => {
     assert.match(config, /\[projects\."\/tmp\/repo"\]\ntrust_level = "trusted"/);
   });
 
-  test("a live native run keeps Codex's own approvals, sandbox, provider and transport", () => {
-    const config = renderCodexRuntimeConfig("", "/tmp/repo", LIVE_NATIVE);
-
-    // The model pin is the only thing a live run inherits from the E2E config.
-    assert.match(config, /model = "gpt-5.6-luna"/);
-    assert.doesNotMatch(config, /approval_policy/);
-    assert.doesNotMatch(config, /sandbox_mode/);
-    assert.doesNotMatch(config, /model_provider/);
-    assert.doesNotMatch(config, /supports_websockets/);
-    assert.doesNotMatch(config, /enable_request_compression/);
-    assert.match(config, /\[projects\."\/tmp\/repo"\]\ntrust_level = "trusted"/);
+  test("record and check use the replayable provider and bypass the inner permission boundary", () => {
+    const config = renderCodexRuntimeConfig("", "/tmp/repo");
+    assert.match(config, /approval_policy = "never"/);
+    assert.match(config, /sandbox_mode = "danger-full-access"/);
+    assert.match(config, /model_provider = "paireto_openai"/);
+    assert.match(config, /supports_websockets = false/);
+    assert.match(config, /enable_request_compression = false/);
   });
 
-  test("Docker and mock runs bypass the inner permission boundary", () => {
-    for (const opts of [LIVE_DOCKER, MOCK_NATIVE]) {
-      const config = renderCodexRuntimeConfig("", "/tmp/repo", opts);
-      assert.match(config, /approval_policy = "never"/);
-      assert.match(config, /sandbox_mode = "danger-full-access"/);
-    }
-  });
-
-  test("every root setting precedes the first TOML table in all modes", () => {
-    for (const opts of [MOCK_NATIVE, LIVE_NATIVE, LIVE_DOCKER]) {
-      const config = renderCodexRuntimeConfig("", "/tmp/repo", opts);
-      const firstTable = config.indexOf("[");
-      const rootLines = config
-        .slice(0, firstTable)
-        .split("\n")
-        .filter((line) => line.trim() !== "");
-      assert.ok(rootLines.length > 0);
-      assert.ok(rootLines.every((line) => line.includes(" = ")));
-    }
+  test("every root setting precedes the first TOML table", () => {
+    const config = renderCodexRuntimeConfig("", "/tmp/repo");
+    const firstTable = config.indexOf("[");
+    const rootLines = config
+      .slice(0, firstTable)
+      .split("\n")
+      .filter((line) => line.trim() !== "");
+    assert.ok(rootLines.length > 0);
+    assert.ok(rootLines.every((line) => line.includes(" = ")));
   });
 
   test("committed recording contains only successful Luna inference traffic", () => {

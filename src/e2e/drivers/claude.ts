@@ -5,8 +5,8 @@
 //
 import * as path from "node:path";
 
-import { MOCK_CA_ENV, MOCK_URL_ENV, resolveMode } from "../mockserver/mode.js";
-import { mockProxyEnv } from "../mockserver/proxyEnv.js";
+import { resolveMode } from "../mockserver/mode.js";
+import { resolveMockProxy } from "../mockserver/proxyEnv.js";
 import { buildClaudeHome, mockPath, probeClaude, type HarnessHome } from "../sandbox.js";
 import { STEP_TIMEOUT_MS } from "../testUtils.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
@@ -15,9 +15,9 @@ import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
 import { startPaneWatch } from "./watch.js";
 
 const MODEL = "claude-haiku-4-5";
-/** Fixed home + session id in mock modes → the config-dir path and any session-derived values (e.g. the
+/** Fixed home + session id → the config-dir path and any session-derived values (e.g. the
  *  plan-file slug) Claude embeds in messages are the SAME in record and check, so bodies match.
- *  Resolved lazily: mockPath touches the filesystem, which a live run has no reason to do. */
+ *  Resolved lazily so importing the driver does not touch the filesystem. */
 const mockHomeDir = (): string => mockPath("pai-e2e-claude-home");
 const MOCK_SESSION_ID = "00000000-0000-4000-8000-0000000000c1";
 // A fresh CLAUDE_CONFIG_DIR shows first-run interstitials that swallow a typed prompt AND leave the
@@ -34,7 +34,7 @@ const PLAN_FILE_EDIT_PERMISSION = /do you want to make this edit to plan-[^?\n]+
 /** Each poll spawns a `tmux capture-pane` subprocess and this runs for the whole test, so keep the
  *  cadence human-scale. The prompt it watches for stays on screen until answered. */
 const PERMISSION_POLL_MS = 500;
-/** A live run's prompt takes a beat to clear. A fraction of the step budget covers that while
+/** A provider-backed run's prompt takes a beat to clear. A fraction of the step budget covers that while
  *  staying inside the step this serves. */
 const PROMPT_ACCEPT_TIMEOUT_MS = STEP_TIMEOUT_MS / 4;
 
@@ -64,10 +64,10 @@ export class ClaudeDriver implements HarnessDriver {
   launch(ctx: DriverContext): Promise<void> {
     this.ctx = ctx;
     const mode = resolveMode(process.env);
-    const mockUrl = process.env[MOCK_URL_ENV];
+    const proxy = resolveMockProxy();
     this.home = buildClaudeHome({
       checkMode: mode === "check",
-      homeDir: mode === "live" ? undefined : mockHomeDir(),
+      homeDir: mockHomeDir(),
     });
     const pluginDir = path.join(repoRoot(), "plugins", "claude-code");
     const env = { ...baseHarnessEnv(), ...this.home.env };
@@ -77,14 +77,9 @@ export class ClaudeDriver implements HarnessDriver {
     env.DISABLE_TELEMETRY = "1";
     env.DISABLE_ERROR_REPORTING = "1";
     env.DISABLE_AUTOUPDATER = "1";
-    if (mockUrl) {
-      // Route traffic THROUGH MockServer as a transparent proxy. record keeps Claude's real OAuth token
-      // (subscription intact) → CAPTURE forwards + records. check relies on the fake far-future OAuth
-      // credential seeded by buildClaudeHome (Claude is "logged in", MockServer SIMULATE-replays and
-      // ignores the token) — durable and credential-free.
-      Object.assign(env, mockProxyEnv(mockUrl, process.env[MOCK_CA_ENV]!));
-      this.log(`mock mode=${mode}: HTTPS_PROXY=${mockUrl} (+CA trust)`);
-    }
+    // Record keeps Claude's real OAuth token; check uses the fake local credential from buildClaudeHome.
+    Object.assign(env, proxy.env);
+    this.log(`mode=${mode}: HTTPS_PROXY=${proxy.url} (+CA trust)`);
     const command = [
       "claude",
       "--model",
@@ -95,9 +90,10 @@ export class ClaudeDriver implements HarnessDriver {
       // Claude lists it in a `<system-reminder>` inside the first user message, so it would make every
       // /v1/messages body non-reproducible for replay. Also removes all /v1/mcp* traffic from fixtures.
       "--strict-mcp-config",
-      // Mock modes: a fixed session id so session-derived values (the plan-file slug Claude embeds in
+      // A fixed session id keeps session-derived values (the plan-file slug Claude embeds in
       // the first message) are identical between record and check.
-      ...(mockUrl ? ["--session-id", MOCK_SESSION_ID] : []),
+      "--session-id",
+      MOCK_SESSION_ID,
       "--plugin-dir",
       shellQuote(pluginDir),
     ].join(" ");

@@ -220,7 +220,7 @@ function transformNotification(type: ClaudeCodeNotificationType | undefined): Ap
 function extractPlanText(toolInput: unknown): string | undefined {
   if (toolInput && typeof toolInput === "object" && "plan" in toolInput) {
     const plan = (toolInput as { plan: unknown }).plan;
-    if (typeof plan === "string") {
+    if (typeof plan === "string" && plan.trim()) {
       return plan;
     }
   }

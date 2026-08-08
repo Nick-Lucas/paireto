@@ -1,7 +1,7 @@
 // Pure-logic coverage for the provider-replay E2E layer (src/e2e/mockserver/). The record/check flow
 // itself is validated end-to-end against the real MockServer container by the E2E suite; these tests
 // pin the three pieces that must be correct BEFORE a run and can't be observed from a green E2E:
-//   1. mode parsing (a typo must fail loud, not silently fall back to live),
+//   1. mode parsing (a typo must fail loud, not silently fall back to record),
 //   2. the fixture-normalization transform (strip volatile request matchers — the difference between
 //      every strict replay 599-ing and a clean offline match),
 //   3. MCP response parsing (MockServer answers as raw JSON or a single SSE frame).
@@ -15,19 +15,27 @@ import { extractJsonRpc } from "../e2e/mockserver/mcpClient.js";
 import {
   isSuccessfulRecording,
   localBootstrapFor,
+  nativeMockServerDockerArgs,
+  normalizingProxyPlan,
   normalizeCapturedResponses,
   recordsPath,
   stripVolatileRequestMatchers,
   unwrapExpectations,
 } from "../e2e/mockserver/MockServerController.js";
-import { fixtureFileName, isMockMode, resolveCase, resolveMode } from "../e2e/mockserver/mode.js";
-import { mockProxyEnv } from "../e2e/mockserver/proxyEnv.js";
+import {
+  fixtureFileName,
+  resolveCase,
+  resolveDriver,
+  resolveMode,
+} from "../e2e/mockserver/mode.js";
+import { mockProxyEnv, resolveMockProxy } from "../e2e/mockserver/proxyEnv.js";
 import {
   isPairetoTool,
   normalizeClaudeBody,
   normalizeCodexBody,
   normalizeOpenCodeBody,
 } from "../e2e/proxy/normalize.js";
+import { isEventStreamContentType } from "../e2e/proxy/normalizingProxy.js";
 
 const codexBridge = require("../../plugins/codex/scripts/bridge.js") as {
   readPlanTurn: (
@@ -50,20 +58,26 @@ function toolsByName(normalizedBody: string): Map<string, NormalizedTool> {
 }
 
 suite("provider-replay: mode parsing", () => {
-  test("defaults to live when unset", () => {
-    assert.strictEqual(resolveMode({}), "live");
-    assert.strictEqual(isMockMode("live"), false);
+  test("defaults to record when unset", () => {
+    assert.strictEqual(resolveMode({}), "record");
   });
 
-  test("parses record/check case-insensitively and marks them mock modes", () => {
+  test("parses record/check case-insensitively", () => {
     assert.strictEqual(resolveMode({ PAIRETO_E2E_MODE: "record" }), "record");
     assert.strictEqual(resolveMode({ PAIRETO_E2E_MODE: "CHECK" }), "check");
-    assert.strictEqual(isMockMode("record"), true);
-    assert.strictEqual(isMockMode("check"), true);
   });
 
-  test("throws on an unknown mode rather than silently falling back", () => {
+  test("rejects the removed live mode and unknown modes", () => {
+    assert.throws(() => resolveMode({ PAIRETO_E2E_MODE: "live" }), /invalid/);
     assert.throws(() => resolveMode({ PAIRETO_E2E_MODE: "replay" }), /invalid/);
+  });
+
+  test("accepts only known E2E drivers", () => {
+    assert.strictEqual(resolveDriver({ PAIRETO_E2E_DRIVER: "codex" }), "codex");
+    assert.throws(
+      () => resolveDriver({ PAIRETO_E2E_DRIVER: "x/../../../Users/example" }),
+      /invalid/i,
+    );
   });
 
   test("test case defaults to fullflow, overridable, and namespaces the fixture per (case, driver)", () => {
@@ -77,7 +91,7 @@ suite("provider-replay: mode parsing", () => {
 
 suite("provider-replay: recorded endpoints", () => {
   test("only conversation endpoints are recorded", () => {
-    for (const driver of ["claudecode", "codex", "opencode"]) {
+    for (const driver of ["claudecode", "codex", "opencode"] as const) {
       assert.strictEqual(recordsPath(driver, "/backend-api/wham/usage"), false, driver);
       assert.strictEqual(
         recordsPath(driver, "/backend-api/wham/rate-limit-reset-credits"),
@@ -627,6 +641,57 @@ suite("provider-replay: transparent proxy env", () => {
     assert.match(env.NO_PROXY ?? "", /127\.0\.0\.1/);
     // deliberately does NOT set a provider base URL — the harness keeps its real host + credentials
     assert.strictEqual(env.ANTHROPIC_BASE_URL, undefined);
+  });
+
+  test("resolves the proxy URL and CA for every E2E run", () => {
+    const proxy = resolveMockProxy({
+      PAIRETO_MOCK_URL: "http://127.0.0.1:9999",
+      PAIRETO_MOCK_CA: "/tmp/ca.pem",
+    });
+    assert.strictEqual(proxy.url, "http://127.0.0.1:9999");
+    assert.strictEqual(proxy.caPath, "/tmp/ca.pem");
+  });
+
+  test("requires the proxy URL and CA together", () => {
+    assert.throws(
+      () => resolveMockProxy({ PAIRETO_MOCK_URL: "http://127.0.0.1:9999" }),
+      /PAIRETO_MOCK_CA/,
+    );
+    assert.throws(() => resolveMockProxy({ PAIRETO_MOCK_CA: "/tmp/ca.pem" }), /PAIRETO_MOCK_URL/);
+  });
+});
+
+suite("provider-replay: normalizing proxy plan", () => {
+  test("routes every driver through the shim and normalizes only replay requests", () => {
+    for (const driver of ["claudecode", "codex", "opencode"] as const) {
+      assert.deepStrictEqual(normalizingProxyPlan("record", driver), {
+        normalizeDriver: undefined,
+        fatalMissPaths: undefined,
+      });
+      const check = normalizingProxyPlan("check", driver);
+      assert.strictEqual(check.normalizeDriver, driver);
+      assert.ok(check.fatalMissPaths?.length);
+    }
+  });
+});
+
+suite("provider-replay: SSE response detection", () => {
+  test("accepts parameters, case differences, and array header values", () => {
+    assert.strictEqual(isEventStreamContentType("text/event-stream; charset=utf-8"), true);
+    assert.strictEqual(isEventStreamContentType("Text/Event-Stream"), true);
+    assert.strictEqual(
+      isEventStreamContentType(["application/json", "text/event-stream; charset=utf-8"]),
+      true,
+    );
+    assert.strictEqual(isEventStreamContentType("application/json"), false);
+  });
+});
+
+suite("provider-replay: native MockServer launch", () => {
+  test("redacts secrets from native container logs and recorded expectations", () => {
+    const args = nativeMockServerDockerArgs(1080, "paireto-test");
+    assert.ok(args.includes("MOCKSERVER_REDACT_SECRETS_IN_LOG=true"));
+    assert.ok(args.includes("MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS=true"));
   });
 });
 

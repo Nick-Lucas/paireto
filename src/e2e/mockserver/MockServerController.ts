@@ -24,7 +24,7 @@ import { loadReplayMiss, type ReplayMiss } from "../replayMiss.js";
 import { normalizeRequestBody, scrubIdentity } from "../proxy/normalize.js";
 import { startNormalizingProxy } from "../proxy/normalizingProxy.js";
 import { McpClient } from "./mcpClient.js";
-import { fixtureFileName, MOCK_URL_ENV, type E2EMode } from "./mode.js";
+import { fixtureFileName, MOCK_URL_ENV, type E2EDriver, type E2EMode } from "./mode.js";
 
 const IMAGE = "mockserver/mockserver:mockserver-7.4.0";
 
@@ -127,21 +127,36 @@ const PROFILES: Record<string, HarnessProfile> = {
 };
 
 /** Whether a recorded exchange on this path is committed to the cassette. */
-export function recordsPath(driver: string, requestPath: string): boolean {
+export function recordsPath(driver: E2EDriver, requestPath: string): boolean {
   return profileFor(driver).fixturePaths.some((matcher) => matcher.test(requestPath));
 }
 
 /** The locally-answered startup calls for a driver, empty when it makes none. */
-export function localBootstrapFor(driver: string): BootstrapExpectation[] {
+export function localBootstrapFor(driver: E2EDriver): BootstrapExpectation[] {
   return LOCAL_BOOTSTRAP[driver] ?? [];
+}
+
+export interface NormalizingProxyPlan {
+  /** Undefined means the shim forwards the original request body unchanged. */
+  normalizeDriver: E2EDriver | undefined;
+  /** Only strict replay misses on inference endpoints end the run. */
+  fatalMissPaths: RegExp[] | undefined;
+}
+
+/** Every mode uses the shim. Recording is pass-through; replay uses the selected driver normalizer. */
+export function normalizingProxyPlan(mode: E2EMode, driver: E2EDriver): NormalizingProxyPlan {
+  return {
+    normalizeDriver: mode === "check" ? driver : undefined,
+    fatalMissPaths: mode === "check" ? profileFor(driver).fixturePaths : undefined,
+  };
 }
 
 export interface MockServerOptions {
   mode: E2EMode;
-  driver: string;
+  driver: E2EDriver;
   /** Host/workspace dir holding the committed fixtures. */
   fixturesHostDir: string;
-  /** Vendored MockServer CA (record: the harness proxies straight to MockServer and trusts this). */
+  /** Vendored MockServer CA, trusted by the shim for its hop to MockServer. */
   mockServerCaPath: string;
   /** Machine-local shim CA + leaf cert/key (the harness proxies to the normalizing shim). */
   shimCaPath: string;
@@ -154,9 +169,9 @@ export interface MockServerOptions {
 
 export class MockServerController {
   private constructor(
-    /** URL the harness uses as its HTTP(S) PROXY: MockServer directly (record) or the shim (check). */
+    /** URL the harness uses as its HTTP(S) proxy: always the normalizing shim. */
     readonly proxyUrl: string,
-    /** CA the harness must trust for that proxy (MockServer's, or the shim's leaf CA). */
+    /** CA the harness trusts for the shim's leaf certificate. */
     readonly caPath: string,
     private readonly mcp: McpClient,
     private readonly mockBaseUrl: string,
@@ -179,7 +194,7 @@ export class MockServerController {
    * A replay miss rendered as a diff against the cassette entry it came closest to matching, so the
    * failure names the field that changed. Undefined when the run did not miss.
    */
-  explainMiss(testCase: string, driver: string, missFilePath: string): string | undefined {
+  explainMiss(testCase: string, driver: E2EDriver, missFilePath: string): string | undefined {
     const miss = loadReplayMiss(missFilePath);
     if (!miss) {
       return undefined;
@@ -200,28 +215,10 @@ export class MockServerController {
     ].join("\n");
   }
 
-  /** Launch (or connect to) MockServer, complete the MCP handshake, and — in check — start the
-   *  normalizing shim in front of it so Claude's volatile request bodies can match the fixture. */
+  /** Launch (or connect to) MockServer, complete the MCP handshake, and start the normalizing shim. */
   static async launch(opts: MockServerOptions): Promise<MockServerController> {
     const { baseUrl, mcp, containerName } = await connectMockServer(opts);
-
-    const needsShim =
-      opts.mode === "check" || opts.driver === "codex" || opts.driver === "opencode";
-    if (!needsShim) {
-      // Claude record: proxy straight to MockServer; its original request must reach the real provider.
-      return new MockServerController(
-        baseUrl,
-        opts.mockServerCaPath,
-        mcp,
-        baseUrl,
-        containerName,
-        opts.fixturesHostDir,
-        undefined,
-        opts.log,
-      );
-    }
-    // Check uses the shim for request normalization; Codex/OpenCode record also use it to restore the
-    // Responses SSE content type that MockServer drops while proxying.
+    const plan = normalizingProxyPlan(opts.mode, opts.driver);
     const shimPort = await freePort();
     const stop = await startNormalizingProxy({
       port: shimPort,
@@ -229,10 +226,8 @@ export class MockServerController {
       keyPath: opts.shimKeyPath,
       mockBaseUrl: baseUrl,
       mockCaPath: opts.mockServerCaPath,
-      normalizeDriver: opts.mode === "check" ? opts.driver : undefined,
-      // Only a miss on the harness's own inference endpoints ends the run; incidental offline 599s
-      // (a model catalogue, a package registry) are expected and survivable.
-      fatalMissPaths: opts.mode === "check" ? profileFor(opts.driver).fixturePaths : undefined,
+      normalizeDriver: plan.normalizeDriver,
+      fatalMissPaths: plan.fatalMissPaths,
       missFilePath: opts.missFilePath,
       log: opts.log,
     });
@@ -259,7 +254,7 @@ export class MockServerController {
 
   /** Check mode: load the committed fixture (container path, via the mount) strict, then SIMULATE so a
    *  miss 599s (never forwards). */
-  async prepareCheck(testCase: string, driver: string): Promise<void> {
+  async prepareCheck(testCase: string, driver: E2EDriver): Promise<void> {
     // The compose-managed server is reused — clear prior record/check state before loading the fixture.
     await this.mcp.callTool("reset", {});
     const fixtureName = fixtureFileName(testCase, driver);
@@ -299,7 +294,7 @@ export class MockServerController {
 
   /** After a record run, promote the captured proxy traffic into mock expectations, retrieve them as
    *  JSON, normalize (strip volatile request matchers), and write the committable fixture. */
-  async snapshotFixture(testCase: string, driver: string): Promise<void> {
+  async snapshotFixture(testCase: string, driver: E2EDriver): Promise<void> {
     await this.mcp.callTool("promote_recordings", {
       consolidate: false,
       redactSensitiveData: true,
@@ -396,7 +391,7 @@ export function stripVolatileRequestMatchers(
  *  MockServer otherwise matches status 200 without reliably emitting the captured stream body. */
 export function normalizeCapturedResponses(
   list: FixtureExpectation[],
-  driver: string,
+  driver: E2EDriver,
 ): FixtureExpectation[] {
   for (const expectation of list) {
     const response = expectation.httpResponse;
@@ -481,7 +476,11 @@ export function unwrapExpectations(raw: unknown): FixtureExpectation[] {
 
 /** Parse retrieved ACTIVE_EXPECTATIONS JSON, strip volatile matchers, write the committable fixture
  *  stamped with the harness version it was recorded against (see harnessVersion.ts). */
-function writeNormalizedFixture(hostPath: string, retrievedJson: string, driver: string): number {
+function writeNormalizedFixture(
+  hostPath: string,
+  retrievedJson: string,
+  driver: E2EDriver,
+): number {
   const essential = unwrapExpectations(JSON.parse(retrievedJson)).filter((expectation) => {
     const requestPath = expectation.httpRequest?.path;
     return (
@@ -574,7 +573,18 @@ async function connectMockServer(
   }
   const port = await freePort();
   const name = `paireto-mockserver-${port}`;
-  const args = [
+  const args = nativeMockServerDockerArgs(port, name);
+  opts.log(`MockServer: docker ${args.join(" ")}`);
+  execFileSync("docker", args, { stdio: "ignore" });
+  const baseUrl = `http://127.0.0.1:${port}`;
+  await waitForStatus(baseUrl, opts.log);
+  const mcp = new McpClient(mcpUrlFor(baseUrl));
+  await mcp.connect();
+  return { baseUrl, mcp, containerName: name };
+}
+
+export function nativeMockServerDockerArgs(port: number, name: string): string[] {
+  return [
     "run",
     "-d",
     "--rm",
@@ -588,15 +598,12 @@ async function connectMockServer(
     "MOCKSERVER_STREAMING_RESPONSES_ENABLED=true",
     "-e",
     "MOCKSERVER_MAX_STREAMING_CAPTURE_BYTES=8388608",
+    "-e",
+    "MOCKSERVER_REDACT_SECRETS_IN_LOG=true",
+    "-e",
+    "MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS=true",
     IMAGE,
   ];
-  opts.log(`MockServer: docker ${args.join(" ")}`);
-  execFileSync("docker", args, { stdio: "ignore" });
-  const baseUrl = `http://127.0.0.1:${port}`;
-  await waitForStatus(baseUrl, opts.log);
-  const mcp = new McpClient(mcpUrlFor(baseUrl));
-  await mcp.connect();
-  return { baseUrl, mcp, containerName: name };
 }
 
 function mcpUrlFor(baseUrl: string): string {
@@ -618,7 +625,7 @@ async function putExpectation(baseUrl: string, expectation: unknown): Promise<vo
 
 /** Strip the bookkeeping MockServer adds to a retrieved expectation, and spell Content-Type the way
  *  it expects on the way back in. The body is already the normalized match key — writeNormalizedFixture
- *  applies the shared normalizer once, at record time, and the shim applies it to the live request. */
+ *  applies the shared normalizer once, at record time, and the shim applies it to the replay request. */
 function cleanExpectationForReplay(expectation: FixtureExpectation): FixtureExpectation {
   const clean = structuredClone(expectation) as FixtureExpectation & Record<string, unknown>;
   delete clean.id;

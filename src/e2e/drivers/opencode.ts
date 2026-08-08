@@ -3,8 +3,8 @@
 // round-trip only works under a persistent server — a bare `opencode run` exits at session.idle
 // before the gate can round-trip. No tmux: these are plain child processes.
 //
-// Live mode stages the user's real config; record/check use a hermetic empty config plus our bundled
-// plugin via the real openCodeInstallPlan. OpenCode's built-in OpenAI OAuth provider reads auth.json
+// Record/check use a hermetic empty config plus our bundled plugin via the real openCodeInstallPlan.
+// OpenCode's built-in OpenAI OAuth provider reads auth.json
 // from XDG_DATA_HOME and exposes the Codex-subscription models without third-party plugins.
 //
 // A run that exits WITHOUT writing any files is a plan-tool miss (the model answered as plain text
@@ -17,8 +17,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { openCodeInstallPlan } from "../../bridge/OpenCodeInstaller.js";
-import { MOCK_CA_ENV, MOCK_URL_ENV, resolveMode, type E2EMode } from "../mockserver/mode.js";
-import { mockProxyEnv } from "../mockserver/proxyEnv.js";
+import { resolveMode, type E2EMode } from "../mockserver/mode.js";
+import { resolveMockProxy } from "../mockserver/proxyEnv.js";
 import { buildOpenCodeHome, mockPath, probeOpenCode, type HarnessHome } from "../sandbox.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
 import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
@@ -30,7 +30,7 @@ const PLAN_AGENT = "plan";
 /** The first file the implement step writes — its presence means the run engaged the plan gate and
  *  got past approve, so an exit is normal completion rather than a plan-tool miss. */
 const IMPLEMENT_MARKER = "hello.txt";
-/** Resolved lazily: mockPath touches the filesystem, which a live run has no reason to do. */
+/** Resolved lazily so importing the driver does not touch the filesystem. */
 const mockHomeDir = (): string => mockPath("pai-e2e-opencode-home");
 
 /**
@@ -60,8 +60,7 @@ export class OpenCodeDriver implements HarnessDriver {
   private home?: HarnessHome;
   private ctx?: DriverContext;
   private env?: NodeJS.ProcessEnv;
-  private mode: E2EMode = "live";
-  private mockUrl?: string;
+  private mode: E2EMode = "record";
   private serve?: ChildProcess;
   private run?: ChildProcess;
   private serverUrl?: string;
@@ -79,18 +78,15 @@ export class OpenCodeDriver implements HarnessDriver {
   async launch(ctx: DriverContext): Promise<void> {
     this.ctx = ctx;
     this.mode = resolveMode(process.env);
-    this.mockUrl = process.env[MOCK_URL_ENV];
+    const proxy = resolveMockProxy();
     this.home = buildOpenCodeHome({
       checkMode: this.mode === "check",
-      homeDir: this.mode === "live" ? undefined : mockHomeDir(),
+      homeDir: mockHomeDir(),
     });
     this.env = { ...baseHarnessEnv(), ...this.home.env };
-    if (this.mockUrl) {
-      // Transparent proxy: OpenCode keeps its opencodex provider + real auth; localhost (serve/attach)
-      // stays direct via NO_PROXY, provider traffic is recorded/replayed. Node honours NODE_EXTRA_CA_CERTS.
-      Object.assign(this.env, mockProxyEnv(this.mockUrl, process.env[MOCK_CA_ENV]!));
-      this.log(`mock mode=${this.mode}: HTTPS_PROXY=${this.mockUrl} (+CA trust)`);
-    }
+    // localhost serve/attach stays direct through NO_PROXY; provider traffic is recorded or replayed.
+    Object.assign(this.env, proxy.env);
+    this.log(`mode=${this.mode}: HTTPS_PROXY=${proxy.url} (+CA trust)`);
     this.stageConfig();
     await this.startServer();
   }
@@ -128,30 +124,12 @@ export class OpenCodeDriver implements HarnessDriver {
 
   // --- config staging -----------------------------------------------------------------------------
 
-  /** Live copies the user's config; mock modes deliberately start empty so replay never installs a
-   *  network plugin. Then install the bundled Paireto plugin via the real install plan. */
+  /** Start empty so replay never installs a network plugin, then install the bundled Paireto plugin. */
   private stageConfig(): void {
     const configDir = path.join(this.home!.env.XDG_CONFIG_HOME as string, "opencode");
     fs.mkdirSync(configDir, { recursive: true });
-    if (this.mode === "live") {
-      const realConfig = realOpenCodeConfigDir();
-      for (const name of [
-        "opencode.json",
-        "opencodex-fast.jsonc",
-        "package.json",
-        "package-lock.json",
-        "bun.lock",
-        "node_modules",
-      ]) {
-        const src = path.join(realConfig, name);
-        if (fs.existsSync(src)) {
-          fs.cpSync(src, path.join(configDir, name), { recursive: true });
-        }
-      }
-    } else {
-      fs.writeFileSync(path.join(configDir, "opencode.json"), "{}\n");
-      this.stagePluginSdk(configDir);
-    }
+    fs.writeFileSync(path.join(configDir, "opencode.json"), "{}\n");
+    this.stagePluginSdk(configDir);
     // Install our plugin (paireto.js + adapter.json + the review command) into the temp config dir.
     for (const copy of openCodeInstallPlan(path.join(repoRoot(), "plugins"), configDir)) {
       fs.mkdirSync(path.dirname(copy.to), { recursive: true });
