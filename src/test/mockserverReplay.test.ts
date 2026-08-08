@@ -14,7 +14,9 @@ import * as path from "node:path";
 import { extractJsonRpc } from "../e2e/mockserver/mcpClient.js";
 import {
   isSuccessfulRecording,
+  localBootstrapFor,
   normalizeCapturedResponses,
+  recordsPath,
   stripVolatileRequestMatchers,
   unwrapExpectations,
 } from "../e2e/mockserver/MockServerController.js";
@@ -70,6 +72,44 @@ suite("provider-replay: mode parsing", () => {
     assert.strictEqual(resolveCase({ PAIRETO_E2E_CASE: "  " }), "fullflow");
     assert.strictEqual(fixtureFileName("fullflow", "claudecode"), "fullflow.claudecode.json");
     assert.strictEqual(fixtureFileName("plan-only", "codex"), "plan-only.codex.json");
+  });
+});
+
+suite("provider-replay: recorded endpoints", () => {
+  test("only conversation endpoints are recorded", () => {
+    for (const driver of ["claudecode", "codex", "opencode"]) {
+      assert.strictEqual(recordsPath(driver, "/backend-api/wham/usage"), false, driver);
+      assert.strictEqual(
+        recordsPath(driver, "/backend-api/wham/rate-limit-reset-credits"),
+        false,
+        driver,
+      );
+    }
+    assert.strictEqual(recordsPath("claudecode", "/v1/messages"), true);
+    assert.strictEqual(recordsPath("codex", "/backend-api/codex/responses"), true);
+    assert.strictEqual(recordsPath("opencode", "/backend-api/codex/responses"), true);
+  });
+
+  // Codex refuses to start a turn without them, so dropping them from the cassette only works if the
+  // bootstrap answers them locally.
+  test("Codex's account endpoints are answered from the local bootstrap", () => {
+    const paths = localBootstrapFor("codex")
+      .map((entry) => entry.httpRequest.path)
+      .sort();
+    assert.deepStrictEqual(paths, [
+      "/backend-api/wham/rate-limit-reset-credits",
+      "/backend-api/wham/usage",
+    ]);
+
+    const usage = localBootstrapFor("codex").find(
+      (entry) => entry.httpRequest.path === "/backend-api/wham/usage",
+    );
+    const body = JSON.parse(String(usage?.httpResponse.body)) as {
+      plan_type: string;
+      rate_limit: { allowed: boolean };
+    };
+    assert.strictEqual(body.rate_limit.allowed, true, "the run must not be rate-limited");
+    assert.ok(!/pro|plus|team|enterprise/i.test(body.plan_type), "states no real subscription");
   });
 });
 

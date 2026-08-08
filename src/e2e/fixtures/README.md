@@ -36,11 +36,16 @@ load with a re-record instruction, and `record` refuses to write one if it can't
 - Audit the file for authorization headers, cookies, bearer/JWT/API-key patterns, and unexpected
   endpoints. Request headers are discarded and response headers are whitelisted to `Content-Type`,
   while MockServer redaction remains defense in depth; fixtures must never contain real credentials.
-- **Personal identity** (email, provider user/account/org ids) is scrubbed automatically — requests via
-  the shared normalizer, responses at write time — because provider _bodies_ carry it and header
-  redaction doesn't reach them. `src/test/fixturePrivacy.test.ts` re-scans every committed cassette and
-  fails the build on anything email- or account-id-shaped. If it fires after a re-record, extend
-  `IDENTITY_PATTERNS`/`IDENTITY_FIELDS` in `src/e2e/proxy/normalize.ts` and re-record — never hand-edit
-  the value out and leave the scrubber blind to it.
+- **Personal identity** (email, provider user/account/org ids, and the conversation handles a provider
+  echoes back — `prompt_cache_key`, `turn_id`) is scrubbed automatically — requests via the shared
+  normalizer, responses at write time — because provider _bodies_ carry it and header redaction
+  doesn't reach them. `src/test/fixturePrivacy.test.ts` re-scans every committed cassette and fails the
+  build on anything email-, account-id-, credential- or home-path-shaped. If it fires after a
+  re-record, extend `IDENTITY_PATTERNS`/`IDENTITY_KEYS` in `src/e2e/proxy/normalize.ts` and re-record —
+  never hand-edit the value out and leave the scrubber blind to it.
+- **Account and billing endpoints are never recorded.** They answer with the recorder's plan, quota use
+  and credit balance, and drive no inference, so `fixturePaths` in `MockServerController.ts` excludes
+  them and `LOCAL_BOOTSTRAP` answers them with a synthetic payload instead. Adding an endpoint to
+  `fixturePaths` commits whatever it returns — check the body first.
 - Fixtures are large but text; they diff. Re-record when the plugin's wire shape or the driver prompts
   change and a Docker check starts 599-ing (the strict-VCR "no fixture matched" signal).

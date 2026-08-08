@@ -30,19 +30,42 @@ const IMAGE = "mockserver/mockserver:mockserver-7.4.0";
 
 /** Per-harness replay knobs — the transparent proxy needs no per-host forward config. */
 interface HarnessProfile {
-  /** Only provider interactions needed to drive inference; updater/telemetry traffic is discarded. */
+  /** Only provider interactions needed to drive inference; updater, telemetry and account traffic is
+   *  discarded. Whatever matches here is committed, so a path whose response carries account state
+   *  belongs in LOCAL_BOOTSTRAP instead. */
   fixturePaths: RegExp[];
 }
 
-const jsonResponse = (body: unknown): unknown => ({
+export interface BootstrapExpectation {
+  httpRequest: { method: string; path: string };
+  httpResponse: { statusCode: number; headers: Record<string, string[]>; body: string };
+}
+
+const jsonResponse = (body: unknown): BootstrapExpectation["httpResponse"] => ({
   statusCode: 200,
   headers: { "content-type": ["application/json"] },
   body: JSON.stringify(body),
 });
 
+/** A quota window that is open and stays open, so a replayed run is never told to back off. */
+const OPEN_WINDOW = {
+  allowed: true,
+  limit_reached: false,
+  primary_window: {
+    used_percent: 0,
+    limit_window_seconds: 604_800,
+    reset_after_seconds: 604_800,
+    reset_at: 0,
+  },
+  secondary_window: null,
+};
+
 /** Startup calls a harness makes that carry no conversation and are answered locally, so they never
- *  need recording. Anything not listed here falls through to the strict 599 catch-all. */
-const LOCAL_BOOTSTRAP: Record<string, unknown[]> = {
+ *  need recording. Anything not listed here falls through to the strict 599 catch-all.
+ *
+ *  These answers are synthetic on purpose: the real ones state the recorder's subscription, quota use,
+ *  credit balance and spend cap, none of which drives inference and all of which would be committed. */
+const LOCAL_BOOTSTRAP: Record<string, BootstrapExpectation[]> = {
   claudecode: [
     { httpRequest: { method: "GET", path: "/api/hello" }, httpResponse: jsonResponse({}) },
     { httpRequest: { method: "GET", path: "/v1/oauth/hello" }, httpResponse: jsonResponse({}) },
@@ -57,6 +80,36 @@ const LOCAL_BOOTSTRAP: Record<string, unknown[]> = {
       }),
     },
   ],
+  codex: [
+    {
+      httpRequest: { method: "GET", path: "/backend-api/wham/usage" },
+      httpResponse: jsonResponse({
+        user_id: "PAIRETO_E2E_ID",
+        account_id: "PAIRETO_E2E_ID",
+        email: "paireto-e2e@example.invalid",
+        plan_type: "e2e",
+        rate_limit: OPEN_WINDOW,
+        code_review_rate_limit: null,
+        additional_rate_limits: [],
+        credits: {
+          has_credits: false,
+          unlimited: false,
+          overage_limit_reached: false,
+          balance: "0",
+          approx_local_messages: [0, 0],
+          approx_cloud_messages: [0, 0],
+        },
+        spend_control: { reached: false, individual_limit: null },
+        rate_limit_reached_type: null,
+        promo: null,
+        rate_limit_reset_credits: { available_count: 0, applicable_available_count: 0 },
+      }),
+    },
+    {
+      httpRequest: { method: "GET", path: "/backend-api/wham/rate-limit-reset-credits" },
+      httpResponse: jsonResponse({ credits: [], available_count: 0, total_earned_count: 0 }),
+    },
+  ],
 };
 
 const PROFILES: Record<string, HarnessProfile> = {
@@ -66,15 +119,22 @@ const PROFILES: Record<string, HarnessProfile> = {
     fixturePaths: [/^\/v1\/messages$/],
   },
   codex: {
-    fixturePaths: [
-      /^\/backend-api\/codex\/(?:models|responses)$/,
-      /^\/backend-api\/wham\/(?:usage|rate-limit-reset-credits)$/,
-    ],
+    fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
   },
   opencode: {
     fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
   },
 };
+
+/** Whether a recorded exchange on this path is committed to the cassette. */
+export function recordsPath(driver: string, requestPath: string): boolean {
+  return profileFor(driver).fixturePaths.some((matcher) => matcher.test(requestPath));
+}
+
+/** The locally-answered startup calls for a driver, empty when it makes none. */
+export function localBootstrapFor(driver: string): BootstrapExpectation[] {
+  return LOCAL_BOOTSTRAP[driver] ?? [];
+}
 
 export interface MockServerOptions {
   mode: E2EMode;
@@ -219,7 +279,7 @@ export class MockServerController {
     for (const expectation of expectations) {
       await putExpectation(this.mockBaseUrl, cleanExpectationForReplay(expectation));
     }
-    const bootstrap = LOCAL_BOOTSTRAP[driver] ?? [];
+    const bootstrap = localBootstrapFor(driver);
     for (const expectation of bootstrap) {
       await putExpectation(this.mockBaseUrl, expectation);
     }
@@ -422,12 +482,11 @@ export function unwrapExpectations(raw: unknown): FixtureExpectation[] {
 /** Parse retrieved ACTIVE_EXPECTATIONS JSON, strip volatile matchers, write the committable fixture
  *  stamped with the harness version it was recorded against (see harnessVersion.ts). */
 function writeNormalizedFixture(hostPath: string, retrievedJson: string, driver: string): number {
-  const profile = profileFor(driver);
   const essential = unwrapExpectations(JSON.parse(retrievedJson)).filter((expectation) => {
     const requestPath = expectation.httpRequest?.path;
     return (
       requestPath !== undefined &&
-      profile.fixturePaths.some((matcher) => matcher.test(requestPath)) &&
+      recordsPath(driver, requestPath) &&
       isSuccessfulRecording(expectation)
     );
   });

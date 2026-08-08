@@ -35,7 +35,9 @@ const IDENTITY_PATTERNS: Array<[RegExp, string]> = [
   [/\borg-[A-Za-z0-9]{16,}\b/g, "org-PAIRETO_E2E_ORG"],
   [/\bacct[_-][A-Za-z0-9]{8,}\b/g, "acct_PAIRETO_E2E_ACCOUNT"],
 ];
-/** Fields whose VALUE is an opaque id the patterns above don't shape-match. */
+/** Fields whose VALUE is an opaque id the patterns above don't shape-match. The conversation handles
+ *  (`prompt_cache_key`, `turn_id`) are deleted from the request match key anyway; they are listed here
+ *  because the provider echoes them back in the RESPONSE, which only scrubIdentity reaches. */
 const IDENTITY_KEYS = new Set([
   "account_id",
   "accountId",
@@ -47,6 +49,8 @@ const IDENTITY_KEYS = new Set([
   "organization_id",
   "organization_uuid",
   "organizationUuid",
+  "prompt_cache_key",
+  "turn_id",
   "user_id",
   "userId",
   "user_uuid",

@@ -1,6 +1,6 @@
-// The guarantee that a committed cassette carries no personal identity: this scans the committed
-// artifacts themselves and fails on anything email- or account-id-shaped, covering provider fields
-// the scrubber's list does not yet know about.
+// The guarantee that a committed cassette carries nothing private: this scans the committed artifacts
+// themselves and fails on anything email-, account-id-, credential- or host-path-shaped, covering
+// provider fields the scrubber's list does not yet know about.
 //
 // If it fails after a re-record, extend IDENTITY_PATTERNS/IDENTITY_KEYS in src/e2e/proxy/normalize.ts
 // to cover the new field and re-record, so the scrubber keeps up with it.
@@ -26,13 +26,61 @@ const PLACEHOLDERS = [
 const VENDOR_EMAILS = [/^noreply@anthropic\.com$/i, /^[a-z0-9._%+-]+@example\.(com|invalid|org)$/i];
 
 const EMAIL = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-const ACCOUNT_ID = /\b(?:user|org)-[A-Za-z0-9]{16,}\b|\bacct[_-][A-Za-z0-9]{8,}\b/g;
+const ACCOUNT_ID =
+  /\b(?:user|org)-[A-Za-z0-9]{16,}\b|\bacct[_-][A-Za-z0-9]{8,}\b|\bRateLimitResetCredit_[A-Za-z0-9]{16,}\b/g;
+
+/** Handles a provider mints per conversation and echoes back inside RESPONSE bodies, which the
+ *  request-side normalizer never reaches. Their value must always be the placeholder. */
+const SESSION_KEYS = ["prompt_cache_key", "turn_id"];
+/** The keys above as written in a cassette: the response body is a JSON string inside JSON, so every
+ *  quote may be escaped. */
+const SESSION_HANDLE = new RegExp(
+  `\\\\?"(?:${SESSION_KEYS.join("|")})\\\\?"\\s*:\\s*\\\\?"([^"\\\\]*)`,
+  "g",
+);
+
+/** Credential shapes a cassette must never carry. None matches today only because auth travels in
+ *  request headers, which are dropped — a provider that moved it into a body would be committed
+ *  unnoticed without this scan. */
+const SECRET_SHAPES: Array<[string, RegExp]> = [
+  ["bearer token", /Bearer[\s\\"]+[A-Za-z0-9._~+/-]{20,}/g],
+  ["JWT", /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g],
+  ["Anthropic key", /\bsk-ant-[A-Za-z0-9_-]{16,}/g],
+  ["OpenAI key", /\bsk-(?:proj|svcacct|admin)?-?[A-Za-z0-9]{32,}/g],
+  ["GitHub token", /\b(?:gh[pousr]_[A-Za-z0-9]{16,}|github_pat_[A-Za-z0-9_]{20,})\b/g],
+  ["AWS key id", /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/g],
+  ["Google key", /\bAIza[0-9A-Za-z_-]{35}\b/g],
+  ["Slack token", /\bxox[baprs]-[A-Za-z0-9-]{10,}/g],
+  ["private key", /-----BEGIN [A-Z ]*PRIVATE KEY-----/g],
+  ["cookie header", /\bSet-Cookie\b/gi],
+];
+
+/** A home directory names the machine that recorded the cassette; the sandbox roots do not. */
+const HOME_PATH = /\/(?:Users|home)\/[A-Za-z0-9_.-]+/g;
+/** OpenCode's own bash tool description ships this literal example path. */
+const VENDOR_HOME_PATHS = [/^\/Users\/name$/];
+
+/** Endpoints that carry account state (plan, quota, credits) and never conversation. Recording one
+ *  commits the recorder's subscription details, so they are answered from LOCAL_BOOTSTRAP instead. */
+const ACCOUNT_ENDPOINT = /\/wham\/|usage|rate-limit|credits|billing/i;
+
+interface CassetteExpectation {
+  httpRequest?: Record<string, unknown>;
+  httpResponse?: { headers?: Record<string, unknown> };
+}
 
 function fixtureFiles(): string[] {
   return fs
     .readdirSync(FIXTURES_DIR)
     .filter((name) => name.endsWith(".json"))
     .map((name) => path.join(FIXTURES_DIR, name));
+}
+
+function expectationsOf(file: string): CassetteExpectation[] {
+  const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    expectations?: CassetteExpectation[];
+  };
+  return parsed.expectations ?? [];
 }
 
 function offenders(text: string, pattern: RegExp, allow: RegExp[] = []): string[] {
@@ -74,6 +122,88 @@ suite("fixture privacy", () => {
     }
   });
 
+  test("no cassette contains a provider conversation handle", () => {
+    for (const file of fixtureFiles()) {
+      const text = fs.readFileSync(file, "utf8");
+      const found = [
+        ...new Set(
+          [...text.matchAll(SESSION_HANDLE)]
+            .map((match) => match[1])
+            .filter((value) => !PLACEHOLDERS.includes(value)),
+        ),
+      ];
+      assert.deepStrictEqual(
+        found,
+        [],
+        `${path.basename(file)} leaks conversation handle(s): ${found.join(", ")}`,
+      );
+    }
+  });
+
+  test("no cassette contains a credential", () => {
+    for (const file of fixtureFiles()) {
+      const text = fs.readFileSync(file, "utf8");
+      for (const [name, pattern] of SECRET_SHAPES) {
+        const found = offenders(text, pattern);
+        assert.deepStrictEqual(
+          found,
+          [],
+          `${path.basename(file)} leaks a ${name}: ${found.join(", ")}`,
+        );
+      }
+    }
+  });
+
+  test("no cassette contains the recorder's home directory", () => {
+    for (const file of fixtureFiles()) {
+      const found = offenders(fs.readFileSync(file, "utf8"), HOME_PATH, VENDOR_HOME_PATHS);
+      assert.deepStrictEqual(
+        found,
+        [],
+        `${path.basename(file)} leaks home path(s): ${found.join(", ")}`,
+      );
+    }
+  });
+
+  // The account endpoints answer with the recorder's plan, quota and credit balance, and drive no
+  // inference — LOCAL_BOOTSTRAP serves them so they never reach a cassette.
+  test("no cassette records an account or billing endpoint", () => {
+    for (const file of fixtureFiles()) {
+      const found = expectationsOf(file)
+        .map((expectation) => String(expectation.httpRequest?.path ?? ""))
+        .filter((requestPath) => ACCOUNT_ENDPOINT.test(requestPath));
+      assert.deepStrictEqual(
+        found,
+        [],
+        `${path.basename(file)} records account endpoint(s): ${found.join(", ")}`,
+      );
+    }
+  });
+
+  // The deny-by-default header policy is what stops a future provider header — a Set-Cookie above all
+  // — becoming committable, so the committed shape is asserted, not just the transform that makes it.
+  test("a cassette stores no request headers and only Content-Type on responses", () => {
+    for (const file of fixtureFiles()) {
+      expectationsOf(file).forEach((expectation, index) => {
+        const where = `${path.basename(file)}#${index}`;
+        assert.deepStrictEqual(
+          Object.keys(expectation.httpRequest ?? {}).filter(
+            (key) => !["method", "path", "body"].includes(key),
+          ),
+          [],
+          `${where} stores request matcher fields beyond method/path/body`,
+        );
+        assert.deepStrictEqual(
+          Object.keys(expectation.httpResponse?.headers ?? {}).filter(
+            (key) => key !== "Content-Type",
+          ),
+          [],
+          `${where} stores a response header outside the whitelist`,
+        );
+      });
+    }
+  });
+
   test("scrubIdentity replaces identity fields, emails, and opaque account ids", () => {
     const raw = JSON.stringify({
       email: "someone@real-domain.example.co.uk",
@@ -90,6 +220,26 @@ suite("fixture privacy", () => {
     assert.ok(!scrubbed.includes("AbCdEfGhIjKlMnOpQrSt"));
     assert.ok(!scrubbed.includes("5b2f1a90-0000-4000-8000-000000000000"));
     assert.ok(scrubbed.includes("this text is content, not identity"));
+  });
+
+  // The request normalizer deletes these outright, but the provider echoes them back inside the SSE
+  // response, where only scrubIdentity runs.
+  test("scrubIdentity replaces the conversation handles a response echoes back", () => {
+    const scrubbed = scrubIdentity(
+      JSON.stringify({
+        response: { prompt_cache_key: "ses_0232f763effeQbE1qXCwIy4XCj" },
+        internal_chat_message_metadata_passthrough: {
+          turn_id: "019fdccf-6990-78f2-972e-59db23528aa8",
+        },
+      }),
+    );
+
+    assert.ok(!scrubbed.includes("ses_0232f763effeQbE1qXCwIy4XCj"));
+    assert.ok(!scrubbed.includes("019fdccf-6990-78f2-972e-59db23528aa8"));
+    assert.deepStrictEqual(
+      [...scrubbed.matchAll(SESSION_HANDLE)].map((match) => match[1]),
+      ["PAIRETO_E2E_ID", "PAIRETO_E2E_ID"],
+    );
   });
 
   test("scrubIdentity is idempotent, so re-normalizing a cassette on load cannot drift", () => {
