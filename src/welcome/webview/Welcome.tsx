@@ -58,7 +58,8 @@ export function Welcome() {
       <section className="card">
         <h2>Set up your agent</h2>
         <p className="muted">
-          Install the bridge plugin so your agent can talk to Paireto, and configure a terminal profile so you create sessions instantly.
+          Install the bridge plugin so your agent can talk to Paireto, and configure a terminal
+          profile so you create sessions instantly.
         </p>
         <div className="rows">
           {(state?.agents ?? []).map((a) => (

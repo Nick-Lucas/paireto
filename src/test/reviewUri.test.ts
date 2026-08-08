@@ -108,13 +108,16 @@ suite("ReviewPath.displayPath (breadcrumb labeling)", () => {
     relPath: string,
     folders: readonly { name: string; fsPath: string }[],
   ): string {
-    return ReviewPath.create({
-      reviewId: "rev1",
-      side: "modified",
-      relPath,
-      ref: "WORKING",
-      repoRoot,
-    }, folders).displayPath();
+    return ReviewPath.create(
+      {
+        reviewId: "rev1",
+        side: "modified",
+        relPath,
+        ref: "WORKING",
+        repoRoot,
+      },
+      folders,
+    ).displayPath();
   }
 
   test("single-root: path relative to the folder, no folder-name prefix", () => {

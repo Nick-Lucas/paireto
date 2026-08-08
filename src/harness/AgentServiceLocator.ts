@@ -13,11 +13,13 @@ import { OpenCodeStrategy } from "./OpenCodeStrategy.js";
 
 export class AgentServiceLocator {
   // One entry per Harness — the literal map is the single point that knows the full set of harnesses.
-  private readonly byHarness: ReadonlyMap<Harness, AgentStrategy> = new Map<Harness, AgentStrategy>([
-    ["claudecode", new ClaudeCodeStrategy()],
-    ["codex", new CodexStrategy()],
-    ["opencode", new OpenCodeStrategy()],
-  ]);
+  private readonly byHarness: ReadonlyMap<Harness, AgentStrategy> = new Map<Harness, AgentStrategy>(
+    [
+      ["claudecode", new ClaudeCodeStrategy()],
+      ["codex", new CodexStrategy()],
+      ["opencode", new OpenCodeStrategy()],
+    ],
+  );
 
   /** Resolve the strategy for a validated harness. Total over the closed union — a missing entry is
    *  a wiring bug (a Harness value with no registered strategy), so throw rather than fail silently. */

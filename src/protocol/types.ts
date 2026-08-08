@@ -114,8 +114,9 @@ export interface SessionAttachMessage extends Envelope {
 /** Blocking plan-gate request. Carries an `id`; the hook blocks until the matching response. `event`
  *  is the raw harness payload carrying the plan (see {@link HarnessHookEvent}): Claude's ExitPlanMode
  *  PermissionRequest (`event.tool_input.plan`), or an OpenCode synthetic `paireto.plan.submitted`
- *  event (the plugin's own dialect). A plan the adapter had to RECOVER (Codex, from its rollout
- *  transcript) rides in `meta.planMarkdown` — never merged into the raw Codex `event`. */
+ *  event (the plugin's own dialect). A plan the adapter had to RECOVER rides in `meta.planMarkdown`,
+ *  alongside the raw `event`: Codex reads its rollout transcript, and Claude reads its own plan FILE
+ *  for the common case where ExitPlanMode omits the optional `plan` argument. */
 export interface PlanReviewRequest extends Envelope {
   t: "plan.review.request";
   id: string;

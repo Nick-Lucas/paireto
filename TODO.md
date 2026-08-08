@@ -158,6 +158,7 @@ Waiting for the exploration agent to finish mapping the existing session-boot ma
 * Look at the agent providing review feedback to the user during coding, reacting to user interactions, reacting to compile and lint errors with quick fixes, etc.
 * keep user feedback around so they can easily review the changes and follow-up, give the agent a tool to reply to each with their fix plan
 * Claude WorktreeCreate etc could be used to manage a CoW system?
+* Include an endpoint which lets the agent group changed files into structured reviews with descriptions of each
 
 # Refactoring ideas:
 

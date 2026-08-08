@@ -31,7 +31,16 @@
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
-    "test:e2e": "pnpm run compile && pnpm run compile-tests && node out/e2e/runE2E.js",
+    "test:e2e": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=record node out/e2e/runE2E.js",
+    "e2e:record": "pnpm test:e2e",
+    "e2e:check": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=check node out/e2e/runE2E.js",
+    "e2e:check:docker": "docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml exec -T tests pnpm e2e:check",
+    "e2e:record:docker": "bash docker/prepare-e2e.sh && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml exec -T tests pnpm e2e:record",
+    "docker:build": "docker compose -f docker/docker-compose.yml build",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:shell": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec tests bash",
+    "test:docker": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec -T tests pnpm test",
+    "test:e2e:docker": "bash docker/prepare-e2e.sh && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml exec -T tests pnpm test:e2e",
     "emulator": "node scripts/emulator.ts"
   },
   "dependencies": {
@@ -611,7 +620,7 @@
             "off"
           ],
           "default": "auto",
-          "description": "Permission mode Claude Code enters when you approve its plan: auto (auto-approve with background safety checks), acceptEdits (auto-approve file edits), default (ask for permission), plan (stay in plan mode), off (leave the mode unchanged). Codex has no settable plan-approve mode, so there is no key for it."
+          "description": "Permission mode Claude Code enters when you approve its plan: auto (auto-approve with background safety checks), acceptEdits (auto-approve file edits), default (ask for permission), plan (stay in plan mode), off (leave the mode unchanged). Codex Stop hooks cannot change collaboration mode, so Codex has no equivalent key and still presents its native approve-and-switch action."
         },
         "paireto.planApprove.mode.opencode": {
           "type": "string",

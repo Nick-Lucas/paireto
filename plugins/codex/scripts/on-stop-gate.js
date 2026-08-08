@@ -6,27 +6,27 @@
 // both surfaces off the Stop payload. Fails OPEN everywhere (any socket / timeout / malformed error
 // lets the agent stop) so a normal turn-end is never stalled.
 //
-// Codex Stop decision shape (empirically CONFIRMED Claude-identical, codex-cli 0.144.1):
-//   allow: exit 0 with no output.
-//   block: {"decision":"block","reason":"..."} -> Codex keeps going and addresses the feedback;
-//          the follow-up Stop then carries stop_hook_active:true.
+// Codex Stop decision shape (official Hooks reference + live verification):
+//   allow: exit 0 with no output -> the Plan turn finishes and Codex owns the next UI state.
+//   block: {"decision":"block","reason":"..."} -> Codex creates a new continuation prompt from
+//          reason; the follow-up Stop carries stop_hook_active:true.
+// Stop receives permission_mode as INPUT, but has no output field for changing collaboration mode.
+// PermissionRequest can approve tool escalations only. Neither hook can select native Plan mode's
+// "Implement this plan?" approve-and-switch action.
 //
 // Fork:
-//   - readPlanTurn().isPlanTurn === true   -> PLAN GATE: the ONLY plan-mode signal is the rollout
-//                                             transcript (permission_mode is approval-policy-only and
-//                                             never "plan", last_assistant_message is null, update_plan
-//                                             is rejected in plan mode — see codex-plangate findings).
-//                                             Send plan.review.request with the adapter-injected
-//                                             plan_markdown (the transcript's Plan item); allow -> emit
-//                                             nothing (stop proceeds, Codex stays in plan mode; the
-//                                             user exits it manually); deny -> block with the feedback
-//                                             (agent revises the plan).
+//   - readPlanTurn().isPlanTurn === true   -> PLAN GATE: recover the native Plan item from the rollout
+//                                             transcript (permission_mode is not a usable signal).
+//                                             Feedback blocks Stop so the continuation prompt revises
+//                                             the plan. Approval allows Stop; Codex then presents its
+//                                             native approve-and-switch selector to the user.
 //   - otherwise                            -> REVIEW GATE: stop.gate.request, block/allow like the
 //                                             Claude adapter's on-review-gate.js.
 
 const crypto = require("node:crypto");
 
 const bridge = require("./bridge.js");
+const { planGateOutcome } = require("./plan-flow.js");
 
 const CONNECT_TIMEOUT_MS = 1500;
 const PLAN_CONNECT_TIMEOUT_MS = 3000;
@@ -121,10 +121,9 @@ async function planGate(event, target, planMarkdown) {
       return;
     }
     clearTimeout(timer);
-    // allow -> emit nothing; Codex stays in plan mode (nextMode is ignored — Codex has no settable
-    // approve mode). deny -> block with the feedback so the agent revises the plan.
-    if (msg.decision === "deny") {
-      finish(() => block(msg.reason || "Plan changes requested."));
+    const outcome = planGateOutcome(msg);
+    if (outcome.decision === "block") {
+      finish(() => block(outcome.reason));
     } else {
       finish(allow);
     }

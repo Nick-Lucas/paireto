@@ -12,6 +12,7 @@ import { log } from "../log.js";
 
 const MARKETPLACE_NAME = "paireto";
 const PLUGIN_NAME = "paireto";
+const PREVIOUS_MARKETPLACE_NAME = "tui-companion";
 
 /**
  * The installed-version marker compares against this, read straight from the shipped plugin
@@ -93,22 +94,40 @@ function isAlreadyPresent(r: RunResult): boolean {
   return text.includes("already");
 }
 
-interface MarketplaceListEntry {
+export interface MarketplaceListEntry {
   name?: string;
   source?: string;
   path?: string;
 }
 
-/**
- * If our marketplace name is already registered but points at a different directory than the
- * current install (e.g. after a VSIX upgrade moved the extension's install path), remove it so the
- * next `add` repoints it — otherwise it silently keeps serving stale plugin files forever (which is
- * how a plan/review hook can end up double-registered and never resolve).
- */
-async function repointStaleMarketplace(bin: string, pluginsRoot: string): Promise<void> {
+export function manualInstallCommand(pluginsRoot: string): string {
+  return (
+    `claude plugin marketplace remove ${PREVIOUS_MARKETPLACE_NAME} --scope user; ` +
+    `claude plugin marketplace remove ${MARKETPLACE_NAME} --scope user; ` +
+    `claude plugin marketplace add "${pluginsRoot}" --scope user && ` +
+    `claude plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME} --scope user`
+  );
+}
+
+export function marketplaceNamesToRemove(
+  entries: MarketplaceListEntry[],
+  pluginsRoot: string,
+): string[] {
+  const expectedPath = path.resolve(pluginsRoot);
+  return entries.flatMap((entry) => {
+    if (entry.source !== "directory" || !entry.name || !entry.path) {
+      return [];
+    }
+    const pathMatches = path.resolve(entry.path) === expectedPath;
+    const hasExpectedName = entry.name === MARKETPLACE_NAME;
+    return pathMatches === hasExpectedName ? [] : [entry.name];
+  });
+}
+
+async function removeStaleMarketplaces(bin: string, pluginsRoot: string): Promise<void> {
   const list = await run(bin, ["plugin", "marketplace", "list", "--json"]);
   if (list.code !== 0) {
-    return; // best-effort — fall through to the normal add/install flow
+    return;
   }
   let entries: MarketplaceListEntry[];
   try {
@@ -116,23 +135,17 @@ async function repointStaleMarketplace(bin: string, pluginsRoot: string): Promis
   } catch {
     return;
   }
-  const existing = entries.find((e) => e.name === MARKETPLACE_NAME);
-  if (existing?.source !== "directory" || !existing.path) {
-    return; // not registered yet, or a non-directory source — normal add handles it
-  }
-  if (path.resolve(existing.path) === path.resolve(pluginsRoot)) {
-    return; // already pointing at the right place
-  }
-  const removed = await run(bin, ["plugin", "marketplace", "remove", MARKETPLACE_NAME, "--scope", "user"]);
-  if (removed.code === 0) {
-    log.info(
-      `plugin marketplace "${MARKETPLACE_NAME}" was stale (${existing.path}) — removed so it repoints to ${pluginsRoot}`,
-    );
-  } else {
-    log.info(
-      `plugin marketplace "${MARKETPLACE_NAME}" is stale (${existing.path}) but couldn't be removed: ` +
-        (removed.stderr || removed.stdout).trim().slice(0, 200),
-    );
+
+  for (const name of marketplaceNamesToRemove(entries, pluginsRoot)) {
+    const removed = await run(bin, ["plugin", "marketplace", "remove", name, "--scope", "user"]);
+    if (removed.code === 0) {
+      log.info(`removed stale plugin marketplace "${name}" before registering ${pluginsRoot}`);
+    } else {
+      log.info(
+        `could not remove stale plugin marketplace "${name}": ` +
+          (removed.stderr || removed.stdout).trim().slice(0, 200),
+      );
+    }
   }
 }
 
@@ -140,9 +153,7 @@ async function repointStaleMarketplace(bin: string, pluginsRoot: string): Promis
  * @param pluginsRoot absolute path to the shipped `plugins/` dir (contains .claude-plugin/marketplace.json)
  */
 export async function installPlugin(pluginsRoot: string): Promise<InstallResult> {
-  const manualCommand =
-    `claude plugin marketplace add "${pluginsRoot}" --scope user && ` +
-    `claude plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME} --scope user`;
+  const manualCommand = manualInstallCommand(pluginsRoot);
 
   const marketplaceManifest = path.join(pluginsRoot, ".claude-plugin", "marketplace.json");
   if (!fs.existsSync(marketplaceManifest)) {
@@ -158,7 +169,7 @@ export async function installPlugin(pluginsRoot: string): Promise<InstallResult>
     };
   }
 
-  await repointStaleMarketplace(bin, pluginsRoot);
+  await removeStaleMarketplaces(bin, pluginsRoot);
 
   const add = await run(bin, ["plugin", "marketplace", "add", pluginsRoot, "--scope", "user"]);
   if (add.code !== 0 && !isAlreadyPresent(add)) {

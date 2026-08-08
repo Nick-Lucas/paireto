@@ -1,0 +1,13 @@
+services:
+  tests:
+    environment:
+      PAIRETO_CLAUDE_CONFIG: "/paireto-secrets/claude.json"
+      PAIRETO_CLAUDE_CREDENTIALS: "/paireto-secrets/claude-credentials.json"
+      # Passed through from the host shell (which driver to run; optional API key).
+      PAIRETO_E2E_DRIVER: "${PAIRETO_E2E_DRIVER:-}"
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
+    volumes:
+      - ./.secrets:/paireto-secrets:ro
+      - ${HOME}/.codex:/root/.codex:ro
+      - ${HOME}/.local/share/opencode:/root/.local/share/opencode:ro
+      - ${HOME}/.config/opencode:/root/.config/opencode:ro

@@ -65,6 +65,18 @@ export function isInside(root: string, child: string): boolean {
 }
 
 /**
+ * A file's path relative to its repository root, for display and for the paths sent to an agent.
+ *
+ * Both sides are canonicalized first: a repo root resolved through git is symlink-free, while a URI
+ * from the editor keeps whatever path the workspace was opened with. On macOS a repo under `/tmp`
+ * (a symlink to `/private/tmp`) makes the two disagree, and the raw subtraction escapes the repo
+ * entirely — `../../../tmp/<repo>/hello.txt` instead of `hello.txt`.
+ */
+export function repoRelativePath(repoRoot: string, filePath: string): string {
+  return path.relative(canonicalize(repoRoot), canonicalize(filePath));
+}
+
+/**
  * The stable key for a repo/worktree root: first 8 bytes of sha256(canonical path), hex.
  * 64 bits of entropy — collision-negligible for per-user repo counts.
  */
