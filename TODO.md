@@ -27,6 +27,7 @@ Do not ever edit this, this is for humans only to edit!
 * keep user feedback around so they can easily review the changes and follow-up, give the agent a tool to reply to each with their fix plan
 * Claude WorktreeCreate etc could be used to manage a CoW system?
 * Include an endpoint which lets the agent group changed files into structured reviews with descriptions of each
+* Store user todos and feedback repo+branch-wise with an option to have it in the homedir or in the repo, permit the agent to respond to question feedback and to resolve comments
 
 # Refactoring ideas:
 
