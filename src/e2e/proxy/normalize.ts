@@ -147,8 +147,65 @@ export function normalizeClaudeBody(raw: string): string {
     body.mcp_servers = normalizeToolInventory(body.mcp_servers);
   }
   dropEmptyTextBlocks(body);
+  sortParallelToolResults(body);
+  trimToolResultTrailingWhitespace(body);
   normalizeClaudeWorkflowToolResults(body);
   return JSON.stringify(body);
+}
+
+/**
+ * Drop trailing whitespace from a tool result. Reading the same unchanged file twice can return the
+ * body with or without a trailing blank line — observed varying between the results of one parallel
+ * batch — and that lands in the next request, breaking strict replay. Only the trailing run is
+ * removed, so every line the model actually reasons about is untouched.
+ */
+function trimToolResultTrailingWhitespace(body: Record<string, unknown>): void {
+  walk(body, (object) => {
+    if (object.type === "tool_result" && typeof object.content === "string") {
+      object.content = object.content.replace(/\s+$/, "");
+    }
+  });
+}
+
+/**
+ * Order the results of tools the model called in PARALLEL by their tool_use_id. They come back in
+ * completion order — a race between two shell commands — while each result carries the id it belongs
+ * to, so the order means nothing and would otherwise make the same turn key differently per run.
+ * Only contiguous runs of tool_result blocks are sorted, so nothing moves past ordinary content.
+ */
+function sortParallelToolResults(body: Record<string, unknown>): void {
+  if (!Array.isArray(body.messages)) {
+    return;
+  }
+  for (const message of body.messages) {
+    const content = (message as { content?: unknown })?.content;
+    if (!Array.isArray(content)) {
+      continue;
+    }
+    for (let start = 0; start < content.length; start++) {
+      if (!isToolResult(content[start])) {
+        continue;
+      }
+      let end = start;
+      while (end + 1 < content.length && isToolResult(content[end + 1])) {
+        end++;
+      }
+      if (end > start) {
+        const run = content.slice(start, end + 1) as Array<{ tool_use_id?: string }>;
+        run.sort((a, b) => (a.tool_use_id ?? "").localeCompare(b.tool_use_id ?? ""));
+        content.splice(start, run.length, ...run);
+      }
+      start = end;
+    }
+  }
+}
+
+function isToolResult(block: unknown): boolean {
+  return (
+    typeof block === "object" &&
+    block !== null &&
+    (block as { type?: unknown }).type === "tool_result"
+  );
 }
 
 /**

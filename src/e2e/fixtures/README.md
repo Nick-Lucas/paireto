@@ -1,7 +1,6 @@
 # E2E provider-replay fixtures
 
-Committed MockServer cassettes, one file per **(test case, driver)** — `<case>.<driver>.json` (the case
-defaults to `fullflow`, set via `PAIRETO_E2E_CASE`; one case per run):
+Committed MockServer cassettes `<case>.<driver>.json`
 
 - `fullflow.claudecode.json`
 - `fullflow.codex.json`
@@ -17,7 +16,7 @@ Recorded inside the Docker `tests` service by whoever has provider access, using
 subscription**:
 
 ```sh
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker
+pnpm e2e:record:docker --grep @claudecode
 ```
 
 Record routes the harness's traffic through MockServer as a transparent MITM proxy — the harness keeps

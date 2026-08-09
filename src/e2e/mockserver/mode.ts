@@ -18,8 +18,8 @@ export const MODE_ENV = "PAIRETO_E2E_MODE";
 export const MOCK_URL_ENV = "PAIRETO_MOCK_URL";
 /** Env var carrying the path to MockServer's CA cert (so the harness trusts the MITM proxy). */
 export const MOCK_CA_ENV = "PAIRETO_MOCK_CA";
-/** Env var naming the E2E test case being run (one case per run) — namespaces its fixture. */
-export const CASE_ENV = "PAIRETO_E2E_CASE";
+/** Env var carrying the compiled spec the window runs — set by runE2E, read by .vscode-test.e2e.mjs. */
+export const SPEC_ENV = "PAIRETO_E2E_SPEC";
 
 /** Parse the mode from an env bag (defaults to `record`); unknown values fail loudly. */
 export function resolveMode(env: NodeJS.ProcessEnv = process.env): E2EMode {
@@ -30,17 +30,33 @@ export function resolveMode(env: NodeJS.ProcessEnv = process.env): E2EMode {
   throw new Error(`${MODE_ENV}="${raw}" is invalid — use record|check`);
 }
 
-export function resolveDriver(env: NodeJS.ProcessEnv = process.env): E2EDriver {
-  const raw = (env.PAIRETO_E2E_DRIVER ?? "").trim().toLowerCase() as E2EDriver;
-  if (E2E_DRIVERS.includes(raw)) {
-    return raw;
-  }
-  throw new Error(`PAIRETO_E2E_DRIVER="${raw}" is invalid — use ${E2E_DRIVERS.join("|")}`);
+/**
+ * The title a (case, driver) suite carries, and the label its window is selected by.
+ *
+ * The spec builds its suite title from this, so ONE Mocha pattern selects the same thing in both
+ * places: out here, where it decides which windows to open, and inside the window, where Mocha
+ * applies it for real. The `@driver` tag is what makes `--grep @codex` mean "codex, every case".
+ */
+export function pairLabel(testCase: string, driver: E2EDriver): string {
+  return `${testCase} @${driver}`;
 }
 
-/** The E2E test case being run (default `fullflow`); one case per run, namespacing its fixture. */
-export function resolveCase(env: NodeJS.ProcessEnv = process.env): string {
-  return (env[CASE_ENV] ?? "").trim() || "fullflow";
+/** A Mocha-style filter, as parsed off the command line. */
+export interface PairFilter {
+  grep?: string;
+  fgrep?: string;
+}
+
+/** The pairs a filter selects. No filter selects the whole matrix. */
+export function filterPairs<T extends { label: string }>(pairs: T[], filter: PairFilter): T[] {
+  if (filter.fgrep) {
+    return pairs.filter((pair) => pair.label.includes(filter.fgrep as string));
+  }
+  if (filter.grep) {
+    const pattern = new RegExp(filter.grep);
+    return pairs.filter((pair) => pattern.test(pair.label));
+  }
+  return pairs;
 }
 
 /** The committed fixture file name for a (case, driver) — lives under src/e2e/fixtures/. */

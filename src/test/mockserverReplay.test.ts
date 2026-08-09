@@ -22,12 +22,7 @@ import {
   stripVolatileRequestMatchers,
   unwrapExpectations,
 } from "../e2e/mockserver/MockServerController.js";
-import {
-  fixtureFileName,
-  resolveCase,
-  resolveDriver,
-  resolveMode,
-} from "../e2e/mockserver/mode.js";
+import { filterPairs, fixtureFileName, pairLabel, resolveMode } from "../e2e/mockserver/mode.js";
 import { mockProxyEnv, resolveMockProxy } from "../e2e/mockserver/proxyEnv.js";
 import {
   isPairetoTool,
@@ -67,20 +62,52 @@ suite("provider-replay: mode parsing", () => {
     assert.throws(() => resolveMode({ PAIRETO_E2E_MODE: "replay" }), /invalid/);
   });
 
-  test("accepts only known E2E drivers", () => {
-    assert.strictEqual(resolveDriver({ PAIRETO_E2E_DRIVER: "codex" }), "codex");
-    assert.throws(
-      () => resolveDriver({ PAIRETO_E2E_DRIVER: "x/../../../Users/example" }),
-      /invalid/i,
-    );
-  });
-
-  test("test case defaults to fullflow, overridable, and namespaces the fixture per (case, driver)", () => {
-    assert.strictEqual(resolveCase({}), "fullflow");
-    assert.strictEqual(resolveCase({ PAIRETO_E2E_CASE: "plan-only" }), "plan-only");
-    assert.strictEqual(resolveCase({ PAIRETO_E2E_CASE: "  " }), "fullflow");
+  test("the fixture is namespaced per (case, driver)", () => {
     assert.strictEqual(fixtureFileName("fullflow", "claudecode"), "fullflow.claudecode.json");
     assert.strictEqual(fixtureFileName("plan-only", "codex"), "plan-only.codex.json");
+  });
+});
+
+suite("provider-replay: matrix selection", () => {
+  const matrix = ["fullflow", "plan-only"].flatMap((testCase) =>
+    (["claudecode", "codex", "opencode"] as const).map((driver) => ({
+      label: pairLabel(testCase, driver),
+    })),
+  );
+  const labels = (pairs: { label: string }[]): string[] => pairs.map((pair) => pair.label);
+
+  test("a pair is labelled with its case and a driver tag, which is its suite title", () => {
+    assert.strictEqual(pairLabel("fullflow", "codex"), "fullflow @codex");
+  });
+
+  test("no filter selects the whole matrix", () => {
+    assert.strictEqual(filterPairs(matrix, {}).length, 6);
+  });
+
+  test("a driver tag selects that driver across every case", () => {
+    assert.deepStrictEqual(filterPairs(matrix, { grep: "@codex" }), [
+      { label: "fullflow @codex" },
+      { label: "plan-only @codex" },
+    ]);
+  });
+
+  test("a case name selects every driver of that case", () => {
+    assert.deepStrictEqual(labels(filterPairs(matrix, { grep: "^fullflow " })), [
+      "fullflow @claudecode",
+      "fullflow @codex",
+      "fullflow @opencode",
+    ]);
+  });
+
+  test("the driver tag cannot match a driver whose name merely contains it", () => {
+    assert.deepStrictEqual(labels(filterPairs(matrix, { fgrep: "@codex" })), [
+      "fullflow @codex",
+      "plan-only @codex",
+    ]);
+  });
+
+  test("a pattern that matches no pair selects nothing, rather than everything", () => {
+    assert.deepStrictEqual(filterPairs(matrix, { grep: "@nosuchdriver" }), []);
   });
 });
 
@@ -393,6 +420,79 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(normalized.input[1].internal_chat_message_metadata_passthrough, undefined);
     assert.strictEqual(normalized.input[1].output[0].text, "NORMALIZED");
     assert.strictEqual(normalized.input[1].output[1].text, "stable output");
+  });
+
+  test("orders parallel tool results by id, so a race between two commands cannot change the key", () => {
+    const body = (first: string, second: string): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "keep me first" },
+              { type: "tool_result", tool_use_id: first, content: `out-${first}` },
+              { type: "tool_result", tool_use_id: second, content: `out-${second}` },
+            ],
+          },
+        ],
+      });
+
+    const normalized = normalizeClaudeBody(body("toolu_a", "toolu_b"));
+    assert.strictEqual(normalized, normalizeClaudeBody(body("toolu_b", "toolu_a")));
+    const parsed = JSON.parse(normalized) as {
+      messages: Array<{ content: Array<{ type: string; tool_use_id?: string; content?: string }> }>;
+    };
+    const blocks = parsed.messages[0].content;
+    assert.strictEqual(blocks[0].type, "text", "ordinary content must not be reordered");
+    assert.deepStrictEqual(
+      blocks.slice(1).map((b) => b.tool_use_id),
+      ["toolu_a", "toolu_b"],
+    );
+    // Each result must still carry ITS OWN output — sorting moves whole blocks, never their contents.
+    assert.strictEqual(blocks[1].content, "out-toolu_a");
+    assert.strictEqual(blocks[2].content, "out-toolu_b");
+  });
+
+  test("trims only trailing whitespace from a tool result, so a stray blank line cannot miss", () => {
+    const body = (suffix: string): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "t", content: `1\tline\n2\t}${suffix}` }],
+          },
+        ],
+      });
+
+    assert.strictEqual(normalizeClaudeBody(body("")), normalizeClaudeBody(body("\n\n")));
+    const parsed = JSON.parse(normalizeClaudeBody(body("\n\n"))) as {
+      messages: Array<{ content: Array<{ content: string }> }>;
+    };
+    // Interior newlines and indentation are the model's actual input — only the tail goes.
+    assert.strictEqual(parsed.messages[0].content[0].content, "1\tline\n2\t}");
+  });
+
+  test("collapses the Codex plugin-cache version, so a plugin bump alone cannot invalidate a cassette", () => {
+    const body = (version: string): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "message",
+            role: "user",
+            content: [
+              {
+                type: "input_text",
+                text: `<hook_prompt hook_run_id="stop:8:/tmp/home/plugins/cache/paireto/paireto/${version}/hooks/hooks.json">go</hook_prompt>`,
+              },
+            ],
+          },
+        ],
+      });
+
+    assert.strictEqual(normalizeCodexBody(body("0.5.7")), normalizeCodexBody(body("0.9.12")));
+    assert.ok(normalizeCodexBody(body("0.5.7")).includes("paireto/paireto/VERSION/hooks"));
+    // The path still has to be there — only its version segment is noise.
+    assert.ok(normalizeCodexBody(body("0.5.7")).includes("plugins/cache/paireto"));
   });
 
   // Codex stamps a fresh `msg_<uuidv7>` on every conversation item, so a replayed body could never
