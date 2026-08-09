@@ -225,6 +225,14 @@
         "command": "paireto.agent.show",
         "title": "Show Agent",
         "icon": "$(eye-closed)"
+      },
+      {
+        "command": "paireto.guided.openFile",
+        "title": "Open Changes"
+      },
+      {
+        "command": "paireto.guided.openChangeset",
+        "title": "Open Changeset"
       }
     ],
     "viewsContainers": {
@@ -357,6 +365,14 @@
         {
           "command": "paireto.agent.show",
           "when": "false"
+        },
+        {
+          "command": "paireto.guided.openFile",
+          "when": "false"
+        },
+        {
+          "command": "paireto.guided.openChangeset",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -480,17 +496,17 @@
         },
         {
           "command": "paireto.review.discard",
-          "when": "view == paireto.main && viewItem == changedFile:unstaged",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
           "group": "inline@2"
         },
         {
           "command": "paireto.review.stage",
-          "when": "view == paireto.main && viewItem == changedFile:unstaged",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
           "group": "inline@3"
         },
         {
           "command": "paireto.review.unstage",
-          "when": "view == paireto.main && viewItem == changedFile:staged",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:staged/",
           "group": "inline@2"
         },
         {
@@ -505,17 +521,17 @@
         },
         {
           "command": "paireto.review.stage",
-          "when": "view == paireto.main && viewItem == changedFile:unstaged",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
           "group": "2_git@1"
         },
         {
           "command": "paireto.review.discard",
-          "when": "view == paireto.main && viewItem == changedFile:unstaged",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
           "group": "2_git@2"
         },
         {
           "command": "paireto.review.unstage",
-          "when": "view == paireto.main && viewItem == changedFile:staged",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:staged/",
           "group": "2_git@1"
         },
         {
@@ -547,6 +563,26 @@
           "command": "paireto.review.unstage",
           "when": "view == paireto.main && viewItem == folder:staged",
           "group": "2_git@1"
+        },
+        {
+          "command": "paireto.review.unstageAll",
+          "when": "view == paireto.main && (viewItem == changeset:unstage || viewItem == changeset:both)",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.stageAll",
+          "when": "view == paireto.main && (viewItem == changeset:stage || viewItem == changeset:both)",
+          "group": "inline@2"
+        },
+        {
+          "command": "paireto.review.stageAll",
+          "when": "view == paireto.main && (viewItem == changeset:stage || viewItem == changeset:both)",
+          "group": "2_git@1"
+        },
+        {
+          "command": "paireto.review.unstageAll",
+          "when": "view == paireto.main && (viewItem == changeset:unstage || viewItem == changeset:both)",
+          "group": "2_git@2"
         }
       ],
       "view/title": [
@@ -636,6 +672,7 @@
     }
   },
   "activationEvents": [
+    "onFileSystem:paireto-changeset",
     "onFileSystem:paireto-review",
     "onStartupFinished"
   ],

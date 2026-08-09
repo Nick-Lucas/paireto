@@ -2,8 +2,16 @@
 
 ## Architecture
 
-Drives the full **plan → feedback → approve → implement → review-feedback → review-approve** loop
-inside a real VS Code window, over the per-repo Unix socket — the same substrate the product uses.
+Drives a whole Paireto loop inside a real VS Code window, over the per-repo Unix socket — the same
+substrate the product uses. There are two cases, selected with `PAIRETO_E2E_CASE` (one per run,
+default `fullflow`):
+
+- **`fullflow`** — **plan → feedback → approve → implement → review-feedback → review-approve**, on
+  all three drivers.
+- **`guidedreview`** — the user asks for a guided review, the agent groups the seeded working-tree
+  changes into changesets and submits them through the bundled MCP tool, the user opens a file,
+  stages a changeset, comments, sends the feedback, and approves the follow-up. Recorded for
+  `claudecode` (the reference harness); the other two share the same wire message and tool contract.
 
 - The specs (`tests/*.e2e.ts`, shared step helpers in `tests/steps.ts`) run under **Mocha** inside the
   extension host, so each step is reported by name and a case scaffolds itself in
@@ -41,6 +49,7 @@ pnpm e2e:check:docker                            # every case × every driver
 pnpm e2e:check:docker --grep @codex              # one driver, every case
 pnpm e2e:check:docker --grep '^fullflow '        # one case, every driver
 pnpm e2e:check:docker --grep 'fullflow @codex'   # exactly one pair
+pnpm e2e:check:docker --grep guidedreview        # the guided-review case
 
 # Recording replaces the cassette of every pair it runs, at the price of a real provider call each.
 pnpm e2e:record:docker --grep @claudecode

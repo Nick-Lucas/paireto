@@ -18,13 +18,20 @@ import {
   applyOpenCodeConfig,
   getLastUserAgentFromMessages,
   isTitleGeneratorPrompt,
+  guidedPlanToolArgs,
   planToolArgs,
   resolveOpenCodeRoot,
   shouldInjectPlanningPrompt,
 } from "./automation.js";
+import type { GuidedReviewArgs } from "../core/mcp/guidedReviewTool.js";
+import {
+  GUIDED_REVIEW_TOOL_DESCRIPTION,
+  GUIDED_REVIEW_TOOL_NAME,
+} from "../core/mcp/guidedReviewTool.js";
 import { createBridge } from "./bridge.js";
 import { handleEvent, maybeRunStopGate, switchAgent } from "./dispatch.js";
 import {
+  GUIDED_REVIEW_APPROVED,
   PLAN_APPROVED,
   PLAN_CHANGES_REQUESTED,
   PLAN_EXIT_REDIRECT,
@@ -62,9 +69,15 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
   // top-level one, so this module's pure helpers stay importable in the unit tests (which don't have
   // the SDK installed and never invoke this factory). Fail-open: no SDK → the plan tool advertises no
   // args rather than crashing the session.
+  //
+  // Cast through `unknown`: the SDK types `tool.schema` as having only `string()`, while the object
+  // it hands over is the whole zod instance. guidedPlanToolArgs checks for each builder it uses
+  // before calling any of them, so a runtime that really is that narrow degrades instead of crashing.
   let toolSchema: ToolSchema | null = null;
   try {
-    const sdk = (await import("@opencode-ai/plugin")) as { tool?: { schema?: ToolSchema } };
+    const sdk = (await import("@opencode-ai/plugin")) as unknown as {
+      tool?: { schema?: ToolSchema };
+    };
     toolSchema = sdk?.tool?.schema ?? null;
   } catch {
     // Not running under OpenCode — leave the plan arg unschematized (never reached at runtime).
@@ -231,6 +244,36 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
             return PLAN_APPROVED;
           } catch {
             return PLAN_UNAVAILABLE;
+          }
+        },
+      },
+
+      // Guided review. OpenCode registers its own tools rather than running an MCP server, so this
+      // mirrors src/plugins/core/mcp/guidedReviewTool.ts — same name, description and arg shape, so
+      // the extension sees one payload whichever harness sent it.
+      [GUIDED_REVIEW_TOOL_NAME]: {
+        description: GUIDED_REVIEW_TOOL_DESCRIPTION,
+        args: guidedPlanToolArgs(toolSchema),
+        execute: async (args: GuidedReviewArgs, ctx: ToolContext) => {
+          const sessionID = typeof ctx?.sessionID === "string" ? ctx.sessionID : undefined;
+          try {
+            const response = await bridge.gate({
+              t: "guided.review.await.request",
+              cwd: bridge.repoRoot,
+              repoRoot: bridge.repoRoot,
+              sessionId: sessionID,
+              summary: args?.summary,
+              compareTo: args?.compareTo,
+              changesets: args?.changesets ?? [],
+            });
+            if (!response) {
+              return REVIEW_UNAVAILABLE;
+            }
+            return response.status === "submitted" && response.feedback
+              ? response.feedback
+              : GUIDED_REVIEW_APPROVED;
+          } catch {
+            return REVIEW_FAILED;
           }
         },
       },

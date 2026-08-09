@@ -210,6 +210,58 @@ export function planToolArgs(schema: ToolSchema | undefined | null): Record<stri
   return { plan: schema.string().describe(PLAN_ARG_DESCRIPTION) };
 }
 
+/** The `args` (ZodRawShape) for the guided-review tool. Same SDK-zod contract and same fail-open
+ *  fallback as {@link planToolArgs} — the shape must mirror the MCP harnesses' tool schema, since
+ *  the extension parses one payload shape whichever harness sent it. */
+export function guidedPlanToolArgs(schema: ToolSchema | undefined | null): Record<string, unknown> {
+  // This shape needs more of zod than the plan tool does, and the SDK's own types only promise
+  // `string`. Check every builder up front so a leaner SDK advertises no args instead of crashing
+  // the plugin boot half way through building them.
+  const str = schema?.string;
+  const enumOf = schema?.enum;
+  const object = schema?.object;
+  const array = schema?.array;
+  if (!schema || !str || !enumOf || !object || !array) {
+    return {};
+  }
+  const text = (description: string) => str.call(schema).describe(description);
+  const optionalText = (description: string) => str.call(schema).optional().describe(description);
+
+  return {
+    summary: optionalText("One paragraph on the branch."),
+    compareTo: object
+      .call(schema, {
+        kind: enumOf
+          .call(schema, ["head", "mergeBase", "default", "ref"])
+          .describe(
+            "head = uncommitted work; mergeBase = this branch since it forked; default = the " +
+              "default branch tip; ref = the named ref.",
+          ),
+        ref: optionalText("For kind 'ref'."),
+      })
+      .optional()
+      .describe("What you diffed against. Must match what you reviewed."),
+    changesets: array
+      .call(
+        schema,
+        object.call(schema, {
+          title: text("Names this group of changes."),
+          description: text("What it does and why."),
+          files: array
+            .call(
+              schema,
+              object.call(schema, {
+                path: text("Repository-relative."),
+                note: optionalText("Why this file matters here."),
+              }),
+            )
+            .describe("In reading order."),
+        }),
+      )
+      .describe("Changed files grouped by intent."),
+  };
+}
+
 /** Git projects use OpenCode's worktree identity; non-Git projects report worktree "/" and use the
  * exact project directory that VS Code serves as a workspace-root socket. */
 export function resolveOpenCodeRoot(

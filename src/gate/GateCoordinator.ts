@@ -3,13 +3,13 @@
 // and is the target of the shared Approve / Send-Feedback commands — but multiple may be pending
 // (their agents blocked on the socket). The user switches the foreground by clicking an agent; the
 // backgrounded gate is hidden, NOT resolved, and can be returned to. The integrated terminal panel
-// is hidden while the foreground gate is a plan and restored otherwise.
+// is hidden while any gate is foreground and restored once none is.
 
 import * as vscode from "vscode";
 
 import { hideBottomPanel, showTerminalPanel } from "./tabs.js";
 
-export type GateKind = "plan" | "review";
+export type GateKind = "plan" | "review" | "guided";
 
 /** The active flow behind the shared Approve / Send-Feedback commands. */
 export interface GateSession {
@@ -131,7 +131,7 @@ export class GateCoordinator implements vscode.Disposable {
     }
   }
 
-  /** Hide the bottom panel while any gate (plan or review) is foreground; restore it when none is. */
+  /** Hide the bottom panel while any gate is foreground; restore it when none is. */
   private async applyPanel(kind: GateKind | undefined): Promise<void> {
     try {
       if (kind !== undefined) {

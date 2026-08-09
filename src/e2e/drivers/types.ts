@@ -7,6 +7,8 @@
 export interface DriverCaps {
   /** Whether the turn-end review gate blocks the agent (claude/codex) or is post-hoc (opencode). */
   turnEndReview: "blocking" | "post-hoc";
+  /** How the user asks this harness for a guided review (its command / skill invocation). */
+  guidedReviewInvocation: string;
 }
 
 /** Everything a driver needs to launch its agent against the sandbox repo. */
@@ -15,6 +17,12 @@ export interface DriverContext {
   sessionId: string;
   /** Failure-artifact sink: the driver appends its wire/screen log here; screen() returns it joined. */
   log: string[];
+  /** Start the session in the harness's reviewed-plan mode (default true — the full-flow case). A
+   *  guided review starts from ordinary work instead. */
+  planMode?: boolean;
+  /** Load the bundled plugin's MCP server, for cases that call one of its tools. Off by default:
+   *  a loaded server puts its tool inventory in every request body, so it changes the replay key. */
+  loadPluginMcp?: boolean;
 }
 
 export interface HarnessDriver {

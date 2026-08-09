@@ -226,6 +226,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return reviewController.startSession(msg.id, sessionId, msg.repoRoot, signal);
     },
+    onGuidedReviewAwait: (msg, signal) => {
+      warnForeignRepo(msg.repoRoot);
+      // Same best-effort attribution as a manual review: the tool may not know its session id.
+      const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot);
+      if (sessionId) {
+        signal.addEventListener("abort", () => agents.markIdleOnDisconnect(sessionId), {
+          once: true,
+        });
+      }
+      // The request comes from a tool, so it carries no harness tag — name the agent from its own
+      // session row when we found one.
+      const session = agents.allSessions().find((s) => s.sessionId === sessionId);
+      const displayName = session ? locator.strategyFor(session.harness).displayName : "The agent";
+      return reviewController.startGuidedSession(
+        msg.id,
+        sessionId,
+        msg.repoRoot,
+        { summary: msg.summary, compareTo: msg.compareTo, changesets: msg.changesets },
+        displayName,
+        signal,
+      );
+    },
     onStopGate: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
       const strategy = locator.strategyFor(msg.harness);

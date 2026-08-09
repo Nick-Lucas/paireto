@@ -37,6 +37,10 @@ export const Commands = {
   reviewAddProblem: "paireto.review.addProblem",
   reviewRevealComment: "paireto.review.revealComment",
   reviewDeleteComment: "paireto.review.deleteComment",
+  /** Open the diff for a file named by the agent's review plan. */
+  guidedOpenFile: "paireto.guided.openFile",
+  /** Open a changeset's description as a read-only, commentable markdown tab. */
+  guidedOpenChangeset: "paireto.guided.openChangeset",
   focusAgent: "paireto.focusAgent",
   /** Click an agent row: switch the foreground gate to that agent's pending plan/review. */
   agentSwitch: "paireto.agent.switch",
@@ -49,6 +53,8 @@ export const Commands = {
 export const Schemes = {
   plan: "paireto-plan",
   review: "paireto-review",
+  /** One changeset's description, as a read-only markdown document the reviewer can comment on. */
+  changeset: "paireto-changeset",
 } as const;
 
 export const Views = {
@@ -64,6 +70,8 @@ export const ContextKeys = {
   reviewDiffActive: "paireto.reviewDiffActive",
   /** True when the foreground gate has ≥1 actionable comment — shows Send Feedback, hides Approve. */
   gateHasFeedback: "paireto.gateHasFeedback",
+  /** True while a review plan is open; it replaces the Changed Files list in the sidebar. */
+  guidedActive: "paireto.guidedActive",
 } as const;
 
 export const StateKeys = {

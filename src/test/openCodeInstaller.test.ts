@@ -1,9 +1,10 @@
-// Pure-function coverage for the OpenCode installer's file-shape logic: the three-file install plan
-// (which shipped artifact copies to which config-dir target), the adapter-version parsing used by the
-// probe, and the shipped-manifest reader's shape assertion. All run without touching any real OpenCode
-// config (the plan is pure paths; version parsing is pure over a JSON string).
+// Coverage for the OpenCode installer's file-shape logic: the install plan (which shipped artifact
+// copies to which config-dir target), the adapter-version parsing used by the probe, and the shipped-
+// manifest reader's shape assertion. The plan enumerates the REAL shipped bundle, so these assert
+// against what esbuild actually built into `dist/plugins/opencode`; nothing touches a real config.
 
 import * as assert from "node:assert";
+import * as fs from "node:fs";
 import * as path from "node:path";
 
 import {
@@ -14,34 +15,49 @@ import {
 } from "../bridge/OpenCodeInstaller.js";
 
 suite("openCodeInstallPlan", () => {
-  const plan = openCodeInstallPlan("/ext/plugins", "/home/.config/opencode");
+  // The real built bundle, so a file added to the OpenCode plugin is installed without touching this.
+  const pluginsRoot = path.resolve(__dirname, "../../dist/plugins");
+  const plan = openCodeInstallPlan(pluginsRoot, "/home/.config/opencode");
+  const targets = plan.map((c) => c.to);
 
-  test("copies the plugin + its manifest into the plugin dir, in place (no version staging)", () => {
-    const byTarget = new Map(plan.map((c) => [c.to, c.from]));
-    assert.strictEqual(
-      byTarget.get("/home/.config/opencode/plugin/paireto.js"),
-      "/ext/plugins/opencode/paireto.js",
-    );
-    assert.strictEqual(
-      byTarget.get("/home/.config/opencode/plugin/adapter.json"),
-      "/ext/plugins/opencode/adapter.json",
-    );
+  test("installs every file the bundle ships, in place (no version staging)", () => {
+    const shipped = fs
+      .readdirSync(path.join(pluginsRoot, "opencode"), { withFileTypes: true })
+      .filter((e) => e.isFile())
+      .map((e) => e.name);
+    assert.ok(shipped.includes("paireto.js"), "the plugin itself is shipped");
+    for (const name of shipped) {
+      assert.ok(
+        targets.includes(`/home/.config/opencode/plugin/${name}`),
+        `${name} must be installed`,
+      );
+    }
   });
 
-  test("copies the command into the commands/ dir (plural)", () => {
-    const byTarget = new Map(plan.map((c) => [c.to, c.from]));
-    assert.strictEqual(
-      byTarget.get("/home/.config/opencode/commands/paireto-review.md"),
-      "/ext/plugins/opencode/commands/paireto-review.md",
-    );
+  test("installs every shipped command into the commands/ dir (plural)", () => {
+    const commands = fs.readdirSync(path.join(pluginsRoot, "opencode", "commands"));
+    assert.ok(commands.length > 0, "the bundle ships at least one command");
+    for (const name of commands) {
+      assert.ok(
+        targets.includes(`/home/.config/opencode/commands/${name}`),
+        `${name} must be installed`,
+      );
+    }
   });
 
-  test("only our three files — never a broad dir copy that could clobber foreign plugins", () => {
-    assert.strictEqual(plan.length, 3);
+  test("writes only our own filenames — never a recursive copy that could clobber a foreign subtree", () => {
     assert.ok(
       plan.every((c) => path.basename(c.from) === path.basename(c.to)),
       "each copy keeps its own filename",
     );
+    assert.strictEqual(new Set(targets).size, targets.length, "no target is written twice");
+    for (const target of targets) {
+      const parent = path.dirname(target);
+      assert.ok(
+        parent === "/home/.config/opencode/plugin" || parent === "/home/.config/opencode/commands",
+        `${target} must land directly in a dir we own`,
+      );
+    }
   });
 });
 

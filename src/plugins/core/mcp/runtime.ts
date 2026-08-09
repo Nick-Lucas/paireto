@@ -5,6 +5,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { PLUGIN_VERSION } from "../../../protocol/types.js";
+import {
+  GUIDED_REVIEW_TOOL_DESCRIPTION,
+  GUIDED_REVIEW_TOOL_INPUT_SCHEMA,
+  GUIDED_REVIEW_TOOL_NAME,
+  runGuidedReview,
+} from "./guidedReviewTool.js";
 import type { ReviewTarget } from "./reviewTool.js";
 import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTool.js";
 
@@ -29,6 +35,15 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
 
   server.registerTool(REVIEW_TOOL_NAME, { description: REVIEW_TOOL_DESCRIPTION }, () =>
     runReview(adapter.resolveReviewTarget(), adapter.noTargetMessage),
+  );
+
+  server.registerTool(
+    GUIDED_REVIEW_TOOL_NAME,
+    {
+      description: GUIDED_REVIEW_TOOL_DESCRIPTION,
+      inputSchema: GUIDED_REVIEW_TOOL_INPUT_SCHEMA,
+    },
+    (args) => runGuidedReview(adapter.resolveReviewTarget(), args, adapter.noTargetMessage),
   );
 
   return server;

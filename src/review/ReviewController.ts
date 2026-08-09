@@ -13,7 +13,7 @@ import { CommentSession, type GateComment } from "../comments/CommentSession.js"
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
-import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
+import { GateCoordinator, type GateEntry, type GateKind } from "../gate/GateCoordinator.js";
 import { repoRelativePath } from "../protocol/paths.js";
 import { closeTabsWhere } from "../gate/tabs.js";
 import {
@@ -35,6 +35,21 @@ import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewPath } from "./ReviewPath.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
 import { relocateReviewAnchor } from "./commentAnchors.js";
+import {
+  ChangesetDocProvider,
+  changesetDocUri,
+  changesetIdFromDocUri,
+  renderChangesetDoc,
+} from "./ChangesetDocProvider.js";
+import {
+  buildGuidedState,
+  parseChangesets,
+  toGuidedPlan,
+  type GuidedChangesetState,
+  type GuidedFileRow,
+  type GuidedPlan,
+  type GuidedReviewState,
+} from "./guidedPlan.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
@@ -70,6 +85,8 @@ export interface ReviewState {
   compareTo: CompareTo;
   layout: FileLayout;
   repositories: RepositoryReviewState[];
+  /** The agent's changeset plan resolved against the live changes, while a guided review is open. */
+  guided?: GuidedReviewState;
 }
 
 export interface RepoChangedFile extends ChangedFile {
@@ -133,6 +150,11 @@ export class ReviewController implements vscode.Disposable {
   private activeRequestId?: string;
   /** Owning agent session of the active review (best-effort; drives the Agents panel). */
   private activeSessionId?: string;
+  /** The agent's changeset plan for the active guided review. Held OUTSIDE `repositoryStates`, which
+   *  `refresh()` rebuilds wholesale — so it stores paths and resolves them fresh on every read. */
+  private guidedPlan?: GuidedPlan;
+  /** Read-only markdown for each changeset the reviewer has opened; cleared with the plan. */
+  private readonly changesetDocs = new ChangesetDocProvider();
   /** The review slot: held while a review is in progress. A second agent review waits in
    *  `reviewWaiters` until the one ahead resolves (at most one review pending at a time). */
   private reviewBusy = false;
@@ -175,12 +197,18 @@ export class ReviewController implements vscode.Disposable {
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
       (doc) =>
         doc.uri.scheme === Schemes.review ||
+        doc.uri.scheme === Schemes.changeset ||
         (doc.uri.scheme === "file" && this.isChangedFileDoc(doc.uri)),
     );
 
     const reg = vscode.commands.registerCommand;
     this.disposables.push(
       this.commentSession,
+      this.changesetDocs,
+      vscode.workspace.registerFileSystemProvider(Schemes.changeset, this.changesetDocs, {
+        isReadonly: true,
+        isCaseSensitive: true,
+      }),
       this.changeEmitter,
       this.activeDiffEmitter,
       reg(Commands.reviewRefresh, () => this.refresh()),
@@ -197,6 +225,8 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewStage, (a: unknown) => this.stageFiles(filesFromArg(a))),
       reg(Commands.reviewUnstage, (a: unknown) => this.unstageFiles(filesFromArg(a))),
       reg(Commands.reviewDiscard, (a: unknown) => this.discardFiles(filesFromArg(a))),
+      reg(Commands.guidedOpenFile, (a: unknown) => this.guidedOpenFile(a)),
+      reg(Commands.guidedOpenChangeset, (a: unknown) => void this.guidedOpenChangeset(a)),
       reg(Commands.reviewStageAll, (a: unknown) => this.stageAll(a)),
       reg(Commands.reviewUnstageAll, (a: unknown) => this.unstageAll(a)),
       reg(Commands.reviewDiscardAll, (a: unknown) => this.discardAll(a)),
@@ -250,6 +280,53 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
+   * Begin a guided review (invoked by the `paireto_start_guided_review` tool via the bridge). The
+   * agent's changeset plan becomes a sidebar section over the ordinary Changes surfaces, and the
+   * agent blocks until the user approves or sends feedback — the same two outcomes as any review.
+   * Takes the review slot: `reviewId` feeds the `paireto-review://` URIs, so two review-like
+   * sessions at once would mint colliding tabs.
+   */
+  async startGuidedSession(
+    requestId: string,
+    sessionId: string | undefined,
+    repoRoot: string,
+    submitted: { summary?: string; compareTo?: unknown; changesets: unknown },
+    displayName: string,
+    signal: AbortSignal,
+  ): Promise<ReviewGateResult> {
+    const who = sessionId?.slice(0, 8) ?? "unknown";
+    if (this.roots.gitRoots.length === 0) {
+      void vscode.window.showWarningMessage("Paireto guided review requires a Git repository.");
+      return { status: "cancelled", feedback: "" };
+    }
+    // The plan is model output. An unusable one fails open — no gate, and the tool tells the agent.
+    const changesets = parseChangesets(submitted.changesets);
+    if (!changesets) {
+      log.info(`guided review rejected for agent ${who}: no usable changesets in the plan`);
+      return { status: "cancelled", feedback: "" };
+    }
+    if (!(await this.acquireReviewSlot(signal))) {
+      return { status: "cancelled", feedback: "" }; // connection dropped while queued
+    }
+    const guidedPlan = toGuidedPlan(repoRoot, changesets, submitted);
+    this.guidedPlan = guidedPlan;
+    await this.setGuidedContext(true);
+    // Align the window to what the agent actually diffed against. Otherwise the two disagree and
+    // every change between the two points arrives as an unclaimed "Other changes" row.
+    await this.applyCompareTo(guidedPlan.compareTo, "guided review");
+    const fileCount = changesets.reduce((total, c) => total + c.files.length, 0);
+    log.info(
+      `guided review opened for agent ${who}: ${changesets.length} changeset(s), ${fileCount} file(s)`,
+    );
+    const plural = changesets.length === 1 ? "" : "s";
+    this.notifyReviewOpened(
+      requestId,
+      `${displayName} prepared a review plan — ${changesets.length} changeset${plural}.`,
+    );
+    return this.runReview(requestId, sessionId, repoRoot, signal, (result) => result, "guided");
+  }
+
+  /**
    * The turn-end gate. Allows the agent to stop immediately unless there's something to review —
    * the turn touched files, there are uncommitted changes, or the user has left comments — in which
    * case it opens a review (consuming any unclaimed comments) and blocks until the user resolves it.
@@ -290,40 +367,34 @@ export class ReviewController implements vscode.Disposable {
     log.info(`review opened for agent ${who}: turn-end (${reason})`);
     this.reviewBusy = true;
     const requestId = newReviewId();
-    this.notifyReviewOpened(requestId, displayName);
+    this.notifyReviewOpened(
+      requestId,
+      `${displayName} finished its turn and is waiting for your review.`,
+    );
     return this.runReview(requestId, sessionId, repoRoot, signal, (r) =>
       r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false },
     );
   }
 
   /**
-   * Non-blocking toast announcing an auto-opened turn-end review (only — /paireto-review stays
-   * silent), with one-click actions: review it or approve as-is.
+   * Non-blocking toast announcing a review that opened by itself — a turn-end gate or a guided
+   * review, never /paireto-review, which the user asked for and so stays silent. One-click actions:
+   * go and review it, or approve as-is.
    */
-  private notifyReviewOpened(requestId: string, displayName: string): void {
+  private notifyReviewOpened(requestId: string, message: string): void {
     const REVIEW = "Start Reviewing";
     const APPROVE = "Approve Immediately";
-    void vscode.window
-      .showInformationMessage(
-        `${displayName} finished its turn and is waiting for your review.`,
-        REVIEW,
-        APPROVE,
-      )
-      .then(async (choice) => {
-        if (this.activeRequestId !== requestId) {
-          return; // resolved/dropped while the toast was up
-        }
-        if (choice === REVIEW) {
-          await this.coordinator.switchTo(requestId);
-          try {
-            await vscode.commands.executeCommand(`${Views.main}.focus`);
-          } catch {
-            /* view may not be registered yet — non-fatal */
-          }
-        } else if (choice === APPROVE) {
-          this.approve();
-        }
-      });
+    void vscode.window.showInformationMessage(message, REVIEW, APPROVE).then(async (choice) => {
+      if (this.activeRequestId !== requestId) {
+        return; // resolved/dropped while the toast was up
+      }
+      if (choice === REVIEW) {
+        await this.coordinator.switchTo(requestId);
+        await this.focusView();
+      } else if (choice === APPROVE) {
+        this.approve();
+      }
+    });
   }
 
   /**
@@ -337,8 +408,9 @@ export class ReviewController implements vscode.Disposable {
     repoRoot: string,
     signal: AbortSignal,
     map: (result: ReviewGateResult) => T,
+    kind: GateKind = "review",
   ): Promise<T> {
-    await this.registerReviewGate(requestId, sessionId, repoRoot);
+    await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
     // A dropped connection ends the review (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
       this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
@@ -357,6 +429,7 @@ export class ReviewController implements vscode.Disposable {
     requestId: string,
     sessionId: string | undefined,
     repoRoot: string,
+    kind: GateKind,
   ): Promise<void> {
     this.activeRequestId = requestId;
     this.activeSessionId = sessionId;
@@ -364,10 +437,10 @@ export class ReviewController implements vscode.Disposable {
     const entry: GateEntry = {
       id: requestId,
       sessionId,
-      kind: "review",
+      kind,
       repoRoot,
       session: {
-        kind: "review",
+        kind,
         approve: () => this.approve(),
         sendFeedback: () => this.sendFeedback(),
         hasFeedback: () => this.hasFeedback(),
@@ -385,6 +458,10 @@ export class ReviewController implements vscode.Disposable {
     }
     this.activeRequestId = undefined;
     this.activeSessionId = undefined;
+    this.guidedPlan = undefined;
+    this.changesetDocs.clear();
+    await this.setGuidedContext(false);
+    await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
     await this.setReviewContext(false);
     this.resetComments();
     await this.coordinator.unregister(requestId);
@@ -396,12 +473,16 @@ export class ReviewController implements vscode.Disposable {
   private async foreground(): Promise<void> {
     await this.setReviewContext(true);
     await this.refresh();
+    await this.focusView();
+    this.changeEmitter.fire();
+  }
+
+  private async focusView(): Promise<void> {
     try {
       await vscode.commands.executeCommand(`${Views.main}.focus`);
     } catch {
       /* view may not be registered yet — non-fatal */
     }
-    this.changeEmitter.fire();
   }
 
   /** Background: hide the Feedback section without resolving; comments are preserved. */
@@ -419,6 +500,23 @@ export class ReviewController implements vscode.Disposable {
    *  openDiff's scoped sync) never ran the full refresh. */
   getRefreshCounts(): Record<string, number> {
     return Object.fromEntries(this.refreshCounts);
+  }
+
+  /** Adopt a Compare To point and persist it, so the Changes model and anything reading it agree. */
+  private async applyCompareTo(compareTo: CompareTo, reason: string): Promise<void> {
+    if (this.compareTo.kind === compareTo.kind && this.compareTo.ref === compareTo.ref) {
+      return;
+    }
+    log.info(
+      `compare-to set to ${compareTo.kind}${compareTo.ref ? ` ${compareTo.ref}` : ""} by ${reason}`,
+    );
+    this.compareTo = compareTo;
+    await this.store.setCompareTo(compareTo);
+  }
+
+  /** Drives whether the sidebar shows the Review Plan in place of the raw Changed Files list. */
+  private async setGuidedContext(active: boolean): Promise<void> {
+    await vscode.commands.executeCommand("setContext", ContextKeys.guidedActive, active);
   }
 
   private async setReviewContext(foreground: boolean): Promise<void> {
@@ -462,18 +560,31 @@ export class ReviewController implements vscode.Disposable {
   }
 
   getState(): ReviewState {
+    const repositories = this.roots.gitRoots.map(
+      (root) =>
+        this.repositoryStates.get(root.repoRoot) ?? {
+          repoRoot: root.repoRoot,
+          displayName: root.displayName,
+          changes: scopedChanges(root.repoRoot, EMPTY_CHANGES),
+        },
+    );
     return {
       compareTo: this.compareTo,
       layout: this.layout,
-      repositories: this.roots.gitRoots.map(
-        (root) =>
-          this.repositoryStates.get(root.repoRoot) ?? {
-            repoRoot: root.repoRoot,
-            displayName: root.displayName,
-            changes: scopedChanges(root.repoRoot, EMPTY_CHANGES),
-          },
-      ),
+      repositories,
+      guided: this.guidedPlan && this.buildGuided(this.guidedPlan, repositories),
     };
+  }
+
+  /** Resolve the plan against the current model. Rebuilt on every read, never cached: `refresh()`
+   *  replaces the repository models wholesale, so a held `ChangedFile` goes stale on the next save. */
+  private buildGuided(plan: GuidedPlan, repositories: RepositoryReviewState[]): GuidedReviewState {
+    return buildGuidedState(
+      plan,
+      repositories,
+      (repository, path) =>
+        selectCommentFile(repository.changes, path) as RepoChangedFile | undefined,
+    );
   }
 
   async refresh(reason = "manual"): Promise<void> {
@@ -584,8 +695,7 @@ export class ReviewController implements vscode.Disposable {
     if (!choice) {
       return;
     }
-    this.compareTo = choice;
-    await this.store.setCompareTo(choice);
+    await this.applyCompareTo(choice, "user");
     if (choice.kind === "ref" && choice.ref) {
       await this.store.addRecentRef(choice.ref);
     }
@@ -713,6 +823,11 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async stageAll(arg: unknown): Promise<void> {
+    const changeset = this.guidedChangeset(arg);
+    if (changeset) {
+      await this.stageFiles(filesInGroup(changeset, "unstaged"));
+      return;
+    }
     const repo = await this.repositoryFromArgOrPick(arg);
     if (repo) {
       await this.stageFiles(repo.changes.unstaged);
@@ -720,6 +835,11 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async unstageAll(arg: unknown): Promise<void> {
+    const changeset = this.guidedChangeset(arg);
+    if (changeset) {
+      await this.unstageFiles(filesInGroup(changeset, "staged"));
+      return;
+    }
     const repo = await this.repositoryFromArgOrPick(arg);
     if (repo) {
       await this.unstageFiles(repo.changes.staged);
@@ -1095,6 +1215,11 @@ export class ReviewController implements vscode.Disposable {
 
   private async addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<void> {
     const uri = reply.thread.uri;
+    const changesetId = changesetIdFromDocUri(uri);
+    if (changesetId !== undefined) {
+      await this.addChangesetComment(reply, kind, changesetId);
+      return;
+    }
     // Comments anchor on the review-scheme side of a locked diff OR the editable working-tree (file:)
     // side of an editable one (its modified side is the live file).
     const anchor = this.resolveCommentAnchor(uri);
@@ -1160,6 +1285,62 @@ export class ReviewController implements vscode.Disposable {
     // Comments accumulate in this bucket whether or not a review is in progress; a review (started by
     // /paireto-review or the turn-end gate) consumes whatever is in it. The Feedback section reveals
     // itself once the bucket is non-empty. Editability is unaffected.
+    this.changeEmitter.fire();
+  }
+
+  /**
+   * A comment on a changeset's description: feedback about how the agent grouped the work, not about
+   * a line of code. It joins the same bucket as file comments so one Send Feedback delivers both,
+   * and carries the changeset instead of a file path — the feedback renderer keys off that.
+   */
+  private async addChangesetComment(
+    reply: vscode.CommentReply,
+    kind: CommentKind,
+    changesetId: string,
+  ): Promise<void> {
+    const guided = this.getState().guided;
+    const changeset = guided?.changesets.find((c) => c.id === changesetId);
+    if (!guided || !changeset) {
+      return;
+    }
+    const line = reply.thread.range?.start.line ?? 0;
+    const doc = await vscode.workspace.openTextDocument(reply.thread.uri);
+    const quote = line < doc.lineCount ? doc.lineAt(line).text : "";
+    const model: ReviewComment = {
+      id: crypto.randomUUID(),
+      repoRoot: guided.repoRoot,
+      filePath: "",
+      changeset: { id: changeset.id, title: changeset.title },
+      side: "modified",
+      line,
+      kind,
+      body: reply.text,
+      quote,
+      anchor: {
+        lineText: quote,
+        contextBefore: [],
+        contextAfter: [],
+        lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
+      },
+    };
+    let comment: GateComment;
+    comment = this.commentSession.add(reply, kind, {
+      id: model.id,
+      onSaved: (newBody) => {
+        model.body = newBody;
+        this.changeEmitter.fire();
+      },
+      onDeleted: () => {
+        this.comments.delete(model.id);
+        const thread = comment.thread;
+        if (thread?.comments.length === 0) {
+          this.commentSession.forget(thread);
+        }
+        this.changeEmitter.fire();
+      },
+    });
+    reply.thread.label = `Changeset: ${changeset.title}`;
+    this.comments.set(model.id, { comment, model });
     this.changeEmitter.fire();
   }
 
@@ -1378,6 +1559,60 @@ export class ReviewController implements vscode.Disposable {
     this.changeEmitter.fire();
   }
 
+  // ── Guided review ───────────────────────────────────────────────────────────
+  /** The live row a guided command was invoked on, from a tree node or a `{changesetId, path}`. */
+  private guidedRow(arg: unknown): GuidedFileRow | undefined {
+    if (!arg || typeof arg !== "object") {
+      return undefined;
+    }
+    const source = "row" in arg ? (arg as { row: unknown }).row : arg;
+    if (!source || typeof source !== "object") {
+      return undefined;
+    }
+    const { changesetId, path } = source as { changesetId?: unknown; path?: unknown };
+    if (typeof changesetId !== "string" || typeof path !== "string") {
+      return undefined;
+    }
+    return this.getState()
+      .guided?.changesets.find((c) => c.id === changesetId)
+      ?.files.find((row) => row.path === path);
+  }
+
+  private guidedOpenFile(arg: unknown): void {
+    const row = this.guidedRow(arg);
+    if (row?.file) {
+      void this.openDiff(row.file);
+    }
+    // A path with no live change has nothing to open — the row already says so.
+  }
+
+  /** The changeset a command argument names, resolved against the live plan. */
+  private guidedChangeset(arg: unknown): GuidedChangesetState | undefined {
+    const id = changesetIdFromArg(arg);
+    return id === undefined
+      ? undefined
+      : this.getState().guided?.changesets.find((c) => c.id === id);
+  }
+
+  /** Open a changeset's description as a read-only markdown tab, so the reviewer can read what the
+   *  group is for and comment on the grouping itself rather than on a line of code. */
+  private async guidedOpenChangeset(arg: unknown): Promise<void> {
+    const changeset = this.guidedChangeset(arg);
+    if (!changeset) {
+      return;
+    }
+    const uri = changesetDocUri(changeset);
+    this.changesetDocs.set(uri, renderChangesetDoc(changeset));
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.languages.setTextDocumentLanguage(doc, "markdown");
+    await vscode.window.showTextDocument(doc, { preview: true });
+  }
+
+  /** Read-only guided snapshot for the env-gated E2E inspect seam. Nothing else reads it. */
+  guidedSnapshot(): GuidedReviewState | undefined {
+    return this.getState().guided;
+  }
+
   getComments(): ReviewComment[] {
     return [...this.comments.values()].map((e) => e.model);
   }
@@ -1455,8 +1690,10 @@ export class ReviewController implements vscode.Disposable {
   }
 }
 
-/** Unwrap a command argument (a MainTree file node, or a root-qualified ChangedFile). */
-function asFile(arg: unknown): RepoChangedFile | undefined {
+/** Unwrap a command argument (a MainTree file node, or a root-qualified ChangedFile). VS Code hands
+ *  an inline `view/item/context` button the tree NODE, so every node shape that carries a changed
+ *  file must be understood here — a shape it misses makes the button silently do nothing. */
+export function asFile(arg: unknown): RepoChangedFile | undefined {
   if (!arg || typeof arg !== "object") {
     return undefined;
   }
@@ -1465,6 +1702,11 @@ function asFile(arg: unknown): RepoChangedFile | undefined {
   }
   if ("file" in arg) {
     return (arg as { file: RepoChangedFile }).file;
+  }
+  // A Review Plan row nests its changed file one level down; a planned path with no live change
+  // resolves to nothing, which is correct — there is nothing to stage.
+  if ("row" in arg) {
+    return asFile((arg as { row: unknown }).row);
   }
   return undefined;
 }
@@ -1483,6 +1725,23 @@ function filesFromArg(arg: unknown): RepoChangedFile[] {
   }
   const f = asFile(arg);
   return f ? [f] : [];
+}
+
+/** A changeset's live files sitting in one git layer — what its bulk Stage/Unstage acts on. */
+function filesInGroup(changeset: GuidedChangesetState, group: FileGroup): RepoChangedFile[] {
+  return changeset.files.flatMap((row) => (row.file?.group === group ? [row.file] : []));
+}
+
+/** The changeset a command argument names — a `changeset` tree node or a plain `{changesetId}`. */
+export function changesetIdFromArg(arg: unknown): string | undefined {
+  if (!arg || typeof arg !== "object") {
+    return undefined;
+  }
+  const o = arg as { kind?: unknown; changeset?: { id?: unknown }; changesetId?: unknown };
+  if (o.kind === "changeset" && typeof o.changeset?.id === "string") {
+    return o.changeset.id;
+  }
+  return typeof o.changesetId === "string" ? o.changesetId : undefined;
 }
 
 function repoRootFromArg(arg: unknown): string | undefined {
@@ -1520,6 +1779,11 @@ function scopedChanges(repoRoot: string, changes: ChangesModel): RepositoryChang
 
 function newReviewId(): string {
   return "review-" + crypto.randomBytes(4).toString("hex");
+}
+
+/** The scheme of a plain-text tab, so tabs belonging to one of our virtual schemes can be closed. */
+function tabUriScheme(input: unknown): string | undefined {
+  return input instanceof vscode.TabInputText ? input.uri.scheme : undefined;
 }
 
 /** Stable virtual URI used to identify either a two-pane review diff or a single virtual pane. */

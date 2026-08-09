@@ -16,7 +16,7 @@ import type { GateCoordinator } from "./gate/GateCoordinator.js";
 import type { RepoService } from "./git/RepoService.js";
 import type { PlanReviewController } from "./plan/PlanReviewController.js";
 import type { ReviewController } from "./review/ReviewController.js";
-import type { AddCommentArgs, InspectSnapshot } from "./e2e/inspectTypes.js";
+import type { AddCommentArgs, InspectGuided, InspectSnapshot } from "./e2e/inspectTypes.js";
 
 export interface TestControlPlaneDeps {
   agents: AgentSessionService;
@@ -84,6 +84,23 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       commentBucketCount: deps.reviewController.getComments().length,
       gateHasFeedback: deps.coordinator.current?.hasFeedback() ?? false,
       refreshCounts: deps.reviewController.getRefreshCounts(),
+      guided: guidedSnapshot(),
+    };
+  };
+
+  const guidedSnapshot = (): InspectGuided | undefined => {
+    const guided = deps.reviewController.guidedSnapshot();
+    if (!guided) {
+      return undefined;
+    }
+    return {
+      repoRoot: guided.repoRoot,
+      changesets: guided.changesets.map((changeset) => ({
+        id: changeset.id,
+        title: changeset.title,
+        descriptionLength: changeset.description.length,
+        files: changeset.files.map((row) => ({ path: row.path, group: row.file?.group })),
+      })),
     };
   };
 

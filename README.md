@@ -17,6 +17,7 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 - [Workflows](#workflows)
   - [Plan Mode](#plan-mode)
   - [Review Mode](#review-mode)
+  - [Guided Review](#guided-review)
   - [Changed Files view](#changed-files-view)
   - [Switch repo or worktree](#switch-repo-or-worktree)
 - [Troubleshooting](#troubleshooting)
@@ -47,6 +48,7 @@ I didn't need a second app, I needed a tighter integration between my TUI and ed
 | 👩🏽‍💻 **Changed Filers** | Edit from git diffs and compare to any git ref |
 | 📋 **Plan review** | Feed back on agent plans before implementation |
 | 🔍 **Code review** | Review completed agent code before accepting it |
+| 🧭 **Guided review** | Your agent groups a branch's changes into described changesets to read in order |
 | 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visiblity |
 | 🚀 **More to come** | See [TODO.md](./TODO.md) |
 
@@ -90,6 +92,22 @@ comments from the VS Code editor, then click **Approve** or **Send Feedback** to
 When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:paireto-review` skill.
 
 Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish. 
+
+## Guided Review
+
+Ask your agent for a guided review (`/paireto:guided-review`, `$paireto-guided-review`, or
+`/paireto-guided-review`) and it studies the changes, then hands VS Code a **review plan**: the changed
+files grouped into named changesets, each with a description and its files in the order you should read
+them.
+
+A **Review Plan** section replaces the Changed Files list while it is open. Work through it changeset by
+changeset: click a changeset to read a description of what it does, click a file to open its diff, and
+stage or unstage a whole changeset from its row. Each file row shows which git layer it sits in
+(committed, staged, or working tree). Anything the plan did not name is collected under **Other
+changes**, so nothing is hidden.
+
+Comment on a file diff as usual, or on a changeset's description to give feedback on the grouping
+itself. Finish with the usual **Approve** or **Send Feedback**.
 
 ## Changed Files view
 

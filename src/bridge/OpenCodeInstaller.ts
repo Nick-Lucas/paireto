@@ -1,16 +1,16 @@
 // Installs the bundled OpenCode adapter. OpenCode autoloads any plugin file dropped in its global
 // config dir (`~/.config/opencode/plugin/`) and any command in `~/.config/opencode/commands/` — no
-// registration CLI, no config edits. So the install is a plain file copy of our own three artifacts:
+// registration CLI, no config edits. So the install is a plain file copy:
 //
-//   dist/plugins/opencode/paireto.js            → <config>/plugin/paireto.js
-//   dist/plugins/opencode/adapter.json          → <config>/plugin/adapter.json   (the plugin reads its
-//                                             own version from this sibling at runtime)
-//   dist/plugins/opencode/commands/paireto-review.md → <config>/commands/paireto-review.md
+//   dist/plugins/opencode/*          → <config>/plugin/     (incl. adapter.json, which the plugin
+//                                      reads its own version from at runtime)
+//   dist/plugins/opencode/commands/* → <config>/commands/
 //
-// merge-don't-clobber: those dirs are SHARED with the user's other plugins/commands, but we only ever
-// write our own three filenames — every foreign file is left untouched. The plan is a PURE function
-// (unit-tested); the IO wrapper stays thin. No stableDir staging (unlike Codex, whose local plugin
-// points at absolute paths): OpenCode loads the copied file in place, so a durable dir isn't needed.
+// The plan is READ from the shipped bundle rather than hard-coded, so adding a command is just adding
+// the file. merge-don't-clobber still holds: those dirs are SHARED with the user's other plugins and
+// commands, and we only ever write the names we ship — every foreign file is left untouched. No
+// stableDir staging (unlike Codex, whose local plugin points at absolute paths): OpenCode loads the
+// copied file in place, so a durable dir isn't needed.
 
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -30,19 +30,21 @@ export interface OpenCodeCopy {
 // Pure: paths + install plan
 // ---------------------------------------------------------------------------
 
-/** The set of copies that make up an install, given the shipped `dist/plugins/` root and OpenCode's
- *  config dir. Pure — the IO wrapper walks this list. */
+/** The set of copies that make up an install: every file the shipped `dist/plugins/` root provides,
+ *  mapped to its OpenCode destination. Enumerated from disk so a new command needs no change here.
+ *  Directories are ignored — the bundle is flat by design, and a recursive copy could clobber a
+ *  foreign subtree. Pure: the IO wrapper walks this list. */
 export function openCodeInstallPlan(pluginsRoot: string, configDir: string): OpenCodeCopy[] {
   const src = path.join(pluginsRoot, "opencode");
-  const pluginDir = path.join(configDir, "plugin");
-  const commandsDir = path.join(configDir, "commands");
+  const filesIn = (dir: string, to: string): OpenCodeCopy[] =>
+    fs
+      .readdirSync(dir, { withFileTypes: true })
+      .filter((entry) => entry.isFile())
+      .map((entry) => ({ from: path.join(dir, entry.name), to: path.join(to, entry.name) }))
+      .sort((a, b) => a.to.localeCompare(b.to));
   return [
-    { from: path.join(src, "paireto.js"), to: path.join(pluginDir, "paireto.js") },
-    { from: path.join(src, "adapter.json"), to: path.join(pluginDir, "adapter.json") },
-    {
-      from: path.join(src, "commands", "paireto-review.md"),
-      to: path.join(commandsDir, "paireto-review.md"),
-    },
+    ...filesIn(src, path.join(configDir, "plugin")),
+    ...filesIn(path.join(src, "commands"), path.join(configDir, "commands")),
   ];
 }
 

@@ -10,7 +10,7 @@ import * as vscode from "vscode";
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { kindColorId, kindIcon, kindLabel } from "../comments/kinds.js";
 import { Commands, Views } from "../config.js";
-import type { GateCoordinator } from "../gate/GateCoordinator.js";
+import type { GateCoordinator, GateKind } from "../gate/GateCoordinator.js";
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { ChangedFile, FileStatus } from "../git/DiffService.js";
 import type {
@@ -22,9 +22,14 @@ import type {
 import type { PlanReviewController } from "../plan/PlanReviewController.js";
 import type { PlanCommentData } from "../plan/planFeedback.js";
 import type { ReviewController } from "../review/ReviewController.js";
+import type {
+  GuidedChangesetState,
+  GuidedFileRow,
+  GuidedReviewState,
+} from "../review/guidedPlan.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import type { AgentSession } from "../agents/AgentSession.js";
-import type { AgentState, FileGroup } from "../types.js";
+import type { AgentState, CompareToKind, FileGroup } from "../types.js";
 import { repoKey } from "../protocol/paths.js";
 import { buildFileTree, type TreeEntry } from "./fileTree.js";
 
@@ -44,18 +49,22 @@ const STATUS_ICON_FILE: Record<FileStatus, string> = {
 function statusIcon(
   extensionUri: vscode.Uri,
   status: FileStatus,
+  muted = false,
 ): { light: vscode.Uri; dark: vscode.Uri } {
   const name = STATUS_ICON_FILE[status] ?? "m";
+  const variant = muted ? `${name}-staged` : name;
   return {
-    light: vscode.Uri.joinPath(extensionUri, "media", "status", `${name}-light.svg`),
-    dark: vscode.Uri.joinPath(extensionUri, "media", "status", `${name}-dark.svg`),
+    light: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-light.svg`),
+    dark: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-dark.svg`),
   };
 }
 
-type SectionId = "agents" | "plan" | "files" | "feedback";
+type SectionId = "agents" | "plan" | "changesets" | "files" | "feedback";
 
 type Node =
-  | { kind: "section"; id: SectionId; label: string; description?: string }
+  | { kind: "section"; id: SectionId; label: string; description?: string; tooltip?: string }
+  | { kind: "changeset"; repoRoot: string; changeset: GuidedChangesetState }
+  | { kind: "changesetFile"; repoRoot: string; row: GuidedFileRow }
   | { kind: "repository"; repository: RepositoryReviewState }
   | {
       kind: "group";
@@ -233,6 +242,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   // ── Selection sync: keep the highlighted row pointed at the diff the editor is showing ──
   private syncSelection(target: { repoRoot: string; group: FileGroup; path: string }): void {
+    // A review plan replaces the Changed Files list, so there is no `file` row to reveal — and
+    // revealing one would drag the selection off the changeset row the user just clicked.
+    if (this.review.getState().guided) {
+      this.pendingReveal = undefined;
+      return;
+    }
     if (this.rowFor(target)) {
       void this.revealRow(target);
       this.pendingReveal = undefined;
@@ -274,6 +289,16 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   getParent(node: Node): Node | undefined {
     switch (node.kind) {
+      case "changeset":
+        return { kind: "section", id: "changesets", label: "Review Plan" };
+      case "changesetFile": {
+        const changeset = this.review
+          .getState()
+          .guided?.changesets.find((c) => c.id === node.row.changesetId);
+        return changeset
+          ? { kind: "changeset", repoRoot: node.repoRoot, changeset }
+          : { kind: "section", id: "changesets", label: "Review Plan" };
+      }
       case "repository":
         return { kind: "section", id: "files", label: "Changed Files" };
       case "group":
@@ -330,8 +355,13 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         item.id = `section:${node.id}`;
         item.contextValue = `section:${node.id}`;
         item.description = node.description;
+        item.tooltip = node.tooltip;
         return item;
       }
+      case "changeset":
+        return changesetItem(node.repoRoot, node.changeset);
+      case "changesetFile":
+        return changesetFileItem(node.repoRoot, node.row, this.extensionUri);
       case "repository": {
         const item = new vscode.TreeItem(
           node.repository.displayName,
@@ -396,6 +426,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     switch (node.kind) {
       case "section":
         return this.sectionChildren(node.id);
+      case "changeset":
+        return changesetFileNodes(node.repoRoot, node.changeset);
       case "repository":
         return this.repositoryChildren(node.repository);
       case "group":
@@ -420,12 +452,26 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const agentCount = this.scopedAgents().length;
     out.push({ kind: "section", id: "agents", label: "Agents", description: count(agentCount) });
 
-    out.push({
-      kind: "section",
-      id: "files",
-      label: "Changed Files",
-      description: changesDescription(this.review.getState()),
-    });
+    // While a review plan is open it REPLACES the raw file list: the plan covers every change (the
+    // trailing "Other changes" group catches anything it did not name), so showing both would list
+    // the same files twice and leave the reviewer unsure which one to work from.
+    const guided = this.review.getState().guided;
+    if (guided) {
+      out.push({
+        kind: "section",
+        id: "changesets",
+        label: "Review Plan",
+        description: guidedDescription(guided),
+        tooltip: guidedTooltip(guided),
+      });
+    } else {
+      out.push({
+        kind: "section",
+        id: "files",
+        label: "Changed Files",
+        description: changesDescription(this.review.getState()),
+      });
+    }
 
     if (this.plan.hasPendingPlan()) {
       out.push({ kind: "section", id: "plan", label: "Plan Review" });
@@ -450,6 +496,17 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return sessions.length
           ? sessions.map((session) => ({ kind: "agent", session }) as Node)
           : [placeholder("No agents connected")];
+      }
+      case "changesets": {
+        const guided = this.review.getState().guided;
+        if (!guided) {
+          return [];
+        }
+        return guided.changesets.map((changeset) => ({
+          kind: "changeset",
+          repoRoot: guided.repoRoot,
+          changeset,
+        }));
       }
       case "files": {
         const repositories = this.review.getState().repositories;
@@ -603,10 +660,17 @@ function placeholder(label: string): Node {
   return { kind: "placeholder", label };
 }
 
+/** How an agent row names the gate it is waiting on. */
+const GATE_ROLE: Record<GateKind, string> = {
+  plan: "plan review",
+  review: "code review",
+  guided: "guided review",
+};
+
 function agentItem(
   s: AgentSession,
   displayName: string,
-  gate?: { kind: "plan" | "review"; foreground: boolean },
+  gate?: { kind: GateKind; foreground: boolean },
 ): vscode.TreeItem {
   // Label by harness name + short session id; the absolute root in the tooltip disambiguates agents
   // from different repositories without making the flat list visually noisy.
@@ -621,7 +685,7 @@ function agentItem(
   const toolLine = s.lastTool ? `\nLast tool: ${s.lastTool}` : "";
   const ctx = `${s.repoRoot}\nSession ${s.sessionId}\nStarted ${started}${toolLine}`;
   if (gate) {
-    const role = gate.kind === "plan" ? "plan review" : "code review";
+    const role = GATE_ROLE[gate.kind];
     const slot = gate.foreground ? "active" : "pending";
     item.description = `awaiting ${role} · ${slot}`;
     item.iconPath = new vscode.ThemeIcon(
@@ -650,11 +714,17 @@ function agentItem(
   return item;
 }
 
-function fileItem(file: RepoChangedFile, extensionUri: vscode.Uri): vscode.TreeItem {
+/** `scope` namespaces the row id. The same file can legitimately appear under two changesets and in
+ *  Changed Files, and VS Code rejects a tree with a duplicate TreeItem.id. */
+function fileItem(
+  file: RepoChangedFile,
+  extensionUri: vscode.Uri,
+  scope = "changes",
+): vscode.TreeItem {
   // Colour only the status indicator (a coloured letter, like git), leaving the filename default —
   // a FileDecoration would instead tint the whole label.
   const item = new vscode.TreeItem(path.basename(file.path), vscode.TreeItemCollapsibleState.None);
-  item.id = `file:${repoKey(file.repoRoot)}:${file.group}:${file.path}`;
+  item.id = `file:${scope}:${repoKey(file.repoRoot)}:${file.group}:${file.path}`;
   item.iconPath = statusIcon(extensionUri, file.status);
   const dir = path.dirname(file.path);
   const counts = `+${file.additions} -${file.deletions}`;
@@ -662,6 +732,110 @@ function fileItem(file: RepoChangedFile, extensionUri: vscode.Uri): vscode.TreeI
   item.tooltip = `${file.path}\n${statusWord(file.status)} · ${counts}`;
   item.contextValue = `changedFile:${file.group}`;
   item.command = { command: Commands.reviewOpenDiff, title: "Open Diff", arguments: [file] };
+  return item;
+}
+
+/**
+ * A changeset's rows, in the order the agent submitted them. Deliberately NOT through
+ * `buildFileTree`, and independent of the flat/tree layout: both sort alphabetically, and the
+ * reading order is the whole point of the plan — losing it is a silent failure that still looks fine.
+ */
+export function changesetFileNodes(repoRoot: string, changeset: GuidedChangesetState): Node[] {
+  return changeset.files.map((row) => ({ kind: "changesetFile", repoRoot, row }));
+}
+
+function plural(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
+export function guidedDescription(guided: GuidedReviewState): string {
+  const changesets = plural(guided.changesets.length, "changeset");
+  const summary = `${changesets} · ${plural(guided.fileTotal, "file")}`;
+  return guided.missingTotal
+    ? `${summary} · ${guided.missingTotal} not in the current comparison`
+    : summary;
+}
+
+/**
+ * Which bulk git actions a changeset row offers, encoded in its contextValue so the menu can hide the
+ * one that would do nothing. A changeset of purely committed files offers neither.
+ */
+export function changesetContextValue(changeset: GuidedChangesetState): string {
+  if (changeset.stageableCount && changeset.unstageableCount) {
+    return "changeset:both";
+  }
+  if (changeset.stageableCount) {
+    return "changeset:stage";
+  }
+  return changeset.unstageableCount ? "changeset:unstage" : "changeset";
+}
+
+const COMPARE_TO_LABEL: Record<CompareToKind, string> = {
+  head: "HEAD",
+  mergeBase: "the merge base",
+  default: "the default branch",
+  ref: "a named ref",
+};
+
+function guidedTooltip(guided: GuidedReviewState): string | undefined {
+  const against = guided.compareTo.ref ?? COMPARE_TO_LABEL[guided.compareTo.kind];
+  const lines = [guided.summary, `Compared against ${against}`];
+  return lines.filter(Boolean).join("\n\n") || undefined;
+}
+
+export function changesetItem(repoRoot: string, changeset: GuidedChangesetState): vscode.TreeItem {
+  const item = new vscode.TreeItem(changeset.title, vscode.TreeItemCollapsibleState.Expanded);
+  item.id = `changeset:${repoKey(repoRoot)}:${changeset.id}`;
+  item.contextValue = changesetContextValue(changeset);
+  item.iconPath = new vscode.ThemeIcon("layers");
+  item.description = plural(changeset.files.length, "file");
+  item.tooltip = new vscode.MarkdownString(
+    `**${changeset.title}**\n\n${changeset.description || "_No description._"}`,
+  );
+  item.command = {
+    command: Commands.guidedOpenChangeset,
+    title: "Open Changeset",
+    arguments: [{ changesetId: changeset.id }],
+  };
+  return item;
+}
+
+export function changesetFileItem(
+  repoRoot: string,
+  row: GuidedFileRow,
+  extensionUri: vscode.Uri,
+): vscode.TreeItem {
+  if (!row.file) {
+    // The plan named it but it has no change now (already committed away, reverted, or outside the
+    // current Compare To). Say so rather than dropping the row and leaving a gap in the reading list.
+    const item = new vscode.TreeItem(path.basename(row.path), vscode.TreeItemCollapsibleState.None);
+    item.id = `changesetFile:${repoKey(repoRoot)}:${row.changesetId}:${row.path}`;
+    item.contextValue = "changesetFile:missing";
+    item.iconPath = new vscode.ThemeIcon("circle-slash");
+    item.description = "no longer in the changes";
+    item.tooltip = `${row.path}\nNot in the current comparison`;
+    return item;
+  }
+  const item = fileItem(row.file, extensionUri, row.changesetId);
+  item.contextValue = `changedFile:${row.file.group}:planned`;
+  // The plan lists a file wherever it currently sits, so the row itself has to say which git layer
+  // that is — unlike Changed Files, where the group header already does. A committed change gets the
+  // commit glyph; the working tree keeps the usual coloured status letter, and the index the same
+  // letter muted, so staged reads as "already dealt with" without losing what changed.
+  item.iconPath =
+    row.file.group === "committed"
+      ? new vscode.ThemeIcon(
+          GROUP_ICON.committed.icon,
+          new vscode.ThemeColor(GROUP_ICON.committed.color),
+        )
+      : statusIcon(extensionUri, row.file.status, row.file.group === "staged");
+  const note = row.note ? `\n${row.note}` : "";
+  item.tooltip = `${item.tooltip}\n${GROUP_LABELS[row.file.group]}${note}`;
+  item.command = {
+    command: Commands.guidedOpenFile,
+    title: "Open Diff",
+    arguments: [{ changesetId: row.changesetId, path: row.path }],
+  };
   return item;
 }
 

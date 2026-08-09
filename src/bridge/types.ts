@@ -3,6 +3,7 @@
 // register callbacks instead).
 
 import type {
+  GuidedReviewAwaitRequest,
   HookEventMessage,
   PlanReviewRequest,
   ReviewAwaitRequest,
@@ -58,6 +59,12 @@ export interface BridgeHandlers {
   /** Manually launched review session via Skill — resolve when the user submits feedback or approves. `signal` aborts
    *  on disconnect so the controller can reset. */
   onReviewAwait(msg: ReviewAwaitRequest, signal: AbortSignal): Promise<ReviewGateResult>;
+  /** Guided review — the agent submitted a changeset plan and blocks while the user works through
+   *  it. Resolves like any other review: submitted with feedback, or cancelled. */
+  onGuidedReviewAwait(
+    msg: GuidedReviewAwaitRequest,
+    signal: AbortSignal,
+  ): Promise<ReviewGateResult>;
   /** Turn-end gated review session — resolve "allow" immediately unless a review is pending/in-progress for
    *  this session, in which case it holds until the user resolves the review. `signal` aborts on
    *  disconnect. */

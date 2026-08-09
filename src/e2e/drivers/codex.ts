@@ -32,6 +32,7 @@ export class CodexDriver implements HarnessDriver {
   readonly harness = "codex";
   readonly caps: DriverCaps = {
     turnEndReview: "blocking",
+    guidedReviewInvocation: "$paireto-guided-review",
   };
 
   private home?: HarnessHome;

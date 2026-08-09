@@ -14,7 +14,11 @@ export interface ReviewComment {
   id: string;
   /** Canonical repository root; filePath is relative to this root. */
   repoRoot: string;
-  filePath: string; // repo-relative
+  /** Repo-relative file the comment sits on. Empty for a comment left on a changeset description,
+   *  which is about a group of changes rather than a line of code — see {@link changeset}. */
+  filePath: string;
+  /** Set when the comment was left on a changeset's description document. */
+  changeset?: { id: string; title: string };
   side: "base" | "modified";
   line: number; // 0-based on the side's document
   kind: CommentKind;

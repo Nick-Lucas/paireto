@@ -27,6 +27,8 @@ pnpm e2e:check:docker
 pnpm e2e:check:docker --grep @codex
 pnpm e2e:check:docker --grep 'fullflow @codex'
 
+pnpm e2e:check:docker --grep 'guidedreview @claudecode'
+
 # Recording talks to the real provider and replaces the cassette of every pair it runs — so filter
 # it unless you mean to re-record the whole matrix, which costs a paid run per pair.
 pnpm e2e:record:docker --grep @claudecode

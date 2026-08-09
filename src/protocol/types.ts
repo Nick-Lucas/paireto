@@ -54,6 +54,8 @@ export type MessageType =
   | "plan.review.response"
   | "review.await.request"
   | "review.await.response"
+  | "guided.review.await.request"
+  | "guided.review.await.response"
   | "stop.gate.request"
   | "stop.gate.response";
 
@@ -168,6 +170,55 @@ export interface ReviewAwaitResponse extends Envelope {
   feedback: string;
 }
 
+/** One file in a changeset, in the order the reviewer should read it. */
+export interface GuidedChangesetFile {
+  /** Repository-relative, as the agent named it. Sanitized extension-side (`parseChangesets`). */
+  path: string;
+  /** One line on why this file matters in this changeset. */
+  note?: string;
+}
+
+/** One named group of changes the agent wants reviewed together. */
+export interface GuidedChangesetPayload {
+  title: string;
+  description: string;
+  files: GuidedChangesetFile[];
+}
+
+/**
+ * Blocking guided-review session. Sent by the `paireto_start_guided_review` tool when the agent has
+ * grouped the changes for a human reviewer; the extension shows the plan and holds this open until
+ * the user approves or sends feedback. Flat like {@link ReviewAwaitRequest} — it comes from a tool,
+ * not a hook, so it carries no raw harness `event`.
+ */
+export interface GuidedReviewAwaitRequest extends Envelope {
+  t: "guided.review.await.request";
+  id: string;
+  cwd: string;
+  repoRoot: string;
+  /** Owning agent session, best-effort (same fallback contract as {@link ReviewAwaitRequest}). */
+  sessionId?: string;
+  /** One-paragraph overview of the branch. Display only. */
+  summary?: string;
+  /**
+   * What the agent diffed against, named with the extension's own Compare To vocabulary so the
+   * window can align to it. Without this the two disagree — an agent reviewing the working tree
+   * while the window compares against a merge base sees every intervening commit arrive as an
+   * unclaimed change. `ref` applies to `kind: "ref"` only. Defaults to `head`.
+   */
+  compareTo?: { kind: "head" | "mergeBase" | "default" | "ref"; ref?: string };
+  changesets: GuidedChangesetPayload[];
+}
+
+/** Extension's response to a {@link GuidedReviewAwaitRequest}; same `id`. */
+export interface GuidedReviewAwaitResponse extends Envelope {
+  t: "guided.review.await.response";
+  id: string;
+  status: ReviewStatus;
+  /** Rendered review feedback (empty when approved with no comments). */
+  feedback: string;
+}
+
 /**
  * Blocking turn-end (Stop) gate. Sent by the Stop hook on every turn-end; the extension holds it
  * open only when a review for this session is in progress or the turn touched files, then resolves
@@ -203,5 +254,7 @@ export type AnyMessage =
   | PlanReviewResponse
   | ReviewAwaitRequest
   | ReviewAwaitResponse
+  | GuidedReviewAwaitRequest
+  | GuidedReviewAwaitResponse
   | StopGateRequest
   | StopGateResponse;

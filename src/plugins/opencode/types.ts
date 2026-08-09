@@ -78,6 +78,15 @@ export interface PluginInput {
 }
 
 /** The zod handle OpenCode exposes as `tool.schema`; only `.string().describe()` is used. */
+interface SchemaNode {
+  describe(text: string): SchemaNode;
+  optional(): SchemaNode;
+}
+
 export interface ToolSchema {
-  string(): { describe(text: string): unknown };
+  string(): SchemaNode;
+  /** Present on the real zod instance, but outside what the SDK's own types promise. */
+  enum?(values: readonly string[]): SchemaNode;
+  object?(shape: Record<string, unknown>): SchemaNode;
+  array?(item: unknown): SchemaNode;
 }

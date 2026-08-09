@@ -197,6 +197,8 @@ suite("command manifest", () => {
       "paireto.review.addProblem",
       "paireto.review.revealComment",
       "paireto.review.deleteComment",
+      "paireto.guided.openFile",
+      "paireto.guided.toggleRead",
       "paireto.agent.switch",
       "paireto.agent.hide",
       "paireto.agent.show",
