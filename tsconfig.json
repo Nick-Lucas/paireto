@@ -7,6 +7,9 @@
     "rootDir": "src",
     "strict": true /* enable all strict type-checking options */,
     "resolveJsonModule": true /* lets src/protocol/types.ts import plugins/.../plugin.json directly */,
+    /* The MCP SDK ships declarations that reference DOM types and import an ESM-only package from
+       its CommonJS build; neither typechecks here, and neither reaches our bundles. */
+    "skipLibCheck": true,
     "types": ["node", "mocha"]
     /* Additional Checks */
     // "noImplicitReturns": true, /* Report error when not all code paths in function return a value. */
@@ -16,5 +19,9 @@
   "include": ["src"],
   // The React webview is browser/JSX code with its own tsconfig (DOM lib + jsx). Keep it out of the
   // node extension-host typecheck and the test runner's out/ layout.
-  "exclude": ["src/welcome/webview"]
+  //
+  // The per-plugin esbuild.mts files are build tooling, not extension code: they run on Node's type
+  // stripping and are typechecked by scripts/tsconfig.json alongside the root build script, so they
+  // have no business being emitted into out/.
+  "exclude": ["src/welcome/webview", "src/plugins/**/*.mts"]
 }

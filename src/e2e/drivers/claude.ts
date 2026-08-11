@@ -69,7 +69,7 @@ export class ClaudeDriver implements HarnessDriver {
       checkMode: mode === "check",
       homeDir: mockHomeDir(),
     });
-    const pluginDir = path.join(repoRoot(), "plugins", "claude-code");
+    const pluginDir = path.join(repoRoot(), "dist", "plugins", "claude-code");
     const env = { ...baseHarnessEnv(), ...this.home.env };
     // Keep the run hermetic: no telemetry / autoupdate / error reporting / non-essential cloud calls,
     // so a recording captures only the model inference traffic (not a flood of settings/registry noise).

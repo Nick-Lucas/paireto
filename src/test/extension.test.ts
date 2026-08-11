@@ -255,7 +255,7 @@ suite("plugin hooks.json is observer-safe", () => {
   // observer mode, so the plugin must never register it (WorktreeRemove goes with it: without the
   // create event the worktree cache can't stay coherent, so the switcher fetches fresh instead).
   test("never registers the Worktree delegation hooks", () => {
-    const hooksJson = path.resolve(__dirname, "../../plugins/claude-code/hooks/hooks.json");
+    const hooksJson = path.resolve(__dirname, "../../dist/plugins/claude-code/hooks/hooks.json");
     const config = JSON.parse(fs.readFileSync(hooksJson, "utf8")) as {
       hooks: Record<string, unknown>;
     };

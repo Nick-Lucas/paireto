@@ -1,8 +1,8 @@
-// Unit coverage for the OpenCode adapter's PURE automation helpers (plugins/opencode/paireto.js).
-// The plugin is a plain ES module shipped verbatim to the user's OpenCode config dir, so these
-// helpers can't be imported through the TS graph — the test dynamic-imports the real .js file (the
-// same artifact the installer copies) and exercises the exported decision functions with no live
-// OpenCode host. Covers the three surfaces the automation layer decides on: config mutation (incl.
+// Unit coverage for the OpenCode adapter's PURE automation helpers, exercised through the BUILT
+// bundle at dist/plugins/opencode/paireto.js — the exact artifact the installer copies into the
+// user's OpenCode config dir. Testing the artifact rather than the TypeScript sources also proves
+// the bundling itself: the loader contract (every export a callable) and the helpers surviving on
+// `_internals`. Covers the three surfaces the automation layer decides on: config mutation (incl.
 // the permission spread hazard), planning-prompt gating (planning-agent / subagent / title-generator
 // cases), and the post-hoc stop-gate decision.
 
@@ -10,7 +10,7 @@ import * as assert from "node:assert";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const pluginPath = path.resolve(__dirname, "../../plugins/opencode/paireto.js");
+const pluginPath = path.resolve(__dirname, "../../dist/plugins/opencode/paireto.js");
 
 // The plugin is plain JS with no type surface — the dynamic import resolves to `any`.
 let full: any;

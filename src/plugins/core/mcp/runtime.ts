@@ -1,0 +1,82 @@
+// The shared MCP stdio server. Each harness supplies only what differs: its server name, how it
+// finds the VS Code window, and how it holds a liveness socket open.
+
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+
+import { PLUGIN_VERSION } from "../../../protocol/types.js";
+import type { ReviewTarget } from "./reviewTool.js";
+import {
+  REVIEW_TOOL_DESCRIPTION,
+  REVIEW_TOOL_INPUT_SCHEMA,
+  REVIEW_TOOL_NAME,
+  runReview,
+} from "./reviewTool.js";
+
+/** Everything a harness supplies to the shared core. */
+export interface McpHarnessAdapter {
+  /** Reported as `serverInfo.name`. */
+  readonly serverName: string;
+  /** Resolved fresh on every tool call; undefined means there is nothing to talk to. */
+  resolveReviewTarget(): ReviewTarget | undefined;
+  /** Shown when resolveReviewTarget returns undefined, when the harness can say something more
+   *  specific than "no window is listening". */
+  readonly noTargetMessage?: string;
+  /** Begin holding the liveness socket open. Returns a disposer run at shutdown. */
+  startLiveness(): () => void;
+}
+
+export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
+  const server = new McpServer(
+    { name: adapter.serverName, version: PLUGIN_VERSION },
+    { capabilities: { tools: {} } },
+  );
+
+  server.registerTool(
+    REVIEW_TOOL_NAME,
+    { description: REVIEW_TOOL_DESCRIPTION, inputSchema: REVIEW_TOOL_INPUT_SCHEMA },
+    () => runReview(adapter.resolveReviewTarget(), adapter.noTargetMessage),
+  );
+
+  return server;
+}
+
+/**
+ * Stdout belongs to the JSON-RPC transport. Anything that prints there corrupts the protocol
+ * stream, so every console channel is pointed at stderr before the transport connects.
+ */
+function reserveStdoutForProtocol(): void {
+  const toStderr = (...args: unknown[]) => console.error(...args);
+  console.log = toStderr;
+  console.info = toStderr;
+  console.debug = toStderr;
+  console.warn = toStderr;
+}
+
+/** Wire up stdio, start liveness, and install the shutdown paths. Resolves when the server stops. */
+export async function runMcpServer(adapter: McpHarnessAdapter): Promise<void> {
+  reserveStdoutForProtocol();
+
+  const stopLiveness = adapter.startLiveness();
+  const server = createMcpServer(adapter);
+  const transport = new StdioServerTransport();
+
+  let stopping = false;
+  const shutdown = () => {
+    if (stopping) {
+      return;
+    }
+    stopping = true;
+    stopLiveness();
+    void transport.close().finally(() => process.exit(0));
+  };
+
+  // A SIGKILLed harness orphans this process; stdin then hits EOF within milliseconds, which is the
+  // only signal that arrives in that case.
+  process.stdin.on("end", shutdown);
+  process.on("SIGTERM", shutdown);
+  process.on("SIGHUP", shutdown);
+  process.on("SIGINT", shutdown);
+
+  await server.connect(transport);
+}

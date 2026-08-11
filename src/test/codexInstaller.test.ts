@@ -11,13 +11,16 @@ import {
   readCodexPluginVersion,
   renderCodexMarketplace,
 } from "../bridge/CodexInstaller.js";
+import { PLUGIN_VERSION } from "../protocol/types.js";
 
-const bundledPlugin = path.resolve(__dirname, "../../plugins/codex");
+const bundledPlugin = path.resolve(__dirname, "../../dist/plugins/codex");
 
 suite("Codex bundled plugin contract", () => {
   test("reads its version from the native manifest, not the removed adapter manifest", () => {
     const pluginsRoot = path.dirname(bundledPlugin);
-    assert.strictEqual(readCodexPluginVersion(pluginsRoot), "0.5.7");
+    // Pinned to the shared version rather than a literal: versionLockstep.test.ts already asserts
+    // every plugin manifest equals PLUGIN_VERSION, so a bump shouldn't need editing in two places.
+    assert.strictEqual(readCodexPluginVersion(pluginsRoot), PLUGIN_VERSION);
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "adapter.json")));
   });
 
@@ -48,8 +51,10 @@ suite("Codex bundled plugin contract", () => {
     );
     assert.ok(skill.includes("`mcp__paireto__paireto_review`"));
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "paireto-plan", "SKILL.md")));
+    // The built server, not the source: this asserts the artifact the installer actually stages.
+    // Match on the bare tool name, which survives minification, rather than a source spelling.
     const server = fs.readFileSync(path.join(bundledPlugin, "mcp", "liveness.js"), "utf8");
-    assert.ok(server.includes('name: "paireto_review"'));
+    assert.ok(server.includes("paireto_review"));
     assert.ok(
       !fs.existsSync(path.join(bundledPlugin, "skills", "paireto-review", "scripts", "review.js")),
     );

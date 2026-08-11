@@ -151,16 +151,16 @@ interface Bridge {
   socketDir(): string;
   canonicalize(p: string): string;
   repoKey(toplevel: string): string;
-  socketPathFor(toplevel: string): string;
-  gitToplevel(cwd: string): string | null;
-  resolveTarget(cwd: string): BridgeTarget | null;
-  connectAndHandshake(socketPath: string, repoKeyHex: string, timeoutMs: number): Promise<Connection>;
+  socketPath(toplevel: string): string;
+  gitToplevel(cwd: string): string | undefined;
+  resolveTarget(cwd: string): BridgeTarget | undefined;
+  connectAndHandshake(socketPath: string, repoRoot: string, timeoutMs: number): Promise<Connection>;
   readMessages(sock: Socket, residual: string, onMessage: (msg: unknown) => void): void;
   sendLine(sock: Socket, obj: unknown): void;
   nowIso(): string;
 }
 
-const bridge = require("../plugins/claude-code/scripts/bridge.js") as Bridge;
+const bridge = require("../dist/plugin-bridge.js") as Bridge;
 
 // ---------------------------------------------------------------------------
 // Pretty-printing
@@ -307,8 +307,7 @@ function resolveTarget(opts: Opts): Target | null {
 }
 
 function connect(target: Target, timeoutMs: number): Promise<Connection> {
-  const key = bridge.repoKey(target.repoRoot);
-  return bridge.connectAndHandshake(target.socketPath, key, timeoutMs);
+  return bridge.connectAndHandshake(target.socketPath, target.repoRoot, timeoutMs);
 }
 
 /** Build a telemetry hook.event for a session (so it shows up as a live agent in the panel). */

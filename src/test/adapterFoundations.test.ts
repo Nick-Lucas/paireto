@@ -145,7 +145,7 @@ suite("AgentSessionService sweep removes only liveness-less silent sessions", ()
 
 suite("onboarding install stamp + installedProbe", () => {
   let dir: string;
-  const pluginsRoot = path.resolve(__dirname, "../../plugins");
+  const pluginsRoot = path.resolve(__dirname, "../../dist/plugins");
 
   setup(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-stamp-"));

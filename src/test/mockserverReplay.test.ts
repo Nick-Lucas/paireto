@@ -37,12 +37,7 @@ import {
 } from "../e2e/proxy/normalize.js";
 import { isEventStreamContentType } from "../e2e/proxy/normalizingProxy.js";
 
-const codexBridge = require("../../plugins/codex/scripts/bridge.js") as {
-  readPlanTurn: (
-    transcriptPath: string,
-    turnId: string,
-  ) => { isPlanTurn: boolean; planMarkdown?: string };
-};
+import { readPlanTurn as readPlanTurnFrom } from "../plugins/codex/planTurn.js";
 
 interface NormalizedTool {
   description?: string;
@@ -402,6 +397,31 @@ suite("provider-replay: fixture normalization", () => {
 
   // Codex stamps a fresh `msg_<uuidv7>` on every conversation item, so a replayed body could never
   // match verbatim; renumbering keeps distinct ids distinct and their call/output pairing intact.
+  test("scrubs the plugin version out of a Codex hook_run_id", () => {
+    // Codex names the staged plugin's hooks.json in every hook_run_id, and that path carries the
+    // plugin version — so without this a routine version bump invalidates every recorded body that
+    // carries a hook prompt.
+    const body = (version: string): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "input_text",
+                text: `<hook_prompt hook_run_id="stop:8:/home/plugins/cache/paireto/paireto/${version}/hooks/hooks.json">go</hook_prompt>`,
+              },
+            ],
+          },
+        ],
+      });
+
+    const normalized = normalizeCodexBody(body("0.5.7"));
+    assert.strictEqual(normalized, normalizeCodexBody(body("9.9.9")));
+    assert.ok(normalized.includes("cache/paireto/paireto/VERSION/hooks/hooks.json"));
+    assert.ok(!normalized.includes("0.5.7"));
+  });
+
   test("renumbers Codex per-run item ids, preserving their pairing", () => {
     const body = (runId: string): string =>
       JSON.stringify({
@@ -549,7 +569,7 @@ suite("provider-replay: Codex replay turn correlation", () => {
   function readPlanTurn(records: unknown[], turnId: string): unknown {
     const transcript = path.join(dir, "rollout.jsonl");
     fs.writeFileSync(transcript, records.map((record) => JSON.stringify(record)).join("\n"));
-    return codexBridge.readPlanTurn(transcript, turnId);
+    return readPlanTurnFrom(transcript, turnId);
   }
 
   const turnContext = (turnId: string, mode = "default"): unknown => ({

@@ -286,7 +286,23 @@ export function normalizeCodexBody(raw: string): string {
   }
   stripInternalMetadata(body);
   canonicalizeItemIds(body);
+  stripPluginVersion(body);
   return JSON.stringify(body);
+}
+
+/** Codex names the staged plugin's hooks.json inside every `hook_run_id`, and that path carries the
+ *  plugin version. The version is incidental to what these tests check, so scrub it — otherwise a
+ *  routine version bump invalidates every recorded body that carries a hook prompt. */
+const PLUGIN_CACHE_VERSION = /(cache\/paireto\/paireto\/)\d+\.\d+\.\d+(\/)/g;
+
+function stripPluginVersion(body: Record<string, unknown>): void {
+  walk(body, (object) => {
+    for (const [key, value] of Object.entries(object)) {
+      if (typeof value === "string" && value.includes("cache/paireto/paireto/")) {
+        object[key] = value.replace(PLUGIN_CACHE_VERSION, "$1VERSION$2");
+      }
+    }
+  });
 }
 
 /** Ids Codex stamps per run, which would otherwise make every replayed body unmatchable. */
