@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Stage the Claude credentials the container can't reach itself (the macOS keychain is unavailable in
 # Linux) into a gitignored ./.secrets dir that docker-compose.e2e.yml mounts read-only. Run on the
-# HOST by `pnpm test:e2e:docker` before the container boots.
+# HOST by `pnpm e2e:record:docker` before the container boots.
 #
 # Secrets hygiene: written 0600 into ./.secrets (gitignored), contents never printed. codex/opencode
 # auth is NOT staged here — the overlay mounts those straight from $HOME.

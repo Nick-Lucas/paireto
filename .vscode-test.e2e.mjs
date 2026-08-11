@@ -32,9 +32,7 @@ export default defineConfig({
 		...(process.env.PAIRETO_DOCKER ? ['--no-sandbox', '--disable-gpu'] : []),
 	],
 	mocha: {
-		// Every step drives a real agent turn, so the per-step budget is the timeout — Mocha's 2s
-		// default would fail the run before the model had answered.
-		timeout: Number(required('PAIRETO_E2E_STEP_TIMEOUT_MS')),
+		timeout: Number(required('PAIRETO_E2E_TEST_TIMEOUT_MS')),
 		// A step depends on the one before it, so once one fails the rest are noise.
 		bail: true,
 		color: false,

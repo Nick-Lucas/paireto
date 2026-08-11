@@ -32,7 +32,7 @@ function isUsable(handoff: CodexHandoff | undefined): handoff is CodexHandoff {
 export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   let currentSessionId: string | undefined;
   let connection: BridgeConnection | undefined;
-  let connecting = false;
+  let connectingSessionId: string | undefined;
   let latestHandoff: CodexHandoff | undefined;
   let watcher: fs.FSWatcher | undefined;
   let stopped = false;
@@ -46,12 +46,14 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
     if (!fs.existsSync(handoff.socketPath)) {
       return; // no listening window yet — a later poll tick retries
     }
-    connecting = true;
+    connectingSessionId = handoff.sessionId;
     void connect(
       { socketPath: handoff.socketPath, repoRoot: handoff.repoRoot },
       { timeoutMs: CONNECT_TIMEOUT_MS },
     ).then((result) => {
-      connecting = false;
+      if (connectingSessionId === handoff.sessionId) {
+        connectingSessionId = undefined;
+      }
       if (!result.ok) {
         return; // no window listening — liveness unavailable, poll retries
       }
@@ -84,7 +86,7 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
       attach(handoff);
       return;
     }
-    if (!connection && !connecting) {
+    if (!connection && connectingSessionId !== handoff.sessionId) {
       attach(handoff); // same session, not yet attached (no window earlier) — retry
     }
   };

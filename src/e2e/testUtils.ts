@@ -6,6 +6,11 @@
  *  driver-side wait always resolves inside the step it serves. */
 export const STEP_TIMEOUT_MS = 120_000;
 
+/** Budget for one Mocha test, which is what Mocha's `timeout` actually caps. A test drives several
+ *  steps in sequence — the longest runs four — so its budget is a multiple of the step budget, not
+ *  the step budget itself. */
+export const TEST_TIMEOUT_MS = 4 * STEP_TIMEOUT_MS;
+
 export interface WaitOptions {
   /** Overall budget before failing (default 15s; LLM-driver steps pass STEP_TIMEOUT_MS). */
   timeoutMs?: number;

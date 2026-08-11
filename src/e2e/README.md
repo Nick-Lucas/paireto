@@ -53,7 +53,7 @@ individual test names has no pair to open and is reported as matching nothing.
 The filter travels as arguments to the `docker compose exec` (see `docker/e2e.sh`), not as container
 configuration, so narrowing a run never recreates the container.
 
-`test:e2e` records the provider traffic and replaces that driver's cassette after a passing run. It
+`e2e:record` records the provider traffic and replaces that driver's cassette after a passing run. It
 runs `pnpm compile` + `pnpm compile-tests` + `PAIRETO_E2E_MODE=record node out/e2e/runE2E.js`. The default unit suite
 (`pnpm test`) globs `out/test/**` and never picks up `out/e2e/**`, so the two stay independent.
 
@@ -199,8 +199,7 @@ The Linux container supplies the virtual display and is the supported test entry
 ```sh
 pnpm docker:build                                    # once
 
-pnpm test:e2e:docker   --grep @claudecode # record and replace the cassette
-pnpm e2e:record:docker --grep @claudecode # explicit alias for the same recording run
+pnpm e2e:record:docker --grep @claudecode # record and replace the cassette
 pnpm e2e:check:docker  --grep @claudecode # strict offline replay, no credentials
 
 pnpm test:docker                                     # the unit suite

@@ -9,9 +9,7 @@ the host while you send test commands into it (streaming their output back). No 
 
 ## Prerequisites
 
-- Docker Desktop (or any Docker engine + `docker compose`).
-- For the **claude** E2E driver: nothing to do manually — `test:e2e:docker` extracts your Claude
-  credential from the macOS keychain automatically (or set `ANTHROPIC_API_KEY` and it wins).
+- Docker with `docker compose`)
 
 ## Commands
 
@@ -34,10 +32,10 @@ pnpm e2e:check:docker --grep 'fullflow @codex'
 pnpm e2e:record:docker --grep @claudecode
 ```
 
-Replay skips a pair with no committed cassette (there is nothing to replay) and says so in the
-summary; recording that pair is how you add it.
+Replay fails a pair with no committed cassette — a driver that never launched must not be able to
+report a pass. Recording that pair is how you add it.
 
-`test:docker` / `test:e2e:docker` each do `docker compose up -d --wait` (a no-op once booted) and then
+`test:docker` / `e2e:record:docker` each do `docker compose up -d --wait` (a no-op once booted) and then
 `docker compose exec` the suite — so the first run pays the boot cost and later runs are just the exec.
 After adding or upgrading a dependency, run `docker compose … exec tests pnpm install` (or
 `pnpm docker:down` and let the next run reinstall) — `node_modules` is a cached named volume, so the
@@ -69,7 +67,7 @@ so a test exec never races the install.
   and runs with MockServer in `SIMULATE` mode so a fixture miss cannot reach a provider.
 - `prepare-e2e.sh` — host-side; stages `~/.claude.json` + the keychain OAuth credential into `./.secrets`
   (gitignored, 0600, contents never printed) so the Linux container can authenticate Claude without a
-  keychain. Run automatically by `test:e2e:docker`.
+  keychain. Run automatically by `e2e:record:docker`.
 
 `PAIRETO_DOCKER=1` makes both runners (`.vscode-test.mjs` and `src/e2e/runE2E.ts`) pass `--no-sandbox`
 to Electron — required because it runs as root and Docker has no usable namespace sandbox. That flag is

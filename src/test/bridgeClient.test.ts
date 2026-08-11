@@ -4,94 +4,13 @@
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
-import * as net from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 
 import { connect, RESPONSE_TAG } from "../plugins/core/bridgeClient.js";
 import { repoKey, socketPath } from "../protocol/paths.js";
 import { PLUGIN_VERSION } from "../protocol/types.js";
-import type { BridgeTarget } from "../plugins/core/target.js";
-
-interface FakeServer {
-  target: BridgeTarget;
-  /** Lines received from the client, in arrival order. */
-  received: string[];
-  dispose(): Promise<void>;
-}
-
-/**
- * A stand-in for the extension's socket server. `onLine` receives each client line together with
- * the socket, so a test can answer, stay silent, or drop the connection.
- */
-async function startServer(onLine: (line: string, sock: net.Socket) => void): Promise<FakeServer> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-bridge-"));
-  const sockPath = path.join(dir, "test.sock");
-  const received: string[] = [];
-
-  const server = net.createServer((sock) => {
-    sock.setEncoding("utf8");
-    let buffer = "";
-    sock.on("error", () => {});
-    sock.on("data", (chunk: string) => {
-      buffer += chunk;
-      let idx: number;
-      while ((idx = buffer.indexOf("\n")) !== -1) {
-        const line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        if (line.trim() !== "") {
-          received.push(line);
-          onLine(line, sock);
-        }
-      }
-    });
-  });
-
-  await new Promise<void>((resolve) => server.listen(sockPath, resolve));
-
-  return {
-    target: { socketPath: sockPath, repoRoot: dir },
-    received,
-    dispose: () =>
-      new Promise<void>((resolve) => {
-        server.close(() => {
-          fs.rmSync(dir, { recursive: true, force: true });
-          resolve();
-        });
-      }),
-  };
-}
-
-/** Wait for the server to have framed `count` lines. `send` resolves when the kernel takes the
- *  bytes, which is earlier than the server seeing them. */
-async function waitForLines(server: FakeServer, count: number): Promise<void> {
-  const deadline = Date.now() + 2000;
-  while (server.received.length < count) {
-    if (Date.now() > deadline) {
-      throw new Error(`only ${server.received.length} of ${count} lines arrived`);
-    }
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-}
-
-/** The stock accepting handshake, so tests only spell out what they change. */
-function ackWith(accept: boolean, version = PLUGIN_VERSION) {
-  return (line: string, sock: net.Socket) => {
-    const msg = JSON.parse(line) as { t: string };
-    if (msg.t === "hello") {
-      sock.write(
-        JSON.stringify({
-          t: "hello.ack",
-          v: version,
-          ts: new Date().toISOString(),
-          role: "extension",
-          extVersion: version,
-          accept,
-        }) + "\n",
-      );
-    }
-  };
-}
+import { ackWith, startServer, waitForLines } from "./fakeBridgeServer.js";
 
 suite("plugin bridge client", () => {
   test("path derivation matches the extension's, including through a symlink", () => {
@@ -284,6 +203,39 @@ suite("plugin bridge client", () => {
     });
 
     assert.strictEqual(response, undefined);
+    await server.dispose();
+  });
+
+  test("a request on an already-closed connection fails open instead of hanging", async () => {
+    // The window can go away between connect() resolving and the request being written. Nothing is
+    // in flight for the close to abort, so only a guard on the request itself settles it — and the
+    // gate callers pass no timeout, so an unsettled promise parks the agent for the hook's whole
+    // (multi-day) budget.
+    const server = await startServer((line, sock) => {
+      if ((JSON.parse(line) as { t: string }).t === "hello") {
+        ackWith(true)(line, sock);
+        setTimeout(() => sock.destroy(), 10);
+      }
+    });
+
+    const result = await connect(server.target);
+    assert.strictEqual(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    await new Promise<void>((resolve) => result.connection.onClose(resolve));
+
+    const hung = Symbol("hung");
+    const settled = await Promise.race([
+      result.connection.request({
+        t: "review.await.request",
+        cwd: "/repo",
+        repoRoot: "/repo",
+      }),
+      new Promise<symbol>((resolve) => setTimeout(() => resolve(hung), 500)),
+    ]);
+
+    assert.strictEqual(settled, undefined, "a closed connection must fail open, not hang");
     await server.dispose();
   });
 

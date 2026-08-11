@@ -155,6 +155,9 @@ function createConnection(sock: net.Socket, residual: string): BridgeConnection 
       return writeLine({ ...body, v: PLUGIN_VERSION, ts: nowIso() });
     },
     request(body, requestOptions = {}) {
+      if (closed) {
+        return Promise.resolve(undefined);
+      }
       const id = crypto.randomUUID();
       const expected = RESPONSE_TAG[body.t as RequestTag];
 

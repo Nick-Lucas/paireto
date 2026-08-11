@@ -21,6 +21,8 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+import { requireCassette } from "./cassette.js";
+import { pairFilter, passThroughArgs } from "./mochaArgs.js";
 import { MockServerController } from "./mockserver/MockServerController.js";
 import {
   type E2EDriver,
@@ -31,7 +33,6 @@ import {
   MOCK_CA_ENV,
   MODE_ENV,
   MOCK_URL_ENV,
-  type PairFilter,
   pairLabel,
   resolveMode,
   SPEC_ENV,
@@ -39,12 +40,15 @@ import {
 import { ensureTestCertificates } from "./proxy/testCertificates.js";
 import { MISS_FILE_ENV } from "./replayMiss.js";
 import { createSandbox, mockPath } from "./sandbox.js";
-import { STEP_TIMEOUT_MS } from "./testUtils.js";
+import { TEST_TIMEOUT_MS } from "./testUtils.js";
 
 /** Hard ceiling on ONE pair. Every phase has its own timeout, but a hang OUTSIDE them (a harness that
  *  never exits, an MCP call that never answers) would otherwise wait forever with no output.
- *  Generous enough for a recording, which pays for real model turns. */
-const PAIR_TIMEOUT_MS = 20 * 60 * 1000;
+ *
+ *  It has to stay above what a legal run can spend — every test in the spec at its full budget —
+ *  or it stops being a backstop and becomes a second, tighter cap that fails a run still making
+ *  progress. */
+const PAIR_TIMEOUT_MS = 45 * 60 * 1000;
 
 const SPEC_SUFFIX = ".e2e.js";
 
@@ -67,18 +71,6 @@ function allCases(specsDir: string): string[] {
     .filter((entry) => entry.endsWith(SPEC_SUFFIX))
     .map((entry) => entry.slice(0, -SPEC_SUFFIX.length))
     .sort();
-}
-
-/**
- * The Mocha filter flags on this command line. Only the two that can also narrow the matrix are read
- * here; every argument is forwarded to the CLI regardless, so the rest of Mocha's flags still work.
- */
-function pairFilter(argv: string[]): PairFilter {
-  const valueOf = (flag: string): string | undefined => {
-    const at = argv.indexOf(flag);
-    return at >= 0 ? argv[at + 1] : undefined;
-  };
-  return { grep: valueOf("--grep"), fgrep: valueOf("--fgrep") };
 }
 
 /**
@@ -196,7 +188,7 @@ async function runPair({
       // Read by .vscode-test.e2e.mjs to build the launch the CLI performs.
       [SPEC_ENV]: spec,
       PAIRETO_E2E_USER_DATA_DIR: sandbox.userDataDir,
-      PAIRETO_E2E_STEP_TIMEOUT_MS: String(STEP_TIMEOUT_MS),
+      PAIRETO_E2E_TEST_TIMEOUT_MS: String(TEST_TIMEOUT_MS),
       PAIRETO_REPO_ROOT: repoRoot,
       XDG_STATE_HOME: sandbox.stateHome,
       // The runner runs under real node (process.execPath), but the extension host runs under
@@ -262,10 +254,7 @@ async function main(): Promise<void> {
   const filter = pairFilter(argv);
   // Mocha's own flags reach the window untouched; the two that also narrow the matrix were consumed
   // here, because the window is already restricted to the one pair it was prepared for.
-  const passThrough = argv.filter(
-    (arg, index) =>
-      !["--grep", "--fgrep"].includes(arg) && !["--grep", "--fgrep"].includes(argv[index - 1]),
-  );
+  const passThrough = passThroughArgs(argv);
 
   const matrix: Pair[] = allCases(specsDir).flatMap((testCase) =>
     E2E_DRIVERS.map((driver) => ({
@@ -285,22 +274,15 @@ async function main(): Promise<void> {
 
   const passed: string[] = [];
   const failed: string[] = [];
-  const skipped: string[] = [];
 
   for (const pair of pairs) {
     const { label, testCase, driver } = pair;
-    // A check run can only replay what was recorded, so a pair with no cassette is not part of its
-    // matrix. Recording one is how you add it.
-    const fixture = path.join(fixturesHostDir, fixtureFileName(testCase, driver));
-    if (mode === "check" && !fs.existsSync(fixture)) {
-      log(`SKIP ${label} — no cassette at ${path.basename(fixture)}`);
-      skipped.push(label);
-      continue;
-    }
-
-    log(`── ${label} (${passed.length + failed.length + skipped.length + 1}/${pairs.length}) ──`);
+    log(`── ${label} (${passed.length + failed.length + 1}/${pairs.length}) ──`);
     armWatchdog(label);
     try {
+      // A check run can only replay what was recorded. A pair the run selected but cannot replay is
+      // a failure of the run: a driver that never launched must not be able to report a pass.
+      requireCassette(mode, path.join(fixturesHostDir, fixtureFileName(testCase, driver)));
       await runPair({ ...pair, repoRoot, fixturesHostDir, mode, passThrough });
       log(`PASS ${label}`);
       passed.push(label);
@@ -312,20 +294,12 @@ async function main(): Promise<void> {
   }
   clearTimeout(watchdog);
 
-  log(`matrix: ${passed.length} passed, ${failed.length} failed, ${skipped.length} skipped`);
-  for (const label of skipped) {
-    log(`  skipped ${label}`);
-  }
+  log(`matrix: ${passed.length} passed, ${failed.length} failed`);
   for (const label of failed) {
     log(`  failed  ${label}`);
   }
   if (failed.length > 0) {
     throw new Error(`${failed.length} of ${pairs.length} matrix pair(s) failed`);
-  }
-  // A run that selected nothing is a failure, not a pass — the same rule Mocha's --fail-zero applies
-  // inside a window.
-  if (passed.length === 0) {
-    throw new Error("no matrix pair ran — nothing was selected, or every pair was skipped");
   }
   console.log("E2E: PASS");
 }

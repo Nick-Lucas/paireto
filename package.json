@@ -31,8 +31,7 @@
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
-    "test:e2e": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=record node out/e2e/runE2E.js",
-    "e2e:record": "pnpm test:e2e",
+    "e2e:record": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=record node out/e2e/runE2E.js",
     "e2e:check": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=check node out/e2e/runE2E.js",
     "e2e:check:docker": "bash docker/e2e.sh check",
     "e2e:record:docker": "bash docker/e2e.sh record",
@@ -40,7 +39,6 @@
     "docker:down": "docker compose -f docker/docker-compose.yml down --remove-orphans",
     "docker:shell": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec tests bash",
     "test:docker": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec -T tests pnpm test",
-    "test:e2e:docker": "bash docker/e2e.sh record",
     "emulator": "node esbuild.mts --emulator-bridge && node scripts/emulator.ts"
   },
   "dependencies": {
