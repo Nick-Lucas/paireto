@@ -9,9 +9,7 @@ the host while you send test commands into it (streaming their output back). No 
 
 ## Prerequisites
 
-- Docker Desktop (or any Docker engine + `docker compose`).
-- For the **claude** E2E driver: nothing to do manually — `test:e2e:docker` extracts your Claude
-  credential from the macOS keychain automatically (or set `ANTHROPIC_API_KEY` and it wins).
+- Docker with `docker compose`)
 
 ## Commands
 
@@ -20,20 +18,28 @@ pnpm docker:build          # build the image once (Node deps' Linux runtime + th
 
 pnpm test:docker           # boots the container (if needed) and runs the unit suite in it
 pnpm docker:shell          # a bash shell inside the running container
-pnpm docker:down           # stop the persistent container
+pnpm docker:down           # stop everything (the test container plus MockServer, if an E2E run left it up)
 
-# E2E recording — pick a driver. The passing run replaces that driver's cassette.
-PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker
-PAIRETO_E2E_DRIVER=codex      pnpm test:e2e:docker
-PAIRETO_E2E_DRIVER=opencode   pnpm test:e2e:docker
+# Strict credential-free replay of the WHOLE (case × driver) matrix, one window per pair.
+pnpm e2e:check:docker
 
-# The explicit recording alias and strict credential-free replay.
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:check:docker
+# Narrow it with Mocha's own flags, matched against the `<case> @<driver>` suite titles.
+pnpm e2e:check:docker --grep @codex
+pnpm e2e:check:docker --grep 'fullflow @codex'
+
+# Recording talks to the real provider and replaces the cassette of every pair it runs — so filter
+# it unless you mean to re-record the whole matrix, which costs a paid run per pair.
+pnpm e2e:record:docker --grep @claudecode
 ```
 
-`test:docker` / `test:e2e:docker` each do `docker compose up -d --wait` (a no-op once booted) and then
+Replay fails a pair with no committed cassette — a driver that never launched must not be able to
+report a pass. Recording that pair is how you add it.
+
+`test:docker` / `e2e:record:docker` each do `docker compose up -d --wait` (a no-op once booted) and then
 `docker compose exec` the suite — so the first run pays the boot cost and later runs are just the exec.
+After adding or upgrading a dependency, run `docker compose … exec tests pnpm install` (or
+`pnpm docker:down` and let the next run reinstall) — `node_modules` is a cached named volume, so the
+entrypoint only populates it when it is empty.
 The first boot does a Linux `pnpm install` into a named volume (host macOS `node_modules` can't be
 reused — esbuild/oxlint/oxfmt are per-platform native binaries), cached across runs, as is the Linux
 VS Code download (`.vscode-test`). The compose healthcheck makes `up --wait` block until that's done,
@@ -51,6 +57,9 @@ so a test exec never races the install.
 - `docker-compose.yml` — the persistent `tests` service: bind-mounts the repo at `/workspace`, shadows
   `node_modules` + `.vscode-test` with container-local named volumes, sets `shm_size: 2gb` (Chromium
   needs more than Docker's default 64MB `/dev/shm`), `PAIRETO_DOCKER=1`, and a readiness healthcheck.
+- `e2e.sh` — the one entry point for both E2E flows: picks the compose overlays for the mode, boots
+  once, then execs the run with the per-run variables attached. `ANTHROPIC_API_KEY` is forwarded only
+  in record mode, so a check run cannot reach a real provider even if the key is exported.
 - `docker-compose.e2e.yml` — E2E-only overlay: mounts the staged Claude secret (`./.secrets`, read-only
   at `/paireto-secrets`) plus `~/.codex`, `~/.local/share/opencode`, `~/.config/opencode`.
 - `docker-compose.mockserver.yml` — adds MockServer for every E2E run. Record combines this with
@@ -58,7 +67,7 @@ so a test exec never races the install.
   and runs with MockServer in `SIMULATE` mode so a fixture miss cannot reach a provider.
 - `prepare-e2e.sh` — host-side; stages `~/.claude.json` + the keychain OAuth credential into `./.secrets`
   (gitignored, 0600, contents never printed) so the Linux container can authenticate Claude without a
-  keychain. Run automatically by `test:e2e:docker`.
+  keychain. Run automatically by `e2e:record:docker`.
 
 `PAIRETO_DOCKER=1` makes both runners (`.vscode-test.mjs` and `src/e2e/runE2E.ts`) pass `--no-sandbox`
 to Electron — required because it runs as root and Docker has no usable namespace sandbox. That flag is

@@ -1,7 +1,7 @@
-// Deterministic resolution of the runtime state dir, per-repo socket paths, and the
-// repo key. The plugin's bridge.js MUST compute identical values — any divergence and the
-// hook talks to the wrong socket (or none). The non-negotiable rule: realpath both sides
-// before hashing, so macOS /var <-> /private/var symlinks don't produce different keys.
+// Deterministic resolution of the runtime state dir, per-repo socket paths, and the repo key. The
+// extension and every plugin process call these same functions, so they cannot disagree about which
+// socket serves a repo. The non-negotiable rule: realpath before hashing, so macOS
+// /var <-> /private/var symlinks don't produce different keys.
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";

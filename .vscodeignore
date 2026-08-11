@@ -13,6 +13,6 @@
 !LICENSE.md
 !CHANGELOG.md
 
-# Bundled agent plugins: ship the whole folder verbatim — these are the distributed artifacts the
-# installers stage/register. Dev tooling lives in repo-root scripts/, outside this tree.
-!plugins/**
+# Bundled agent plugins: built by esbuild from src/plugins/ (entry points bundled, assets/ copied)
+# into dist/plugins — these are the distributed artifacts the installers stage/register.
+!dist/plugins/**

@@ -150,7 +150,7 @@ async function removeStaleMarketplaces(bin: string, pluginsRoot: string): Promis
 }
 
 /**
- * @param pluginsRoot absolute path to the shipped `plugins/` dir (contains .claude-plugin/marketplace.json)
+ * @param pluginsRoot absolute path to the shipped `dist/plugins/` dir (contains .claude-plugin/marketplace.json)
  */
 export async function installPlugin(pluginsRoot: string): Promise<InstallResult> {
   const manualCommand = manualInstallCommand(pluginsRoot);

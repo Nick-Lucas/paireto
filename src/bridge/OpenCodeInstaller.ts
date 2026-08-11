@@ -2,10 +2,10 @@
 // config dir (`~/.config/opencode/plugin/`) and any command in `~/.config/opencode/commands/` — no
 // registration CLI, no config edits. So the install is a plain file copy of our own three artifacts:
 //
-//   plugins/opencode/paireto.js            → <config>/plugin/paireto.js
-//   plugins/opencode/adapter.json          → <config>/plugin/adapter.json   (the plugin reads its
+//   dist/plugins/opencode/paireto.js            → <config>/plugin/paireto.js
+//   dist/plugins/opencode/adapter.json          → <config>/plugin/adapter.json   (the plugin reads its
 //                                             own version from this sibling at runtime)
-//   plugins/opencode/commands/paireto-review.md → <config>/commands/paireto-review.md
+//   dist/plugins/opencode/commands/paireto-review.md → <config>/commands/paireto-review.md
 //
 // merge-don't-clobber: those dirs are SHARED with the user's other plugins/commands, but we only ever
 // write our own three filenames — every foreign file is left untouched. The plan is a PURE function
@@ -30,8 +30,8 @@ export interface OpenCodeCopy {
 // Pure: paths + install plan
 // ---------------------------------------------------------------------------
 
-/** The set of copies that make up an install, given the shipped `plugins/` root and OpenCode's config
- *  dir. Pure — the IO wrapper walks this list. */
+/** The set of copies that make up an install, given the shipped `dist/plugins/` root and OpenCode's
+ *  config dir. Pure — the IO wrapper walks this list. */
 export function openCodeInstallPlan(pluginsRoot: string, configDir: string): OpenCodeCopy[] {
   const src = path.join(pluginsRoot, "opencode");
   const pluginDir = path.join(configDir, "plugin");
@@ -102,7 +102,7 @@ function readFileOrEmpty(file: string): string {
 
 /**
  * Install the OpenCode adapter by copying our three artifacts into the user's OpenCode config dir.
- * `ctx.pluginsRoot` is the shipped `plugins/` dir; `ctx.stableDir` is unused (OpenCode loads the file
+ * `ctx.pluginsRoot` is the shipped `dist/plugins/` dir; `ctx.stableDir` is unused (OpenCode loads the file
  * in place). Foreign files in those shared dirs are never touched.
  */
 export async function installOpenCode(ctx: {

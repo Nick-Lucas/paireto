@@ -75,8 +75,8 @@ suite("openCodeInstallState (tri-state probe)", () => {
 });
 
 suite("readOpenCodeAdapterVersion (shipped manifest)", () => {
-  test("reads the real shipped plugins/opencode/adapter.json", () => {
-    const pluginsRoot = path.resolve(__dirname, "../../plugins");
+  test("reads the real shipped dist/plugins/opencode/adapter.json", () => {
+    const pluginsRoot = path.resolve(__dirname, "../../dist/plugins");
     const version = readOpenCodeAdapterVersion(pluginsRoot);
     assert.ok(/^\d+\.\d+\.\d+/.test(version), `version looks semver-ish: ${version}`);
   });

@@ -316,7 +316,7 @@ export function probeOpenCode(mode: E2EMode = "record"): Availability {
  * credential (or ANTHROPIC_API_KEY when present, for CI). The credential comes from a host-staged
  * file when PAIRETO_CLAUDE_CREDENTIALS points at one (Docker — no keychain in Linux; see
  * docker/prepare-e2e.sh), else from the macOS keychain. Plugin is wired at launch via
- * `--plugin-dir <repo>/plugins/claude-code`.
+ * `--plugin-dir <repo>/dist/plugins/claude-code`.
  */
 export function buildClaudeHome(opts: { checkMode?: boolean; homeDir?: string } = {}): HarnessHome {
   // Pin CLAUDE_CONFIG_DIR when requested so its embedded path is stable between record and check.

@@ -133,8 +133,9 @@ export class WelcomePanel {
     }
   }
 
+  /** The shipped plugin tree, built into dist/ alongside the extension bundle. */
   private pluginsRoot(): string {
-    return vscode.Uri.joinPath(this.context.extensionUri, "plugins").fsPath;
+    return vscode.Uri.joinPath(this.context.extensionUri, "dist", "plugins").fsPath;
   }
 
   /** Per-agent writable dir under globalStorage. Pure path (no mkdir) — probes only read; setupAgent

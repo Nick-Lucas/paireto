@@ -1,7 +1,7 @@
 # Dev scripts
 
-Repo-local development tooling. **Not shipped in the `.vsix`** — these live outside `plugins/` so
-the whole plugin folder can be bundled as-is (`!plugins/**` in `.vscodeignore`).
+Repo-local development tooling. **Not shipped in the `.vsix`** — these live outside `src/plugins/`,
+which esbuild builds into `dist/plugins` (`!dist/plugins/**` in `.vscodeignore`).
 
 ## Bridge emulator (manual testing without an agent)
 

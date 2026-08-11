@@ -1,0 +1,9 @@
+{
+  "name": "paireto",
+  "description": "Bridges Claude Code to the VS Code Paireto extension",
+  "version": "0.5.8",
+  "author": {
+    "name": "paireto"
+  },
+  "keywords": ["vscode", "plan-review", "hooks", "ExitPlanMode"]
+}

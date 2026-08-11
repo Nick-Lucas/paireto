@@ -5,10 +5,21 @@
 Drives the full **plan → feedback → approve → implement → review-feedback → review-approve** loop
 inside a real VS Code window, over the per-repo Unix socket — the same substrate the product uses.
 
-- The test (`tests/fullflow.e2e.ts`) runs inside the extension host (`@vscode/test-electron`,
-  launched by `runE2E.ts`). It plays the **user** side via the real `paireto.gate.*` commands and an
-  env-gated test control plane (`src/testControlPlane.ts`, active only when `PAIRETO_TEST=1`):
-  `paireto.test.inspect` (state snapshot) + `paireto.test.addComment`.
+- The specs (`tests/*.e2e.ts`, shared step helpers in `tests/steps.ts`) run under **Mocha** inside the
+  extension host, so each step is reported by name and a case scaffolds itself in
+  `suiteSetup`/`suiteTeardown` (launching and disposing its driver). Steps share one agent session, so
+  they run in order and the run uses `bail` — once a step fails the rest are noise. They play the
+  **user** side via the real `paireto.gate.*` commands and an env-gated test control plane
+  (`src/testControlPlane.ts`, active only when `PAIRETO_TEST=1`): `paireto.test.inspect` (state
+  snapshot) + `paireto.test.addComment`.
+- **A case is a spec file; the drivers are a matrix.** Each suite is titled `<case> @<driver>`, so
+  one Mocha pattern selects pairs out here and tests inside the window. There is no selection env
+  var. One pair runs per window, because each needs its own sandbox repo and its own cassette, both
+  armed before VS Code starts.
+- **`runE2E.ts` owns everything around the window**, but not the window itself: it builds the sandbox
+  and arms MockServer, then hands the launch to the `vscode-test` CLI (`.vscode-test.e2e.mjs`). That
+  config is deliberately separate from `.vscode-test.mjs` so `pnpm test` and the VS Code Test Explorer
+  cannot start a run that has no proxy to talk to.
 - A **`HarnessDriver`** (`drivers/`) plays the agent side — it launches the real TUI/server for its
   harness and performs only pre-flow setup such as activating its reviewed-plan workflow. Steps branch on `DriverCaps`
   (e.g. blocking vs post-hoc turn-end review). Drivers never act after a Paireto approval.
@@ -20,17 +31,29 @@ inside a real VS Code window, over the per-repo Unix socket — the same substra
 
 ## Running
 
-All E2E and unit tests for this workflow run in the Docker `tests` service. Pick a driver — there is
-no default:
+All E2E and unit tests for this workflow run in the Docker `tests` service. An unfiltered run covers
+the whole matrix; narrow it with Mocha's own flags, which are forwarded through:
 
 ```sh
 pnpm docker:build
-PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker
-PAIRETO_E2E_DRIVER=codex      pnpm test:e2e:docker
-PAIRETO_E2E_DRIVER=opencode   pnpm test:e2e:docker
+pnpm e2e:check:docker                            # every case × every driver
+
+pnpm e2e:check:docker --grep @codex              # one driver, every case
+pnpm e2e:check:docker --grep '^fullflow '        # one case, every driver
+pnpm e2e:check:docker --grep 'fullflow @codex'   # exactly one pair
+
+# Recording replaces the cassette of every pair it runs, at the price of a real provider call each.
+pnpm e2e:record:docker --grep @claudecode
 ```
 
-`test:e2e` records the provider traffic and replaces that driver's cassette after a passing run. It
+A pattern is matched against the suite titles — `<case> @<driver>` — first out here to choose which
+windows to open, then again by Mocha inside each one. So it selects whole pairs; a pattern aimed at
+individual test names has no pair to open and is reported as matching nothing.
+
+The filter travels as arguments to the `docker compose exec` (see `docker/e2e.sh`), not as container
+configuration, so narrowing a run never recreates the container.
+
+`e2e:record` records the provider traffic and replaces that driver's cassette after a passing run. It
 runs `pnpm compile` + `pnpm compile-tests` + `PAIRETO_E2E_MODE=record node out/e2e/runE2E.js`. The default unit suite
 (`pnpm test`) globs `out/test/**` and never picks up `out/e2e/**`, so the two stay independent.
 
@@ -103,8 +126,8 @@ forward proxy (`src/e2e/mockserver/`). The harness keeps talking to its real pro
 uses your real credentials and **local subscription**; replay uses no credentials and no network:
 
 ```sh
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker # real provider → record fixture
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:check:docker  # strict offline replay, fake auth
+pnpm e2e:record:docker --grep @claudecode # real provider → record fixture
+pnpm e2e:check:docker  --grep @claudecode # strict offline replay, fake auth
 ```
 
 How it works:
@@ -122,7 +145,7 @@ How it works:
   `promote_recordings` → retrieve the expectations → strip volatile matchers → commit the fixture.
   The shim passes request bodies through unchanged. This works against the OAuth subscription for
   **all three** harnesses.
-- **check** = load `fixtures/fullflow.<driver>.json` plus local startup responses, add a lowest-priority
+- **check** = load `fixtures/<case>.<driver>.json` plus local startup responses, add a lowest-priority
   599 catch-all, then enable `SIMULATE`. The check compose overlay mounts no user credentials; each
   harness gets syntactically valid, far-future fake OAuth state. Drift fails loud and cannot hit a
   real API. The shim applies the selected driver's normalizer before matching. The sandbox repo and
@@ -176,9 +199,8 @@ The Linux container supplies the virtual display and is the supported test entry
 ```sh
 pnpm docker:build                                    # once
 
-PAIRETO_E2E_DRIVER=claudecode pnpm test:e2e:docker   # record and replace the cassette
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:record:docker # explicit alias for the same recording run
-PAIRETO_E2E_DRIVER=claudecode pnpm e2e:check:docker  # strict offline replay, no credentials
+pnpm e2e:record:docker --grep @claudecode # record and replace the cassette
+pnpm e2e:check:docker  --grep @claudecode # strict offline replay, no credentials
 
 pnpm test:docker                                     # the unit suite
 pnpm docker:down                                     # stop the container

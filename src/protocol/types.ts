@@ -1,8 +1,8 @@
-// Wire-protocol types shared between the VS Code extension (socket server) and the
-// Claude Code plugin hook scripts. The hook scripts are plain JS and re-implement the
-// same shapes by hand — keep this file the single source of truth and mirror changes there.
+// Wire-protocol types shared between the VS Code extension (socket server) and the plugin hook
+// scripts and MCP servers. The plugins are TypeScript under src/plugins/ and import these types
+// directly, so both sides of the wire are checked against this one file.
 
-import pluginManifest from "../../plugins/claude-code/.claude-plugin/plugin.json";
+import pluginManifest from "../plugins/claude-code/assets/.claude-plugin/plugin.json";
 
 // The per-harness raw-event dialects live in their strategy files (agent-specific types belong with
 // the one module that consumes them); this file imports them TYPE-ONLY for the HarnessHookEvent
@@ -16,10 +16,8 @@ import type { OpenCodeForwardedEvent } from "../harness/OpenCodeStrategy.js";
  * point of truth — bump it there and every one of the following updates together): the wire
  * protocol marker sent as `v` in every envelope (bump the manifest whenever the wire shape changes
  * incompatibly; checked for strict equality), the plugin's own `pluginVersion` in the hello
- * handshake, the MCP server's reported `SERVER_INFO.version`, and the extension's own `extVersion`
- * in `hello.ack`. `bridge.js` reads the same manifest file directly at runtime under its own
- * `PLUGIN_VERSION` name — mirroring this file's existing convention of hand-keeping the plugin's
- * plain-JS scripts in sync with the TypeScript source of truth.
+ * handshake, the MCP server's reported `serverInfo.version`, and the extension's own `extVersion`
+ * in `hello.ack`. The plugin bundles import this same constant, so the manifest is read once.
  */
 export const PLUGIN_VERSION: string = pluginManifest.version;
 

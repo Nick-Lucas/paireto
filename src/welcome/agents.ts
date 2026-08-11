@@ -28,7 +28,7 @@ export interface AgentTerminalProfile {
 
 /** Everything an agent's install / probe needs from the host, resolved by WelcomePanel. */
 export interface InstallContext {
-  /** Absolute path to the shipped `plugins/` dir (bundled with the extension — this path CHANGES on
+  /** Absolute path to the shipped `dist/plugins/` dir (built with the extension — this path CHANGES on
    *  every extension update, so nothing durable may point at it). */
   pluginsRoot: string;
   /** A per-agent writable dir under globalStorage (`<globalStorage>/adapters/<id>`), mkdirp'd by the

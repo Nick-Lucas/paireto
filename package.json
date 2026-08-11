@@ -15,13 +15,13 @@
   "main": "./dist/extension.js",
   "scripts": {
     "vscode:prepublish": "pnpm run prepackage",
-    "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
+    "compile": "pnpm run check-types && pnpm run lint && node esbuild.mts",
     "watch": "npm-run-all -p watch:*",
-    "watch:esbuild": "node esbuild.js --watch",
+    "watch:esbuild": "node esbuild.mts --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
-    "prepackage": "pnpm run check-types && pnpm run lint && node esbuild.js --production",
+    "prepackage": "pnpm run check-types && pnpm run lint && node esbuild.mts --production",
     "package": "vsce package --no-dependencies --out dist/paireto.vsix",
-    "compile-tests": "tsc -p . --outDir out",
+    "compile-tests": "rm -rf out && tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview",
@@ -31,17 +31,15 @@
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
-    "test:e2e": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=record node out/e2e/runE2E.js",
-    "e2e:record": "pnpm test:e2e",
+    "e2e:record": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=record node out/e2e/runE2E.js",
     "e2e:check": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=check node out/e2e/runE2E.js",
-    "e2e:check:docker": "docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml exec -T tests pnpm e2e:check",
-    "e2e:record:docker": "bash docker/prepare-e2e.sh && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml exec -T tests pnpm e2e:record",
+    "e2e:check:docker": "bash docker/e2e.sh check",
+    "e2e:record:docker": "bash docker/e2e.sh record",
     "docker:build": "docker compose -f docker/docker-compose.yml build",
-    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "docker:down": "docker compose -f docker/docker-compose.yml down --remove-orphans",
     "docker:shell": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec tests bash",
     "test:docker": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec -T tests pnpm test",
-    "test:e2e:docker": "bash docker/prepare-e2e.sh && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml up -d --wait && docker compose -f docker/docker-compose.yml -f docker/docker-compose.mockserver.yml -f docker/docker-compose.e2e.yml exec -T tests pnpm test:e2e",
-    "emulator": "node scripts/emulator.ts"
+    "emulator": "node esbuild.mts --emulator-bridge && node scripts/emulator.ts"
   },
   "dependencies": {
     "dedent": "^1.7.2",
@@ -50,6 +48,7 @@
     "react-dom": "^19.2.7"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "@types/mocha": "^10.0.10",
     "@types/node": "22.x",
     "@types/react": "^19.2.17",
@@ -59,10 +58,12 @@
     "@vscode/test-electron": "^2.5.2",
     "@vscode/vsce": "^3.9.2",
     "esbuild": "^0.27.3",
+    "mocha": "^11.8.0",
     "npm-run-all": "^4.1.5",
     "oxfmt": "^0.54.0",
     "oxlint": "^1.69.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "zod": "^3.25.76"
   },
   "contributes": {
     "commands": [

@@ -63,7 +63,7 @@ export class CodexDriver implements HarnessDriver {
     this.home.env.CODEX_HOME = codexHome;
     const result = await installCodex(
       {
-        pluginsRoot: path.join(repoRoot(), "plugins"),
+        pluginsRoot: path.join(repoRoot(), "dist", "plugins"),
         stableDir: path.join(codexHome, "paireto-installer"),
       },
       { codexHome },

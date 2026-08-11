@@ -131,7 +131,7 @@ export class OpenCodeDriver implements HarnessDriver {
     fs.writeFileSync(path.join(configDir, "opencode.json"), "{}\n");
     this.stagePluginSdk(configDir);
     // Install our plugin (paireto.js + adapter.json + the review command) into the temp config dir.
-    for (const copy of openCodeInstallPlan(path.join(repoRoot(), "plugins"), configDir)) {
+    for (const copy of openCodeInstallPlan(path.join(repoRoot(), "dist", "plugins"), configDir)) {
       fs.mkdirSync(path.dirname(copy.to), { recursive: true });
       fs.copyFileSync(copy.from, copy.to);
     }

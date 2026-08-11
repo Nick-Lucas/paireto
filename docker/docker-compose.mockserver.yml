@@ -7,9 +7,9 @@
 services:
   tests:
     environment:
-      PAIRETO_E2E_DRIVER: "${PAIRETO_E2E_DRIVER:-}"
-      PAIRETO_E2E_MODE: "check"
-      # The controller reaches the sibling service by name, drives its MCP endpoint, and starts the
+      # Driver, case and mode are EXEC-time inputs (docker/e2e.sh passes them with `exec -e`), so
+      # switching any of them never recreates this container. Only the network topology belongs here:
+      # the controller reaches the sibling service by name, drives its MCP endpoint, and starts the
       # harness-facing shim. Readiness is polled by the controller.
       PAIRETO_MOCK_URL: "http://mockserver:1080"
     depends_on:

@@ -3,21 +3,16 @@
 // tool call streams `input:{}`, and the CLI back-fills `{plan, planFilePath}` from the file
 // afterwards, past the point where our PermissionRequest hook fires).
 //
-// These tests pin that the same recovery works for a real user, whose CLAUDE_CONFIG_DIR is unset, and
-// that it stays bound to this turn's plan within the shared plans directory.
+// These tests pin that recovery uses only what the event itself names — the explicit planFilePath or
+// the session transcript — and never picks a plan out of the shared plans directory, which holds
+// files from unrelated repositories and sessions.
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-const planFile = require("../../plugins/claude-code/scripts/plan-file.js") as {
-  resolvePlanMarkdown: (
-    event: unknown,
-    env?: NodeJS.ProcessEnv,
-    nowMs?: number,
-  ) => string | undefined;
-};
+import { resolvePlanMarkdown } from "../plugins/claude-code/planFile.js";
 
 const PLAN = "# Plan\n\n1. Add hello.txt containing 'hi'\n";
 
@@ -40,14 +35,10 @@ function writePlan(dir: string, name: string, text: string, ageMs = 0): string {
 
 suite("Claude plan-file recovery", () => {
   test("returns nothing when the tool call already carried the plan", () => {
-    const { home, plansDir, cleanup } = makeHome();
+    const { plansDir, cleanup } = makeHome();
     try {
       writePlan(plansDir, "plan-other.md", "# A different plan\n");
-      const recovered = planFile.resolvePlanMarkdown(
-        { tool_input: { plan: PLAN } },
-        { HOME: home },
-        Date.now(),
-      );
+      const recovered = resolvePlanMarkdown({ tool_input: { plan: PLAN } });
       assert.strictEqual(recovered, undefined);
     } finally {
       cleanup();
@@ -58,11 +49,7 @@ suite("Claude plan-file recovery", () => {
     const { home, cleanup } = makeHome();
     try {
       const elsewhere = writePlan(home, "plan-named.md", PLAN);
-      const recovered = planFile.resolvePlanMarkdown(
-        { tool_input: { planFilePath: elsewhere } },
-        { HOME: home },
-        Date.now(),
-      );
+      const recovered = resolvePlanMarkdown({ tool_input: { planFilePath: elsewhere } });
       assert.strictEqual(recovered, PLAN);
     } finally {
       cleanup();
@@ -84,11 +71,7 @@ suite("Claude plan-file recovery", () => {
           },
         })}\n`,
       );
-      const recovered = planFile.resolvePlanMarkdown(
-        { transcript_path: transcript, tool_input: {} },
-        { HOME: home },
-        Date.now(),
-      );
+      const recovered = resolvePlanMarkdown({ transcript_path: transcript, tool_input: {} });
       assert.strictEqual(recovered, PLAN);
     } finally {
       cleanup();
@@ -96,14 +79,10 @@ suite("Claude plan-file recovery", () => {
   });
 
   test("does not recover an uncorrelated plan from the shared plans directory", () => {
-    const { home, plansDir, cleanup } = makeHome();
+    const { plansDir, cleanup } = makeHome();
     try {
       writePlan(plansDir, "plan-fresh.md", PLAN);
-      const recovered = planFile.resolvePlanMarkdown(
-        { tool_input: {} },
-        { HOME: home },
-        Date.now(),
-      );
+      const recovered = resolvePlanMarkdown({ tool_input: {} });
       assert.strictEqual(recovered, undefined);
     } finally {
       cleanup();
@@ -111,14 +90,10 @@ suite("Claude plan-file recovery", () => {
   });
 
   test("ignores a stale plan file — the plans directory is shared across sessions and repos", () => {
-    const { home, plansDir, cleanup } = makeHome();
+    const { plansDir, cleanup } = makeHome();
     try {
       writePlan(plansDir, "plan-someone-elses.md", PLAN, 120_000);
-      const recovered = planFile.resolvePlanMarkdown(
-        { tool_input: {} },
-        { HOME: home },
-        Date.now(),
-      );
+      const recovered = resolvePlanMarkdown({ tool_input: {} });
       assert.strictEqual(recovered, undefined);
     } finally {
       cleanup();
@@ -126,35 +101,34 @@ suite("Claude plan-file recovery", () => {
   });
 
   test("does not pick either of two fresh plans from unrelated sessions", () => {
-    const { home, plansDir, cleanup } = makeHome();
+    const { plansDir, cleanup } = makeHome();
     try {
       writePlan(plansDir, "plan-older.md", "# Older plan\n", 5_000);
       writePlan(plansDir, "plan-newer.md", PLAN);
-      const recovered = planFile.resolvePlanMarkdown(
-        { tool_input: {} },
-        { HOME: home },
-        Date.now(),
-      );
+      const recovered = resolvePlanMarkdown({ tool_input: {} });
       assert.strictEqual(recovered, undefined);
     } finally {
       cleanup();
     }
   });
 
-  test("fails open (undefined) on a missing directory, blank plan, or malformed event", () => {
-    const { home, plansDir, cleanup } = makeHome();
+  test("fails open (undefined) on an unreadable path, a blank plan, or a malformed event", () => {
+    const { plansDir, cleanup } = makeHome();
     try {
       assert.strictEqual(
-        planFile.resolvePlanMarkdown({ tool_input: {} }, { HOME: "/nope/nowhere" }, Date.now()),
+        resolvePlanMarkdown({ tool_input: { planFilePath: "/nope/nowhere.md" } }),
         undefined,
       );
-      writePlan(plansDir, "plan-blank.md", "   \n");
+
+      const blank = writePlan(plansDir, "plan-blank.md", "   \n");
+      assert.strictEqual(resolvePlanMarkdown({ tool_input: { planFilePath: blank } }), undefined);
+
       assert.strictEqual(
-        planFile.resolvePlanMarkdown({ tool_input: {} }, { HOME: home }, Date.now()),
+        resolvePlanMarkdown({ transcript_path: "/nope/missing.jsonl" }),
         undefined,
       );
-      assert.strictEqual(planFile.resolvePlanMarkdown(undefined, {}, Date.now()), undefined);
-      assert.strictEqual(planFile.resolvePlanMarkdown({}, {}, Date.now()), undefined);
+      assert.strictEqual(resolvePlanMarkdown(undefined), undefined);
+      assert.strictEqual(resolvePlanMarkdown({}), undefined);
     } finally {
       cleanup();
     }

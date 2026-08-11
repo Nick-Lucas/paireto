@@ -454,7 +454,7 @@ export function readFixture(raw: unknown, driver: string): Fixture {
   if (!recordedWith?.[driver] || !recordedOn || !wrapped?.expectations) {
     throw new Error(
       `cassette for "${driver}" is not a stamped {recordedWith, recordedOn, expectations} fixture — ` +
-        `re-record it with PAIRETO_E2E_DRIVER=${driver} PAIRETO_E2E_MODE=record`,
+        `re-record it with PAIRETO_E2E_MODE=record ... --grep @${driver}`,
     );
   }
   return {
