@@ -1,0 +1,100 @@
+# Every gate a change has to pass: static checks, the packaged build, the unit suite, and the E2E
+# matrix replayed against its committed cassettes.
+#
+# The two suites run in the same Docker image the repo uses locally (docker/README.md), so a CI
+# failure reproduces with one command on a developer machine. The image is built fresh on every run
+# and never restored from a layer cache — it installs the claude/codex/opencode CLIs unpinned, and
+# caching those layers would quietly freeze CI on an old release.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new push supersedes the run in flight for the same branch; E2E is far too long to leave queued
+# runs racing each other.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint, format and types
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          # Matches the Dockerfile's pin. There is no `packageManager` field to read it from — see
+          # the comment in docker/Dockerfile for why.
+          version: 10.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run check-types
+      - run: pnpm run lint
+      - run: pnpm run format
+
+  build:
+    name: Build VSIX
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # `vsce package` runs `vscode:prepublish`, so this is the real production build, not a re-run
+      # of the lint job's checks with a different entry point.
+      - run: pnpm run package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: paireto-vsix
+          path: dist/paireto.vsix
+          if-no-files-found: error
+
+  unit:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # The suite launches a real VS Code, so it runs in the container's virtual display rather than
+      # on the runner. pnpm is only needed to reach the script.
+      - run: pnpm run docker:build
+      - run: pnpm run test:docker
+
+  e2e:
+    name: E2E (replay)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.24.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: pnpm run docker:build
+      - run: pnpm run e2e:check:docker
