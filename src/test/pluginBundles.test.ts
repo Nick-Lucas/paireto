@@ -60,8 +60,8 @@ suite("plugin bundles match their manifests", () => {
     test(`${pluginDir}: hook bundles stay small enough for a 5s timeout`, () => {
       for (const script of hookScriptPaths(pluginDir)) {
         const full = path.join(repoRoot, pluginDir, script);
+        assert.ok(fs.existsSync(full), `${pluginDir}/${script} is missing — run the build`);
         const size = fs.statSync(full).size;
-        assert.ok(
           size <= HOOK_BUNDLE_MAX_BYTES,
           `${pluginDir}/${script} is ${size} bytes, over the ${HOOK_BUNDLE_MAX_BYTES} ceiling — ` +
             "something pulled the MCP SDK or another heavy dependency into a hook",
