@@ -15,7 +15,8 @@ const CONNECT_TIMEOUT_MS = 3000;
 const HANDOFF_POLL_MS = 500;
 
 export interface CodexLiveness {
-  /** The most recent handoff seen, which the review tool reuses for its socket and session id. */
+  /** The active handoff, which the review tool reuses for its socket and session id. Re-read from
+   *  disk per call, falling back to the last usable one seen. */
   latest(): CodexHandoff | undefined;
   stop(): void;
 }
@@ -28,9 +29,7 @@ function isUsable(handoff: CodexHandoff | undefined): handoff is CodexHandoff {
   );
 }
 
-export function startCodexLiveness(): CodexLiveness {
-  const pid = codexPid();
-
+export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   let currentSessionId: string | undefined;
   let connection: BridgeConnection | undefined;
   let connecting = false;
@@ -120,7 +119,12 @@ export function startCodexLiveness(): CodexLiveness {
   }
 
   return {
-    latest: () => latestHandoff ?? (isUsable(readHandoff(pid)) ? readHandoff(pid) : undefined),
+    // Read the file first: a `/new` rewrites the session id between poll ticks, and a review
+    // dispatched in that gap must not carry the session that just ended.
+    latest: () => {
+      const fresh = readHandoff(pid);
+      return isUsable(fresh) ? fresh : latestHandoff;
+    },
     stop() {
       stopped = true;
       clearInterval(timer);

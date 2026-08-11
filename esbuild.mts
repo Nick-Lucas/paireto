@@ -4,18 +4,22 @@
 //
 // The `.mts` extension makes this an ES module on its own, without a `"type": "module"` in
 // package.json — which is not available to us anyway, because it would also reclassify the
-// CommonJS plugin bundles under plugins/**/*.js and break every harness that spawns them.
+// CommonJS plugin bundles under dist/plugins/**/*.js and break every harness that spawns them.
 //
 // The plugin bundles are declared next to the plugins themselves (src/plugins/*/esbuild.mts); this
 // file owns only the extension's own two bundles and the wiring.
 
+import * as fs from "node:fs";
+
 import * as esbuild from "esbuild";
 import type { BuildOptions, Plugin } from "esbuild";
 
-import { PLUGIN_OUT_ROOT, pluginConfigs } from "./src/plugins/esbuild.mts";
+import { emulatorBridgeConfig, PLUGIN_OUT_ROOT, pluginConfigs } from "./src/plugins/esbuild.mts";
 
 const production = process.argv.includes("--production");
 const watch = process.argv.includes("--watch");
+/** scripts/emulator.ts needs only the bridge bundle, so it skips the extension and plugin builds. */
+const emulatorBridgeOnly = process.argv.includes("--emulator-bridge");
 
 const esbuildProblemMatcherPlugin: Plugin = {
   name: "esbuild-problem-matcher",
@@ -68,11 +72,18 @@ const webviewConfig: BuildOptions = {
 };
 
 async function main(): Promise<void> {
-  const configs: BuildOptions[] = [
-    extensionConfig,
-    webviewConfig,
-    ...pluginConfigs({ production, problemMatcher: esbuildProblemMatcherPlugin }),
-  ];
+  const ctx = { production, problemMatcher: esbuildProblemMatcherPlugin };
+
+  if (!emulatorBridgeOnly) {
+    // The plugin tree is written file by file and never pruned, so an asset deleted or renamed in
+    // source would survive here and ship in the .vsix. Start from nothing instead.
+    fs.rmSync(PLUGIN_OUT_ROOT, { recursive: true, force: true });
+  }
+
+  const configs: BuildOptions[] = emulatorBridgeOnly
+    ? [emulatorBridgeConfig(ctx)]
+    : [extensionConfig, webviewConfig, ...pluginConfigs(ctx)];
+
   const ctxs = await Promise.all(configs.map((config) => esbuild.context(config)));
   if (watch) {
     await Promise.all(ctxs.map((c) => c.watch()));
@@ -80,7 +91,9 @@ async function main(): Promise<void> {
     await Promise.all(ctxs.map((c) => c.rebuild()));
     await Promise.all(ctxs.map((c) => c.dispose()));
   }
-  console.log(`[build] plugin tree written to ${PLUGIN_OUT_ROOT}/`);
+  if (!emulatorBridgeOnly) {
+    console.log(`[build] plugin tree written to ${PLUGIN_OUT_ROOT}/`);
+  }
 }
 
 main().catch((e: unknown) => {

@@ -8,21 +8,19 @@
 // the hook or tool silently degrades (events drop, gates return "proceed") rather than stalling or
 // crashing the agent.
 
-import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME } from "../core/mcp/reviewTool.js";
+import {
+  REVIEW_APPROVED,
+  REVIEW_TOOL_DESCRIPTION,
+  REVIEW_TOOL_NAME,
+} from "../core/mcp/reviewTool.js";
 import {
   agentModeFor,
   applyOpenCodeConfig,
-  ensurePermission,
   getLastUserAgentFromMessages,
-  isChildSession,
-  isNewUserTurn,
-  isPrimaryCapableAgent,
   isTitleGeneratorPrompt,
-  normalizePrimaryTools,
   planToolArgs,
   resolveOpenCodeRoot,
   shouldInjectPlanningPrompt,
-  stopGateInjectionReason,
 } from "./automation.js";
 import { createBridge } from "./bridge.js";
 import { handleEvent, maybeRunStopGate, switchAgent } from "./dispatch.js";
@@ -33,7 +31,6 @@ import {
   PLAN_UNAVAILABLE,
   PLANNING_AGENTS,
   PLANNING_PROMPT,
-  REVIEW_APPROVED,
   REVIEW_FAILED,
   REVIEW_UNAVAILABLE,
   SUBMIT_PLAN_DESCRIPTION,
@@ -240,24 +237,3 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
     },
   };
 };
-
-// Test-only surface. OpenCode's plugin loader treats EVERY export as a plugin factory: a function
-// export is invoked as `fn(pluginInput, options)` (a bare helper then crashes the boot — it reads
-// its real parameters off the wrong objects), and a non-function export is a hard load error
-// ("Plugin export is not a function"). So the helpers ride an INERT plugin: a callable that
-// registers no hooks, with the helpers attached as properties for the unit tests to destructure.
-export const _internals = Object.assign(async () => ({}), {
-  normalizePrimaryTools,
-  ensurePermission,
-  isPrimaryCapableAgent,
-  applyOpenCodeConfig,
-  isNewUserTurn,
-  isTitleGeneratorPrompt,
-  getLastUserAgentFromMessages,
-  agentModeFor,
-  shouldInjectPlanningPrompt,
-  isChildSession,
-  stopGateInjectionReason,
-  planToolArgs,
-  resolveOpenCodeRoot,
-});

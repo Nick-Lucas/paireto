@@ -8,6 +8,7 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const repoRoot = path.resolve(__dirname, "../..");
 
@@ -17,9 +18,38 @@ const PLUGINS = "dist/plugins";
 /** Hooks are spawned per event with a 5s timeout; the shared socket glue alone is ~15 KB. */
 const HOOK_BUNDLE_MAX_BYTES = 80 * 1024;
 
+/** Each plugin's static asset tree and where the build copies it. `skip` names entries of the output
+ *  directory that belong to another tree — the root manifest's output is the whole plugin tree. */
+const ASSET_TREES = [
+  { src: "src/plugins/assets", out: PLUGINS, skip: ["claude-code", "codex", "opencode"] },
+  { src: "src/plugins/claude-code/assets", out: `${PLUGINS}/claude-code`, skip: [] },
+  { src: "src/plugins/codex/assets", out: `${PLUGINS}/codex`, skip: [] },
+  { src: "src/plugins/opencode/assets", out: `${PLUGINS}/opencode`, skip: [] },
+];
+
 interface HookCommand {
   type: string;
   command: string;
+}
+
+/** Every file under `root`, as paths relative to it, minus the named top-level entries. */
+function relativeFiles(root: string, skip: string[]): string[] {
+  const found: string[] = [];
+  const walk = (rel: string) => {
+    for (const entry of fs.readdirSync(path.join(root, rel), { withFileTypes: true })) {
+      const next = rel ? path.join(rel, entry.name) : entry.name;
+      if (skip.includes(next)) {
+        continue;
+      }
+      if (entry.isDirectory()) {
+        walk(next);
+      } else {
+        found.push(next);
+      }
+    }
+  };
+  walk("");
+  return found.sort();
 }
 
 function readJson<T>(...segments: string[]): T {
@@ -62,6 +92,7 @@ suite("plugin bundles match their manifests", () => {
         const full = path.join(repoRoot, pluginDir, script);
         assert.ok(fs.existsSync(full), `${pluginDir}/${script} is missing — run the build`);
         const size = fs.statSync(full).size;
+        assert.ok(
           size <= HOOK_BUNDLE_MAX_BYTES,
           `${pluginDir}/${script} is ${size} bytes, over the ${HOOK_BUNDLE_MAX_BYTES} ceiling — ` +
             "something pulled the MCP SDK or another heavy dependency into a hook",
@@ -97,8 +128,20 @@ suite("plugin bundles match their manifests", () => {
     assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/codex`, codexArg)), codexArg);
   });
 
-  test("the OpenCode adapter the installer copies exists", () => {
-    assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/opencode/paireto.js`)));
+  // OpenCode's plugin loader treats EVERY export as a plugin factory: functions are invoked as
+  // `fn(pluginInput, options)` (a directly-exported helper crashes the boot — seen live: "failed to
+  // load plugin ... evaluating 'planningAgents'"), and a NON-function export is a hard load error
+  // too ("Plugin export is not a function", also seen live).
+  test("the OpenCode adapter the installer copies exports only loader-safe functions", async () => {
+    const adapter = path.join(repoRoot, `${PLUGINS}/opencode/paireto.js`);
+    assert.ok(fs.existsSync(adapter));
+
+    const loaded = (await import(pathToFileURL(adapter).href)) as Record<string, unknown>;
+    const exportNames = Object.keys(loaded).sort();
+    assert.deepStrictEqual(exportNames, ["PairetoOpenCode"]);
+    for (const name of exportNames) {
+      assert.strictEqual(typeof loaded[name], "function", name);
+    }
   });
 
   test("the MCP servers do carry the SDK — the shared core is really in use", () => {
@@ -107,7 +150,20 @@ suite("plugin bundles match their manifests", () => {
       `${PLUGINS}/codex/mcp/liveness.js`,
     ]) {
       const text = fs.readFileSync(path.join(repoRoot, server), "utf8");
+      assert.ok(text.includes("modelcontextprotocol"), `${server} does not bundle the MCP SDK`);
       assert.ok(text.includes("paireto_review"), `${server} does not register the review tool`);
     }
   });
+
+  // The output tree is only ever written into, so an asset deleted or renamed in source would keep
+  // shipping in the .vsix until someone cleared dist by hand. Bundled .js is generated rather than
+  // copied; everything else in the built tree must still exist in source.
+  for (const { src, out, skip } of ASSET_TREES) {
+    test(`${out}: copied assets match ${src}`, () => {
+      const copied = relativeFiles(path.join(repoRoot, out), skip).filter(
+        (file) => !file.endsWith(".js"),
+      );
+      assert.deepStrictEqual(copied, relativeFiles(path.join(repoRoot, src), []));
+    });
+  }
 });

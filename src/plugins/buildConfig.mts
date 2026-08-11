@@ -17,21 +17,51 @@ export interface PluginBuildContext {
   problemMatcher: Plugin;
 }
 
+/** The virtual module that carries an asset tree into esbuild's module graph. */
+const ASSET_NAMESPACE = "paireto-assets";
+const ASSET_ENTRY = "paireto:assets";
+
+/** Every file and directory under `root`, so an asset tree can be declared to esbuild's watcher. */
+function assetPaths(root: string): { files: string[]; dirs: string[] } {
+  const files: string[] = [];
+  const dirs: string[] = [root];
+  for (const entry of fs.readdirSync(root, { withFileTypes: true, recursive: true })) {
+    const full = path.join(entry.parentPath, entry.name);
+    if (entry.isDirectory()) {
+      dirs.push(full);
+    } else {
+      files.push(full);
+    }
+  }
+  return { files, dirs };
+}
+
 /**
  * Copy a plugin's static assets (manifests, hooks.json, .mcp.json, commands, skills, docs) into the
  * built tree. esbuild has no notion of copying a directory, so this rides an onEnd hook.
  *
- * Note for watch mode: esbuild watches the module graph, and these files are not part of it, so a
- * change to an asset is picked up on the next rebuild rather than immediately.
+ * The assets are not imported by any module, so watch mode would never rebuild on a change to one.
+ * A virtual entry module declares the whole tree to the watcher instead: the files catch an edit and
+ * the directories catch an add, a rename or a delete.
  */
 export function copyAssets(from: string, to: string): Plugin {
   return {
     name: `copy-assets:${to}`,
     setup(build) {
-      build.onEnd(() => {
+      build.onResolve({ filter: new RegExp(`^${ASSET_ENTRY}$`) }, () => ({
+        path: from,
+        namespace: ASSET_NAMESPACE,
+      }));
+
+      build.onLoad({ filter: /.*/, namespace: ASSET_NAMESPACE }, () => {
         if (!fs.existsSync(from)) {
           throw new Error(`plugin assets missing: ${from}`);
         }
+        const { files, dirs } = assetPaths(from);
+        return { contents: "", loader: "js" as const, watchFiles: files, watchDirs: dirs };
+      });
+
+      build.onEnd(() => {
         fs.mkdirSync(to, { recursive: true });
         fs.cpSync(from, to, { recursive: true });
       });
@@ -65,11 +95,12 @@ export function nodePluginBundle(
   };
 }
 
-/** An asset-only config: no code to bundle, just the static tree to copy. esbuild needs something to
- *  build, so this uses a stdin entry that writes nowhere. */
+/** An asset-only config: no code to bundle, just the static tree to copy. The entry imports the
+ *  virtual asset module so the tree is what this build watches, and the output is thrown away. */
 export function assetOnlyBundle(ctx: PluginBuildContext, from: string, to: string): BuildOptions {
   return {
-    stdin: { contents: "", loader: "js" },
+    stdin: { contents: `import "${ASSET_ENTRY}";`, loader: "js" },
+    bundle: true,
     write: false,
     logLevel: "silent",
     plugins: [ctx.problemMatcher, copyAssets(from, path.join(PLUGIN_OUT_ROOT, to))],

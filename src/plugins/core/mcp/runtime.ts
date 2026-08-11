@@ -6,12 +6,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 
 import { PLUGIN_VERSION } from "../../../protocol/types.js";
 import type { ReviewTarget } from "./reviewTool.js";
-import {
-  REVIEW_TOOL_DESCRIPTION,
-  REVIEW_TOOL_INPUT_SCHEMA,
-  REVIEW_TOOL_NAME,
-  runReview,
-} from "./reviewTool.js";
+import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTool.js";
 
 /** Everything a harness supplies to the shared core. */
 export interface McpHarnessAdapter {
@@ -32,10 +27,8 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
     { capabilities: { tools: {} } },
   );
 
-  server.registerTool(
-    REVIEW_TOOL_NAME,
-    { description: REVIEW_TOOL_DESCRIPTION, inputSchema: REVIEW_TOOL_INPUT_SCHEMA },
-    () => runReview(adapter.resolveReviewTarget(), adapter.noTargetMessage),
+  server.registerTool(REVIEW_TOOL_NAME, { description: REVIEW_TOOL_DESCRIPTION }, () =>
+    runReview(adapter.resolveReviewTarget(), adapter.noTargetMessage),
   );
 
   return server;

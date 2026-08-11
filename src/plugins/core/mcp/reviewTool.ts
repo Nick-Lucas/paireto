@@ -14,8 +14,7 @@ export const REVIEW_TOOL_DESCRIPTION =
   "submit feedback. Blocks until the user clicks Send Feedback or Cancel, then returns the " +
   "review comments (file:line, kind, note) to act on. Call this when the user asks for a review.";
 
-/** No arguments. An empty shape advertises an object schema with no properties. */
-export const REVIEW_TOOL_INPUT_SCHEMA = {} as const;
+export const REVIEW_APPROVED = "Review approved — proceeding with no changes.";
 
 const CONNECT_TIMEOUT_MS = 3000;
 
@@ -80,5 +79,5 @@ export async function runReview(
   if (response.status === "submitted" && response.feedback) {
     return textResult(response.feedback);
   }
-  return textResult("Review approved — proceeding with no changes.");
+  return textResult(REVIEW_APPROVED);
 }

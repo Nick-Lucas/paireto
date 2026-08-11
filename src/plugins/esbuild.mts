@@ -1,4 +1,4 @@
-// Every config that produces the built `plugins/` tree, gathered from the per-plugin build files.
+// Every config that produces the built `dist/plugins/` tree, gathered from the per-plugin build files.
 //
 // The whole output directory is a build artifact: nothing under it is committed, and the installers
 // stage it from the packaged extension. Adding a harness means adding its esbuild.mts here.
@@ -14,7 +14,7 @@ import { openCodeConfigs } from "./opencode/esbuild.mts";
 /** Dev-only: a requireable build of the shared bridge client for scripts/emulator.ts, which runs
  *  under Node's type stripping and so cannot import the TypeScript sources itself. dist/ is not in
  *  the .vscodeignore allowlist, so this never ships. */
-function emulatorBridgeConfig(ctx: PluginBuildContext): BuildOptions {
+export function emulatorBridgeConfig(ctx: PluginBuildContext): BuildOptions {
   return {
     entryPoints: ["src/plugins/core/emulatorBridge.ts"],
     bundle: true,

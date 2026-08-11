@@ -20,7 +20,7 @@ const CONNECT_TIMEOUT_MS = 1500;
  * identity in its stripped env). Only SessionStart / UserPromptSubmit carry a fresh session_id (a
  * `/new` overwrites the previous one for the same codex pid), so only those write.
  */
-function publishHandoff(event: CodexHookEvent, repoRoot: string, pid: number): void {
+function publishHandoff(event: CodexHookEvent, repoRoot: string): void {
   const name = event.hook_event_name;
   if (name !== "SessionStart" && name !== "UserPromptSubmit") {
     return;
@@ -28,6 +28,9 @@ function publishHandoff(event: CodexHookEvent, repoRoot: string, pid: number): v
   if (typeof event.session_id !== "string" || event.session_id === "") {
     return;
   }
+  // The pid of the codex process hosting this session — the handoff key the liveness MCP server
+  // watches. Resolved here rather than per event, because finding it walks the process table.
+  const pid = codexPid();
   writeHandoff(pid, {
     pid,
     sessionId: event.session_id,
@@ -46,13 +49,10 @@ async function main(): Promise<void> {
 
   const cwd = event.cwd || process.cwd();
   const target = resolveTarget(cwd);
-  // The pid of the codex process hosting this session — the handoff key the liveness MCP server
-  // watches. Computed once so a SessionStart/UserPromptSubmit doesn't walk the process table twice.
-  const pid = codexPid();
   // Publish the liveness handoff even when no window is listening (the MCP server may attach once one
   // opens); resolve the repoRoot the same way resolveTarget does so both sides agree on the socket.
   const repoRoot = target ? target.repoRoot : canonicalize(gitToplevel(cwd) ?? cwd);
-  publishHandoff(event, repoRoot, pid);
+  publishHandoff(event, repoRoot);
   if (!target) {
     return; // no extension listening — drop the telemetry silently
   }
