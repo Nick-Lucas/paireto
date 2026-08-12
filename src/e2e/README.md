@@ -70,6 +70,11 @@ specific is the _output_ of shell commands the agent runs: `od` pads columns dif
 and GNU, and that output becomes the next request. It is content the model reasons about rather than
 noise, so it is not normalized, and native **codex** replay fails on it.
 
+The one exception is the ORDER of a directory listing (`find`, `ls`), which is a property of the
+machine's filesystem rather than of the tree — two hosts holding identical files report them
+differently, so a cassette recorded on one missed on another. Those lines are sorted before matching.
+Every path still has to be present, so a listing that gained or lost one still fails.
+
 ## When a replay misses
 
 A strict-VCR miss ends the run immediately and prints the differing lines against the cassette entry
@@ -154,8 +159,9 @@ How it works:
   is dated from a fixed point so its commit id does too — an agent that runs `git log` puts that id
   straight into its next request.
 - Request matchers discard provider headers and narrowly canonicalize account/environment metadata,
-  prompt-cache controls, and deterministic workflow tool-result wording. User prompts, model messages,
-  tool names/calls/arguments, and file contents remain strict.
+  prompt-cache controls, deterministic workflow tool-result wording, and the order (never the
+  contents) of a directory listing. User prompts, model messages, tool names/calls/arguments, and
+  file contents remain strict.
 - The tool inventory is **reduced, not erased**: every tool keeps its name (sorted, because the
   advertised order varies between runs), and **Paireto's own tools are kept whole — description and
   schema** — so a regression that stopped offering them, or shipped a broken `paireto_submit_plan`

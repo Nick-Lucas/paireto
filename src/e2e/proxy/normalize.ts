@@ -276,8 +276,14 @@ function keyOf(entry: unknown): string {
   return String(entry);
 }
 
+/** A shell command that reports a directory in the order the filesystem walks it. That order is a
+ *  property of the machine, not of the tree, so two hosts holding identical files disagree — while
+ *  the set of paths, which is what the model reasons about, is the same on both. */
+const DIRECTORY_LISTING = /^\s*(find|ls)\s/;
+
 function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void {
   const toolNames = new Map<string, string>();
+  const shellCommands = new Map<string, string>();
   walk(body, (object) => {
     delete object.cache_control;
     if (
@@ -286,6 +292,10 @@ function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void
       typeof object.name === "string"
     ) {
       toolNames.set(object.id, object.name);
+      const command = (object.input as { command?: unknown } | undefined)?.command;
+      if (object.name === "Bash" && typeof command === "string") {
+        shellCommands.set(object.id, command);
+      }
       // Claude Code 2.1.220 can either repeat the plan text/path here or send an empty input. The
       // preceding Write call remains the substantive discriminator, so canonicalize this envelope.
       if (object.name === "ExitPlanMode") {
@@ -300,6 +310,13 @@ function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void
     const name = toolNames.get(object.tool_use_id);
     if (name === "Write" || name === "Edit" || name === "ExitPlanMode") {
       object.content = `${name.toUpperCase()}_RESULT_NORMALIZED`;
+      return;
+    }
+    // Sorted, not replaced: a listing that gained or lost a path still keys differently, so only the
+    // order this host happened to report is dropped.
+    const command = shellCommands.get(object.tool_use_id);
+    if (command && DIRECTORY_LISTING.test(command) && typeof object.content === "string") {
+      object.content = object.content.split("\n").sort().join("\n");
     }
   });
 }
