@@ -209,6 +209,12 @@ export class DiffService {
     }
   }
 
+  /** True when the repository can resolve the name to a commit. */
+  async refExists(repoRoot: string, ref: string): Promise<boolean> {
+    const out = await gitSafe(repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
+    return out.trim().length > 0;
+  }
+
   /** Auto-detect the default branch (main/master/origin's HEAD), or undefined. */
   async defaultBranch(repoRoot: string): Promise<string | undefined> {
     const head = (

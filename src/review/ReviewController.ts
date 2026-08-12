@@ -23,6 +23,7 @@ import {
   type ChangedFile,
   type ChangesModel,
   type ContentRef,
+  type FileSides,
 } from "../git/DiffService.js";
 import type { WorkspaceRootCatalog } from "../git/WorkspaceRootCatalog.js";
 import { currentBranch } from "../git/gitCli.js";
@@ -57,6 +58,7 @@ import {
   GuidedPlanError,
   parseChangesets,
   toGuidedPlan,
+  verifyGuidedCompareTo,
   type GuidedChangesetState,
   type GuidedFileRow,
   type GuidedPlan,
@@ -165,6 +167,10 @@ export class ReviewController implements vscode.Disposable {
   /** The agent's changeset plan for the active guided review. Held OUTSIDE `repositoryStates`, which
    *  `refresh()` rebuilds wholesale — so it stores paths and resolves them fresh on every read. */
   private guidedPlan?: GuidedPlan;
+  /** The open plan's comparison point, scoped to the repository it describes. The window's shared
+   *  Compare To cannot hold a raw ref while several Git roots are open, so a multi-root window would
+   *  otherwise resolve the plan against the default branch instead of what the agent diffed. */
+  private guidedCompareTo?: { repoRoot: string; compareTo: CompareTo };
   /** Read-only markdown for each changeset the reviewer has opened; cleared with the plan. */
   private readonly changesetDocs = new ChangesetDocProvider();
   /** The review slot: held while a review is in progress. A second agent review waits in
@@ -321,6 +327,13 @@ export class ReviewController implements vscode.Disposable {
     }
     // The plan is model output. A plan we cannot render goes back to the agent as feedback saying
     // exactly what was wrong, so it fixes the payload and submits again — no gate opens meanwhile.
+    const reject = (message: string): ReviewGateResult => {
+      log.error(`guided review rejected for agent ${who}: ${message}`);
+      return {
+        status: "submitted",
+        feedback: `Your review plan was rejected — ${message}. Fix it and submit again.`,
+      };
+    };
     let guidedPlan: GuidedPlan;
     try {
       guidedPlan = toGuidedPlan(repoRoot, parseChangesets(submitted.changesets), submitted);
@@ -328,21 +341,28 @@ export class ReviewController implements vscode.Disposable {
       if (!(error instanceof GuidedPlanError)) {
         throw error;
       }
-      log.error(`guided review rejected for agent ${who}: ${error.message}`);
-      return {
-        status: "submitted",
-        feedback: `Your review plan was rejected — ${error.message}. Fix it and submit again.`,
-      };
+      return reject(error.message);
+    }
+    const unresolved = await verifyGuidedCompareTo(guidedPlan, (root, ref) =>
+      this.diff.refExists(root, ref),
+    );
+    if (unresolved) {
+      return reject(unresolved);
     }
     const changesets = guidedPlan.changesets;
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
     this.guidedPlan = guidedPlan;
+    this.guidedCompareTo = { repoRoot: guidedPlan.repoRoot, compareTo: guidedPlan.compareTo };
     await this.setGuidedContext(true);
     // Align the window to what the agent actually diffed against. Otherwise the two disagree and
-    // every change between the two points arrives as an unclaimed "Other changes" row.
-    await this.applyCompareTo(guidedPlan.compareTo, "guided review");
+    // every change between the two points arrives as an unclaimed "Other changes" row. Where the
+    // shared Compare To cannot hold the plan's comparison, the scoped one above is the alignment,
+    // and the other repositories keep the point the user chose.
+    if (sharedCompareToHolds(this.roots.gitRoots.length, guidedPlan.compareTo)) {
+      await this.applyCompareTo(guidedPlan.compareTo, "guided review");
+    }
     const fileCount = changesets.reduce((total, c) => total + c.files.length, 0);
     log.info(
       `guided review opened for agent ${who}: ${changesets.length} changeset(s), ${fileCount} file(s)`,
@@ -488,6 +508,7 @@ export class ReviewController implements vscode.Disposable {
     this.activeRequestId = undefined;
     this.activeSessionId = undefined;
     this.guidedPlan = undefined;
+    this.guidedCompareTo = undefined;
     this.changesetDocs.clear();
     await this.setGuidedContext(false);
     await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
@@ -619,7 +640,7 @@ export class ReviewController implements vscode.Disposable {
   async refresh(reason = "manual"): Promise<void> {
     this.refreshCounts.set(reason, (this.refreshCounts.get(reason) ?? 0) + 1);
     const roots = this.roots.gitRoots;
-    if (roots.length > 1 && this.compareTo.kind === "ref") {
+    if (!sharedCompareToHolds(roots.length, this.compareTo)) {
       this.compareTo = { kind: "default" };
       await this.store.setCompareTo(this.compareTo);
     }
@@ -662,7 +683,10 @@ export class ReviewController implements vscode.Disposable {
         let branch: string | undefined;
         try {
           [next, branch] = await Promise.all([
-            this.diff.getChanges(root.repoRoot, this.compareTo),
+            this.diff.getChanges(
+              root.repoRoot,
+              compareToForRepo(this.compareTo, this.guidedCompareTo, root.repoRoot),
+            ),
             currentBranch(root.repoRoot),
           ]);
         } catch {
@@ -724,6 +748,8 @@ export class ReviewController implements vscode.Disposable {
     if (!choice) {
       return;
     }
+    // An explicit choice outranks the open plan's comparison, in its repository too.
+    this.guidedCompareTo = undefined;
     await this.applyCompareTo(choice, "user");
     if (choice.kind === "ref" && choice.ref) {
       await this.store.addRecentRef(choice.ref);
@@ -1502,7 +1528,9 @@ export class ReviewController implements vscode.Disposable {
     const lineText = line < doc.lineCount ? doc.lineAt(line).text : "";
     const range = new vscode.Range(line, 0, line, lineText.length);
     const attachedPath = migratedAttachment?.file.path ?? c.filePath;
-    const label = this.commentLocationLabel(c.repoRoot, attachedPath, line);
+    const label = c.changeset
+      ? `Changeset: ${c.changeset.title}`
+      : this.commentLocationLabel(c.repoRoot, attachedPath, line);
     const thread = this.commentSession.reattach(entry.comment, targetUri, range, label);
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     c.line = line;
@@ -1539,7 +1567,9 @@ export class ReviewController implements vscode.Disposable {
     currentThreadUri: vscode.Uri,
   ): Promise<vscode.Uri | undefined> {
     const candidates: vscode.Uri[] = [];
-    if (c.side === "modified") {
+    // A changeset comment has no file path, so the working-tree candidate would be the repository
+    // root directory — its thread URI (the description document) is the only home it has.
+    if (c.side === "modified" && c.filePath) {
       candidates.push(vscode.Uri.file(join(c.repoRoot, c.filePath)));
     }
     if (c.attachment?.sourceUri) {
@@ -1601,10 +1631,15 @@ export class ReviewController implements vscode.Disposable {
 
   private openPlannedFile(named: GuidedRowArg): void {
     const file = this.guidedRow(named)?.file;
-    if (file) {
-      void this.openDiff(file);
+    if (!file) {
+      return; // A path with no live change has nothing to open — the row already says so.
     }
-    // A path with no live change has nothing to open — the row already says so.
+    const changes = this.changesFor(file.repoRoot);
+    void this.openDiff(file, {
+      baseComparison: changes
+        ? plannedBaseComparison(this.diff.fileSides(file, changes.compareRef), changes)
+        : undefined,
+    });
   }
 
   /** The changeset an id names, resolved against the live plan. */
@@ -1814,6 +1849,48 @@ export function selectCommentFile(
     }
   }
   return undefined;
+}
+
+/**
+ * Whether the window's shared Compare To can hold this comparison point. A raw ref cannot be shared
+ * once several Git roots are open — it need not name anything in the others — so the window falls
+ * back to the default branch there.
+ */
+export function sharedCompareToHolds(rootCount: number, compareTo: CompareTo): boolean {
+  return rootCount <= 1 || compareTo.kind !== "ref";
+}
+
+/**
+ * The comparison point one repository is scanned against: the open plan's own comparison for the
+ * repository it describes, otherwise the window's shared Compare To. The two only differ while a
+ * guided review is open in a window holding more than one Git root, where the shared Compare To
+ * cannot carry a raw ref.
+ */
+export function compareToForRepo(
+  shared: CompareTo,
+  guided: { repoRoot: string; compareTo: CompareTo } | undefined,
+  repoRoot: string,
+): CompareTo {
+  return guided?.repoRoot === repoRoot ? guided.compareTo : shared;
+}
+
+/**
+ * The base a planned row opens against: the plan's comparison point, so a file that is partly staged
+ * — or committed and then edited — shows every layer of its change rather than only the topmost one
+ * its natural sides would compare. An add or a delete has content on one side only, so it keeps its
+ * natural single pane and returns nothing to pin.
+ */
+export function plannedBaseComparison(
+  natural: FileSides,
+  changes: { compareRef: string | null; compareLabel: string },
+): { ref: ContentRef; label: string } | undefined {
+  if (singlePaneSide(natural) !== null) {
+    return undefined;
+  }
+  return {
+    ref: { kind: "ref", ref: changes.compareRef ?? "HEAD" },
+    label: changes.compareRef ? changes.compareLabel : "HEAD",
+  };
 }
 
 /** Only historical/current-file fallbacks need an editor open; review targets are already visible. */

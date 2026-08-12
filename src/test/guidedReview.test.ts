@@ -11,7 +11,7 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { DiffService, type ChangesModel } from "../git/DiffService.js";
+import { DiffService, type ChangesModel, type FileSides } from "../git/DiffService.js";
 
 import { GateCoordinator, type GateEntry, type GateKind } from "../gate/GateCoordinator.js";
 import {
@@ -27,6 +27,7 @@ import {
   changesetContextValue,
   changesetItem,
   guidedDescription,
+  reviewCommentItem,
 } from "../views/MainTreeProvider.js";
 import {
   buildGuidedState,
@@ -35,15 +36,22 @@ import {
   parseCompareTo,
   parseChangesets,
   toGuidedPlan,
+  verifyGuidedCompareTo,
   type GuidedChangesetState,
   type GuidedPlan,
   type GuidedReviewState,
   type ParsedChangeset,
 } from "../review/guidedPlan.js";
 import type { RepoChangedFile, RepositoryReviewState } from "../review/ReviewController.js";
-import { selectCommentFile } from "../review/ReviewController.js";
+import {
+  compareToForRepo,
+  plannedBaseComparison,
+  selectCommentFile,
+  sharedCompareToHolds,
+} from "../review/ReviewController.js";
+import type { ReviewComment } from "../review/reviewTypes.js";
 import { ChangesetIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
-import type { FileGroup } from "../types.js";
+import type { CompareTo, FileGroup } from "../types.js";
 
 const REPO = "/repo";
 
@@ -205,6 +213,123 @@ suite("guided review — parseCompareTo", () => {
   test("a plan carries the comparison it was built against", () => {
     const built = toGuidedPlan(REPO, [], { compareTo: { kind: "mergeBase" } });
     assert.deepStrictEqual(built.compareTo, { kind: "mergeBase" });
+  });
+
+  // A ref only the agent believes in makes the committed group degrade to empty, so the review would
+  // open without the very changes the plan grouped — and they cannot even surface as "Other changes".
+  test("a ref the repository cannot resolve is the agent's to fix", async () => {
+    const built = toGuidedPlan(REPO, [], { compareTo: { kind: "ref", ref: "no-such-branch" } });
+    const rejection = await verifyGuidedCompareTo(built, async () => false);
+    assert.match(rejection ?? "", /no-such-branch/);
+  });
+
+  test("a resolvable ref, and every computed kind, is accepted", async () => {
+    const resolvable = toGuidedPlan(REPO, [], { compareTo: { kind: "ref", ref: "v1.2" } });
+    assert.strictEqual(await verifyGuidedCompareTo(resolvable, async () => true), undefined);
+    for (const kind of ["head", "default", "mergeBase"] as const) {
+      const built = toGuidedPlan(REPO, [], { compareTo: { kind } });
+      const rejection = await verifyGuidedCompareTo(built, async () => {
+        throw new Error("a computed comparison point is never checked as a ref");
+      });
+      assert.strictEqual(rejection, undefined, kind);
+    }
+  });
+});
+
+// The window's Compare To is shared by every Git root, and a multi-root window cannot hold a raw ref
+// at all. The plan's own comparison therefore stays scoped to the repository it describes, so the
+// files it named resolve against what the agent actually diffed.
+suite("guided review — comparison point per repository", () => {
+  const shared: CompareTo = { kind: "default" };
+  const guided = { repoRoot: REPO, compareTo: { kind: "ref", ref: "v1.2" } as CompareTo };
+
+  test("the plan's repository uses the plan's comparison", () => {
+    assert.deepStrictEqual(compareToForRepo(shared, guided, REPO), guided.compareTo);
+  });
+
+  test("every other repository keeps the window's shared comparison", () => {
+    assert.deepStrictEqual(compareToForRepo(shared, guided, "/other"), shared);
+  });
+
+  test("with no plan open every repository uses the shared comparison", () => {
+    assert.deepStrictEqual(compareToForRepo(shared, undefined, REPO), shared);
+  });
+
+  test("a lone root shares every comparison point; several roots cannot share a ref", () => {
+    for (const kind of ["head", "default", "mergeBase"] as const) {
+      assert.strictEqual(sharedCompareToHolds(3, { kind }), true, kind);
+    }
+    assert.strictEqual(sharedCompareToHolds(1, guided.compareTo), true);
+    assert.strictEqual(sharedCompareToHolds(2, guided.compareTo), false);
+  });
+});
+
+// A planned row is a reading instruction, so it has to show everything that changed in that file
+// since the plan's comparison point — not only the topmost git layer the file happens to sit in.
+suite("guided review — a planned row opens against the plan's comparison point", () => {
+  const diff = new DiffService();
+  const changes = { compareRef: "abc123", compareLabel: "main" };
+  const sidesFor = (file: Partial<RepoChangedFile>): FileSides =>
+    diff.fileSides({ ...changed("a.ts", "unstaged"), ...file }, changes.compareRef);
+
+  test("a partly staged file is pinned to the comparison point, not to the index", () => {
+    const natural = sidesFor({ group: "unstaged" });
+    assert.deepStrictEqual(natural.base, { kind: "index" }, "the staged hunks are below this base");
+    assert.deepStrictEqual(plannedBaseComparison(natural, changes), {
+      ref: { kind: "ref", ref: "abc123" },
+      label: "main",
+    });
+  });
+
+  test("comparing against HEAD pins the row to HEAD", () => {
+    const head = { compareRef: null, compareLabel: "HEAD" };
+    assert.deepStrictEqual(
+      plannedBaseComparison(diff.fileSides(changed("a.ts", "unstaged"), null), head),
+      {
+        ref: { kind: "ref", ref: "HEAD" },
+        label: "HEAD",
+      },
+    );
+  });
+
+  test("an add or a delete keeps its natural single pane", () => {
+    // Neither has content on both sides, so there is nothing to pin a comparison point to.
+    assert.strictEqual(plannedBaseComparison(sidesFor({ status: "U" }), changes), undefined);
+    assert.strictEqual(plannedBaseComparison(sidesFor({ status: "A" }), changes), undefined);
+    assert.strictEqual(plannedBaseComparison(sidesFor({ status: "D" }), changes), undefined);
+  });
+});
+
+suite("guided review — feedback rows", () => {
+  const comment = (over: Partial<ReviewComment>): ReviewComment => ({
+    id: "c1",
+    repoRoot: REPO,
+    filePath: "src/a.ts",
+    side: "modified",
+    line: 3,
+    kind: "comment",
+    body: "split this up",
+    quote: "> why",
+    anchor: { lineText: "", contextBefore: [], contextAfter: [], lineHash: "" },
+    ...over,
+  });
+
+  test("a changeset comment is named by its changeset, not by an empty file path", () => {
+    const item = reviewCommentItem(
+      comment({ filePath: "", changeset: { id: "cs0", title: "Auth" } }),
+    );
+    assert.strictEqual(item.label, "Auth");
+    assert.ok(String(item.description).includes("split this up"));
+    assert.ok(
+      String((item.tooltip as vscode.MarkdownString).value).includes("Auth"),
+      "the tooltip names the changeset rather than the repository root",
+    );
+  });
+
+  test("a file comment still shows its path and line", () => {
+    const item = reviewCommentItem(comment({}));
+    assert.strictEqual(item.label, "a.ts:4");
+    assert.ok(String(item.description).includes("src"));
   });
 });
 

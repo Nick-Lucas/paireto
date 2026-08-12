@@ -324,3 +324,22 @@ export function parseCompareTo(raw: unknown): CompareTo {
   }
   return { kind, ref: named };
 }
+
+/**
+ * Check a plan's comparison point against the repository itself, returning the rejection message for
+ * the agent or `undefined` when the plan can open. Only a named ref needs this — the other kinds are
+ * computed from the repository, so they always resolve. A ref git cannot resolve leaves the committed
+ * group empty, which would open a review missing the very changes the plan grouped.
+ */
+export async function verifyGuidedCompareTo(
+  plan: GuidedPlan,
+  refExists: (repoRoot: string, ref: string) => Promise<boolean>,
+): Promise<string | undefined> {
+  const { kind, ref } = plan.compareTo;
+  if (kind !== "ref" || !ref) {
+    return undefined;
+  }
+  return (await refExists(plan.repoRoot, ref))
+    ? undefined
+    : `compareTo — "${ref}" is not a ref this repository can resolve`;
+}

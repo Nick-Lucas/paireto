@@ -843,21 +843,34 @@ export function changesetFileItem(
   return item;
 }
 
-function reviewCommentItem(c: ReviewComment): vscode.TreeItem {
-  const item = new vscode.TreeItem(
-    `${path.basename(c.filePath)}:${c.line + 1}`,
-    vscode.TreeItemCollapsibleState.None,
-  );
-  const dir = path.dirname(c.filePath);
-  const repo = path.basename(c.repoRoot);
-  item.description = dir === "." ? `${repo} · ${c.body}` : `${repo}/${dir} · ${c.body}`;
+export function reviewCommentItem(c: ReviewComment): vscode.TreeItem {
+  // A comment on a changeset description is about the grouping, not about a line of code: it carries
+  // no file path, so it is named by the changeset it belongs to.
+  const [label, where] = c.changeset
+    ? [c.changeset.title, `Changeset: ${c.changeset.title}`]
+    : [
+        `${path.basename(c.filePath)}:${c.line + 1}`,
+        `${path.join(c.repoRoot, c.filePath)}:${c.line + 1}`,
+      ];
+  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+  item.description = `${commentScope(c)} · ${c.body}`;
   item.iconPath = kindThemeIcon(c.kind);
   item.tooltip = new vscode.MarkdownString(
-    `**${kindLabel(c.kind)}** · ${path.join(c.repoRoot, c.filePath)}:${c.line + 1}\n\n> ${c.quote}\n\n${c.body}`,
+    `**${kindLabel(c.kind)}** · ${where}\n\n> ${c.quote}\n\n${c.body}`,
   );
   item.contextValue = "reviewComment";
   item.command = { command: Commands.reviewRevealComment, title: "Reveal Comment", arguments: [c] };
   return item;
+}
+
+/** Where a feedback row sits, shown ahead of its body: the changeset, or the file's directory. */
+function commentScope(c: ReviewComment): string {
+  if (c.changeset) {
+    return "Changeset";
+  }
+  const dir = path.dirname(c.filePath);
+  const repo = path.basename(c.repoRoot);
+  return dir === "." ? repo : `${repo}/${dir}`;
 }
 
 function planCommentItem(c: PlanCommentData): vscode.TreeItem {
