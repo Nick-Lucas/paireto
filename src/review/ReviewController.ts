@@ -233,20 +233,47 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewPickCompareTo, () => this.changeCompareTo()),
       reg(Commands.reviewPickDiffCompareTo, () => this.changeActiveDiffCompareTo()),
       reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
-      reg(Commands.reviewOpenDiff, withArg(FileArg, (file) => this.openDiff(file))),
-      reg(Commands.reviewOpenFile, withArg(FileArg, (file) => this.openFile(file))),
-      reg(Commands.reviewStage, withArg(FilesArg, (files) => this.stageFiles(files))),
-      reg(Commands.reviewUnstage, withArg(FilesArg, (files) => this.unstageFiles(files))),
-      reg(Commands.reviewDiscard, withArg(FilesArg, (files) => this.discardFiles(files))),
-      reg(Commands.guidedReviewOpenFile, withArg(GuidedRowArg, (row) => this.openPlannedFile(row))),
+      reg(
+        Commands.reviewOpenDiff,
+        withArg(FileArg, (file) => this.openDiff(file)),
+      ),
+      reg(
+        Commands.reviewOpenFile,
+        withArg(FileArg, (file) => this.openFile(file)),
+      ),
+      reg(
+        Commands.reviewStage,
+        withArg(FilesArg, (files) => this.stageFiles(files)),
+      ),
+      reg(
+        Commands.reviewUnstage,
+        withArg(FilesArg, (files) => this.unstageFiles(files)),
+      ),
+      reg(
+        Commands.reviewDiscard,
+        withArg(FilesArg, (files) => this.discardFiles(files)),
+      ),
+      reg(
+        Commands.guidedReviewOpenFile,
+        withArg(GuidedRowArg, (row) => this.openPlannedFile(row)),
+      ),
       reg(
         Commands.guidedReviewOpenChangeset,
         withArg(ChangesetIdArg, (id) => this.guidedReviewOpenChangeset(id)),
       ),
       reg(Commands.guidedReviewOpenPlan, () => void this.guidedReviewOpenPlan()),
-      reg(Commands.reviewStageAll, withArg(BulkTargetArg, (target) => this.stageAll(target))),
-      reg(Commands.reviewUnstageAll, withArg(BulkTargetArg, (target) => this.unstageAll(target))),
-      reg(Commands.reviewDiscardAll, withArg(BulkTargetArg, (target) => this.discardAll(target))),
+      reg(
+        Commands.reviewStageAll,
+        withArg(BulkTargetArg, (target) => this.stageAll(target)),
+      ),
+      reg(
+        Commands.reviewUnstageAll,
+        withArg(BulkTargetArg, (target) => this.unstageAll(target)),
+      ),
+      reg(
+        Commands.reviewDiscardAll,
+        withArg(BulkTargetArg, (target) => this.discardAll(target)),
+      ),
       reg(
         Commands.reviewAddQuestion,
         withArg(CommentReplyArg, (reply) => this.addComment(reply, "question")),
@@ -259,8 +286,14 @@ export class ReviewController implements vscode.Disposable {
         Commands.reviewAddProblem,
         withArg(CommentReplyArg, (reply) => this.addComment(reply, "problem")),
       ),
-      reg(Commands.reviewRevealComment, withArg(CommentIdArg, (id) => this.revealComment(id))),
-      reg(Commands.reviewDeleteComment, withArg(CommentIdArg, (id) => this.deleteComment(id))),
+      reg(
+        Commands.reviewRevealComment,
+        withArg(CommentIdArg, (id) => this.revealComment(id)),
+      ),
+      reg(
+        Commands.reviewDeleteComment,
+        withArg(CommentIdArg, (id) => this.deleteComment(id)),
+      ),
       // Editing an editable staged/committed diff routes the change to the working tree. Track that
       // location immediately, but keep the tab's comparison point pinned.
       vscode.workspace.onDidChangeTextDocument((e) => this.maybeMarkAsUnstaged(e.document.uri)),
@@ -1644,7 +1677,9 @@ export class ReviewController implements vscode.Disposable {
 
   /** The changeset an id names, resolved against the live plan. */
   private guidedChangeset(id: string | undefined): GuidedChangesetState | undefined {
-    return id === undefined ? undefined : this.getState().guided?.changesets.find((c) => c.id === id);
+    return id === undefined
+      ? undefined
+      : this.getState().guided?.changesets.find((c) => c.id === id);
   }
 
   /** Open a changeset's description as a read-only markdown tab, so the reviewer can read what the

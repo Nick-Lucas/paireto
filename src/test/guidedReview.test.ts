@@ -154,8 +154,14 @@ suite("guided review — parseChangesets", () => {
         [{ title: "Silent", summary: "under the wrong name", files: [{ path: "a.ts" }] }],
         "changesets[0].description",
       ],
-      [[{ title: "Abs", description: "d", files: [{ path: "/abs.ts" }] }], "changesets[0].files[0]"],
-      [[{ title: "Up", description: "d", files: [{ path: "../up.ts" }] }], "changesets[0].files[0]"],
+      [
+        [{ title: "Abs", description: "d", files: [{ path: "/abs.ts" }] }],
+        "changesets[0].files[0]",
+      ],
+      [
+        [{ title: "Up", description: "d", files: [{ path: "../up.ts" }] }],
+        "changesets[0].files[0]",
+      ],
       [["not an object"], "changesets[0]"],
     ];
     for (const [payload, where] of rejected) {
@@ -567,8 +573,7 @@ suite("guided review — a planned row follows the file through the layers", () 
   let baseRef: string;
   const git = (args: string[]): string =>
     execFileSync("git", args, { cwd: repo }).toString().trim();
-  const write = (content: string): void =>
-    fs.writeFileSync(path.join(repo, "a.ts"), content);
+  const write = (content: string): void => fs.writeFileSync(path.join(repo, "a.ts"), content);
 
   suiteSetup(() => {
     repo = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-guided-"));

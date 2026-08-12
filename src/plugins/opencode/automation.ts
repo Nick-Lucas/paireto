@@ -9,13 +9,7 @@ import { z } from "zod";
 import { canonicalize } from "../../protocol/paths.js";
 import type { StopGateResponse } from "../../protocol/types.js";
 import { PLAN_ARG_DESCRIPTION, SUBMIT_PLAN_TOOL } from "./text.js";
-import type {
-  AgentConfig,
-  AgentInfo,
-  MessageEntry,
-  MessageInfo,
-  OpenCodeConfig,
-} from "./types.js";
+import type { AgentConfig, AgentInfo, MessageEntry, MessageInfo, OpenCodeConfig } from "./types.js";
 
 /** Dedup a raw `experimental.primary_tools` value into a clean string array (drops non-strings /
  *  blanks / duplicates). Anything not an array reads as empty — we only ever ADD our tool. */

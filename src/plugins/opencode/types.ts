@@ -76,5 +76,3 @@ export interface PluginInput {
   directory?: string;
   client: OpenCodeClient;
 }
-
-

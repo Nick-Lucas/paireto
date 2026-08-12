@@ -3,7 +3,7 @@
 ## Architecture
 
 Drives a whole Paireto loop inside a real VS Code window, over the per-repo Unix socket — the same
-substrate the product uses. 
+substrate the product uses.
 
 - The specs (`tests/*.e2e.ts`, shared step helpers in `tests/steps.ts`) run under **Mocha** inside the
   extension host, so each step is reported by name and a case scaffolds itself in

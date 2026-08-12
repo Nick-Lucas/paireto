@@ -132,7 +132,9 @@ function parseChangeset(raw: unknown, index: number, where: string): ParsedChang
   }
   const files: GuidedChangesetFile[] = [];
   const seen = new Set<string>();
-  for (const [fileIndex, rawFile] of submitted.data.files.slice(0, MAX_FILES_PER_CHANGESET).entries()) {
+  for (const [fileIndex, rawFile] of submitted.data.files
+    .slice(0, MAX_FILES_PER_CHANGESET)
+    .entries()) {
     const file = parseChangesetFile(rawFile, `${where}.files[${fileIndex}]`);
     if (!seen.has(file.path)) {
       seen.add(file.path);
