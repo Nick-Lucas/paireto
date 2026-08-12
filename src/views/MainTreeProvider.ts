@@ -28,6 +28,8 @@ import type {
   GuidedReviewState,
 } from "../review/guidedPlan.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
+import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
+import type { SetupPrompt } from "../welcome/installStatus.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import type { AgentState, FileGroup } from "../types.js";
 import { repoKey } from "../protocol/paths.js";
@@ -63,6 +65,7 @@ function statusIcon(
 type SectionId = "agents" | "plan" | "changesets" | "files" | "feedback";
 
 type Node =
+  | { kind: "setupNotice"; prompt: SetupPrompt }
   | {
       kind: "section";
       id: SectionId;
@@ -185,6 +188,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     private readonly plan: PlanReviewController,
     private readonly coordinator: GateCoordinator,
     private readonly locator: AgentServiceLocator,
+    private readonly installStatus: AgentInstallStatus,
     private readonly extensionUri: vscode.Uri,
   ) {
     const fire = (): void => {
@@ -199,6 +203,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         this.maybeRevealPending();
       }),
       this.plan.onDidChange(fire),
+      this.installStatus.onDidChange(() => this.emitter.fire()),
       this.review.onDidChangeActiveDiff((t) => this.syncSelection(t)),
       // Re-render when gate foreground/queue changes (agent rows show active/pending ownership).
       this.coordinator.onDidChange(fire),
@@ -358,6 +363,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   getTreeItem(node: Node): vscode.TreeItem {
     switch (node.kind) {
+      case "setupNotice":
+        return setupNoticeItem(node.prompt);
       case "section": {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.id = `section:${node.id}`;
@@ -458,6 +465,11 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   private sections(): Node[] {
     const out: Node[] = [];
+    // Cached only — probing here would block the render (the Codex probe calls its CLI).
+    const prompt = this.installStatus.prompt();
+    if (prompt) {
+      out.push({ kind: "setupNotice", prompt });
+    }
     const agentCount = this.scopedAgents().length;
     out.push({ kind: "section", id: "agents", label: "Agents", description: count(agentCount) });
 
@@ -670,6 +682,31 @@ function count(n: number): string | undefined {
 
 function placeholder(label: string): Node {
   return { kind: "placeholder", label };
+}
+
+/**
+ * The top row that sends the user to the Welcome screen: either no agent has the Paireto plugin yet,
+ * or one has a stale copy that will not speak to this extension.
+ */
+export function setupNoticeItem(prompt: SetupPrompt): vscode.TreeItem {
+  const item = new vscode.TreeItem("", vscode.TreeItemCollapsibleState.None);
+  item.id = "notice:agentSetup";
+  item.contextValue = "setupNotice";
+  item.command = { command: Commands.openWelcome, title: "Open Welcome" };
+  if (prompt.kind === "install") {
+    item.label = "Set up an agent";
+    item.iconPath = new vscode.ThemeIcon("rocket");
+    item.tooltip =
+      "No agent has the Paireto plugin yet.\nClick to open the Welcome screen and set one up.";
+    return item;
+  }
+  item.label = "Update agent plugins";
+  item.description = prompt.agentNames.join(", ");
+  item.iconPath = new vscode.ThemeIcon("warning", new vscode.ThemeColor("charts.orange"));
+  item.tooltip = `These agents have an old Paireto plugin: ${prompt.agentNames.join(
+    ", ",
+  )}.\nClick to open the Welcome screen and update them.`;
+  return item;
 }
 
 /** How an agent row names the gate it is waiting on. */
