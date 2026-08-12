@@ -8,6 +8,17 @@ Do not ever edit this, this is for humans only to edit!
 * pressing the Enter key on a changes entry should trigger renaming of the file just like in explorer
 * Support "stackBase" as well as "mergeBase" which compares to the commit the branch was branched from instead of the merge base
 
+# WIP Feedback Enhancements
+
+* Store feedback items per repo+branch persistently
+* Add an MCP tool for the agent to respond to question feedback and to resolve comments
+* Add an MCP tool for the agent to resolve comments
+* Remove the "Problem" feedback type, question and comment are enough
+* When the agent replies to a question or comment it should be marked clearly with activity 
+* When the agent marks a comment resolved it should be marked clearly with this activity
+* Only once a user has approved changes without additional feedback should the feedback be cleared, we should also have a clear all feedback button on the Feedback tree directory (must confirm)
+
+
 # WIP 14
 
 * support git conflicts just like the main git panel
@@ -27,6 +38,4 @@ Do not ever edit this, this is for humans only to edit!
 * plugin for Pi
 * Support feedback on UIs in in-editor browser
 * Look at the agent providing review feedback to the user during coding, reacting to user interactions, reacting to compile and lint errors with quick fixes, etc.
-* keep user feedback around so they can easily review the changes and follow-up, give the agent a tool to reply to each with their fix plan
 * Claude WorktreeCreate etc could be used to manage a CoW system?
-* Store user todos and feedback repo+branch-wise with an option to have it in the homedir or in the repo, permit the agent to respond to question feedback and to resolve comments
