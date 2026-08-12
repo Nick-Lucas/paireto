@@ -38,7 +38,7 @@ function manifestVersion(dir: string): string | undefined {
 
 suite("adapter version lockstep", () => {
   test("changed hook bundles advance past the prior installed version", () => {
-    assert.notStrictEqual(PLUGIN_VERSION, "0.5.6");
+    assert.notStrictEqual(PLUGIN_VERSION, "0.5.8");
   });
 
   // Skip dot-dirs (e.g. plugins/.claude-plugin, the marketplace manifest) and any dir without an

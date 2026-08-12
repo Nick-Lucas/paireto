@@ -2,8 +2,8 @@
 
 ## Architecture
 
-Drives the full **plan → feedback → approve → implement → review-feedback → review-approve** loop
-inside a real VS Code window, over the per-repo Unix socket — the same substrate the product uses.
+Drives a whole Paireto loop inside a real VS Code window, over the per-repo Unix socket — the same
+substrate the product uses.
 
 - The specs (`tests/*.e2e.ts`, shared step helpers in `tests/steps.ts`) run under **Mocha** inside the
   extension host, so each step is reported by name and a case scaffolds itself in
@@ -41,6 +41,7 @@ pnpm e2e:check:docker                            # every case × every driver
 pnpm e2e:check:docker --grep @codex              # one driver, every case
 pnpm e2e:check:docker --grep '^fullflow '        # one case, every driver
 pnpm e2e:check:docker --grep 'fullflow @codex'   # exactly one pair
+pnpm e2e:check:docker --grep guidedreview        # the guided-review case
 
 # Recording replaces the cassette of every pair it runs, at the price of a real provider call each.
 pnpm e2e:record:docker --grep @claudecode
@@ -68,6 +69,11 @@ sandbox and harness homes are spelled identically wherever the run happens. What
 specific is the _output_ of shell commands the agent runs: `od` pads columns differently under BSD
 and GNU, and that output becomes the next request. It is content the model reasons about rather than
 noise, so it is not normalized, and native **codex** replay fails on it.
+
+The one exception is the ORDER of a directory listing (`find`, `ls`), which is a property of the
+machine's filesystem rather than of the tree — two hosts holding identical files report them
+differently, so a cassette recorded on one missed on another. Those lines are sorted before matching.
+Every path still has to be present, so a listing that gained or lost one still fails.
 
 ## When a replay misses
 
@@ -149,10 +155,13 @@ How it works:
   599 catch-all, then enable `SIMULATE`. The check compose overlay mounts no user credentials; each
   harness gets syntactically valid, far-future fake OAuth state. Drift fails loud and cannot hit a
   real API. The shim applies the selected driver's normalizer before matching. The sandbox repo and
-  harness homes use fixed `/tmp` paths so request bodies reproduce.
+  harness homes use fixed `/tmp` paths so request bodies reproduce, and the sandbox's initial commit
+  is dated from a fixed point so its commit id does too — an agent that runs `git log` puts that id
+  straight into its next request.
 - Request matchers discard provider headers and narrowly canonicalize account/environment metadata,
-  prompt-cache controls, and deterministic workflow tool-result wording. User prompts, model messages,
-  tool names/calls/arguments, and file contents remain strict.
+  prompt-cache controls, deterministic workflow tool-result wording, and the order (never the
+  contents) of a directory listing. User prompts, model messages, tool names/calls/arguments, and
+  file contents remain strict.
 - The tool inventory is **reduced, not erased**: every tool keeps its name (sorted, because the
   advertised order varies between runs), and **Paireto's own tools are kept whole — description and
   schema** — so a regression that stopped offering them, or shipped a broken `paireto_submit_plan`

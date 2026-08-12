@@ -655,6 +655,49 @@ suite("provider-replay: fixture normalization", () => {
   });
 });
 
+// `find` and `ls` report a directory in the order the filesystem walks it, which differs between
+// machines holding an identical tree — so a cassette recorded on one host missed on another, and the
+// diff named only the shuffled listing. Order is the one dimension that cannot reproduce; every path
+// in the listing still has to.
+suite("provider-replay: directory listing order", () => {
+  const turn = (command: string, listing: string): string =>
+    JSON.stringify({
+      messages: [
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "toolu_1", name: "Bash", input: { command } }],
+        },
+        {
+          role: "user",
+          content: [{ tool_use_id: "toolu_1", type: "tool_result", content: listing }],
+        },
+      ],
+    });
+  const FIND = "find docs src -type f 2>/dev/null | head -20";
+
+  test("the same listing keys the same however the filesystem walked it", () => {
+    assert.strictEqual(
+      normalizeClaudeBody(turn(FIND, "docs/changelog.md\nsrc/ui/button.ts\nsrc/auth/login.ts")),
+      normalizeClaudeBody(turn(FIND, "docs/changelog.md\nsrc/auth/login.ts\nsrc/ui/button.ts")),
+    );
+  });
+
+  test("a listing that gained or lost a path still differs", () => {
+    const three = normalizeClaudeBody(turn(FIND, "a.ts\nb.ts\nc.ts"));
+    assert.notStrictEqual(three, normalizeClaudeBody(turn(FIND, "a.ts\nb.ts")));
+    assert.notStrictEqual(three, normalizeClaudeBody(turn(FIND, "a.ts\nb.ts\nd.ts")));
+  });
+
+  test("output of any other command keeps the order it was produced in", () => {
+    // Ordering carries meaning nearly everywhere else — a git log is the obvious case.
+    const log = "git log --oneline -10";
+    assert.notStrictEqual(
+      normalizeClaudeBody(turn(log, "ed76240 second\n802f70f initial")),
+      normalizeClaudeBody(turn(log, "802f70f initial\ned76240 second")),
+    );
+  });
+});
+
 suite("provider-replay: Codex replay turn correlation", () => {
   let dir: string;
 

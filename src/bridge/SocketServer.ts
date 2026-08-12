@@ -218,6 +218,24 @@ export class SocketServer {
         }
         break;
       }
+      case "guided.review.await.request": {
+        const ac = new AbortController();
+        inflight.add(ac);
+        try {
+          const result = await this.handlers.onGuidedReviewAwait(msg, ac.signal);
+          send({
+            t: "guided.review.await.response",
+            v: PLUGIN_VERSION,
+            id: msg.id,
+            ts: new Date().toISOString(),
+            status: result.status,
+            feedback: result.feedback,
+          });
+        } finally {
+          inflight.delete(ac);
+        }
+        break;
+      }
       case "stop.gate.request": {
         const ac = new AbortController();
         inflight.add(ac);

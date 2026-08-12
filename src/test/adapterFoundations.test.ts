@@ -143,6 +143,45 @@ suite("AgentSessionService sweep removes only liveness-less silent sessions", ()
   });
 });
 
+suite("AgentSessionService.getSessionById", () => {
+  // A tool call can be an agent's first contact — the gate it opens needs a real row to own, not a
+  // stand-in name.
+  test("registers a session the service has never seen, then returns that same one", () => {
+    const svc = new AgentSessionService(new AgentServiceLocator());
+    try {
+      const created = svc.getSessionById("s-1", "/repo", "codex");
+      assert.strictEqual(created.harness, "codex");
+      assert.strictEqual(created.repoRoot, "/repo");
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 1);
+
+      const again = svc.getSessionById("s-1", "/repo", "codex");
+      assert.strictEqual(again, created, "an existing row is reused, never replaced");
+      assert.strictEqual(svc.sessionsForRepo("/repo").length, 1);
+    } finally {
+      svc.dispose();
+    }
+  });
+
+  test("keeps the harness the session already had", () => {
+    const svc = new AgentSessionService(new AgentServiceLocator());
+    try {
+      svc.ingest(
+        {
+          kind: "sessionStart",
+          harness: "claudecode",
+          sessionId: "s-2",
+          backgroundTaskCount: 0,
+          sessionCronCount: 0,
+        },
+        "/repo",
+      );
+      assert.strictEqual(svc.getSessionById("s-2", "/repo", "codex").harness, "claudecode");
+    } finally {
+      svc.dispose();
+    }
+  });
+});
+
 suite("onboarding install stamp + installedProbe", () => {
   let dir: string;
   const pluginsRoot = path.resolve(__dirname, "../../dist/plugins");

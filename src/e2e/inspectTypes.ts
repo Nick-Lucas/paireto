@@ -2,7 +2,7 @@
 // (src/testControlPlane.ts, which produces it) and the E2E test (src/e2e/tests/fullflow.e2e.ts,
 // which polls it). Type-only, no runtime deps, so both the host and pure-node sides can import it.
 
-import type { AgentState } from "../types.js";
+import type { AgentState, FileGroup } from "../types.js";
 import type { Harness } from "../protocol/types.js";
 import type { GateKind } from "../gate/GateCoordinator.js";
 
@@ -23,6 +23,28 @@ export interface InspectGate {
   foreground: boolean;
 }
 
+/** One row of the agent's review plan, as the sidebar resolved it against the live changes. */
+export interface InspectGuidedFile {
+  path: string;
+  /** The git layer the path currently sits in; absent when it has no live change. */
+  group?: FileGroup;
+}
+
+/** Titles ship whole (they are short, and the test asserts they are distinct and non-empty);
+ *  descriptions ship as a length only, mirroring the `planTexts` fingerprint approach. */
+export interface InspectGuidedChangeset {
+  id: string;
+  title: string;
+  descriptionLength: number;
+  files: InspectGuidedFile[];
+}
+
+export interface InspectGuided {
+  repoRoot: string;
+  /** The agent's changesets, plus the synthetic "Other changes" one when it has any rows. */
+  changesets: InspectGuidedChangeset[];
+}
+
 /** The full read-only snapshot the E2E test asserts against. `planTexts` maps a plan gate id to a
  *  cheap fingerprint (`<sha1>:<length>`) so a re-proposed plan is detectable without shipping the
  *  whole markdown across the command boundary. */
@@ -35,6 +57,8 @@ export interface InspectSnapshot {
   gateHasFeedback: boolean;
   /** Per-reason ReviewController.refresh() tally (e.g. proves openDiff never ran the full refresh). */
   refreshCounts: Record<string, number>;
+  /** Present only while a guided review is open. */
+  guided?: InspectGuided;
 }
 
 /** Argument to the `paireto.test.addComment` command. */

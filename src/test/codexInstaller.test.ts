@@ -51,10 +51,16 @@ suite("Codex bundled plugin contract", () => {
     );
     assert.ok(skill.includes("`mcp__paireto__paireto_review`"));
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "paireto-plan", "SKILL.md")));
+    const guided = fs.readFileSync(
+      path.join(bundledPlugin, "skills", "paireto-guided-review", "SKILL.md"),
+      "utf8",
+    );
+    assert.ok(guided.includes("`mcp__paireto__paireto_start_guided_review`"));
     // The built server, not the source: this asserts the artifact the installer actually stages.
-    // Match on the bare tool name, which survives minification, rather than a source spelling.
+    // Match on the bare tool names, which survive minification, rather than a source spelling.
     const server = fs.readFileSync(path.join(bundledPlugin, "mcp", "liveness.js"), "utf8");
     assert.ok(server.includes("paireto_review"));
+    assert.ok(server.includes("paireto_start_guided_review"));
     assert.ok(
       !fs.existsSync(path.join(bundledPlugin, "skills", "paireto-review", "scripts", "review.js")),
     );

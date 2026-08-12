@@ -9,6 +9,7 @@ Do not ever edit this, this is for humans only to edit!
 * support a paireto-review-consume skill which consumes the already added comments instead of starting a blocking review
 * When staging a file with unsaved changes, the file is currently closed and prompts to save. If you choose to save you should also commit the unsaved changes
 * Enter on a changes entry support renaming of the file
+* Support "stackBase" as well as "mergeBase" which compares to the commit the branch was branched from instead of the merge base
 
 # Feature Ideas:
 

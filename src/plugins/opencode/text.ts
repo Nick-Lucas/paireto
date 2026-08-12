@@ -39,6 +39,9 @@ export const PLAN_EXIT_REDIRECT =
 export const REVIEW_UNAVAILABLE =
   "No VS Code Paireto is listening for this repository — skipping the review.";
 export const REVIEW_FAILED = "Review unavailable — proceeding with no changes.";
+export const REVIEW_APPROVED = "Review approved — proceeding with no changes.";
+
+export const GUIDED_REVIEW_APPROVED = "Review plan approved — the reviewer is done, proceed.";
 export const PLAN_UNAVAILABLE = "Plan review unavailable — proceeding.";
 export const PLAN_APPROVED = "Plan approved — proceed.";
 export const PLAN_CHANGES_REQUESTED = "Plan changes requested.";

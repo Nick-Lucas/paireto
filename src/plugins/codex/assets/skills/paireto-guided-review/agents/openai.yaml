@@ -1,0 +1,4 @@
+interface:
+  display_name: "Paireto Guided Review"
+  short_description: "Group a branch's changes into a review plan for a human"
+  default_prompt: "Use $paireto-guided-review to prepare a review plan for my current changes."

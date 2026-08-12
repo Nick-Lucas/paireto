@@ -15,6 +15,7 @@ let liveness: CodexLiveness | undefined;
 
 const adapter: McpHarnessAdapter = {
   serverName: "paireto-codex",
+  harness: "codex",
 
   noTargetMessage:
     "Paireto could not identify this Codex session. Send another prompt after the Paireto " +

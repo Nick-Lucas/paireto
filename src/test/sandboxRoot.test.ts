@@ -4,6 +4,7 @@
 // extension computes — a shape no user's session has.
 
 import * as assert from "node:assert";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -22,6 +23,24 @@ suite("E2E sandbox root", () => {
     const sandbox = createSandbox();
     try {
       assert.strictEqual(sandbox.repoRoot, fs.realpathSync(sandbox.repoRoot));
+    } finally {
+      sandbox.cleanup();
+    }
+  });
+
+  // An agent that runs `git log` puts the commit id in its next request body, so a sandbox whose
+  // initial commit hashed differently each run could never replay: the recorded id would never
+  // reappear. The tree and the identity are already fixed, so the dates are what remains — pinned
+  // here as literals, because a change to them invalidates every cassette holding the old id.
+  test("the initial commit is dated from a fixed point, so its id never moves", () => {
+    const sandbox = createSandbox();
+    try {
+      const show = (format: string): string =>
+        execFileSync("git", ["log", "-1", `--format=${format}`], { cwd: sandbox.repoRoot })
+          .toString()
+          .trim();
+      assert.strictEqual(show("%aI"), "2020-01-01T00:00:00+00:00", "author date");
+      assert.strictEqual(show("%cI"), "2020-01-01T00:00:00+00:00", "committer date");
     } finally {
       sandbox.cleanup();
     }

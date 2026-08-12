@@ -3,7 +3,7 @@
 
 import * as assert from "node:assert";
 
-import { openCodeRunFatal } from "../e2e/drivers/opencode.js";
+import { openCodeRunArgs, openCodeRunFatal } from "../e2e/drivers/opencode.js";
 import {
   attachCommand,
   createPaneWatch,
@@ -60,6 +60,26 @@ suite("E2E watch attach command", () => {
       docker,
       /^docker compose .* exec tests tmux -L pai-e2e-123-abc attach -t main -r$/,
     );
+  });
+});
+
+// The plan agent's permission rules deny every edit until a plan approval releases it. A case that
+// never proposes a plan (the guided review) must therefore not run under it — its agent could group
+// the changes but could never act on the feedback the reviewer sent back.
+suite("OpenCode run agent", () => {
+  const turn = { serverUrl: "http://127.0.0.1:4096", repoRoot: "/tmp/repo", prompt: "go" };
+
+  test("a case that proposes a plan runs under the plan agent", () => {
+    const args = openCodeRunArgs({ ...turn, planMode: true });
+    assert.ok(args.includes("--agent"));
+    assert.strictEqual(args[args.indexOf("--agent") + 1], "plan");
+  });
+
+  test("a case that never proposes a plan runs under the default agent", () => {
+    const args = openCodeRunArgs({ ...turn, planMode: false });
+    assert.ok(!args.includes("--agent"), "the plan agent could not act on review feedback");
+    assert.strictEqual(args.at(-1), "go", "the prompt stays last");
+    assert.ok(args.includes("--model"));
   });
 });
 

@@ -15,12 +15,11 @@ import {
   isNewUserTurn,
   isTitleGeneratorPrompt,
   normalizePrimaryTools,
-  planToolArgs,
   resolveOpenCodeRoot,
   shouldInjectPlanningPrompt,
   stopGateInjectionReason,
 } from "../plugins/opencode/automation.js";
-import type { OpenCodeConfig, ToolSchema } from "../plugins/opencode/types.js";
+import type { OpenCodeConfig } from "../plugins/opencode/types.js";
 
 function permissionOf(config: OpenCodeConfig, agent: string): Record<string, unknown> {
   return (config.agent?.[agent]?.permission ?? {}) as Record<string, unknown>;
@@ -227,31 +226,6 @@ suite("OpenCode adapter automation helpers", () => {
       assert.strictEqual(isChildSession("parent", parentOf), false);
       assert.strictEqual(isChildSession(undefined, parentOf), false);
       assert.strictEqual(isChildSession("child", undefined), false);
-    });
-  });
-
-  suite("planToolArgs (submit_plan arg shape)", () => {
-    // OpenCode types tool `args` as a ZodRawShape (record of zod schemas). The plan arg MUST be a
-    // real schema, never a bare value (`""` throws during schema advertisement + arg validation), so
-    // it's built from the SDK's zod instance (`tool.schema`), modelled here by a minimal fake.
-    const fakeSchema: ToolSchema = {
-      string: () => ({
-        kind: "zodString",
-        describe: (text: string) => ({ kind: "zodString", description: text }),
-      }),
-    };
-
-    test("builds { plan: <schema> } — a real schema, never a bare string", () => {
-      const plan = planToolArgs(fakeSchema).plan as { kind: string; description: string };
-      assert.notStrictEqual(typeof plan, "string", "the arg must not be a bare value");
-      assert.strictEqual(plan.kind, "zodString");
-      assert.strictEqual(typeof plan.description, "string");
-    });
-
-    test("fail-open: no SDK zod (not under OpenCode) → empty shape, no crash", () => {
-      assert.deepStrictEqual(planToolArgs(null), {});
-      assert.deepStrictEqual(planToolArgs(undefined), {});
-      assert.deepStrictEqual(planToolArgs({} as ToolSchema), {});
     });
   });
 });

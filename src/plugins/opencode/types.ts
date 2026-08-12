@@ -76,8 +76,3 @@ export interface PluginInput {
   directory?: string;
   client: OpenCodeClient;
 }
-
-/** The zod handle OpenCode exposes as `tool.schema`; only `.string().describe()` is used. */
-export interface ToolSchema {
-  string(): { describe(text: string): unknown };
-}

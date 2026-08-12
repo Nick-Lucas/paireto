@@ -4,17 +4,12 @@
 
 import * as path from "node:path";
 
+import { z } from "zod";
+
 import { canonicalize } from "../../protocol/paths.js";
 import type { StopGateResponse } from "../../protocol/types.js";
 import { PLAN_ARG_DESCRIPTION, SUBMIT_PLAN_TOOL } from "./text.js";
-import type {
-  AgentConfig,
-  AgentInfo,
-  MessageEntry,
-  MessageInfo,
-  OpenCodeConfig,
-  ToolSchema,
-} from "./types.js";
+import type { AgentConfig, AgentInfo, MessageEntry, MessageInfo, OpenCodeConfig } from "./types.js";
 
 /** Dedup a raw `experimental.primary_tools` value into a clean string array (drops non-strings /
  *  blanks / duplicates). Anything not an array reads as empty — we only ever ADD our tool. */
@@ -197,18 +192,10 @@ export function stopGateInjectionReason(
   return null;
 }
 
-/** Build the `args` (ZodRawShape) for the paireto_submit_plan tool from OpenCode's zod instance
- *  (`tool.schema`, resolved at runtime — this adapter imports only node builtins at top level).
- *  OpenCode types tool `args` as a RECORD OF ZOD SCHEMAS: a bare value (e.g. `""`) is NOT a valid
- *  entry — it throws during JSON-schema advertisement and arg validation, so the plan text would
- *  never reach VS Code. When the SDK zod is unavailable (i.e. not running under OpenCode — unit
- *  tests) fall back to an empty shape (fail-open; the tool advertises no args instead of crashing). */
-export function planToolArgs(schema: ToolSchema | undefined | null): Record<string, unknown> {
-  if (!schema || typeof schema.string !== "function") {
-    return {};
-  }
-  return { plan: schema.string().describe(PLAN_ARG_DESCRIPTION) };
-}
+/** The plan tool's arguments, declared like the guided-review ones: a zod schema OpenCode advertises
+ *  as-is. */
+export const SubmitPlanArgs = z.object({ plan: z.string().describe(PLAN_ARG_DESCRIPTION) });
+export type SubmitPlanArgs = z.infer<typeof SubmitPlanArgs>;
 
 /** Git projects use OpenCode's worktree identity; non-Git projects report worktree "/" and use the
  * exact project directory that VS Code serves as a workspace-root socket. */
