@@ -26,7 +26,7 @@ export interface AgentTerminalProfile {
   command: string;
 }
 
-/** Everything an agent's install / probe needs from the host, resolved by WelcomePanel. */
+/** Everything an agent's install / probe needs from the host, resolved by AgentInstallStatus. */
 export interface InstallContext {
   /** Absolute path to the shipped `dist/plugins/` dir (built with the extension — this path CHANGES on
    *  every extension update, so nothing durable may point at it). */

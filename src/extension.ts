@@ -30,10 +30,14 @@ import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
+import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
 import { exposeTestControlPlane } from "./testControlPlane.js";
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  // Which agents carry the shipped Paireto plugin — read by the Welcome screen and the sidebar nudge.
+  const installStatus = new AgentInstallStatus(context);
+
   // Warm the comment-author cache (signed-in account → OS user → "Developer"); fire-and-forget.
   void resolveCommentAuthor();
 
@@ -44,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const welcomeMarker = "paireto.welcomeShownVersion";
   if (context.globalState.get<string>(welcomeMarker) !== WELCOME_VERSION) {
     void context.globalState.update(welcomeMarker, WELCOME_VERSION);
-    WelcomePanel.show(context);
+    WelcomePanel.show(context, installStatus);
   }
 
   // Session-scoped panels start hidden; their context keys gate visibility (see package.json `when`).
@@ -84,6 +88,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     planReview,
     coordinator,
     locator,
+    installStatus,
     context.extensionUri,
   );
   const switcher = new RepoSwitcher(repoService, worktrees, recents, context.extensionUri);
@@ -117,11 +122,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewContent,
     reviewController,
     mainTree,
+    installStatus,
     switcher,
     vscode.commands.registerCommand(Commands.focusAgent, () =>
       vscode.commands.executeCommand("workbench.action.terminal.focus"),
     ),
-    vscode.commands.registerCommand(Commands.openWelcome, () => WelcomePanel.show(context)),
+    vscode.commands.registerCommand(Commands.openWelcome, () =>
+      WelcomePanel.show(context, installStatus),
+    ),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
     vscode.commands.registerCommand(Commands.gateApprove, () => coordinator.current?.approve()),
     vscode.commands.registerCommand(Commands.gateSendFeedback, () =>
@@ -150,6 +158,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     }),
     mainTree.register(),
   );
+
+  // The Codex probe calls its CLI and can block for seconds, so the first probe waits until
+  // activation has returned.
+  installStatus.scheduleRefresh();
 
   // Env-gated E2E test control plane (inert unless PAIRETO_TEST === "1"): read-only inspect + a
   // comment injector that re-dispatches through the real add-comment commands. Never in production.
