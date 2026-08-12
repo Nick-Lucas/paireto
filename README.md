@@ -89,7 +89,7 @@ comments from the VS Code editor, then click **Approve** or **Send Feedback** to
 
 ## Review Mode
 
-When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:paireto-review` skill.
+When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill.
 
 Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish. 
 
