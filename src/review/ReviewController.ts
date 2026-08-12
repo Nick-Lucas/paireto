@@ -65,6 +65,16 @@ import {
   type GuidedReviewState,
 } from "./guidedPlan.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
+import {
+  dirtyTargetDocs,
+  SAVE_AND_STAGE,
+  saveBeforeStagePrompt,
+  stageSaveAction,
+  stageSaveChoice,
+  STAGE_SAVED,
+  unsavedAfterStageMessage,
+  type SaveBeforeStage,
+} from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
@@ -870,12 +880,62 @@ export class ReviewController implements vscode.Disposable {
 
   // ── Git write-ops ──────────────────────────────────────────────────────────
   private async stageFiles(files: RepoChangedFile[]): Promise<void> {
+    if (!files.length) {
+      return;
+    }
+    // Asked once for the whole selection, so a bulk stage asks at most one question.
+    const prepared = await this.prepareStage(files);
+    if (!prepared.run) {
+      return;
+    }
     for (const [repoRoot, repoFiles] of filesByRoot(files)) {
       const paths = repoFiles.map((f) => f.path);
       await this.diff.stage(repoRoot, paths);
       await this.refresh();
       await this.reconcileOpenDiffsAfterWrite(repoRoot, paths, "staged");
     }
+    if (prepared.unsaved.length) {
+      void vscode.window.showWarningMessage(unsavedAfterStageMessage(prepared.unsaved));
+    }
+  }
+
+  /**
+   * Git stages the file as it is on disk, so a stage means "stage the version I am looking at" only
+   * when the editor's unsaved edits are written first. Returns whether the stage may run, and the
+   * files whose unsaved edits were deliberately left out of it.
+   */
+  private async prepareStage(
+    files: RepoChangedFile[],
+  ): Promise<{ run: boolean; unsaved: string[] }> {
+    const dirty = dirtyTargetDocs(vscode.workspace.textDocuments, files);
+    const setting = vscode.workspace
+      .getConfiguration("paireto")
+      .get<SaveBeforeStage>("review.saveBeforeStage", "prompt");
+    let action = stageSaveAction(setting, dirty.length);
+    if (action === "ask") {
+      const prompt = saveBeforeStagePrompt(dirty.map((d) => d.path));
+      const answer = await vscode.window.showWarningMessage(
+        prompt.message,
+        { modal: true, detail: prompt.detail },
+        SAVE_AND_STAGE,
+        STAGE_SAVED,
+      );
+      const choice = stageSaveChoice(answer);
+      if (choice === "cancel") {
+        return { run: false, unsaved: [] };
+      }
+      action = choice;
+    }
+    if (action === "stage") {
+      return { run: true, unsaved: dirty.map((d) => d.path) };
+    }
+    for (const { doc, path } of dirty) {
+      if (!(await doc.save())) {
+        void vscode.window.showErrorMessage(`Could not save ${path}. Nothing was staged.`);
+        return { run: false, unsaved: [] };
+      }
+    }
+    return { run: true, unsaved: [] };
   }
 
   private async unstageFiles(files: RepoChangedFile[]): Promise<void> {
@@ -1002,6 +1062,11 @@ export class ReviewController implements vscode.Disposable {
         continue; // still present at the same level — content refresh handles it
       }
       const located = this.locateReviewTab(baseKey);
+      // Closing a tab with unsaved edits makes VS Code raise its own save dialog and can drop the
+      // buffer. The working-tree side of the diff still shows live content where it is.
+      if (located?.dirty) {
+        continue;
+      }
       this.openDiffs.delete(baseKey);
       if (
         this.openDiffFile?.repoRoot === repoRoot &&
@@ -1033,14 +1098,21 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  /** The open review tab whose virtual URI matches `tabKey`: its column, active and preview state. */
+  /** The open review tab whose virtual URI matches `tabKey`: its column, active, preview and dirty state. */
   private locateReviewTab(
     tabKey: string,
-  ): { viewColumn: vscode.ViewColumn; active: boolean; preview: boolean } | undefined {
+  ):
+    | { viewColumn: vscode.ViewColumn; active: boolean; preview: boolean; dirty: boolean }
+    | undefined {
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
         if (reviewTabKey(tab.input) === tabKey) {
-          return { viewColumn: group.viewColumn, active: tab.isActive, preview: tab.isPreview };
+          return {
+            viewColumn: group.viewColumn,
+            active: tab.isActive,
+            preview: tab.isPreview,
+            dirty: tab.isDirty,
+          };
         }
       }
     }
