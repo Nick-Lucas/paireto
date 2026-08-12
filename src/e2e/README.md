@@ -3,15 +3,7 @@
 ## Architecture
 
 Drives a whole Paireto loop inside a real VS Code window, over the per-repo Unix socket — the same
-substrate the product uses. There are two cases, selected with `PAIRETO_E2E_CASE` (one per run,
-default `fullflow`):
-
-- **`fullflow`** — **plan → feedback → approve → implement → review-feedback → review-approve**, on
-  all three drivers.
-- **`guidedreview`** — the user asks for a guided review, the agent groups the seeded working-tree
-  changes into changesets and submits them through the bundled MCP tool, the user opens a file,
-  stages a changeset, comments, sends the feedback, and approves the follow-up. Recorded for
-  `claudecode` (the reference harness); the other two share the same wire message and tool contract.
+substrate the product uses. 
 
 - The specs (`tests/*.e2e.ts`, shared step helpers in `tests/steps.ts`) run under **Mocha** inside the
   extension host, so each step is reported by name and a case scaffolds itself in
@@ -158,7 +150,9 @@ How it works:
   599 catch-all, then enable `SIMULATE`. The check compose overlay mounts no user credentials; each
   harness gets syntactically valid, far-future fake OAuth state. Drift fails loud and cannot hit a
   real API. The shim applies the selected driver's normalizer before matching. The sandbox repo and
-  harness homes use fixed `/tmp` paths so request bodies reproduce.
+  harness homes use fixed `/tmp` paths so request bodies reproduce, and the sandbox's initial commit
+  is dated from a fixed point so its commit id does too — an agent that runs `git log` puts that id
+  straight into its next request.
 - Request matchers discard provider headers and narrowly canonicalize account/environment metadata,
   prompt-cache controls, and deterministic workflow tool-result wording. User prompts, model messages,
   tool names/calls/arguments, and file contents remain strict.

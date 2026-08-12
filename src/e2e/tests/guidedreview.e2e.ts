@@ -42,8 +42,11 @@ const GUIDED_FIXTURE: Record<string, string> = {
 
 const SEEDED = Object.keys(GUIDED_FIXTURE);
 
-const REVIEW_FEEDBACK = "Write guided-feedback.txt containing exactly: reviewed";
+/** The file the agent writes to prove the review feedback reached it, and so also the marker that
+ *  this case's agent turn carried the flow through. */
+const FEEDBACK_FILE = "guided-feedback.txt";
 const FEEDBACK_MARKER = "reviewed";
+const REVIEW_FEEDBACK = `Write ${FEEDBACK_FILE} containing exactly: ${FEEDBACK_MARKER}`;
 
 /** One long model turn: reading a whole diff and grouping it takes far longer than a normal step. */
 const PLAN_TIMEOUT_MS = 300_000;
@@ -95,7 +98,14 @@ E2E_DRIVERS.forEach((harness) => {
       }
       const sessionId = `${harness}-${crypto.randomBytes(4).toString("hex")}`;
       // Ordinary work, not plan mode — and the bundled MCP server loaded so its tool is callable.
-      await driver.launch({ repoRoot, sessionId, log, planMode: false, loadPluginMcp: true });
+      await driver.launch({
+        repoRoot,
+        sessionId,
+        log,
+        planMode: false,
+        loadPluginMcp: true,
+        completionMarker: FEEDBACK_FILE,
+      });
     });
 
     suiteTeardown(async () => {
@@ -210,14 +220,13 @@ E2E_DRIVERS.forEach((harness) => {
         "the guided gate to resolve on send-feedback",
       );
       // The return channel is the half most likely to break silently, so assert a real side effect.
+      const feedbackFile = path.join(repoRoot, FEEDBACK_FILE);
       await wait(
-        "the agent to act on the feedback (guided-feedback.txt)",
+        `the agent to act on the feedback (${FEEDBACK_FILE})`,
         () =>
           Promise.resolve(
-            fs.existsSync(path.join(repoRoot, "guided-feedback.txt")) &&
-              fs
-                .readFileSync(path.join(repoRoot, "guided-feedback.txt"), "utf8")
-                .includes(FEEDBACK_MARKER),
+            fs.existsSync(feedbackFile) &&
+              fs.readFileSync(feedbackFile, "utf8").includes(FEEDBACK_MARKER),
           ),
         PLAN_TIMEOUT_MS,
       );

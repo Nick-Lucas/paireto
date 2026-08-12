@@ -7,9 +7,10 @@
 // OpenCode's built-in OpenAI OAuth provider reads auth.json
 // from XDG_DATA_HOME and exposes the Codex-subscription models without third-party plugins.
 //
-// A run that exits WITHOUT writing any files is a plan-tool miss (the model answered as plain text
-// instead of calling paireto_submit_plan). That is a test failure: silently retrying a fresh session
-// would not match what happens to a user and could hide an unreliable plan integration.
+// A run that exits without writing its case's completion marker never carried the flow through (in
+// the full-flow case, a plan-tool miss: the model answered as plain text instead of calling
+// paireto_submit_plan). That is a test failure: silently retrying a fresh session would not match
+// what happens to a user and could hide an unreliable integration.
 
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
@@ -27,8 +28,8 @@ import { watchChildOutput } from "./watch.js";
 // A fast, affordable model supported by ChatGPT-account Codex OAuth.
 const MODEL = "openai/gpt-5.6-luna";
 const PLAN_AGENT = "plan";
-/** The first file the implement step writes — its presence means the run engaged the plan gate and
- *  got past approve, so an exit is normal completion rather than a plan-tool miss. */
+/** The full-flow case's own marker: the first file its implement step writes, so its presence means
+ *  the run engaged the plan gate and got past approve rather than missing the plan tool. */
 const IMPLEMENT_MARKER = "hello.txt";
 /** Resolved lazily so importing the driver does not touch the filesystem. */
 const mockHomeDir = (): string => mockPath("pai-e2e-opencode-home");
@@ -49,6 +50,30 @@ export function openCodeRunFatal(line: string): string | undefined {
   return /the user rejected permission to use this specific tool call/i.test(line)
     ? "OpenCode reported a rejected tool call, so the agent stopped acting on the workspace"
     : undefined;
+}
+
+/**
+ * The `opencode run` argument list for one turn. The plan agent denies every edit until a plan
+ * approval releases it, so it is passed only for a case that proposes a plan: a case that never does
+ * would sit in that agent for its whole run and could not act on any feedback it was sent.
+ */
+export function openCodeRunArgs(turn: {
+  serverUrl: string;
+  repoRoot: string;
+  prompt: string;
+  planMode: boolean;
+}): string[] {
+  return [
+    "run",
+    "--attach",
+    turn.serverUrl,
+    "--dir",
+    turn.repoRoot,
+    ...(turn.planMode ? ["--agent", PLAN_AGENT] : []),
+    "--model",
+    MODEL,
+    turn.prompt,
+  ];
 }
 
 export class OpenCodeDriver implements HarnessDriver {
@@ -199,18 +224,12 @@ export class OpenCodeDriver implements HarnessDriver {
   /** Spawn one `opencode run --attach` turn. It drives the whole cascade while gates round-trip via
    *  the socket. A plan-tool miss remains visible and the E2E fails, just as the user's run would. */
   private spawnRun(): void {
-    const args = [
-      "run",
-      "--attach",
-      this.serverUrl!,
-      "--dir",
-      this.ctx!.repoRoot,
-      "--agent",
-      PLAN_AGENT,
-      "--model",
-      MODEL,
-      this.promptText!,
-    ];
+    const args = openCodeRunArgs({
+      serverUrl: this.serverUrl!,
+      repoRoot: this.ctx!.repoRoot,
+      prompt: this.promptText!,
+      planMode: this.ctx?.planMode !== false,
+    });
     this.log(`run: opencode ${args.join(" ")}`);
     this.runStartedAt = Date.now();
     this.run = spawn("opencode", args, {
@@ -235,18 +254,17 @@ export class OpenCodeDriver implements HarnessDriver {
     this.run.on("exit", (code) => {
       const elapsed = Date.now() - this.runStartedAt;
       this.log(`run exited code=${code} after ${elapsed}ms`);
-      const engaged = fs.existsSync(path.join(this.ctx!.repoRoot, IMPLEMENT_MARKER));
-      if (!engaged) {
+      const marker = this.ctx?.completionMarker ?? IMPLEMENT_MARKER;
+      if (!fs.existsSync(path.join(this.ctx!.repoRoot, marker))) {
         this.fatal ??=
-          `opencode run exited (code=${code}) without writing ${IMPLEMENT_MARKER} — the model ` +
-          "answered the planning prompt as plain text instead of calling paireto_submit_plan, so no " +
-          "plan gate ever opened. The assistant's actual reply is in the run log below.";
+          `opencode run exited (code=${code}) without writing ${marker} — its turn ended before it ` +
+          "carried the flow through, so no later step can complete. The assistant's actual reply is " +
+          "in the run log below.";
         this.log(
-          `run exited (code=${code}) without writing ${IMPLEMENT_MARKER}: the model answered the ` +
-            "planning prompt as plain text instead of calling paireto_submit_plan, so no plan gate " +
-            "ever opened. This is a real integration failure — the test fails rather than retrying, " +
-            "because a user's run would fail the same way. Check the run/provider logs below for the " +
-            "assistant's actual reply.",
+          `run exited (code=${code}) without writing ${marker}: the agent's turn ended before the ` +
+            "flow completed. This is a real integration failure — the test fails rather than " +
+            "retrying, because a user's run would fail the same way. Check the run/provider logs " +
+            "below for the assistant's actual reply.",
         );
       }
     });

@@ -96,10 +96,11 @@ export function parseChangesets(raw: unknown): ParsedChangeset[] {
 }
 
 /**
- * The advertised schema, loosened where a model's near-miss is still usable: a missing description
- * or file list reads as empty rather than voiding the changeset, and a file may be a bare string —
- * models reach for that shorthand. Each file is validated on its own below, so one malformed entry
- * costs its own row instead of the whole changeset.
+ * The advertised schema, loosened where a model's near-miss is still usable: a missing file list
+ * reads as empty, and a file may be a bare string — models reach for that shorthand. Each file is
+ * validated on its own below, so one malformed entry costs its own row instead of the whole
+ * changeset. The title and the description are checked below rather than here, so a missing one is
+ * named in its own right instead of arriving as a schema error.
  */
 const submittedChangesetSchema = z.object({
   title: z.string(),
@@ -121,6 +122,14 @@ function parseChangeset(raw: unknown, index: number, where: string): ParsedChang
   if (!title) {
     throw new GuidedPlanError(`${where}.title — a changeset needs a title`);
   }
+  // The description is what the reviewer reads to learn why these files belong together — a
+  // changeset without one is a bare file list, so the agent writes it before the review opens.
+  const description = cap(submitted.data.description.trim(), MAX_DESCRIPTION);
+  if (!description) {
+    throw new GuidedPlanError(
+      `${where}.description — a changeset needs a description saying why these files belong together`,
+    );
+  }
   const files: GuidedChangesetFile[] = [];
   const seen = new Set<string>();
   for (const [fileIndex, rawFile] of submitted.data.files.slice(0, MAX_FILES_PER_CHANGESET).entries()) {
@@ -133,12 +142,7 @@ function parseChangeset(raw: unknown, index: number, where: string): ParsedChang
   if (files.length === 0) {
     throw new GuidedPlanError(`${where}.files — a changeset needs at least one file`);
   }
-  return {
-    id: `cs${index}`,
-    title,
-    description: cap(submitted.data.description.trim(), MAX_DESCRIPTION),
-    files,
-  };
+  return { id: `cs${index}`, title, description, files };
 }
 
 function parseChangesetFile(raw: unknown, where: string): GuidedChangesetFile {

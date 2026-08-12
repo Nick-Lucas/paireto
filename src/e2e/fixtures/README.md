@@ -2,11 +2,6 @@
 
 Committed MockServer cassettes `<case>.<driver>.json`
 
-- `fullflow.claudecode.json`
-- `fullflow.codex.json`
-- `fullflow.opencode.json`
-- `guidedreview.claudecode.json`
-
 Each records the provider HTTP/SSE traffic of that case so `PAIRETO_E2E_MODE=check` can replay it with
 **no credentials and no network** (see `src/e2e/README.md` and `src/e2e/mockserver/`). `fullflow` is
 the plan → feedback → approve → implement → review run; `guidedreview` is the agent grouping the

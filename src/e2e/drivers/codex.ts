@@ -26,7 +26,36 @@ const mockHomeDir = (): string => mockPath("pai-e2e-codex-home");
 const CODEX_MODEL = "gpt-5.6-luna";
 const IMPLEMENT_SELECTOR = /implement this plan\?/i;
 const PLAN_MODE = /plan mode/i;
+/** The footer Codex draws once its composer is interactive — the earliest point a keystroke can land. */
+const COMPOSER_READY = /\bgpt-[\w.-]+ \w+ · \//;
+/** Codex says this when a keystroke arrives while it is still starting its MCP servers. */
+const MCP_INTERRUPTED =
+  /MCP startup interrupted\. The following servers were not initialized: (.+)/;
+const MCP_WATCH_MS = 1_000;
 type PlanApprovalTmux = Pick<TmuxSession, "capture" | "sendKeys">;
+type ReadyTmux = Pick<TmuxSession, "capture" | "exitStatus">;
+type PromptTmux = Pick<TmuxSession, "capture" | "sendKeys" | "typeLine">;
+
+/** Waits, in ms. Overridden by tests so they need not sit out real intervals. */
+export interface CodexTimings {
+  readyTimeoutMs: number;
+  readyPollMs: number;
+  /** Identical consecutive frames that end the boot burst of redraws. */
+  readyStableFrames: number;
+  acceptTimeoutMs: number;
+  acceptPollMs: number;
+  /** Gap before Enter — Codex drops an Enter that lands in the same tick as a literal paste. */
+  submitGapMs: number;
+}
+
+const DEFAULT_TIMINGS: CodexTimings = {
+  readyTimeoutMs: 40_000,
+  readyPollMs: 1_000,
+  readyStableFrames: 3,
+  acceptTimeoutMs: 5_000,
+  acceptPollMs: 500,
+  submitGapMs: 1_500,
+};
 
 export class CodexDriver implements HarnessDriver {
   readonly harness = "codex";
@@ -38,6 +67,7 @@ export class CodexDriver implements HarnessDriver {
   private home?: HarnessHome;
   private ctx?: DriverContext;
   private stopPaneWatch?: () => void;
+  private mcpWatch?: NodeJS.Timeout;
   /** Set by the pane watch when the TUI dies; the test polls fatalError() and aborts. */
   private fatal?: string;
 
@@ -84,10 +114,28 @@ export class CodexDriver implements HarnessDriver {
     this.stopPaneWatch = startPaneWatch(this.harness, this.tmux, (reason) => {
       this.fatal ??= reason;
     });
+    this.watchForInterruptedMcp();
+  }
+
+  /** An abandoned MCP startup leaves the session without Paireto's tools, so no gate can ever open.
+   *  Report it as the cause the moment Codex says so, rather than at the next step's timeout. */
+  private watchForInterruptedMcp(): void {
+    this.mcpWatch = setInterval(() => {
+      const reason = interruptedMcpReason(this.tmux.capture());
+      if (reason) {
+        this.fatal ??= reason;
+        this.stopMcpWatch();
+      }
+    }, MCP_WATCH_MS);
+  }
+
+  private stopMcpWatch(): void {
+    clearInterval(this.mcpWatch);
+    this.mcpWatch = undefined;
   }
 
   async enterPlanMode(): Promise<void> {
-    await delay(2500); // let the TUI boot before the key registers
+    await waitForCodexReady(this.tmux, (line) => this.log(line));
     this.tmux.sendKeys("BTab"); // Shift-Tab cycles to native Plan mode
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
@@ -101,8 +149,10 @@ export class CodexDriver implements HarnessDriver {
   }
 
   async prompt(text: string): Promise<void> {
+    const log = (line: string): void => this.log(line);
+    await waitForCodexReady(this.tmux, log);
     this.log(`prompt: ${text}`);
-    await this.tmux.typeLine(text);
+    await typeCodexPrompt(this.tmux, text, log);
   }
 
   async afterPlanApprove(): Promise<void> {
@@ -122,6 +172,7 @@ export class CodexDriver implements HarnessDriver {
 
   dispose(): Promise<void> {
     this.stopPaneWatch?.();
+    this.stopMcpWatch();
     this.tmux.kill();
     this.home?.cleanup();
     return Promise.resolve();
@@ -172,6 +223,85 @@ export function renderCodexRuntimeConfig(existing: string, project: string): str
     `${rootSettings}\n${providerTable}${features}\n` +
     `${installerConfig}[projects.${tomlKey(project)}]\ntrust_level = "trusted"\n`
   );
+}
+
+/**
+ * A screen where Codex has abandoned its MCP startup, as a failure reason — otherwise undefined.
+ * The session then holds none of Paireto's tools, so no gate can ever open and every later step
+ * would wait out its budget with the cause buried in the pane.
+ */
+export function interruptedMcpReason(screen: string): string | undefined {
+  const interrupted = MCP_INTERRUPTED.exec(screen);
+  return interrupted
+    ? `Codex abandoned its MCP startup (${interrupted[1].trim()}), so this session has none of ` +
+        "Paireto's tools and no gate can open. A keystroke arrived while it was still starting."
+    : undefined;
+}
+
+/**
+ * Hold every keystroke until the TUI has finished starting. Codex draws its banner, then starts its
+ * MCP servers, and a key pressed in that window BOTH abandons that startup and is swallowed — so an
+ * early prompt leaves a session with no Paireto tools and an empty composer. Codex prints nothing
+ * when the handshake succeeds, so readiness is the interactive composer plus a settled screen: a run
+ * of identical frames means the boot burst of redraws is over.
+ */
+export async function waitForCodexReady(
+  tmux: ReadyTmux,
+  log: (line: string) => void,
+  timings: Partial<CodexTimings> = {},
+): Promise<void> {
+  const { readyTimeoutMs, readyPollMs, readyStableFrames } = { ...DEFAULT_TIMINGS, ...timings };
+  const deadline = Date.now() + readyTimeoutMs;
+  let previous: string | undefined;
+  let stable = 0;
+  do {
+    const screen = tmux.capture();
+    const exitStatus = tmux.exitStatus();
+    if (exitStatus !== undefined) {
+      throw new Error(`Codex exited during startup (status ${exitStatus})\n${screen}`);
+    }
+    stable = screen === previous ? stable + 1 : 0;
+    previous = screen;
+    if (COMPOSER_READY.test(screen) && stable >= readyStableFrames) {
+      log(`waitForReady: composer settled over ${stable} identical frames — ready to type`);
+      return;
+    }
+    if (Date.now() < deadline) {
+      await delay(readyPollMs);
+    }
+  } while (Date.now() < deadline);
+  log(`waitForReady: never settled within ${readyTimeoutMs}ms (typing anyway)`);
+}
+
+/**
+ * Type the prompt, confirm it actually reached the composer, then submit it. A swallowed prompt is
+ * otherwise invisible until the step waiting on its result times out, minutes later.
+ */
+export async function typeCodexPrompt(
+  tmux: PromptTmux,
+  text: string,
+  log: (line: string) => void,
+  timings: Partial<CodexTimings> = {},
+): Promise<void> {
+  const { acceptTimeoutMs, acceptPollMs, submitGapMs } = { ...DEFAULT_TIMINGS, ...timings };
+  // Enough of the line to identify it on screen, short enough to survive the pane's wrapping.
+  const echo = text.slice(0, 24);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    await tmux.typeLine(text, false);
+    const deadline = Date.now() + acceptTimeoutMs;
+    do {
+      if (tmux.capture().includes(echo)) {
+        await delay(submitGapMs);
+        tmux.sendKeys("Enter");
+        return;
+      }
+      if (Date.now() < deadline) {
+        await delay(acceptPollMs);
+      }
+    } while (Date.now() < deadline);
+    log(`prompt attempt ${attempt}: the composer never showed the text — retyping`);
+  }
+  throw new Error("Codex never accepted the prompt into its composer");
 }
 
 /** Wait for Codex's native Plan-mode transition UI and select its pre-highlighted implement option.

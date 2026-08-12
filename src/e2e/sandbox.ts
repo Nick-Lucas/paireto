@@ -25,13 +25,21 @@ export interface Sandbox {
   cleanup(): void;
 }
 
+/** A fixed point for the sandbox commit's dates. With the tree and the identity already fixed, this
+ *  is what makes its commit id the same on every run — and an agent that runs `git log` puts that id
+ *  into its next request body, which a recorded fixture has to match. Changing it invalidates every
+ *  cassette holding the old id. */
+const SANDBOX_COMMIT_DATE = "2020-01-01T00:00:00Z";
+
 /** Git env that ignores the user's global/system config so signing hooks / identities can't break
- *  the sandbox commit. */
+ *  the sandbox commit, and dates it from the fixed point above. */
 const HERMETIC_GIT_ENV: NodeJS.ProcessEnv = {
   ...process.env,
   GIT_CONFIG_GLOBAL: "/dev/null",
   GIT_CONFIG_SYSTEM: "/dev/null",
   GIT_TERMINAL_PROMPT: "0",
+  GIT_AUTHOR_DATE: SANDBOX_COMMIT_DATE,
+  GIT_COMMITTER_DATE: SANDBOX_COMMIT_DATE,
 };
 
 /** Paireto settings seeded into the sandbox .vscode/settings.json. */

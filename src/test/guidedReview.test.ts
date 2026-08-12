@@ -114,7 +114,7 @@ suite("guided review — parseChangesets", () => {
   test("mints ids from submission order and keeps the agent's file order", () => {
     const parsed = parseChangesets([
       { title: "Auth", description: "login", files: [{ path: "z.ts" }, { path: "a.ts" }] },
-      { title: "UI", description: "", files: [{ path: "b.ts" }] },
+      { title: "UI", description: "buttons", files: [{ path: "b.ts" }] },
     ]);
     assert.deepStrictEqual(
       parsed?.map((c) => c.id),
@@ -142,6 +142,18 @@ suite("guided review — parseChangesets", () => {
     const rejected: Array<[unknown, string]> = [
       [[{ title: "   ", description: "d", files: [{ path: "a.ts" }] }], "changesets[0].title"],
       [[{ title: "Empty", description: "d", files: [] }], "changesets[0].files"],
+      // The description IS the guided review — a changeset without one groups files and explains
+      // nothing, so the reviewer is left to work out why they belong together. Only `description`
+      // carries it: a model that puts the text under another name is told to move it.
+      [
+        [{ title: "Silent", description: "  ", files: [{ path: "a.ts" }] }],
+        "changesets[0].description",
+      ],
+      [[{ title: "Silent", files: [{ path: "a.ts" }] }], "changesets[0].description"],
+      [
+        [{ title: "Silent", summary: "under the wrong name", files: [{ path: "a.ts" }] }],
+        "changesets[0].description",
+      ],
       [[{ title: "Abs", description: "d", files: [{ path: "/abs.ts" }] }], "changesets[0].files[0]"],
       [[{ title: "Up", description: "d", files: [{ path: "../up.ts" }] }], "changesets[0].files[0]"],
       [["not an object"], "changesets[0]"],
@@ -716,11 +728,13 @@ suite("guided review — changeset description document", () => {
     assert.ok(doc.includes("1. `a.ts`"));
   });
 
+  // The boundary rejects a description-less plan, so this is the renderer's own last line of defence
+  // — built directly, because no payload can reach it through `parseChangesets`.
   test("a changeset with no description still renders", () => {
-    const bare = guidedFor(
-      [changed("a.ts", "unstaged")],
-      [{ title: "Bare", description: "", files: [{ path: "a.ts" }] }],
-    ).changesets[0];
+    const bare: GuidedChangesetState = {
+      ...changeset("Bare"),
+      description: "",
+    };
     assert.ok(renderChangesetDoc(bare).includes("no description"));
   });
 });
