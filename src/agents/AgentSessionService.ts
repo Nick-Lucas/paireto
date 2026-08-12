@@ -11,6 +11,7 @@ import { log } from "../log.js";
 import { AgentSession, type AgentSessionHost } from "./AgentSession.js";
 import { NotificationService } from "../notify/NotificationService.js";
 import { canonicalize } from "../protocol/paths.js";
+import type { Harness } from "../protocol/types.js";
 import type { AgentState } from "../types.js";
 
 // Pure helpers re-exported for tests and co-located callers.
@@ -172,6 +173,29 @@ export class AgentSessionService implements vscode.Disposable {
   /** All tracked sessions (most recently active first), for the Agents panel. */
   allSessions(): AgentSession[] {
     return [...this.sessions.values()].sort((a, b) => b.lastEventAt - a.lastEventAt);
+  }
+
+  /**
+   * The session with this id, registering it first when the extension has not seen it yet. A tool
+   * call can be the first thing an agent ever sends (its harness may hook no earlier event), and
+   * that agent is real and about to block on a gate — so it gets a real row, not a stand-in.
+   */
+  getSessionById(sessionId: string, repoRoot: string, harness: Harness): AgentSession {
+    const existing = this.sessions.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+    const session = new AgentSession(
+      sessionId,
+      repoRoot,
+      harness,
+      this.locator.strategyFor(harness).supportsLiveness,
+      this.host,
+      this.notifications,
+    );
+    this.sessions.set(sessionId, session);
+    this.changeEmitter.fire();
+    return session;
   }
 
   /** Open liveness connections per session (the MCP server holds one; ref-counted so a second

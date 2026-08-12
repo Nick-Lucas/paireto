@@ -30,19 +30,31 @@ import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
-import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewPath } from "./ReviewPath.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
 import { relocateReviewAnchor } from "./commentAnchors.js";
 import {
+  BulkTargetArg,
+  ChangesetIdArg,
+  CommentIdArg,
+  CommentReplyArg,
+  FileArg,
+  FilesArg,
+  GuidedRowArg,
+  withArg,
+} from "./commandArgs.js";
+import {
   ChangesetDocProvider,
   changesetDocUri,
   changesetIdFromDocUri,
+  PLAN_DOC_ID,
   renderChangesetDoc,
+  renderPlanDoc,
 } from "./ChangesetDocProvider.js";
 import {
   buildGuidedState,
+  GuidedPlanError,
   parseChangesets,
   toGuidedPlan,
   type GuidedChangesetState,
@@ -197,7 +209,7 @@ export class ReviewController implements vscode.Disposable {
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
       (doc) =>
         doc.uri.scheme === Schemes.review ||
-        doc.uri.scheme === Schemes.changeset ||
+        (doc.uri.scheme === Schemes.changeset && changesetIdFromDocUri(doc.uri) !== PLAN_DOC_ID) ||
         (doc.uri.scheme === "file" && this.isChangedFileDoc(doc.uri)),
     );
 
@@ -215,26 +227,34 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewPickCompareTo, () => this.changeCompareTo()),
       reg(Commands.reviewPickDiffCompareTo, () => this.changeActiveDiffCompareTo()),
       reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
-      reg(Commands.reviewOpenDiff, (a: unknown) => {
-        const f = asFile(a);
-        if (f) {
-          void this.openDiff(f);
-        }
-      }),
-      reg(Commands.reviewOpenFile, (a: unknown) => this.openFile(asFile(a))),
-      reg(Commands.reviewStage, (a: unknown) => this.stageFiles(filesFromArg(a))),
-      reg(Commands.reviewUnstage, (a: unknown) => this.unstageFiles(filesFromArg(a))),
-      reg(Commands.reviewDiscard, (a: unknown) => this.discardFiles(filesFromArg(a))),
-      reg(Commands.guidedOpenFile, (a: unknown) => this.guidedOpenFile(a)),
-      reg(Commands.guidedOpenChangeset, (a: unknown) => void this.guidedOpenChangeset(a)),
-      reg(Commands.reviewStageAll, (a: unknown) => this.stageAll(a)),
-      reg(Commands.reviewUnstageAll, (a: unknown) => this.unstageAll(a)),
-      reg(Commands.reviewDiscardAll, (a: unknown) => this.discardAll(a)),
-      reg(Commands.reviewAddQuestion, (r: vscode.CommentReply) => this.addComment(r, "question")),
-      reg(Commands.reviewAddComment, (r: vscode.CommentReply) => this.addComment(r, "comment")),
-      reg(Commands.reviewAddProblem, (r: vscode.CommentReply) => this.addComment(r, "problem")),
-      reg(Commands.reviewRevealComment, (c: ReviewComment) => this.revealComment(c)),
-      reg(Commands.reviewDeleteComment, (c: ReviewComment) => this.deleteComment(c)),
+      reg(Commands.reviewOpenDiff, withArg(FileArg, (file) => this.openDiff(file))),
+      reg(Commands.reviewOpenFile, withArg(FileArg, (file) => this.openFile(file))),
+      reg(Commands.reviewStage, withArg(FilesArg, (files) => this.stageFiles(files))),
+      reg(Commands.reviewUnstage, withArg(FilesArg, (files) => this.unstageFiles(files))),
+      reg(Commands.reviewDiscard, withArg(FilesArg, (files) => this.discardFiles(files))),
+      reg(Commands.guidedReviewOpenFile, withArg(GuidedRowArg, (row) => this.openPlannedFile(row))),
+      reg(
+        Commands.guidedReviewOpenChangeset,
+        withArg(ChangesetIdArg, (id) => this.guidedReviewOpenChangeset(id)),
+      ),
+      reg(Commands.guidedReviewOpenPlan, () => void this.guidedReviewOpenPlan()),
+      reg(Commands.reviewStageAll, withArg(BulkTargetArg, (target) => this.stageAll(target))),
+      reg(Commands.reviewUnstageAll, withArg(BulkTargetArg, (target) => this.unstageAll(target))),
+      reg(Commands.reviewDiscardAll, withArg(BulkTargetArg, (target) => this.discardAll(target))),
+      reg(
+        Commands.reviewAddQuestion,
+        withArg(CommentReplyArg, (reply) => this.addComment(reply, "question")),
+      ),
+      reg(
+        Commands.reviewAddComment,
+        withArg(CommentReplyArg, (reply) => this.addComment(reply, "comment")),
+      ),
+      reg(
+        Commands.reviewAddProblem,
+        withArg(CommentReplyArg, (reply) => this.addComment(reply, "problem")),
+      ),
+      reg(Commands.reviewRevealComment, withArg(CommentIdArg, (id) => this.revealComment(id))),
+      reg(Commands.reviewDeleteComment, withArg(CommentIdArg, (id) => this.deleteComment(id))),
       // Editing an editable staged/committed diff routes the change to the working tree. Track that
       // location immediately, but keep the tab's comparison point pinned.
       vscode.workspace.onDidChangeTextDocument((e) => this.maybeMarkAsUnstaged(e.document.uri)),
@@ -299,16 +319,25 @@ export class ReviewController implements vscode.Disposable {
       void vscode.window.showWarningMessage("Paireto guided review requires a Git repository.");
       return { status: "cancelled", feedback: "" };
     }
-    // The plan is model output. An unusable one fails open — no gate, and the tool tells the agent.
-    const changesets = parseChangesets(submitted.changesets);
-    if (!changesets) {
-      log.info(`guided review rejected for agent ${who}: no usable changesets in the plan`);
-      return { status: "cancelled", feedback: "" };
+    // The plan is model output. A plan we cannot render goes back to the agent as feedback saying
+    // exactly what was wrong, so it fixes the payload and submits again — no gate opens meanwhile.
+    let guidedPlan: GuidedPlan;
+    try {
+      guidedPlan = toGuidedPlan(repoRoot, parseChangesets(submitted.changesets), submitted);
+    } catch (error) {
+      if (!(error instanceof GuidedPlanError)) {
+        throw error;
+      }
+      log.error(`guided review rejected for agent ${who}: ${error.message}`);
+      return {
+        status: "submitted",
+        feedback: `Your review plan was rejected — ${error.message}. Fix it and submit again.`,
+      };
     }
+    const changesets = guidedPlan.changesets;
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
-    const guidedPlan = toGuidedPlan(repoRoot, changesets, submitted);
     this.guidedPlan = guidedPlan;
     await this.setGuidedContext(true);
     // Align the window to what the agent actually diffed against. Otherwise the two disagree and
@@ -516,7 +545,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** Drives whether the sidebar shows the Review Plan in place of the raw Changed Files list. */
   private async setGuidedContext(active: boolean): Promise<void> {
-    await vscode.commands.executeCommand("setContext", ContextKeys.guidedActive, active);
+    await vscode.commands.executeCommand("setContext", ContextKeys.guidedReviewDiffActive, active);
   }
 
   private async setReviewContext(foreground: boolean): Promise<void> {
@@ -612,7 +641,7 @@ export class ReviewController implements vscode.Disposable {
         }
         for (const entry of this.comments.values()) {
           if (entry.model.repoRoot === root) {
-            this.deleteComment(entry.model);
+            this.deleteComment(entry.model.id);
           }
         }
         changed = true;
@@ -822,41 +851,43 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  private async stageAll(arg: unknown): Promise<void> {
-    const changeset = this.guidedChangeset(arg);
+  private async stageAll(target: BulkTargetArg): Promise<void> {
+    const changeset = this.guidedChangeset(target.changesetId);
     if (changeset) {
       await this.stageFiles(filesInGroup(changeset, "unstaged"));
       return;
     }
-    const repo = await this.repositoryFromArgOrPick(arg);
+    const repo = await this.repositoryOrPick(target.repoRoot);
     if (repo) {
       await this.stageFiles(repo.changes.unstaged);
     }
   }
 
-  private async unstageAll(arg: unknown): Promise<void> {
-    const changeset = this.guidedChangeset(arg);
+  private async unstageAll(target: BulkTargetArg): Promise<void> {
+    const changeset = this.guidedChangeset(target.changesetId);
     if (changeset) {
       await this.unstageFiles(filesInGroup(changeset, "staged"));
       return;
     }
-    const repo = await this.repositoryFromArgOrPick(arg);
+    const repo = await this.repositoryOrPick(target.repoRoot);
     if (repo) {
       await this.unstageFiles(repo.changes.staged);
     }
   }
 
-  private async discardAll(arg: unknown): Promise<void> {
-    const repo = await this.repositoryFromArgOrPick(arg);
+  private async discardAll(target: BulkTargetArg): Promise<void> {
+    const repo = await this.repositoryOrPick(target.repoRoot);
     if (repo) {
       await this.discardFiles(repo.changes.unstaged);
     }
   }
 
-  private async repositoryFromArgOrPick(arg: unknown): Promise<RepositoryReviewState | undefined> {
-    const root = repoRootFromArg(arg);
-    if (root) {
-      return this.repositoryStates.get(root);
+  /** The repository a command names, or the one the user picks when it names none. */
+  private async repositoryOrPick(
+    repoRoot: string | undefined,
+  ): Promise<RepositoryReviewState | undefined> {
+    if (repoRoot) {
+      return this.repositoryStates.get(repoRoot);
     }
     const repositories = this.getState().repositories;
     if (repositories.length <= 1) {
@@ -1413,11 +1444,12 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /** Reveal a feedback row's line in its diff and expand the comment thread. */
-  private async revealComment(c: ReviewComment): Promise<void> {
-    const entry = this.comments.get(c.id);
+  private async revealComment(id: string): Promise<void> {
+    const entry = this.comments.get(id);
     if (!entry?.comment.thread) {
       return;
     }
+    const c = entry.model;
 
     await this.refresh("reveal-comment");
     const changes = this.changesFor(c.repoRoot);
@@ -1542,8 +1574,8 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /** Delete a comment from the Feedback tree row (its in-diff thread also drops it). */
-  private deleteComment(c: ReviewComment): void {
-    const entry = this.comments.get(c.id);
+  private deleteComment(id: string): void {
+    const entry = this.comments.get(id);
     if (!entry) {
       return;
     }
@@ -1555,54 +1587,56 @@ export class ReviewController implements vscode.Disposable {
         this.commentSession.forget(thread);
       }
     }
-    this.comments.delete(c.id);
+    this.comments.delete(id);
     this.changeEmitter.fire();
   }
 
   // ── Guided review ───────────────────────────────────────────────────────────
-  /** The live row a guided command was invoked on, from a tree node or a `{changesetId, path}`. */
-  private guidedRow(arg: unknown): GuidedFileRow | undefined {
-    if (!arg || typeof arg !== "object") {
-      return undefined;
-    }
-    const source = "row" in arg ? (arg as { row: unknown }).row : arg;
-    if (!source || typeof source !== "object") {
-      return undefined;
-    }
-    const { changesetId, path } = source as { changesetId?: unknown; path?: unknown };
-    if (typeof changesetId !== "string" || typeof path !== "string") {
-      return undefined;
-    }
+  /** The live row a guided command names, looked up in the plan as it stands now. */
+  private guidedRow(named: GuidedRowArg): GuidedFileRow | undefined {
     return this.getState()
-      .guided?.changesets.find((c) => c.id === changesetId)
-      ?.files.find((row) => row.path === path);
+      .guided?.changesets.find((c) => c.id === named.changesetId)
+      ?.files.find((row) => row.path === named.path);
   }
 
-  private guidedOpenFile(arg: unknown): void {
-    const row = this.guidedRow(arg);
-    if (row?.file) {
-      void this.openDiff(row.file);
+  private openPlannedFile(named: GuidedRowArg): void {
+    const file = this.guidedRow(named)?.file;
+    if (file) {
+      void this.openDiff(file);
     }
     // A path with no live change has nothing to open — the row already says so.
   }
 
-  /** The changeset a command argument names, resolved against the live plan. */
-  private guidedChangeset(arg: unknown): GuidedChangesetState | undefined {
-    const id = changesetIdFromArg(arg);
-    return id === undefined
-      ? undefined
-      : this.getState().guided?.changesets.find((c) => c.id === id);
+  /** The changeset an id names, resolved against the live plan. */
+  private guidedChangeset(id: string | undefined): GuidedChangesetState | undefined {
+    return id === undefined ? undefined : this.getState().guided?.changesets.find((c) => c.id === id);
   }
 
   /** Open a changeset's description as a read-only markdown tab, so the reviewer can read what the
    *  group is for and comment on the grouping itself rather than on a line of code. */
-  private async guidedOpenChangeset(arg: unknown): Promise<void> {
-    const changeset = this.guidedChangeset(arg);
+  private async guidedReviewOpenChangeset(id: string): Promise<void> {
+    const changeset = this.guidedChangeset(id);
     if (!changeset) {
       return;
     }
-    const uri = changesetDocUri(changeset);
-    this.changesetDocs.set(uri, renderChangesetDoc(changeset));
+    await this.showGuidedDoc(changesetDocUri(changeset), renderChangesetDoc(changeset));
+  }
+
+  /** Open the plan's overview, so the agent's summary of the branch can be read in full rather than
+   *  only as the section row's tooltip. */
+  private async guidedReviewOpenPlan(): Promise<void> {
+    const guided = this.getState().guided;
+    if (!guided) {
+      return;
+    }
+    await this.showGuidedDoc(
+      changesetDocUri({ id: PLAN_DOC_ID, title: "Review plan" }),
+      renderPlanDoc(guided),
+    );
+  }
+
+  private async showGuidedDoc(uri: vscode.Uri, markdown: string): Promise<void> {
+    this.changesetDocs.set(uri, markdown);
     const doc = await vscode.workspace.openTextDocument(uri);
     await vscode.languages.setTextDocumentLanguage(doc, "markdown");
     await vscode.window.showTextDocument(doc, { preview: true });
@@ -1690,66 +1724,9 @@ export class ReviewController implements vscode.Disposable {
   }
 }
 
-/** Unwrap a command argument (a MainTree file node, or a root-qualified ChangedFile). VS Code hands
- *  an inline `view/item/context` button the tree NODE, so every node shape that carries a changed
- *  file must be understood here — a shape it misses makes the button silently do nothing. */
-export function asFile(arg: unknown): RepoChangedFile | undefined {
-  if (!arg || typeof arg !== "object") {
-    return undefined;
-  }
-  if ("path" in arg && "group" in arg && "repoRoot" in arg) {
-    return arg as RepoChangedFile;
-  }
-  if ("file" in arg) {
-    return (arg as { file: RepoChangedFile }).file;
-  }
-  // A Review Plan row nests its changed file one level down; a planned path with no live change
-  // resolves to nothing, which is correct — there is nothing to stage.
-  if ("row" in arg) {
-    return asFile((arg as { row: unknown }).row);
-  }
-  return undefined;
-}
-
-/**
- * Collect every ChangedFile a git action should apply to. Handles a single file row, a folder row
- * (all descendant files, matching the native git panel), and a raw ChangedFile from a caller.
- */
-function filesFromArg(arg: unknown): RepoChangedFile[] {
-  if (!arg || typeof arg !== "object") {
-    return [];
-  }
-  const o = arg as { kind?: string; entry?: TreeEntry };
-  if (o.kind === "folder" && o.entry) {
-    return filesInEntry(o.entry) as RepoChangedFile[];
-  }
-  const f = asFile(arg);
-  return f ? [f] : [];
-}
-
 /** A changeset's live files sitting in one git layer — what its bulk Stage/Unstage acts on. */
 function filesInGroup(changeset: GuidedChangesetState, group: FileGroup): RepoChangedFile[] {
   return changeset.files.flatMap((row) => (row.file?.group === group ? [row.file] : []));
-}
-
-/** The changeset a command argument names — a `changeset` tree node or a plain `{changesetId}`. */
-export function changesetIdFromArg(arg: unknown): string | undefined {
-  if (!arg || typeof arg !== "object") {
-    return undefined;
-  }
-  const o = arg as { kind?: unknown; changeset?: { id?: unknown }; changesetId?: unknown };
-  if (o.kind === "changeset" && typeof o.changeset?.id === "string") {
-    return o.changeset.id;
-  }
-  return typeof o.changesetId === "string" ? o.changesetId : undefined;
-}
-
-function repoRootFromArg(arg: unknown): string | undefined {
-  if (!arg || typeof arg !== "object") {
-    return undefined;
-  }
-  const root = (arg as { repoRoot?: unknown }).repoRoot;
-  return typeof root === "string" ? root : asFile(arg)?.repoRoot;
 }
 
 function filesByRoot(files: RepoChangedFile[]): Map<string, RepoChangedFile[]> {

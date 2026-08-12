@@ -29,8 +29,9 @@ import type {
 } from "../review/guidedPlan.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import type { AgentSession } from "../agents/AgentSession.js";
-import type { AgentState, CompareToKind, FileGroup } from "../types.js";
+import type { AgentState, FileGroup } from "../types.js";
 import { repoKey } from "../protocol/paths.js";
+import { describeCompareTo } from "../protocol/guidedReview.js";
 import { buildFileTree, type TreeEntry } from "./fileTree.js";
 
 // Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
@@ -62,7 +63,14 @@ function statusIcon(
 type SectionId = "agents" | "plan" | "changesets" | "files" | "feedback";
 
 type Node =
-  | { kind: "section"; id: SectionId; label: string; description?: string; tooltip?: string }
+  | {
+      kind: "section";
+      id: SectionId;
+      label: string;
+      description?: string;
+      tooltip?: string;
+      command?: vscode.Command;
+    }
   | { kind: "changeset"; repoRoot: string; changeset: GuidedChangesetState }
   | { kind: "changesetFile"; repoRoot: string; row: GuidedFileRow }
   | { kind: "repository"; repository: RepositoryReviewState }
@@ -356,6 +364,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         item.contextValue = `section:${node.id}`;
         item.description = node.description;
         item.tooltip = node.tooltip;
+        item.command = node.command;
         return item;
       }
       case "changeset":
@@ -463,6 +472,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         label: "Review Plan",
         description: guidedDescription(guided),
         tooltip: guidedTooltip(guided),
+        // The agent's summary is a paragraph about the whole branch; the row can only hold a
+        // tooltip, so clicking it opens the summary as a document, like a changeset description.
+        command: { command: Commands.guidedReviewOpenPlan, title: "Open Review Plan" },
       });
     } else {
       out.push({
@@ -770,15 +782,8 @@ export function changesetContextValue(changeset: GuidedChangesetState): string {
   return changeset.unstageableCount ? "changeset:unstage" : "changeset";
 }
 
-const COMPARE_TO_LABEL: Record<CompareToKind, string> = {
-  head: "HEAD",
-  mergeBase: "the merge base",
-  default: "the default branch",
-  ref: "a named ref",
-};
-
 function guidedTooltip(guided: GuidedReviewState): string | undefined {
-  const against = guided.compareTo.ref ?? COMPARE_TO_LABEL[guided.compareTo.kind];
+  const against = describeCompareTo(guided.compareTo);
   const lines = [guided.summary, `Compared against ${against}`];
   return lines.filter(Boolean).join("\n\n") || undefined;
 }
@@ -793,7 +798,7 @@ export function changesetItem(repoRoot: string, changeset: GuidedChangesetState)
     `**${changeset.title}**\n\n${changeset.description || "_No description._"}`,
   );
   item.command = {
-    command: Commands.guidedOpenChangeset,
+    command: Commands.guidedReviewOpenChangeset,
     title: "Open Changeset",
     arguments: [{ changesetId: changeset.id }],
   };
@@ -829,10 +834,9 @@ export function changesetFileItem(
           new vscode.ThemeColor(GROUP_ICON.committed.color),
         )
       : statusIcon(extensionUri, row.file.status, row.file.group === "staged");
-  const note = row.note ? `\n${row.note}` : "";
-  item.tooltip = `${item.tooltip}\n${GROUP_LABELS[row.file.group]}${note}`;
+  item.tooltip = `${item.tooltip}\n${GROUP_LABELS[row.file.group]}`;
   item.command = {
-    command: Commands.guidedOpenFile,
+    command: Commands.guidedReviewOpenFile,
     title: "Open Diff",
     arguments: [{ changesetId: row.changesetId, path: row.path }],
   };

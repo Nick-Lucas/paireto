@@ -161,13 +161,13 @@ E2E_DRIVERS.forEach((harness) => {
 
     test("a changeset opens its description and its files", async () => {
       const first = plan.changesets[0];
-      await vscode.commands.executeCommand("paireto.guided.openChangeset", {
+      await vscode.commands.executeCommand("paireto.guidedReview.openChangeset", {
         changesetId: first.id,
       });
       await wait("the changeset description tab to open", () =>
         Promise.resolve(tabsOnScheme("paireto-changeset").length > 0),
       );
-      await vscode.commands.executeCommand("paireto.guided.openFile", {
+      await vscode.commands.executeCommand("paireto.guidedReview.openFile", {
         changesetId: first.id,
         path: first.files[0].path,
       });

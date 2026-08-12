@@ -26,16 +26,10 @@ export function renderReviewFeedback(comments: ReviewComment[], multiRepository 
     })
     .join("\n\n");
 
-  // Only describe a kind of item the list actually contains — a review with no changeset comments
-  // reads exactly as it always has.
-  const changesetNote = actionable.some((c) => c.changeset)
-    ? '\nA "Changeset" item is feedback on how you grouped the changes, not on one line of code.'
-    : "";
-
   return dedent`
     Code review feedback received from the user:
 
-    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.${changesetNote}
+    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
 
     ${items}
   `;

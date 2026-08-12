@@ -227,12 +227,16 @@
         "icon": "$(eye-closed)"
       },
       {
-        "command": "paireto.guided.openFile",
+        "command": "paireto.guidedReview.openFile",
         "title": "Open Changes"
       },
       {
-        "command": "paireto.guided.openChangeset",
+        "command": "paireto.guidedReview.openChangeset",
         "title": "Open Changeset"
+      },
+      {
+        "command": "paireto.guidedReview.openPlan",
+        "title": "Open Review Plan"
       }
     ],
     "viewsContainers": {
@@ -367,11 +371,15 @@
           "when": "false"
         },
         {
-          "command": "paireto.guided.openFile",
+          "command": "paireto.guidedReview.openFile",
           "when": "false"
         },
         {
-          "command": "paireto.guided.openChangeset",
+          "command": "paireto.guidedReview.openChangeset",
+          "when": "false"
+        },
+        {
+          "command": "paireto.guidedReview.openPlan",
           "when": "false"
         }
       ],

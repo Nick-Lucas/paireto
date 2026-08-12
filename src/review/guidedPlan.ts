@@ -6,7 +6,11 @@
 // plan against the live Changes model. The plan holds only paths, never `ChangedFile` snapshots,
 // because the model behind those is rebuilt wholesale on every refresh.
 
-import type { CompareTo, CompareToKind, FileGroup } from "../types.js";
+import { z } from "zod";
+import { prettifyError } from "zod/v4";
+
+import { CompareTo, GuidedChangeset, GuidedChangesetFile } from "../protocol/guidedReview.js";
+import type { FileGroup } from "../types.js";
 import type { RepoChangedFile, RepositoryReviewState } from "./ReviewController.js";
 
 /** Bounds on the agent-authored payload. The plan travels as ONE NDJSON line over the socket and one
@@ -15,20 +19,12 @@ const MAX_CHANGESETS = 40;
 const MAX_FILES_PER_CHANGESET = 200;
 const MAX_TITLE = 200;
 const MAX_DESCRIPTION = 4000;
-const MAX_NOTE = 300;
 
-/** A sanitized changeset. `id` is minted from submission order so the tree and the git actions can
- *  refer to one changeset without carrying its (agent-authored, non-unique) title around. */
-export interface ParsedChangeset {
+/** A sanitized changeset: the wire payload plus an `id` minted from submission order, so the tree and
+ *  the git actions can refer to one changeset without carrying its (agent-authored, non-unique)
+ *  title around. */
+export interface ParsedChangeset extends GuidedChangeset {
   id: string;
-  title: string;
-  description: string;
-  files: ParsedChangesetFile[];
-}
-
-export interface ParsedChangesetFile {
-  path: string;
-  note?: string;
 }
 
 /** The sanitized plan, held by ReviewController for the lifetime of one guided review. */
@@ -45,7 +41,6 @@ export interface GuidedPlan {
 export interface GuidedFileRow {
   changesetId: string;
   path: string;
-  note?: string;
   file?: RepoChangedFile;
 }
 
@@ -79,70 +74,85 @@ export const OTHER_CHANGESET_ID = "__other";
 const OTHER_TITLE = "Other changes";
 const OTHER_DESCRIPTION = "Changed files the review plan did not name.";
 
+/** A payload the agent has to fix. Its message is handed straight back as the tool's result. */
+export class GuidedPlanError extends Error {}
+
 /**
- * Sanitize the agent-authored wire payload into a plan we are willing to render, or `undefined` when
- * nothing usable survives (the caller then fails open — no gate, benign tool result). The payload is
- * model output, so nothing in it is trusted: paths are normalized and confined to the repository,
- * text is trimmed and capped, and malformed entries are dropped rather than rejected wholesale.
+ * Sanitize the agent-authored wire payload into a plan we are willing to render. The payload is
+ * model output, so nothing in it is trusted: text is trimmed and capped, and paths are normalized
+ * and confined to the repository. Anything that survives none of that throws — the agent is the one
+ * that can fix it, and a plan that quietly lost a changeset would be reviewed as if complete.
  */
-export function parseChangesets(raw: unknown): ParsedChangeset[] | undefined {
+export function parseChangesets(raw: unknown): ParsedChangeset[] {
   if (!Array.isArray(raw)) {
-    return undefined;
+    throw new GuidedPlanError("changesets — expected an array of changesets");
   }
-  const changesets: ParsedChangeset[] = [];
-  for (const entry of raw.slice(0, MAX_CHANGESETS)) {
-    const changeset = parseChangeset(entry, changesets.length);
-    if (changeset) {
-      changesets.push(changeset);
-    }
+  if (raw.length === 0) {
+    throw new GuidedPlanError("changesets — the plan named no changesets");
   }
-  return changesets.length > 0 ? changesets : undefined;
+  return raw
+    .slice(0, MAX_CHANGESETS)
+    .map((entry, index) => parseChangeset(entry, index, `changesets[${index}]`));
 }
 
-function parseChangeset(raw: unknown, index: number): ParsedChangeset | undefined {
-  if (!isRecord(raw)) {
-    return undefined;
+/**
+ * The advertised schema, loosened where a model's near-miss is still usable: a missing description
+ * or file list reads as empty rather than voiding the changeset, and a file may be a bare string —
+ * models reach for that shorthand. Each file is validated on its own below, so one malformed entry
+ * costs its own row instead of the whole changeset.
+ */
+const submittedChangesetSchema = z.object({
+  title: z.string(),
+  description: z.string().catch(""),
+  files: z.array(z.unknown()).catch([]),
+});
+
+const submittedFileSchema = z.preprocess(
+  (raw) => (typeof raw === "string" ? { path: raw } : raw),
+  GuidedChangesetFile,
+);
+
+function parseChangeset(raw: unknown, index: number, where: string): ParsedChangeset {
+  const submitted = submittedChangesetSchema.safeParse(raw);
+  if (!submitted.success) {
+    throw new GuidedPlanError(`${where} — ${prettifyError(submitted.error)}`);
   }
-  const title = cap(text(raw.title), MAX_TITLE);
+  const title = cap(submitted.data.title.trim(), MAX_TITLE);
   if (!title) {
-    return undefined;
+    throw new GuidedPlanError(`${where}.title — a changeset needs a title`);
   }
-  const files: ParsedChangesetFile[] = [];
+  const files: GuidedChangesetFile[] = [];
   const seen = new Set<string>();
-  const rawFiles = Array.isArray(raw.files) ? raw.files : [];
-  for (const rawFile of rawFiles) {
-    if (files.length >= MAX_FILES_PER_CHANGESET) {
-      break;
-    }
-    const file = parseChangesetFile(rawFile);
-    if (file && !seen.has(file.path)) {
+  for (const [fileIndex, rawFile] of submitted.data.files.slice(0, MAX_FILES_PER_CHANGESET).entries()) {
+    const file = parseChangesetFile(rawFile, `${where}.files[${fileIndex}]`);
+    if (!seen.has(file.path)) {
       seen.add(file.path);
       files.push(file);
     }
   }
   if (files.length === 0) {
-    return undefined;
+    throw new GuidedPlanError(`${where}.files — a changeset needs at least one file`);
   }
   return {
     id: `cs${index}`,
     title,
-    description: cap(text(raw.description), MAX_DESCRIPTION),
+    description: cap(submitted.data.description.trim(), MAX_DESCRIPTION),
     files,
   };
 }
 
-function parseChangesetFile(raw: unknown): ParsedChangesetFile | undefined {
-  // A bare string is accepted alongside the documented object form — models reach for the shorthand.
-  const source = typeof raw === "string" ? { path: raw } : raw;
-  if (!isRecord(source)) {
-    return undefined;
+function parseChangesetFile(raw: unknown, where: string): GuidedChangesetFile {
+  const submitted = submittedFileSchema.safeParse(raw);
+  if (!submitted.success) {
+    throw new GuidedPlanError(`${where} — ${prettifyError(submitted.error)}`);
   }
-  const path = normalizePath(text(source.path));
+  const path = normalizePath(submitted.data.path);
   if (!path) {
-    return undefined;
+    throw new GuidedPlanError(
+      `${where} — "${submitted.data.path}" is not a path inside the repository`,
+    );
   }
-  const note = cap(text(source.note), MAX_NOTE);
-  return note ? { path, note } : { path };
+  return { path };
 }
 
 /**
@@ -224,14 +234,13 @@ function resolveChangeset(
   id: string,
   title: string,
   description: string,
-  files: ParsedChangesetFile[],
+  files: GuidedChangesetFile[],
   resolve: (path: string) => RepoChangedFile | undefined,
 ): GuidedChangesetState {
   const rows = files.map(
     (planned): GuidedFileRow => ({
       changesetId: id,
       path: planned.path,
-      note: planned.note,
       file: resolve(planned.path),
     }),
   );
@@ -271,10 +280,6 @@ function liveFiles(repository: RepositoryReviewState): RepoChangedFile[] {
   return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function text(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -296,24 +301,26 @@ export function toGuidedPlan(
   };
 }
 
-const COMPARE_TO_KINDS: CompareToKind[] = ["head", "mergeBase", "default", "ref"];
-
 /**
- * Read the agent's declared comparison point, falling back to HEAD. Agent output, so an unknown kind
- * or a `ref` kind with no ref degrades to HEAD rather than being trusted — HEAD shows the working
- * state, which is never wrong, only narrower than the agent may have meant.
+ * Read the agent's declared comparison point. Omitting it means HEAD; declaring a bad one is an
+ * error the agent has to fix — silently comparing against something it did not choose would show it
+ * a review of changes it never grouped.
  */
 export function parseCompareTo(raw: unknown): CompareTo {
-  if (!isRecord(raw)) {
+  if (raw === undefined) {
     return { kind: "head" };
   }
-  const kind = COMPARE_TO_KINDS.find((candidate) => candidate === raw.kind);
-  if (!kind) {
-    return { kind: "head" };
+  const submitted = CompareTo.safeParse(raw);
+  if (!submitted.success) {
+    throw new GuidedPlanError(`compareTo — ${prettifyError(submitted.error)}`);
   }
+  const { kind, ref } = submitted.data;
   if (kind !== "ref") {
     return { kind };
   }
-  const ref = cap(text(raw.ref), MAX_TITLE);
-  return ref ? { kind, ref } : { kind: "head" };
+  const named = cap((ref ?? "").trim(), MAX_TITLE);
+  if (!named) {
+    throw new GuidedPlanError("compareTo — kind 'ref' needs the ref to compare against");
+  }
+  return { kind, ref: named };
 }

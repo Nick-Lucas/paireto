@@ -3,14 +3,9 @@
 /** Which group a changed file belongs to in the Changes view. */
 export type FileGroup = "staged" | "unstaged" | "committed";
 
-/** The "Compare To" point that defines the Committed group. */
-export type CompareToKind = "head" | "mergeBase" | "default" | "ref";
-
-export interface CompareTo {
-  kind: CompareToKind;
-  /** For kind === "ref": the chosen branch/ref. */
-  ref?: string;
-}
+// Compare To lives on the wire protocol: an agent names its comparison point in the guided-review
+// payload, so both sides have to mean the same thing by it.
+export type { CompareTo, CompareToKind } from "./protocol/types.js";
 
 /** How the Changed Files list is laid out. */
 export type FileLayout = "tree" | "flat";

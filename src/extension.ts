@@ -235,10 +235,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           once: true,
         });
       }
-      // The request comes from a tool, so it carries no harness tag — name the agent from its own
-      // session row when we found one.
-      const session = agents.allSessions().find((s) => s.sessionId === sessionId);
-      const displayName = session ? locator.strategyFor(session.harness).displayName : "The agent";
+      // The tool call may be the first thing this agent ever sent, so register the session rather
+      // than naming it from a row that might not exist yet.
+      const session = sessionId
+        ? agents.getSessionById(sessionId, msg.repoRoot, msg.harness)
+        : undefined;
+      const displayName = locator.strategyFor(session?.harness ?? msg.harness).displayName;
       return reviewController.startGuidedSession(
         msg.id,
         sessionId,

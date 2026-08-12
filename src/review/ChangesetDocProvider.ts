@@ -9,7 +9,12 @@
 import * as vscode from "vscode";
 
 import { Schemes } from "../config.js";
-import type { GuidedChangesetState } from "./guidedPlan.js";
+import { describeCompareTo } from "../protocol/guidedReview.js";
+import type { GuidedChangesetState, GuidedReviewState } from "./guidedPlan.js";
+
+/** The plan's own overview document, keyed like a changeset so one provider serves both. No changeset
+ *  can collide with it: agent-authored ids are minted as `cs<n>`. */
+export const PLAN_DOC_ID = "__plan";
 
 /** The visible tab name is the changeset title; the id rides in the query so two changesets that
  *  happen to share a title still get distinct URIs (mirrors how the plan document is keyed). */
@@ -37,10 +42,25 @@ export function renderChangesetDoc(changeset: GuidedChangesetState): string {
   lines.push("## Files, in reading order", "");
   for (const [index, row] of changeset.files.entries()) {
     const state = row.file ? `\`${row.file.group}\`` : "_no longer in the changes_";
-    const note = row.note ? ` — ${row.note}` : "";
-    lines.push(`${index + 1}. \`${row.path}\` · ${state}${note}`);
+    lines.push(`${index + 1}. \`${row.path}\` · ${state}`);
   }
   lines.push("", "---", "", "Comment on any line to give the agent feedback about this changeset.");
+  return lines.join("\n");
+}
+
+/** The plan's overview document: the agent's summary of the branch, plus what it compared against and
+ *  the changesets it made. The summary has nowhere else to be read in full — the section row can only
+ *  hold a tooltip. */
+export function renderPlanDoc(guided: GuidedReviewState): string {
+  const lines = ["# Review plan", ""];
+  lines.push(guided.summary || "_The agent gave no summary for this branch._", "");
+  lines.push(`Compared against ${describeCompareTo(guided.compareTo)}.`, "");
+  lines.push("## Changesets", "");
+  for (const [index, changeset] of guided.changesets.entries()) {
+    const files = changeset.files.length === 1 ? "1 file" : `${changeset.files.length} files`;
+    lines.push(`${index + 1}. **${changeset.title}** · ${files}`);
+  }
+  lines.push("", "---", "", "Open a changeset to comment on how the agent grouped the work.");
   return lines.join("\n");
 }
 

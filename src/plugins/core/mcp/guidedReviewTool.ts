@@ -4,8 +4,8 @@
 // decides whether to call this from the description alone, and the e2e replay fixtures match on the
 // whole tool inventory — so treat the text and the schema as fixed rather than reworded freely.
 
-import { z } from "zod";
-
+import type { GuidedReviewArgs } from "../../../protocol/guidedReview.js";
+import type { Harness } from "../../../protocol/types.js";
 import { connect } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
 import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
@@ -13,47 +13,7 @@ import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
 export const GUIDED_REVIEW_TOOL_NAME = "paireto_start_guided_review";
 
 export const GUIDED_REVIEW_TOOL_DESCRIPTION =
-  "Hand a review plan to the human reviewer and wait for their verdict. Blocks until they " +
-  "approve or send feedback, then returns the feedback to act on.";
-
-/** The tool's arguments, as the shape the MCP SDK turns into the advertised JSON schema. */
-export const GUIDED_REVIEW_TOOL_INPUT_SCHEMA = {
-  summary: z.string().optional().describe("One paragraph on the branch."),
-  compareTo: z
-    .object({
-      kind: z
-        .enum(["head", "mergeBase", "default", "ref"])
-        .describe(
-          "head = uncommitted work; mergeBase = this branch since it forked; default = the " +
-            "default branch tip; ref = the named ref.",
-        ),
-      ref: z.string().optional().describe("For kind 'ref'."),
-    })
-    .optional()
-    .describe("What you diffed against. Must match what you reviewed."),
-  changesets: z
-    .array(
-      z.object({
-        title: z.string().describe("Names this group of changes."),
-        description: z.string().describe("What it does and why."),
-        files: z
-          .array(
-            z.object({
-              path: z.string().describe("Repository-relative."),
-              note: z.string().optional().describe("Why this file matters here."),
-            }),
-          )
-          .describe("In reading order."),
-      }),
-    )
-    .describe("Changed files grouped by intent."),
-} as const;
-
-export type GuidedReviewArgs = {
-  [K in keyof typeof GUIDED_REVIEW_TOOL_INPUT_SCHEMA]: z.infer<
-    (typeof GUIDED_REVIEW_TOOL_INPUT_SCHEMA)[K]
-  >;
-};
+  "Hand a review plan to the human reviewer and wait for feedback. Blocks until they respond.";
 
 const CONNECT_TIMEOUT_MS = 3000;
 
@@ -64,6 +24,7 @@ const CONNECT_TIMEOUT_MS = 3000;
  */
 export async function runGuidedReview(
   reviewTarget: ReviewTarget | undefined,
+  harness: Harness,
   args: GuidedReviewArgs,
   noTargetMessage: string = NO_WINDOW_MESSAGE,
 ): Promise<ToolResult> {
@@ -82,6 +43,7 @@ export async function runGuidedReview(
     t: "guided.review.await.request",
     cwd: reviewTarget.cwd,
     repoRoot: reviewTarget.target.repoRoot,
+    harness,
     sessionId: reviewTarget.sessionId,
     summary: args.summary,
     compareTo: args.compareTo,

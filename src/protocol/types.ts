@@ -170,20 +170,16 @@ export interface ReviewAwaitResponse extends Envelope {
   feedback: string;
 }
 
-/** One file in a changeset, in the order the reviewer should read it. */
-export interface GuidedChangesetFile {
-  /** Repository-relative, as the agent named it. Sanitized extension-side (`parseChangesets`). */
-  path: string;
-  /** One line on why this file matters in this changeset. */
-  note?: string;
-}
-
-/** One named group of changes the agent wants reviewed together. */
-export interface GuidedChangesetPayload {
-  title: string;
-  description: string;
-  files: GuidedChangesetFile[];
-}
+// The guided-review payload is defined in zod — see ./guidedReview.ts. Its types are re-exported
+// here (type only) because the wire messages below use them, and every reader of the protocol
+// expects to find the message's own field types in this file.
+import type { CompareTo, GuidedChangeset } from "./guidedReview.js";
+export type {
+  CompareTo,
+  CompareToKind,
+  GuidedChangeset,
+  GuidedChangesetFile,
+} from "./guidedReview.js";
 
 /**
  * Blocking guided-review session. Sent by the `paireto_start_guided_review` tool when the agent has
@@ -196,6 +192,9 @@ export interface GuidedReviewAwaitRequest extends Envelope {
   id: string;
   cwd: string;
   repoRoot: string;
+  /** Which harness sent this, so the extension can name (and, when new, register) its session row
+   *  without a hook event to read it off. */
+  harness: Harness;
   /** Owning agent session, best-effort (same fallback contract as {@link ReviewAwaitRequest}). */
   sessionId?: string;
   /** One-paragraph overview of the branch. Display only. */
@@ -206,8 +205,8 @@ export interface GuidedReviewAwaitRequest extends Envelope {
    * while the window compares against a merge base sees every intervening commit arrive as an
    * unclaimed change. `ref` applies to `kind: "ref"` only. Defaults to `head`.
    */
-  compareTo?: { kind: "head" | "mergeBase" | "default" | "ref"; ref?: string };
-  changesets: GuidedChangesetPayload[];
+  compareTo?: CompareTo;
+  changesets: GuidedChangeset[];
 }
 
 /** Extension's response to a {@link GuidedReviewAwaitRequest}; same `id`. */

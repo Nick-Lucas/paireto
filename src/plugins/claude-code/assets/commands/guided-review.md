@@ -6,30 +6,18 @@ Prepare a review plan so a human can review these changes, then hand it to Paire
 
 ## 1. Choose what to compare
 
-Use the comparison the user asked for. If they named none, use `mergeBase`, or `head` when the branch
-has no commits of its own. Review only what is inside that comparison.
-
-- `head` — uncommitted work (staged and working tree).
-- `mergeBase` — this branch since it forked from the default branch.
-- `default` — against the default branch tip.
-- `ref` — against a named ref; report the ref too.
+Use the comparison the user asks for. If they do not specify one then default to the merge base. Review only what is inside that comparison.
 
 ## 2. Read the changes
 
-`git diff --stat` for that comparison, then the diffs themselves. Do not judge a file by its name.
+`git diff --stat` for that comparison, then the diffs themselves. Do not judge a file by its name/directory only.
 
 ## 3. Group them
 
-Group the changed files by intent — one feature, fix, or refactor per changeset. Each changeset needs
-a title, a description of what it does and why, and its files in the order they should be read. Add a
-`note` to a file when its role is not obvious.
+Group the changed files into changesets representing logical threads or features to follow — one feature, fix, or refactor per changeset. Files should be included in the order they should be read, and one file may be included in multiple changesets.
 
 ## 4. Submit
 
-Call the `paireto_start_guided_review` tool once, with every changeset and the `compareTo` from step 1. It blocks until the reviewer
-responds.
+Call the `paireto_start_guided_review` tool once, with every changeset and the `compareTo` from step 1. It blocks until the reviewer responds.
 
-If it returns comments (`file:line`, a kind, the quoted line, and a note), address each one: fix a
-`PROBLEM`, answer a `QUESTION`, apply a `COMMENT` unless it does not make sense — then say why. A
-`Changeset` comment is about the grouping; regroup and submit again. If it returns approval,
-acknowledge and continue.
+If it returns comments then action them appropriately.

@@ -5,9 +5,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
 import { PLUGIN_VERSION } from "../../../protocol/types.js";
+import type { Harness } from "../../../protocol/types.js";
+import { GuidedReviewArgs } from "../../../protocol/guidedReview.js";
 import {
   GUIDED_REVIEW_TOOL_DESCRIPTION,
-  GUIDED_REVIEW_TOOL_INPUT_SCHEMA,
   GUIDED_REVIEW_TOOL_NAME,
   runGuidedReview,
 } from "./guidedReviewTool.js";
@@ -18,6 +19,8 @@ import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTo
 export interface McpHarnessAdapter {
   /** Reported as `serverInfo.name`. */
   readonly serverName: string;
+  /** Which harness this server runs inside, stamped on the tool calls that carry no hook event. */
+  readonly harness: Harness;
   /** Resolved fresh on every tool call; undefined means there is nothing to talk to. */
   resolveReviewTarget(): ReviewTarget | undefined;
   /** Shown when resolveReviewTarget returns undefined, when the harness can say something more
@@ -41,9 +44,15 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
     GUIDED_REVIEW_TOOL_NAME,
     {
       description: GUIDED_REVIEW_TOOL_DESCRIPTION,
-      inputSchema: GUIDED_REVIEW_TOOL_INPUT_SCHEMA,
+      inputSchema: GuidedReviewArgs.shape,
     },
-    (args) => runGuidedReview(adapter.resolveReviewTarget(), args, adapter.noTargetMessage),
+    (args) =>
+      runGuidedReview(
+        adapter.resolveReviewTarget(),
+        adapter.harness,
+        args,
+        adapter.noTargetMessage,
+      ),
   );
 
   return server;

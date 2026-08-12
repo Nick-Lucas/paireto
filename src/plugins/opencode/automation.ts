@@ -4,6 +4,8 @@
 
 import * as path from "node:path";
 
+import { z } from "zod";
+
 import { canonicalize } from "../../protocol/paths.js";
 import type { StopGateResponse } from "../../protocol/types.js";
 import { PLAN_ARG_DESCRIPTION, SUBMIT_PLAN_TOOL } from "./text.js";
@@ -13,7 +15,6 @@ import type {
   MessageEntry,
   MessageInfo,
   OpenCodeConfig,
-  ToolSchema,
 } from "./types.js";
 
 /** Dedup a raw `experimental.primary_tools` value into a clean string array (drops non-strings /
@@ -197,70 +198,10 @@ export function stopGateInjectionReason(
   return null;
 }
 
-/** Build the `args` (ZodRawShape) for the paireto_submit_plan tool from OpenCode's zod instance
- *  (`tool.schema`, resolved at runtime — this adapter imports only node builtins at top level).
- *  OpenCode types tool `args` as a RECORD OF ZOD SCHEMAS: a bare value (e.g. `""`) is NOT a valid
- *  entry — it throws during JSON-schema advertisement and arg validation, so the plan text would
- *  never reach VS Code. When the SDK zod is unavailable (i.e. not running under OpenCode — unit
- *  tests) fall back to an empty shape (fail-open; the tool advertises no args instead of crashing). */
-export function planToolArgs(schema: ToolSchema | undefined | null): Record<string, unknown> {
-  if (!schema || typeof schema.string !== "function") {
-    return {};
-  }
-  return { plan: schema.string().describe(PLAN_ARG_DESCRIPTION) };
-}
-
-/** The `args` (ZodRawShape) for the guided-review tool. Same SDK-zod contract and same fail-open
- *  fallback as {@link planToolArgs} — the shape must mirror the MCP harnesses' tool schema, since
- *  the extension parses one payload shape whichever harness sent it. */
-export function guidedPlanToolArgs(schema: ToolSchema | undefined | null): Record<string, unknown> {
-  // This shape needs more of zod than the plan tool does, and the SDK's own types only promise
-  // `string`. Check every builder up front so a leaner SDK advertises no args instead of crashing
-  // the plugin boot half way through building them.
-  const str = schema?.string;
-  const enumOf = schema?.enum;
-  const object = schema?.object;
-  const array = schema?.array;
-  if (!schema || !str || !enumOf || !object || !array) {
-    return {};
-  }
-  const text = (description: string) => str.call(schema).describe(description);
-  const optionalText = (description: string) => str.call(schema).optional().describe(description);
-
-  return {
-    summary: optionalText("One paragraph on the branch."),
-    compareTo: object
-      .call(schema, {
-        kind: enumOf
-          .call(schema, ["head", "mergeBase", "default", "ref"])
-          .describe(
-            "head = uncommitted work; mergeBase = this branch since it forked; default = the " +
-              "default branch tip; ref = the named ref.",
-          ),
-        ref: optionalText("For kind 'ref'."),
-      })
-      .optional()
-      .describe("What you diffed against. Must match what you reviewed."),
-    changesets: array
-      .call(
-        schema,
-        object.call(schema, {
-          title: text("Names this group of changes."),
-          description: text("What it does and why."),
-          files: array
-            .call(
-              schema,
-              object.call(schema, {
-                path: text("Repository-relative."),
-                note: optionalText("Why this file matters here."),
-              }),
-            )
-            .describe("In reading order."),
-        }),
-      )
-      .describe("Changed files grouped by intent."),
-  };
-}
+/** The plan tool's arguments, declared like the guided-review ones: a zod schema OpenCode advertises
+ *  as-is. */
+export const SubmitPlanArgs = z.object({ plan: z.string().describe(PLAN_ARG_DESCRIPTION) });
+export type SubmitPlanArgs = z.infer<typeof SubmitPlanArgs>;
 
 /** Git projects use OpenCode's worktree identity; non-Git projects report worktree "/" and use the
  * exact project directory that VS Code serves as a workspace-root socket. */

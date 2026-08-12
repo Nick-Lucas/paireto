@@ -11,17 +11,15 @@ import {
   agentModeFor,
   applyOpenCodeConfig,
   getLastUserAgentFromMessages,
-  guidedPlanToolArgs,
   isChildSession,
   isNewUserTurn,
   isTitleGeneratorPrompt,
   normalizePrimaryTools,
-  planToolArgs,
   resolveOpenCodeRoot,
   shouldInjectPlanningPrompt,
   stopGateInjectionReason,
 } from "../plugins/opencode/automation.js";
-import type { OpenCodeConfig, ToolSchema } from "../plugins/opencode/types.js";
+import type { OpenCodeConfig } from "../plugins/opencode/types.js";
 
 function permissionOf(config: OpenCodeConfig, agent: string): Record<string, unknown> {
   return (config.agent?.[agent]?.permission ?? {}) as Record<string, unknown>;
@@ -228,79 +226,6 @@ suite("OpenCode adapter automation helpers", () => {
       assert.strictEqual(isChildSession("parent", parentOf), false);
       assert.strictEqual(isChildSession(undefined, parentOf), false);
       assert.strictEqual(isChildSession("child", undefined), false);
-    });
-  });
-
-  suite("planToolArgs (submit_plan arg shape)", () => {
-    // OpenCode types tool `args` as a ZodRawShape (record of zod schemas). The plan arg MUST be a
-    // real schema, never a bare value (`""` throws during schema advertisement + arg validation), so
-    // it's built from the SDK's zod instance (`tool.schema`), modelled here by a minimal fake.
-    const fakeSchema = {
-      string: () => ({
-        kind: "zodString",
-        describe: (text: string) => ({ kind: "zodString", description: text }),
-      }),
-    } as unknown as ToolSchema;
-
-    test("builds { plan: <schema> } — a real schema, never a bare string", () => {
-      const plan = planToolArgs(fakeSchema).plan as { kind: string; description: string };
-      assert.notStrictEqual(typeof plan, "string", "the arg must not be a bare value");
-      assert.strictEqual(plan.kind, "zodString");
-      assert.strictEqual(typeof plan.description, "string");
-    });
-
-    test("fail-open: no SDK zod (not under OpenCode) → empty shape, no crash", () => {
-      assert.deepStrictEqual(planToolArgs(null), {});
-      assert.deepStrictEqual(planToolArgs(undefined), {});
-      assert.deepStrictEqual(planToolArgs({} as ToolSchema), {});
-    });
-  });
-
-  suite("guidedPlanToolArgs (submit_review_plan arg shape)", () => {
-    // Same ZodRawShape contract as planToolArgs, but nested: the changesets array carries objects
-    // holding a further array. The fake mirrors just enough of zod to prove nothing is a bare value.
-    // Chainable like zod: every builder returns a NEW node carrying what came before, so
-    // `.optional().describe(…)` keeps both marks.
-    interface FakeNode {
-      kind: string;
-      isOptional?: boolean;
-      values: string[];
-      shape: Record<string, FakeNode>;
-      item: FakeNode;
-    }
-    const node = (props: Record<string, unknown>): Record<string, unknown> => ({
-      ...props,
-      describe: (d: string) => node({ ...props, description: d }),
-      optional: () => node({ ...props, isOptional: true }),
-    });
-    const fakeSchema = {
-      string: () => node({ kind: "zodString" }),
-      object: (shape: unknown) => node({ kind: "zodObject", shape }),
-      array: (item: unknown) => node({ kind: "zodArray", item }),
-      enum: (values: unknown) => node({ kind: "zodEnum", values }),
-    } as unknown as ToolSchema;
-
-    test("builds real schemas for every arg, including the nested changesets array", () => {
-      const args = guidedPlanToolArgs(fakeSchema) as unknown as Record<string, FakeNode>;
-      assert.deepStrictEqual(Object.keys(args).sort(), ["changesets", "compareTo", "summary"]);
-      // The comparison point must be the window's own enum, not free text — a mismatch shows
-      // unrelated commits as unreviewed changes.
-      assert.deepStrictEqual(args.compareTo.shape.kind.values, [
-        "head",
-        "mergeBase",
-        "default",
-        "ref",
-      ]);
-      assert.strictEqual(args.summary.isOptional, true);
-      assert.strictEqual(args.changesets.kind, "zodArray");
-      assert.strictEqual(args.changesets.item.kind, "zodObject");
-      assert.strictEqual(args.changesets.item.shape.files.kind, "zodArray");
-      assert.strictEqual(args.changesets.item.shape.files.item.shape.path.kind, "zodString");
-    });
-
-    test("fail-open: no SDK zod → empty shape, no crash", () => {
-      assert.deepStrictEqual(guidedPlanToolArgs(null), {});
-      assert.deepStrictEqual(guidedPlanToolArgs({} as ToolSchema), {});
     });
   });
 });

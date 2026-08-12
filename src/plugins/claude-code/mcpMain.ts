@@ -13,6 +13,7 @@ import { claudeCwd, livenessSessionId, reviewSessionId } from "./session.js";
 
 const adapter: McpHarnessAdapter = {
   serverName: "paireto",
+  harness: "claudecode",
 
   resolveReviewTarget(): ReviewTarget | undefined {
     const cwd = claudeCwd();

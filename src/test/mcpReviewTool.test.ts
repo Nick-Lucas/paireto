@@ -37,6 +37,7 @@ suite("MCP paireto_review tool", () => {
   test("a call that omits arguments reaches the tool", async () => {
     const server = createMcpServer({
       serverName: "paireto-test",
+      harness: "claudecode" as const,
       resolveReviewTarget: () => undefined,
       startLiveness: () => () => {},
     });

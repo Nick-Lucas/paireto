@@ -4,14 +4,22 @@
 // covered without a git repository.
 
 import * as assert from "node:assert";
+import { execFileSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import * as vscode from "vscode";
+
+import { DiffService, type ChangesModel } from "../git/DiffService.js";
 
 import { GateCoordinator, type GateEntry, type GateKind } from "../gate/GateCoordinator.js";
 import {
   changesetDocUri,
   changesetIdFromDocUri,
+  PLAN_DOC_ID,
   renderChangesetDoc,
+  renderPlanDoc,
 } from "../review/ChangesetDocProvider.js";
 import {
   changesetFileItem,
@@ -29,10 +37,12 @@ import {
   toGuidedPlan,
   type GuidedChangesetState,
   type GuidedPlan,
+  type GuidedReviewState,
   type ParsedChangeset,
 } from "../review/guidedPlan.js";
 import type { RepoChangedFile, RepositoryReviewState } from "../review/ReviewController.js";
-import { asFile, changesetIdFromArg, selectCommentFile } from "../review/ReviewController.js";
+import { selectCommentFile } from "../review/ReviewController.js";
+import { ChangesetIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
 import type { FileGroup } from "../types.js";
 
 const REPO = "/repo";
@@ -63,6 +73,18 @@ function repository(files: RepoChangedFile[]): RepositoryReviewState {
   };
 }
 
+/** What ReviewController stores per repository: the same model, with every file root-qualified. */
+function scoped(repoRoot: string, changes: ChangesModel): RepositoryReviewState["changes"] {
+  const qualify = (files: ChangesModel["staged"]): RepoChangedFile[] =>
+    files.map((file) => ({ ...file, repoRoot }));
+  return {
+    ...changes,
+    staged: qualify(changes.staged),
+    unstaged: qualify(changes.unstaged),
+    committed: qualify(changes.committed),
+  };
+}
+
 /** The production resolver, so these tests exercise the same layer/rename preference the UI does. */
 const resolve = (repo: RepositoryReviewState, path: string): RepoChangedFile | undefined =>
   selectCommentFile(repo.changes, path) as RepoChangedFile | undefined;
@@ -73,14 +95,18 @@ function plan(changesets: ParsedChangeset[]): GuidedPlan {
 
 /** Resolve a raw agent payload against a synthetic repository, the way the sidebar does. */
 function guidedFor(files: RepoChangedFile[], raw: unknown): ReturnType<typeof buildGuidedState> {
-  return buildGuidedState(plan(parseChangesets(raw) ?? []), [repository(files)], resolve);
+  return buildGuidedState(plan(parseChangesets(raw)), [repository(files)], resolve);
+}
+
+function escapeRegExp(text: string): string {
+  return text.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 suite("guided review — parseChangesets", () => {
   test("mints ids from submission order and keeps the agent's file order", () => {
     const parsed = parseChangesets([
       { title: "Auth", description: "login", files: [{ path: "z.ts" }, { path: "a.ts" }] },
-      { title: "UI", description: "", files: [{ path: "b.ts", note: "why" }] },
+      { title: "UI", description: "", files: [{ path: "b.ts" }] },
     ]);
     assert.deepStrictEqual(
       parsed?.map((c) => c.id),
@@ -90,7 +116,6 @@ suite("guided review — parseChangesets", () => {
       parsed?.[0].files.map((f) => f.path),
       ["z.ts", "a.ts"],
     );
-    assert.strictEqual(parsed?.[1].files[0].note, "why");
   });
 
   test("accepts a bare string file entry alongside the object form", () => {
@@ -103,18 +128,19 @@ suite("guided review — parseChangesets", () => {
     );
   });
 
-  test("drops changesets with no title or no usable files", () => {
-    const parsed = parseChangesets([
-      { title: "   ", description: "d", files: [{ path: "a.ts" }] },
-      { title: "Kept", description: "d", files: [{ path: "a.ts" }] },
-      { title: "Empty", description: "d", files: [] },
-      { title: "AllBad", description: "d", files: [{ path: "/abs.ts" }, { path: "../up.ts" }] },
-      "not an object",
-    ]);
-    assert.deepStrictEqual(
-      parsed?.map((c) => c.title),
-      ["Kept"],
-    );
+  // A plan that quietly lost a changeset would be reviewed as if it were complete, so every one of
+  // these goes back to the agent naming the entry that was wrong.
+  test("rejects a changeset with no title, no files, or a path outside the repository", () => {
+    const rejected: Array<[unknown, string]> = [
+      [[{ title: "   ", description: "d", files: [{ path: "a.ts" }] }], "changesets[0].title"],
+      [[{ title: "Empty", description: "d", files: [] }], "changesets[0].files"],
+      [[{ title: "Abs", description: "d", files: [{ path: "/abs.ts" }] }], "changesets[0].files[0]"],
+      [[{ title: "Up", description: "d", files: [{ path: "../up.ts" }] }], "changesets[0].files[0]"],
+      [["not an object"], "changesets[0]"],
+    ];
+    for (const [payload, where] of rejected) {
+      assert.throws(() => parseChangesets(payload), new RegExp(escapeRegExp(where)), where);
+    }
   });
 
   test("dedupes paths within a changeset, keeping first-seen order", () => {
@@ -143,20 +169,18 @@ suite("guided review — parseChangesets", () => {
       {
         title: "x".repeat(500),
         description: "y".repeat(5000),
-        files: Array.from({ length: 250 }, (_, i) => ({ path: `f${i}.ts`, note: "n".repeat(400) })),
+        files: Array.from({ length: 250 }, (_, i) => ({ path: `f${i}.ts` })),
       },
     ]);
     assert.strictEqual(wide?.[0].title.length, 200);
     assert.strictEqual(wide?.[0].description.length, 4000);
     assert.strictEqual(wide?.[0].files.length, 200);
-    assert.strictEqual(wide?.[0].files[0].note?.length, 300);
   });
 
-  test("returns undefined for a payload with nothing usable", () => {
-    assert.strictEqual(parseChangesets(undefined), undefined);
-    assert.strictEqual(parseChangesets("nope"), undefined);
-    assert.strictEqual(parseChangesets([]), undefined);
-    assert.strictEqual(parseChangesets([{ title: "T", description: "d", files: [] }]), undefined);
+  test("rejects a payload that is not a non-empty list of changesets", () => {
+    for (const bad of [undefined, "nope", []]) {
+      assert.throws(() => parseChangesets(bad), /changesets/, JSON.stringify(bad) ?? "undefined");
+    }
   });
 });
 
@@ -171,16 +195,10 @@ suite("guided review — parseCompareTo", () => {
     });
   });
 
-  test("falls back to HEAD for anything it cannot trust", () => {
-    // HEAD shows the working state, which is never wrong — only narrower than the agent may have meant.
-    for (const bad of [
-      undefined,
-      "head",
-      { kind: "branch" },
-      { kind: "ref" },
-      { kind: "ref", ref: "  " },
-    ]) {
-      assert.deepStrictEqual(parseCompareTo(bad), { kind: "head" }, JSON.stringify(bad));
+  test("an omitted comparison means HEAD; a bad one is the agent's to fix", () => {
+    assert.deepStrictEqual(parseCompareTo(undefined), { kind: "head" });
+    for (const bad of ["head", { kind: "branch" }, { kind: "ref" }, { kind: "ref", ref: "  " }]) {
+      assert.throws(() => parseCompareTo(bad), /compareTo/, JSON.stringify(bad));
     }
   });
 
@@ -210,7 +228,7 @@ suite("guided review — buildGuidedState", () => {
     const parsed = parseChangesets([
       { title: "One", description: "d", files: [{ path: "a.ts" }, { path: "b.ts" }] },
     ]);
-    const state = buildGuidedState(plan(parsed ?? []), [repository(files)], resolve);
+    const state = buildGuidedState(plan(parsed), [repository(files)], resolve);
     assert.strictEqual(state.fileTotal, 2);
     assert.strictEqual(state.missingTotal, 0);
     assert.deepStrictEqual(
@@ -225,7 +243,7 @@ suite("guided review — buildGuidedState", () => {
   test("follows a rename through the old path", () => {
     const parsed = parseChangesets([{ title: "T", description: "d", files: [{ path: "old.ts" }] }]);
     const state = buildGuidedState(
-      plan(parsed ?? []),
+      plan(parsed),
       [repository([changed("new.ts", "unstaged", "old.ts")])],
       resolve,
     );
@@ -236,7 +254,7 @@ suite("guided review — buildGuidedState", () => {
     const parsed = parseChangesets([
       { title: "T", description: "d", files: [{ path: "gone.ts" }] },
     ]);
-    const state = buildGuidedState(plan(parsed ?? []), [repository([])], resolve);
+    const state = buildGuidedState(plan(parsed), [repository([])], resolve);
     assert.strictEqual(state.changesets[0].files.length, 1);
     assert.strictEqual(state.changesets[0].files[0].file, undefined);
     assert.strictEqual(state.missingTotal, 1);
@@ -248,7 +266,7 @@ suite("guided review — buildGuidedState", () => {
       { title: "Two", description: "d", files: [{ path: "shared.ts" }] },
     ]);
     const state = buildGuidedState(
-      plan(parsed ?? []),
+      plan(parsed),
       [repository([changed("shared.ts", "unstaged")])],
       resolve,
     );
@@ -267,7 +285,7 @@ suite("guided review — buildGuidedState", () => {
     const parsed = parseChangesets([
       { title: "T", description: "d", files: [{ path: "claimed.ts" }] },
     ]);
-    const state = buildGuidedState(plan(parsed ?? []), [repository(files)], resolve);
+    const state = buildGuidedState(plan(parsed), [repository(files)], resolve);
     const other = state.changesets.at(-1);
     assert.strictEqual(other?.id, OTHER_CHANGESET_ID);
     assert.deepStrictEqual(
@@ -280,7 +298,7 @@ suite("guided review — buildGuidedState", () => {
 
   test("a plan for a repository no longer in the window resolves to all-missing", () => {
     const parsed = parseChangesets([{ title: "T", description: "d", files: [{ path: "a.ts" }] }]);
-    const state = buildGuidedState(plan(parsed ?? []), [], resolve);
+    const state = buildGuidedState(plan(parsed), [], resolve);
     assert.strictEqual(state.missingTotal, 1);
     assert.strictEqual(state.changesets.length, 1, "no repository means nothing to collect");
   });
@@ -308,7 +326,7 @@ suite("guided review — sidebar rows", () => {
     const item = changesetItem(REPO, state.changesets[0]);
     assert.strictEqual(item.label, "Auth");
     assert.strictEqual(item.description, "1 file");
-    assert.strictEqual(item.command?.command, "paireto.guided.openChangeset");
+    assert.strictEqual(item.command?.command, "paireto.guidedReview.openChangeset");
     assert.ok(item.id?.startsWith("changeset:"));
     assert.ok(item.id?.endsWith(":cs0"));
   });
@@ -402,11 +420,85 @@ suite("guided review — sidebar rows", () => {
   });
 });
 
+// A plan row must track the file's CURRENT git layer, not the one it had when the plan arrived:
+// editing a committed file has to give that row the working-tree actions, and undoing the edit has
+// to give it back its committed state. Driven against a real repository through the real
+// DiffService, because the layer transitions are git's, not ours.
+suite("guided review — a planned row follows the file through the layers", () => {
+  const diff = new DiffService();
+  let repo: string;
+  let baseRef: string;
+  const git = (args: string[]): string =>
+    execFileSync("git", args, { cwd: repo }).toString().trim();
+  const write = (content: string): void =>
+    fs.writeFileSync(path.join(repo, "a.ts"), content);
+
+  suiteSetup(() => {
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-guided-"));
+    git(["init", "-q"]);
+    git(["config", "user.email", "test@example.com"]);
+    git(["config", "user.name", "Test"]);
+    write("v1\n");
+    git(["add", "."]);
+    git(["commit", "-q", "-m", "base"]);
+    baseRef = git(["rev-parse", "HEAD"]);
+    write("v2\n");
+    git(["commit", "-q", "-am", "change a"]);
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  /** The plan row for a.ts as the sidebar would render it right now. */
+  const rowNow = async (): Promise<vscode.TreeItem> => {
+    const changes = await diff.getChanges(repo, { kind: "ref", ref: baseRef });
+    const state = buildGuidedState(
+      toGuidedPlan(repo, parseChangesets([{ title: "T", description: "d", files: ["a.ts"] }]), {
+        compareTo: { kind: "ref", ref: baseRef },
+      }),
+      [{ repoRoot: repo, displayName: "repo", changes: scoped(repo, changes) }],
+      resolve,
+    );
+    return changesetFileItem(repo, state.changesets[0].files[0], vscode.Uri.file("/ext"));
+  };
+
+  test("committed, then edited, then staged, then restored", async () => {
+    assert.strictEqual(
+      (await rowNow()).contextValue,
+      "changedFile:committed:planned",
+      "starts as a committed change against the compare point",
+    );
+
+    write("v3\n");
+    assert.strictEqual(
+      (await rowNow()).contextValue,
+      "changedFile:unstaged:planned",
+      "an edit gives the row the working-tree actions",
+    );
+
+    git(["add", "a.ts"]);
+    assert.strictEqual(
+      (await rowNow()).contextValue,
+      "changedFile:staged:planned",
+      "staging moves the row to the index",
+    );
+
+    git(["restore", "--staged", "a.ts"]);
+    write("v2\n");
+    assert.strictEqual(
+      (await rowNow()).contextValue,
+      "changedFile:committed:planned",
+      "undoing the edit returns the row to the committed comparison",
+    );
+  });
+});
+
 suite("guided review — command arguments", () => {
   // VS Code hands an inline view/item/context button the tree NODE. A node shape the unwrapper does
   // not understand makes the button silently do nothing, so pin the exact nodes the tree produces.
   const rowNode = (raw: unknown, files: RepoChangedFile[]): unknown => {
-    const state = buildGuidedState(plan(parseChangesets(raw) ?? []), [repository(files)], resolve);
+    const state = buildGuidedState(plan(parseChangesets(raw)), [repository(files)], resolve);
     return changesetFileNodes(REPO, state.changesets[0])[0];
   };
 
@@ -415,7 +507,7 @@ suite("guided review — command arguments", () => {
       [{ title: "T", description: "d", files: [{ path: "a.ts" }] }],
       [changed("a.ts", "unstaged")],
     );
-    const file = asFile(node);
+    const file = readArg(FileArg, node);
     assert.strictEqual(file?.path, "a.ts");
     assert.strictEqual(file?.group, "unstaged");
     assert.strictEqual(file?.repoRoot, REPO);
@@ -423,7 +515,7 @@ suite("guided review — command arguments", () => {
 
   test("a planned row with no live change resolves to nothing — there is nothing to stage", () => {
     const node = rowNode([{ title: "T", description: "d", files: [{ path: "gone.ts" }] }], []);
-    assert.strictEqual(asFile(node), undefined);
+    assert.strictEqual(readArg(FileArg, node), undefined);
   });
 
   test("a file row never resolves to its whole changeset", () => {
@@ -431,16 +523,40 @@ suite("guided review — command arguments", () => {
       [{ title: "T", description: "d", files: [{ path: "a.ts" }, { path: "b.ts" }] }],
       [changed("a.ts", "unstaged"), changed("b.ts", "unstaged")],
     );
-    assert.strictEqual(changesetIdFromArg(node), undefined);
+    assert.strictEqual(readArg(ChangesetIdArg, node), undefined);
   });
 
   test("a changeset row resolves to its id, from the node or a plain payload", () => {
     assert.strictEqual(
-      changesetIdFromArg({ kind: "changeset", repoRoot: REPO, changeset: { id: "cs0" } }),
+      readArg(ChangesetIdArg, { kind: "changeset", repoRoot: REPO, changeset: { id: "cs0" } }),
       "cs0",
     );
-    assert.strictEqual(changesetIdFromArg({ changesetId: "cs1" }), "cs1");
-    assert.strictEqual(changesetIdFromArg({ kind: "file" }), undefined);
+    assert.strictEqual(readArg(ChangesetIdArg, { changesetId: "cs1" }), "cs1");
+    assert.strictEqual(readArg(ChangesetIdArg, { kind: "file" }), undefined);
+  });
+
+  test("withArg hands the handler a parsed value, and refuses an argument it cannot read", () => {
+    const seen: string[] = [];
+    const run = withArg(ChangesetIdArg, (id) => seen.push(id));
+
+    run({ kind: "changeset", changeset: { id: "cs0" } });
+    assert.deepStrictEqual(seen, ["cs0"]);
+
+    // A wired-up-wrong menu must be loud: silently doing nothing is the hardest version to find.
+    assert.throws(() => run({ kind: "file" }), /command argument rejected/);
+    assert.deepStrictEqual(seen, ["cs0"], "the handler never ran on a rejected argument");
+  });
+
+  // The schemas name only the fields a command reads, so a node that grows one keeps working — while
+  // anything that isn't one of the known shapes resolves to nothing rather than a half-built file.
+  test("extra fields are tolerated; an unknown shape resolves to nothing", () => {
+    const file = { ...changed("a.ts", "unstaged"), decoration: { badge: "M" } };
+    assert.strictEqual(readArg(FileArg, file)?.path, "a.ts");
+    assert.strictEqual(readArg(FileArg, { file, kind: "file", label: "a.ts" })?.group, "unstaged");
+
+    for (const bad of [undefined, null, "a.ts", 7, {}, { file: { path: "a.ts" } }]) {
+      assert.strictEqual(readArg(FileArg, bad), undefined, JSON.stringify(bad) ?? "undefined");
+    }
   });
 });
 
@@ -448,7 +564,7 @@ suite("guided review — changeset description document", () => {
   const changeset = (title: string): GuidedChangesetState =>
     guidedFor(
       [changed("a.ts", "unstaged")],
-      [{ title, description: "why it exists", files: [{ path: "a.ts", note: "the entry point" }] }],
+      [{ title, description: "why it exists", files: [{ path: "a.ts" }] }],
     ).changesets[0];
 
   test("the URI is titled for the tab and keyed by changeset id", () => {
@@ -473,7 +589,6 @@ suite("guided review — changeset description document", () => {
     assert.ok(doc.startsWith("# Auth"));
     assert.ok(doc.includes("why it exists"));
     assert.ok(doc.includes("1. `a.ts`"));
-    assert.ok(doc.includes("the entry point"));
   });
 
   test("a changeset with no description still renders", () => {
@@ -482,6 +597,44 @@ suite("guided review — changeset description document", () => {
       [{ title: "Bare", description: "", files: [{ path: "a.ts" }] }],
     ).changesets[0];
     assert.ok(renderChangesetDoc(bare).includes("no description"));
+  });
+});
+
+suite("guided review — plan overview document", () => {
+  const guided = (summary?: string): GuidedReviewState =>
+    buildGuidedState(
+      toGuidedPlan(
+        REPO,
+        parseChangesets([
+          { title: "Auth", description: "d", files: ["a.ts"] },
+          { title: "UI", description: "d", files: ["b.ts"] },
+        ]),
+        { summary, compareTo: { kind: "mergeBase" } },
+      ),
+      [repository([changed("a.ts", "unstaged"), changed("b.ts", "unstaged")])],
+      resolve,
+    );
+
+  test("the plan document is keyed apart from every changeset", () => {
+    const uri = changesetDocUri({ id: PLAN_DOC_ID, title: "Review plan" });
+    assert.strictEqual(changesetIdFromDocUri(uri), PLAN_DOC_ID);
+    assert.ok(
+      !guided("s").changesets.some((c) => c.id === PLAN_DOC_ID),
+      "no changeset can claim the plan's own id",
+    );
+  });
+
+  test("it carries the summary, the comparison point, and every changeset", () => {
+    const doc = renderPlanDoc(guided("This branch adds guided review."));
+    assert.ok(doc.startsWith("# Review plan"));
+    assert.ok(doc.includes("This branch adds guided review."));
+    assert.ok(doc.includes("merge base"));
+    assert.ok(doc.includes("**Auth**"));
+    assert.ok(doc.includes("**UI**"));
+  });
+
+  test("a plan with no summary still renders", () => {
+    assert.ok(renderPlanDoc(guided()).includes("no summary"));
   });
 });
 

@@ -18,12 +18,11 @@ import {
   applyOpenCodeConfig,
   getLastUserAgentFromMessages,
   isTitleGeneratorPrompt,
-  guidedPlanToolArgs,
-  planToolArgs,
+  SubmitPlanArgs,
   resolveOpenCodeRoot,
   shouldInjectPlanningPrompt,
 } from "./automation.js";
-import type { GuidedReviewArgs } from "../core/mcp/guidedReviewTool.js";
+import { GuidedReviewArgs } from "../../protocol/guidedReview.js";
 import {
   GUIDED_REVIEW_TOOL_DESCRIPTION,
   GUIDED_REVIEW_TOOL_NAME,
@@ -49,7 +48,6 @@ import type {
   OpenCodeEvent,
   PluginInput,
   ToolExecuteInput,
-  ToolSchema,
 } from "./types.js";
 
 interface ToolContext {
@@ -63,25 +61,6 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
   }
 
   const bridge = createBridge(bridgeRoot);
-
-  // OpenCode provides `@opencode-ai/plugin` in its own runtime (never bundled with us); its
-  // `tool.schema` is the zod instance we need to declare the plan tool's arg. A DYNAMIC import, not a
-  // top-level one, so this module's pure helpers stay importable in the unit tests (which don't have
-  // the SDK installed and never invoke this factory). Fail-open: no SDK → the plan tool advertises no
-  // args rather than crashing the session.
-  //
-  // Cast through `unknown`: the SDK types `tool.schema` as having only `string()`, while the object
-  // it hands over is the whole zod instance. guidedPlanToolArgs checks for each builder it uses
-  // before calling any of them, so a runtime that really is that narrow degrades instead of crashing.
-  let toolSchema: ToolSchema | null = null;
-  try {
-    const sdk = (await import("@opencode-ai/plugin")) as unknown as {
-      tool?: { schema?: ToolSchema };
-    };
-    toolSchema = sdk?.tool?.schema ?? null;
-  } catch {
-    // Not running under OpenCode — leave the plan arg unschematized (never reached at runtime).
-  }
 
   // The agents list is static per session; cache it so the system-prompt transform doesn't re-fetch
   // on every LLM call.
@@ -212,10 +191,10 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
       // TARGET AGENT to switch to, closing the "no mode switch" gap by prompting that agent to proceed.
       [SUBMIT_PLAN_TOOL]: {
         description: SUBMIT_PLAN_DESCRIPTION,
-        args: planToolArgs(toolSchema),
-        execute: async (args: { plan?: unknown }, ctx: ToolContext) => {
+        args: SubmitPlanArgs.shape,
+        execute: async (args: SubmitPlanArgs, ctx: ToolContext) => {
           const sessionID = typeof ctx?.sessionID === "string" ? ctx.sessionID : undefined;
-          const plan = typeof args?.plan === "string" ? args.plan : "";
+          const plan = args?.plan ?? "";
           try {
             const response = await bridge.gate({
               t: "plan.review.request",
@@ -248,12 +227,12 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
         },
       },
 
-      // Guided review. OpenCode registers its own tools rather than running an MCP server, so this
-      // mirrors src/plugins/core/mcp/guidedReviewTool.ts — same name, description and arg shape, so
-      // the extension sees one payload whichever harness sent it.
+      // Guided review. OpenCode registers its own tools rather than running an MCP server, but takes
+      // the same zod arguments one does, so it advertises the shared schema itself — the extension
+      // sees one payload whichever harness sent it.
       [GUIDED_REVIEW_TOOL_NAME]: {
         description: GUIDED_REVIEW_TOOL_DESCRIPTION,
-        args: guidedPlanToolArgs(toolSchema),
+        args: GuidedReviewArgs.shape,
         execute: async (args: GuidedReviewArgs, ctx: ToolContext) => {
           const sessionID = typeof ctx?.sessionID === "string" ? ctx.sessionID : undefined;
           try {
@@ -261,6 +240,7 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
               t: "guided.review.await.request",
               cwd: bridge.repoRoot,
               repoRoot: bridge.repoRoot,
+              harness: "opencode",
               sessionId: sessionID,
               summary: args?.summary,
               compareTo: args?.compareTo,
