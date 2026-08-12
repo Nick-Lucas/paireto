@@ -17,7 +17,15 @@ import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { closeTabsForUri, tabUri } from "../gate/tabs.js";
 import { log } from "../log.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
-import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
+import { type PlanCommentData } from "./planFeedback.js";
+import {
+  codeFeedbackPromptText,
+  composePlanFeedback,
+  planSendDecision,
+  INCLUDE_FILE_COMMENTS,
+  PLAN_FEEDBACK_ONLY,
+  type CodeFeedbackSource,
+} from "./planCodeFeedback.js";
 import { planDocLabel } from "./planTitle.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
 import type { Harness } from "../protocol/types.js";
@@ -53,6 +61,7 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly registry: PlanGateRegistry,
     private readonly coordinator: GateCoordinator,
     private readonly locator: AgentServiceLocator,
+    private readonly codeFeedback: CodeFeedbackSource,
   ) {
     this.comments = new CommentSession("paireto.plan", "Paireto: Add Comment", Schemes.plan, {
       prompt: "Add plan feedback",
@@ -221,25 +230,62 @@ export class PlanReviewController implements vscode.Disposable {
     this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
 
-  private sendFeedback(review: PlanReview): void {
+  private async sendFeedback(review: PlanReview): Promise<void> {
     if (!this.plans.has(review.id)) {
       return;
     }
     const comments = this.collect(review);
-    if (comments.length === 0) {
+    const codeComments = this.codeFeedback.getComments();
+    const decision = planSendDecision({
+      planComments: comments.length,
+      codeComments: codeComments.length,
+      reviewInProgress: this.codeFeedback.isSessionActive(),
+    });
+
+    if (decision.action === "refuse") {
+      const queued =
+        codeComments.length > 0 ? " Your file comments stay queued for the next code review." : "";
       void vscode.window.showWarningMessage(
-        "No comments to send. Add at least one comment, or use Approve.",
+        `No plan comments to send. Add a comment on the plan, or use Approve.${queued}`,
       );
       return;
     }
+
+    let include = false;
+    if (decision.action === "ask") {
+      const { message, detail } = codeFeedbackPromptText(decision.codeCount);
+      const choice = await vscode.window.showWarningMessage(
+        message,
+        { modal: true, detail },
+        INCLUDE_FILE_COMMENTS,
+        PLAN_FEEDBACK_ONLY,
+      );
+      if (!this.plans.has(review.id)) {
+        return; // resolved while the dialog was open
+      }
+      if (choice !== INCLUDE_FILE_COMMENTS && choice !== PLAN_FEEDBACK_ONLY) {
+        log.info("plan review feedback cancelled at the file-comment prompt");
+        return;
+      }
+      include = choice === INCLUDE_FILE_COMMENTS;
+    }
+
+    const sentCode = include ? codeComments : [];
     log.info(
-      `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s)`,
+      `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
-    const planTool = this.locator.strategyFor(review.harness).planToolName;
     this.registry.fulfill(review.key, {
       decision: "deny",
-      reason: renderPlanFeedback(comments, planTool),
+      reason: composePlanFeedback({
+        planComments: comments,
+        codeComments: sentCode,
+        toolName: this.locator.strategyFor(review.harness).planToolName,
+        multiRepository: this.codeFeedback.isMultiRepository(),
+      }),
     });
+    if (include) {
+      this.codeFeedback.clearComments();
+    }
   }
 
   private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
@@ -352,7 +398,12 @@ export class PlanReviewController implements vscode.Disposable {
         );
         return;
       }
-      this.sendFeedback(review);
+      await this.sendFeedback(review);
+      // The file-comment prompt can be cancelled, which answers nothing. The tab is already closed,
+      // so bring the plan back or the user can no longer read it or comment on it.
+      if (this.registry.has(review.key)) {
+        await this.reopen(review);
+      }
     } else {
       await this.reopen(review); // dismissed — keep the gate alive
     }
