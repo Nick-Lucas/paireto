@@ -66,7 +66,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const coordinator = new GateCoordinator();
   const planProvider = new PlanContentProvider();
   const planGate = new PlanGateRegistry();
-  const planReview = new PlanReviewController(planProvider, planGate, coordinator, locator);
   const statusBar = new StatusBarController(repoService, agents);
   const activityPublisher = new ActivityPublisher(agents);
 
@@ -80,6 +79,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewStore,
     reviewContent,
     coordinator,
+  );
+
+  // Constructed after reviewController: a plan's Send Feedback can carry the file comments it holds.
+  const planReview = new PlanReviewController(
+    planProvider,
+    planGate,
+    coordinator,
+    locator,
+    reviewController,
   );
 
   const mainTree = new MainTreeProvider(

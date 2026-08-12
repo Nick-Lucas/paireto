@@ -546,7 +546,7 @@ export class ReviewController implements vscode.Disposable {
     await this.setGuidedContext(false);
     await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
     await this.setReviewContext(false);
-    this.resetComments();
+    this.clearComments();
     await this.coordinator.unregister(requestId);
     this.releaseReviewSlot();
     this.changeEmitter.fire();
@@ -1740,7 +1740,7 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.getComments();
-    const feedback = renderReviewFeedback(comments, this.roots.gitRoots.length > 1);
+    const feedback = renderReviewFeedback(comments, this.isMultiRepository());
     if (!feedback) {
       void vscode.window.showWarningMessage(
         "No comments to send. Add a comment, or Approve to proceed with no changes.",
@@ -1755,7 +1755,12 @@ export class ReviewController implements vscode.Disposable {
 
   /** True when there's ≥1 comment to send (drives which gate button shows). */
   hasFeedback(): boolean {
-    return renderReviewFeedback(this.getComments(), this.roots.gitRoots.length > 1).length > 0;
+    return renderReviewFeedback(this.getComments(), this.isMultiRepository()).length > 0;
+  }
+
+  /** True when comment file paths need their repo root prefixed to stay unambiguous. */
+  isMultiRepository(): boolean {
+    return this.roots.gitRoots.length > 1;
   }
 
   /** True if any comment is anchored on this file (so reconcile won't yank the diff out from it). */
@@ -1765,7 +1770,8 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  private resetComments(): void {
+  /** Empties the comment bucket once its comments are delivered, so they cannot be sent twice. */
+  clearComments(): void {
     this.commentSession.reset();
     this.comments.clear();
     this.changeEmitter.fire();
