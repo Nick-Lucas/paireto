@@ -1,15 +1,17 @@
 Do not ever edit this, this is for humans only to edit!
 
+# WIP NOW
+
+* Make the extension sidebar aware of the plugin versions of agents based on the welcome screen logic. If none are installed then prompt the user to the welcome screen, and if any plugin version is wrong then also prompt the user to update them (link to the welcome screen)
+* Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
+* When staging a file with unsaved changes, the file is currently closed and prompts to save. If you choose to save you should also commit the unsaved changes
+* pressing the Enter key on a changes entry should trigger renaming of the file just like in explorer
+* Support "stackBase" as well as "mergeBase" which compares to the commit the branch was branched from instead of the merge base
+
 # WIP 14
 
 * support git conflicts just like the main git panel
-* When the extension rejects an older plugin version, show a debounced VS Code notification with a one-click update action and instructions to restart the agent
 * If possible: when doing a Go To Definition from within a diff, if the target file also has a diff we should open the diff instead by default
-* Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
-* support a paireto-review-consume skill which consumes the already added comments instead of starting a blocking review
-* When staging a file with unsaved changes, the file is currently closed and prompts to save. If you choose to save you should also commit the unsaved changes
-* Enter on a changes entry support renaming of the file
-* Support "stackBase" as well as "mergeBase" which compares to the commit the branch was branched from instead of the merge base
 
 # Feature Ideas:
 
@@ -27,11 +29,4 @@ Do not ever edit this, this is for humans only to edit!
 * Look at the agent providing review feedback to the user during coding, reacting to user interactions, reacting to compile and lint errors with quick fixes, etc.
 * keep user feedback around so they can easily review the changes and follow-up, give the agent a tool to reply to each with their fix plan
 * Claude WorktreeCreate etc could be used to manage a CoW system?
-* Include an endpoint which lets the agent group changed files into structured reviews with descriptions of each
 * Store user todos and feedback repo+branch-wise with an option to have it in the homedir or in the repo, permit the agent to respond to question feedback and to resolve comments
-
-# Refactoring ideas:
-
-* Use real MCP server instead of the dependency free one
-* compile the claude hooks from TS so they're type-safe and can import shared code between both sides of the bridge
-* Consider consolidating the bridge so the MCP server provides everything
