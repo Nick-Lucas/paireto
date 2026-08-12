@@ -655,6 +655,21 @@
           "default": "automatic",
           "description": "When Paireto opens a code Review at the end of an agent's turn."
         },
+        "paireto.review.saveBeforeStage": {
+          "type": "string",
+          "enum": [
+            "prompt",
+            "always",
+            "never"
+          ],
+          "enumDescriptions": [
+            "Ask whether to save, so you choose between the editor content and the version on disk.",
+            "Save without asking, so Stage always stages what you see in the editor.",
+            "Never save. Stage uses the version on disk and tells you which edits stayed out of the index."
+          ],
+          "default": "prompt",
+          "description": "What Paireto does when you stage a file that has unsaved changes in an editor. Git stages the version on disk, so unsaved edits do not go into the index unless the file is saved first."
+        },
         "paireto.planApprove.mode.claudecode": {
           "type": "string",
           "enum": [
