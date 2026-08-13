@@ -29,6 +29,8 @@ export const Commands = {
   reviewStage: "paireto.review.stage",
   reviewUnstage: "paireto.review.unstage",
   reviewDiscard: "paireto.review.discard",
+  /** Rename (or move) the file behind a Changed Files row — the explorer's F2 / mac Enter. */
+  reviewRenameFile: "paireto.review.renameFile",
   reviewStageAll: "paireto.review.stageAll",
   reviewUnstageAll: "paireto.review.unstageAll",
   reviewDiscardAll: "paireto.review.discardAll",
@@ -74,6 +76,10 @@ export const ContextKeys = {
   gateHasFeedback: "paireto.gateHasFeedback",
   /** True while a review plan is open; it replaces the Changed Files list in the sidebar. */
   guidedReviewDiffActive: "paireto.guidedReviewDiffActive",
+  /** True while the sidebar's selected row is a file that can be renamed. A keybinding is dispatched
+   *  against the focused element's context keys, which never carry a row's `viewItem` — that reaches
+   *  menus only — so the tree publishes its selection here for the rename key to read. */
+  renameTarget: "paireto.renameTarget",
 } as const;
 
 export const StateKeys = {

@@ -208,6 +208,10 @@
         "icon": "$(trash)"
       },
       {
+        "command": "paireto.review.renameFile",
+        "title": "Rename…"
+      },
+      {
         "command": "paireto.focusAgent",
         "title": "Paireto: Focus Agent",
         "icon": "$(terminal)"
@@ -260,6 +264,12 @@
         "command": "paireto.switcher.openInThisWindow",
         "key": "shift+enter",
         "when": "paireto.switcherVisible"
+      },
+      {
+        "command": "paireto.review.renameFile",
+        "key": "f2",
+        "mac": "enter",
+        "when": "view == paireto.main && listFocus && !inputFocus && paireto.renameTarget"
       }
     ],
     "views": {
@@ -336,6 +346,10 @@
         },
         {
           "command": "paireto.review.deleteComment",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.renameFile",
           "when": "false"
         },
         {
@@ -541,6 +555,11 @@
           "command": "paireto.review.unstage",
           "when": "view == paireto.main && viewItem =~ /^changedFile:staged/",
           "group": "2_git@1"
+        },
+        {
+          "command": "paireto.review.renameFile",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:(staged|unstaged|committed)$/",
+          "group": "3_modify@1"
         },
         {
           "command": "paireto.review.stage",

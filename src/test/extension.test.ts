@@ -7,7 +7,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
-import { Schemes } from "../config.js";
+import { ContextKeys, Schemes } from "../config.js";
 import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { relatedWorkspaceFolder } from "../git/WorkspaceRootCatalog.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
@@ -46,6 +46,8 @@ import { NotificationService } from "../notify/NotificationService.js";
 import { createInboundEventLog } from "../bridge/SocketServer.js";
 import {
   agentLabel,
+  canRenameFile,
+  changedFileContextValue,
   changedFileCount,
   commandSession,
   computeViewBadge,
@@ -150,7 +152,11 @@ suite("command manifest", () => {
     activationEvents: string[];
     contributes: {
       commands: Array<{ command: string; title: string }>;
-      menus: { commandPalette: Array<{ command: string; when?: string }> };
+      keybindings: Array<{ command: string; key: string; mac?: string; when?: string }>;
+      menus: {
+        commandPalette: Array<{ command: string; when?: string }>;
+        "view/item/context": Array<{ command: string; when?: string; group?: string }>;
+      };
     };
   };
 
@@ -199,6 +205,7 @@ suite("command manifest", () => {
       "paireto.review.addProblem",
       "paireto.review.revealComment",
       "paireto.review.deleteComment",
+      "paireto.review.renameFile",
       "paireto.guidedReview.openFile",
       "paireto.guidedReview.openChangeset",
       "paireto.guidedReview.openPlan",
@@ -222,6 +229,61 @@ suite("command manifest", () => {
       ({ command, title }) => parentCommands.has(command) && !title.startsWith("Paireto: "),
     );
     assert.deepStrictEqual(unprefixed, []);
+  });
+
+  test("rename needs a tree row, so it is hidden from the Command Palette", () => {
+    const entry = manifest.contributes.menus.commandPalette.find(
+      ({ command }) => command === "paireto.review.renameFile",
+    );
+    assert.strictEqual(entry?.when, "false");
+  });
+
+  test("rename is bound to F2, and to Enter on mac like the explorer", () => {
+    const binding = manifest.contributes.keybindings.find(
+      ({ command }) => command === "paireto.review.renameFile",
+    );
+    assert.ok(binding, "the rename keybinding is contributed");
+    assert.strictEqual(binding.key, "f2");
+    assert.strictEqual(binding.mac, "enter");
+    const when = binding.when ?? "";
+    // Enter is heavily used, so the clause must pin it to a focused list row in the Paireto tree and
+    // leave every input box (the tree find box, a comment reply) alone.
+    for (const clause of ["view == paireto.main", "listFocus", "!inputFocus"]) {
+      assert.ok(when.includes(clause), `the when clause must include ${clause}: ${when}`);
+    }
+  });
+
+  test("the rename keybinding reads a published key, not a row's contextValue", () => {
+    const binding = manifest.contributes.keybindings.find(
+      ({ command }) => command === "paireto.review.renameFile",
+    );
+    const when = binding?.when ?? "";
+    // VS Code gives `viewItem` to a row's MENU only. A keybinding is dispatched against the focused
+    // element's context keys, where `viewItem` is undefined, so a clause naming it never matches. The
+    // tree publishes this key from its selection instead.
+    assert.ok(!when.includes("viewItem"), `viewItem cannot gate a keybinding: ${when}`);
+    assert.ok(when.includes(ContextKeys.renameTarget), `the clause must read the key: ${when}`);
+  });
+
+  test("the rename menu entry matches only a live Changed Files row", () => {
+    const entry = manifest.contributes.menus["view/item/context"].find(
+      ({ command }) => command === "paireto.review.renameFile",
+    );
+    const found = /viewItem =~ \/(.+?)\//.exec(entry?.when ?? "");
+    assert.ok(found, `the when clause must anchor on a viewItem regex: ${entry?.when}`);
+    const viewItem = new RegExp(found[1]);
+    for (const value of ["changedFile:staged", "changedFile:unstaged", "changedFile:committed"]) {
+      assert.ok(viewItem.test(value), `${value} offers rename`);
+    }
+    for (const value of [
+      "changedFile:unstaged:planned",
+      "changedFile:unstaged:deleted",
+      "changesetFile:missing",
+      "folder:unstaged",
+      "group:unstaged",
+    ]) {
+      assert.ok(!viewItem.test(value), `${value} does not offer rename`);
+    }
   });
 
   test("comment gutter actions use a namespaced controller label", () => {
@@ -2389,6 +2451,38 @@ suite("changedFileCount (matches the Git panel)", () => {
 
   test("sums the two sections", () => {
     assert.strictEqual(changedFileCount([{ path: "x" }], [{ path: "y" }, { path: "z" }]), 3);
+  });
+});
+
+suite("changedFileContextValue (which rows offer rename)", () => {
+  const file = (status: FileStatus, group: FileGroup): ChangedFile => ({
+    path: "src/a.ts",
+    status,
+    group,
+    additions: 1,
+    deletions: 0,
+  });
+
+  test("a file on disk gives exactly changedFile:<group>", () => {
+    assert.strictEqual(changedFileContextValue(file("M", "unstaged")), "changedFile:unstaged");
+    assert.strictEqual(changedFileContextValue(file("A", "staged")), "changedFile:staged");
+    assert.strictEqual(changedFileContextValue(file("U", "unstaged")), "changedFile:unstaged");
+    assert.strictEqual(changedFileContextValue(file("R", "committed")), "changedFile:committed");
+  });
+
+  test("a deleted file is marked, so the rename clause cannot reach it", () => {
+    assert.strictEqual(
+      changedFileContextValue(file("D", "unstaged")),
+      "changedFile:unstaged:deleted",
+    );
+    assert.strictEqual(changedFileContextValue(file("D", "staged")), "changedFile:staged:deleted");
+  });
+
+  test("canRenameFile gates the keybinding: a file on disk yes, a deleted one or none no", () => {
+    assert.strictEqual(canRenameFile(file("M", "unstaged")), true);
+    assert.strictEqual(canRenameFile(file("U", "unstaged")), true);
+    assert.strictEqual(canRenameFile(file("D", "staged")), false);
+    assert.strictEqual(canRenameFile(undefined), false);
   });
 });
 

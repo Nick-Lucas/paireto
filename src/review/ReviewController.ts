@@ -4,7 +4,7 @@
 
 import * as crypto from "node:crypto";
 import * as fs from "node:fs/promises";
-import { basename, join } from "node:path";
+import { basename, dirname, extname, join } from "node:path";
 
 import * as vscode from "vscode";
 
@@ -64,6 +64,7 @@ import {
   type GuidedPlan,
   type GuidedReviewState,
 } from "./guidedPlan.js";
+import { resolveRenameTarget } from "./renamePath.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
@@ -932,6 +933,145 @@ export class ReviewController implements vscode.Disposable {
         repoRoot,
         repoFiles.map((f) => f.path),
       );
+    }
+  }
+
+  /**
+   * Rename — or, with a `/` in the typed text, move — the file behind a Changed Files row, the way
+   * the explorer's F2 does. The move goes through a WorkspaceEdit rather than the filesystem so VS
+   * Code runs its file-operation participants: undo keeps working, open editors follow the file, and
+   * a language server can update the imports that name it.
+   */
+  async renameFile(file?: RepoChangedFile): Promise<void> {
+    // A deleted file is not on disk, so there is nothing to rename.
+    if (!file || file.status === "D") {
+      return;
+    }
+    const { repoRoot } = file;
+    const oldPath = file.path;
+    const name = basename(oldPath);
+    const stem = name.slice(0, name.length - extname(name).length);
+    const typed = await vscode.window.showInputBox({
+      title: `Rename ${name}`,
+      value: name,
+      // Pre-select the stem only, so typing replaces the name and keeps the extension.
+      valueSelection: [0, stem.length],
+      prompt: "Type a new name. A path with / moves the file.",
+      validateInput: (value) => this.renameProblem(repoRoot, oldPath, value),
+    });
+    if (typed === undefined) {
+      return;
+    }
+    const target = resolveRenameTarget(oldPath, typed);
+    // An unchanged name is a cancel, and a rejected one already showed its message in the box.
+    if (!target.ok || target.path === oldPath) {
+      return;
+    }
+    const newPath = target.path;
+    const oldUri = vscode.Uri.file(join(repoRoot, oldPath));
+    const newUri = vscode.Uri.file(join(repoRoot, newPath));
+
+    // A WorkspaceEdit cannot create a folder, so a move into a new one has to make it first.
+    const parent = vscode.Uri.file(dirname(join(repoRoot, newPath)));
+    try {
+      await vscode.workspace.fs.stat(parent);
+    } catch {
+      await vscode.workspace.fs.createDirectory(parent);
+    }
+
+    const edit = new vscode.WorkspaceEdit();
+    edit.renameFile(oldUri, newUri, { overwrite: false });
+    if (!(await vscode.workspace.applyEdit(edit))) {
+      void vscode.window.showErrorMessage(`Could not rename ${name}.`);
+      return;
+    }
+    this.debug(`rename: ${oldPath} -> ${newPath}`);
+    this.repointComments(repoRoot, oldPath, newPath);
+    // Nothing else rebuilds the groups: there is no file watcher here, and applyEdit fires no save.
+    await this.refresh("rename");
+    await this.moveOpenDiffsToRenamedFile(repoRoot, oldPath, newPath);
+  }
+
+  /** What is wrong with the text in the rename box, or nothing when it can be applied. */
+  private async renameProblem(
+    repoRoot: string,
+    currentPath: string,
+    value: string,
+  ): Promise<string | undefined> {
+    const target = resolveRenameTarget(currentPath, value);
+    if (!target.ok) {
+      return target.message;
+    }
+    if (target.path === currentPath) {
+      return undefined;
+    }
+    const to = join(repoRoot, target.path);
+    // A case-only rename on a case-insensitive filesystem finds the file itself, not a clash.
+    if (join(repoRoot, currentPath).toLowerCase() === to.toLowerCase()) {
+      return undefined;
+    }
+    try {
+      await fs.access(to);
+      return `A file called ${target.path} already exists.`;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** Move review comments on the renamed file onto its new path, so their Feedback rows and their
+   *  reveal still land on the file the user renamed. */
+  private repointComments(repoRoot: string, oldPath: string, newPath: string): void {
+    let moved = false;
+    for (const { model } of this.comments.values()) {
+      if (model.repoRoot === repoRoot && model.filePath === oldPath) {
+        model.filePath = newPath;
+        moved = true;
+      }
+    }
+    if (moved) {
+      this.changeEmitter.fire();
+    }
+  }
+
+  /**
+   * Re-point every open diff tab of the renamed file at its new path. Deliberately NOT
+   * `reconcileOpenDiffsAfterWrite`: git reports the old path as an unstaged delete after a rename, so
+   * that route would keep the tab showing the file's deletion.
+   */
+  private async moveOpenDiffsToRenamedFile(
+    repoRoot: string,
+    oldPath: string,
+    newPath: string,
+  ): Promise<void> {
+    if (this.openDiffs.size === 0) {
+      return;
+    }
+    // Snapshot so we can mutate openDiffs (delete re-pointed entries) while iterating.
+    const snapshot = Array.from(this.openDiffs.entries());
+    for (const [key, open] of snapshot) {
+      if (open.repoRoot !== repoRoot || open.path !== oldPath) {
+        continue;
+      }
+      const located = this.locateReviewTab(key);
+      // Closing a tab with unsaved edits makes VS Code raise its own save dialog and can drop the
+      // buffer, so that tab is left where it is.
+      if (located?.dirty) {
+        continue;
+      }
+      this.openDiffs.delete(key);
+      if (this.openDiffFile?.repoRoot === repoRoot && this.openDiffFile.path === oldPath) {
+        this.openDiffFile = undefined;
+      }
+      await closeTabsWhere((tab) => reviewTabKey(tab.input) === key);
+      const file = this.allFiles(repoRoot).find((f) => f.path === newPath);
+      if (file) {
+        await this.openDiff(file, {
+          viewColumn: located?.viewColumn,
+          preserveFocus: !located?.active,
+          preview: located?.preview ?? true,
+          skipRefresh: true,
+        });
+      }
     }
   }
 

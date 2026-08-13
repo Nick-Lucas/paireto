@@ -9,7 +9,7 @@ import * as vscode from "vscode";
 
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { kindColorId, kindIcon, kindLabel } from "../comments/kinds.js";
-import { Commands, Views } from "../config.js";
+import { Commands, ContextKeys, Views } from "../config.js";
 import type { GateCoordinator, GateKind } from "../gate/GateCoordinator.js";
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { ChangedFile, FileStatus } from "../git/DiffService.js";
@@ -32,6 +32,7 @@ import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
 import type { SetupPrompt } from "../welcome/installStatus.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import type { AgentState, FileGroup } from "../types.js";
+import { FileArg, readArg } from "../review/commandArgs.js";
 import { repoKey } from "../protocol/paths.js";
 import { describeCompareTo } from "../protocol/guidedReview.js";
 import { buildFileTree, type TreeEntry } from "./fileTree.js";
@@ -216,6 +217,26 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       vscode.commands.registerCommand(Commands.agentShow, (arg: AgentCommandArg) =>
         this.agents.setMuted(commandSession(arg).sessionId, false),
       ),
+      // Owned here rather than by the ReviewController because the keybinding passes no argument, so
+      // the target has to come from this class's TreeView selection.
+      vscode.commands.registerCommand(Commands.reviewRenameFile, (arg: unknown) => {
+        void this.review.renameFile(readArg(FileArg, arg) ?? this.selectedChangedFile());
+      }),
+    );
+  }
+
+  /** The changed file of the last-selected row, for an invocation that names none (a keybinding). */
+  private selectedChangedFile(): RepoChangedFile | undefined {
+    const node = this.view?.selection.at(-1);
+    return node?.kind === "file" ? node.file : undefined;
+  }
+
+  /** Tell the rename keybinding whether the selected row is a file it can act on. */
+  private publishRenameTarget(): void {
+    void vscode.commands.executeCommand(
+      "setContext",
+      ContextKeys.renameTarget,
+      canRenameFile(this.selectedChangedFile()),
     );
   }
 
@@ -234,8 +255,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   /** Create the sidebar tree view (kept here so `reveal` can select the row of the focused diff). */
   register(): vscode.TreeView<Node> {
     this.view = vscode.window.createTreeView(Views.main, { treeDataProvider: this });
-    this.subs.push(this.view);
+    this.subs.push(
+      this.view,
+      this.view.onDidChangeSelection(() => this.publishRenameTarget()),
+    );
     this.updateBadge();
+    this.publishRenameTarget();
     return this.view;
   }
 
@@ -763,6 +788,20 @@ function agentItem(
   return item;
 }
 
+/** A file can be renamed while it is on disk. A deleted one is not there to move. */
+export function canRenameFile(file: Pick<ChangedFile, "status"> | undefined): boolean {
+  return file !== undefined && file.status !== "D";
+}
+
+/**
+ * A changed-file row's contextValue, which every menu clause keys on. A deleted file carries a
+ * `:deleted` suffix so an action needing the file on disk — rename — can exclude it with an exact
+ * match, while the existing prefix clauses (stage/unstage/discard/open) still reach it.
+ */
+export function changedFileContextValue(file: ChangedFile): string {
+  return canRenameFile(file) ? `changedFile:${file.group}` : `changedFile:${file.group}:deleted`;
+}
+
 /** `scope` namespaces the row id. The same file can legitimately appear under two changesets and in
  *  Changed Files, and VS Code rejects a tree with a duplicate TreeItem.id. */
 function fileItem(
@@ -779,7 +818,7 @@ function fileItem(
   const counts = `+${file.additions} -${file.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${file.path}\n${statusWord(file.status)} · ${counts}`;
-  item.contextValue = `changedFile:${file.group}`;
+  item.contextValue = changedFileContextValue(file);
   item.command = { command: Commands.reviewOpenDiff, title: "Open Diff", arguments: [file] };
   return item;
 }
