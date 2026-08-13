@@ -26,7 +26,7 @@ export interface AgentTerminalProfile {
   command: string;
 }
 
-/** Everything an agent's install / probe needs from the host, resolved by WelcomePanel. */
+/** Everything an agent's install / probe needs from the host, resolved by AgentInstallStatus. */
 export interface InstallContext {
   /** Absolute path to the shipped `dist/plugins/` dir (built with the extension — this path CHANGES on
    *  every extension update, so nothing durable may point at it). */
@@ -44,11 +44,12 @@ export interface OnboardingAgent {
   available: boolean;
   /** Installer for an available agent. Absent for planned ones. */
   install?: (ctx: InstallContext) => Promise<InstallResult>;
-  /** Synchronous probe the Welcome screen runs to render the card's action (Set up / Update / ✓
-   *  Installed): "installed" iff this agent's plugin is present at the SHIPPED version,
-   *  "update-available" iff it's present but at a stale version (installers are idempotent upgraders,
-   *  so Update just re-runs install), else "not-installed". Absent → treated as not-installed. */
-  installedProbe?: (ctx: InstallContext) => InstallState;
+  /** Probe behind the card's action (Set up / Update / ✓ Installed): "installed" iff this agent's
+   *  plugin is present at the SHIPPED version, "update-available" iff it's present but at a stale
+   *  version (installers are idempotent upgraders, so Update just re-runs install), else
+   *  "not-installed". Absent → treated as not-installed. May answer asynchronously: a probe that
+   *  asks a CLI must not hold the extension host thread. */
+  installedProbe?: (ctx: InstallContext) => InstallState | Promise<InstallState>;
   /** Terminal profile written to User settings on setup (powers the quick-launch profile picker). */
   profile?: AgentTerminalProfile;
   /** Static setup note rendered under the agent's card — e.g. an opt-in feature the user must enable

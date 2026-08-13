@@ -45,6 +45,12 @@ export interface InspectGuided {
   changesets: InspectGuidedChangeset[];
 }
 
+/** One open review diff tab and the tree row it stands for. */
+export interface InspectOpenDiff {
+  path: string;
+  group: string;
+}
+
 export interface InspectRepositoryChanges {
   repoRoot: string;
   compareRef: string | null;
@@ -66,6 +72,8 @@ export interface InspectSnapshot {
   /** Per-reason ReviewController.refresh() tally (e.g. proves openDiff never ran the full refresh). */
   refreshCounts: Record<string, number>;
   compareTo: CompareTo;
+  /** Which tree row each open diff tab stands for — a tab that outlives its row is a stale record. */
+  openDiffs: InspectOpenDiff[];
   repositories: InspectRepositoryChanges[];
   /** Present only while a guided review is open. */
   guided?: InspectGuided;

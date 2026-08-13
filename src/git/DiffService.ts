@@ -5,7 +5,7 @@
 import { readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { git, gitSafe, splitNul } from "./gitCli.js";
+import { currentBranch, git, gitSafe, splitNul } from "./gitCli.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 
 export type FileStatus = "A" | "M" | "D" | "R" | "C" | "U"; // U = untracked
@@ -179,25 +179,45 @@ export class DiffService {
     return files;
   }
 
-  /** Resolve a Compare-To descriptor to a concrete ref (null = HEAD, no committed group) + label. */
+  /** Resolve a Compare-To descriptor to a concrete ref (null = HEAD, no committed group) + label.
+   *  `knownDefaultBranch` spares a caller that resolves several descriptors at once one probe per
+   *  descriptor — the picker asks for three. */
   async resolveCompareTo(
     repoRoot: string,
     compareTo: CompareTo,
+    knownDefaultBranch?: string,
   ): Promise<{ ref: string | null; label: string }> {
+    const defaultBranch = async (): Promise<string | undefined> =>
+      knownDefaultBranch ?? (await this.defaultBranch(repoRoot));
     switch (compareTo.kind) {
       case "head":
         return { ref: null, label: "HEAD" };
       case "default": {
-        const branch = await this.defaultBranch(repoRoot);
+        const branch = await defaultBranch();
         return { ref: branch ?? null, label: branch ?? "default" };
       }
       case "mergeBase": {
-        const branch = await this.defaultBranch(repoRoot);
+        const branch = await defaultBranch();
         if (!branch) {
           return { ref: null, label: "merge-base" };
         }
         const base = (await gitSafe(repoRoot, ["merge-base", branch, "HEAD"])).trim();
         return { ref: base || branch, label: `merge-base(${branch})` };
+      }
+      case "stackBase": {
+        const branch = await defaultBranch();
+        if (!branch) {
+          return { ref: null, label: "stack-base" };
+        }
+        const mergeBase =
+          (await gitSafe(repoRoot, ["merge-base", branch, "HEAD"])).trim() || branch;
+        const parent = await this.stackParent(repoRoot, mergeBase);
+        // With nothing under it the branch forked from the default branch, so the merge base IS the
+        // stack base — but it keeps the stack-base label so the reviewer can tell the two apart.
+        if (!parent) {
+          return { ref: mergeBase, label: `stack-base(${branch})` };
+        }
+        return { ref: parent.commit, label: `stack-base(${parent.branch})` };
       }
       case "ref":
         return { ref: compareTo.ref ?? null, label: compareTo.ref ?? "HEAD" };
@@ -208,6 +228,30 @@ export class DiffService {
   async refExists(repoRoot: string, ref: string): Promise<boolean> {
     const out = await gitSafe(repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
     return out.trim().length > 0;
+  }
+
+  /** The branch below this one in a stack: the nearest ancestor commit another local branch points
+   *  at. Bounded by the merge base because a stack always sits above it, which keeps the walk short.
+   *  `--first-parent` gives this layer's own line of commits, and a stack is built along that line.
+   *  A branch merged into the layer sits off it and is work this layer took in, not the branch it
+   *  was built on. */
+  private async stackParent(
+    repoRoot: string,
+    mergeBase: string,
+  ): Promise<{ commit: string; branch: string } | undefined> {
+    const [log, checkedOut] = await Promise.all([
+      gitSafe(repoRoot, [
+        "log",
+        "--first-parent",
+        "--format=%H%x09%D",
+        // `%D` follows the log.decorate config, and only short names can match a branch name.
+        "--decorate=short",
+        "--decorate-refs=refs/heads/*",
+        `${mergeBase}..HEAD`,
+      ]),
+      currentBranch(repoRoot),
+    ]);
+    return pickStackBase(log, checkedOut);
   }
 
   /** Auto-detect the default branch (main/master/origin's HEAD), or undefined. */
@@ -381,6 +425,41 @@ export function parseNameStatus(output: string, group: FileGroup): ChangedFile[]
     }
   }
   return files;
+}
+
+/** Read `git log --first-parent --format=%H%x09%D` output nearest-first and return the first commit
+ *  that a local branch other than the checked-out one points at. Git marks the checked-out branch
+ *  with an arrow, so that prefix comes off before the name is compared. The walk runs out at the
+ *  merge base, where the range ends: there is no branch below, and the merge base is the comparison
+ *  point instead.
+ *
+ *  A branch on the HEAD commit is the branch below only when the checked-out branch is known: it is
+ *  then a stack layer with no commits of its own. Without that name — a detached HEAD, which is the
+ *  normal state during a rebase — a branch there can be the position we sit on under another name,
+ *  so the walk goes past it. */
+export function pickStackBase(
+  log: string,
+  checkedOut: string | undefined,
+): { commit: string; branch: string } | undefined {
+  let seenHead = false;
+  for (const line of log.split("\n")) {
+    const [commit, decorations = ""] = line.split("\t");
+    if (!commit) {
+      continue;
+    }
+    const atHead = !seenHead;
+    seenHead = true;
+    if (atHead && checkedOut === undefined) {
+      continue;
+    }
+    for (const decoration of decorations.split(", ")) {
+      const name = decoration.replace(/^HEAD -> /, "");
+      if (name !== "" && name !== "HEAD" && name !== checkedOut) {
+        return { commit, branch: name };
+      }
+    }
+  }
+  return undefined;
 }
 
 /** Parse `git diff --numstat -z` into per-path counts. */

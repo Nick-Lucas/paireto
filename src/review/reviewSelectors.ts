@@ -1,5 +1,5 @@
 // The "Compare To" QuickPick: choose the point the Committed group is diffed against.
-// Presets: HEAD, merge-base, the auto-detected default branch, and a Branch/Ref… picker.
+// Presets: HEAD, merge-base, stack base, the auto-detected default branch, and a Branch/Ref… picker.
 
 import * as vscode from "vscode";
 
@@ -25,8 +25,13 @@ export async function pickCompareTo(
   const items: CompareItem[] = [
     { label: "$(git-commit) HEAD", description: "working changes only", value: { kind: "head" } },
     {
+      label: "$(layers) Stack base",
+      description: "since the branch below in the stack",
+      value: { kind: "stackBase" },
+    },
+    {
       label: "$(git-pull-request) Merge base",
-      description: "since you branched",
+      description: "since the default branch",
       value: { kind: "mergeBase" },
     },
   ];
@@ -72,6 +77,11 @@ export async function pickMultiCompareTo(current: CompareTo): Promise<CompareTo 
   const items: CompareItem[] = [
     { label: "$(git-commit) HEAD", description: "working changes only", value: { kind: "head" } },
     {
+      label: "$(layers) Stack base",
+      description: "resolve independently per repository",
+      value: { kind: "stackBase" },
+    },
+    {
       label: "$(git-pull-request) Merge base",
       description: "resolve independently per repository",
       value: { kind: "mergeBase" },
@@ -98,8 +108,12 @@ export async function pickFileCompareTo(
   currentBaseRef: string,
   currentBaseLabel?: string,
 ): Promise<FileCompareTo | undefined> {
+  // Both computed rows resolve the default branch, so it is asked for once and passed down.
   const defaultBranch = await diff.defaultBranch(repoRoot);
-  const mergeBase = await diff.resolveCompareTo(repoRoot, { kind: "mergeBase" });
+  const [mergeBase, stackBase] = await Promise.all([
+    diff.resolveCompareTo(repoRoot, { kind: "mergeBase" }, defaultBranch),
+    diff.resolveCompareTo(repoRoot, { kind: "stackBase" }, defaultBranch),
+  ]);
   const items: CompareItem<FileCompareTo>[] = [];
   if (currentBaseRef === "EMPTY") {
     items.push({
@@ -121,6 +135,12 @@ export async function pickFileCompareTo(
       description: "latest commit",
       value: { kind: "head" },
       comparisonRef: "HEAD",
+    },
+    {
+      label: "$(layers) Stack base",
+      description: "where this branch was created",
+      value: { kind: "stackBase" },
+      comparisonRef: stackBase.ref ?? "HEAD",
     },
     {
       label: "$(git-pull-request) Merge base",
@@ -198,7 +218,13 @@ export function currentFileCompareKind(
   baseLabel: string | undefined,
   defaultBranch: string | undefined,
 ): FileCompareTo["kind"] | undefined {
-  if (baseLabel?.startsWith("merge-base(")) {
+  // A stack base can resolve to the same commit as the merge base, so the label is the only thing
+  // that keeps the two rows apart. Without a default branch neither label names one, so the bracket
+  // is not part of the match.
+  if (baseLabel?.startsWith("stack-base")) {
+    return "stackBase";
+  }
+  if (baseLabel?.startsWith("merge-base")) {
     return "mergeBase";
   }
   if (defaultBranch && baseRef === defaultBranch && baseLabel === defaultBranch) {

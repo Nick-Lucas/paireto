@@ -19,7 +19,7 @@ import { summarizeActivity } from "../agents/activitySummary.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
 import { branchFromRevParse, gitToplevel } from "../git/gitCli.js";
 import { buildSwitcherSections } from "../status/switcherRows.js";
-import { parseNameStatus, type ChangedFile } from "../git/DiffService.js";
+import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
@@ -61,6 +61,7 @@ import {
   shouldOpenStandaloneCommentTarget,
   shouldOpenTurnEndReview,
 } from "../review/ReviewController.js";
+import { dirtyTargetDocs } from "../review/stageSaves.js";
 import { relocateReviewAnchor } from "../review/commentAnchors.js";
 import { compareToEqual, currentFileCompareKind } from "../review/reviewSelectors.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
@@ -1827,6 +1828,7 @@ suite("Compare To picker", () => {
       compareToEqual({ kind: "ref", ref: "origin/main" }, { kind: "ref", ref: "main" }),
       false,
     );
+    assert.strictEqual(compareToEqual({ kind: "stackBase" }, { kind: "mergeBase" }), false);
   });
 
   test("recovers the semantic tab comparison when concrete refs overlap", () => {
@@ -1837,10 +1839,27 @@ suite("Compare To picker", () => {
       "mergeBase",
     );
     assert.strictEqual(
+      currentFileCompareKind("abc123", "stack-base(feat/a)", "origin/main"),
+      "stackBase",
+    );
+    // A branch sitting straight on the default branch resolves both rows to the SAME commit, so
+    // only the label separates them.
+    assert.strictEqual(
+      currentFileCompareKind("abc123", "stack-base(origin/main)", "origin/main"),
+      "stackBase",
+    );
+    assert.strictEqual(
       currentFileCompareKind("origin/main", "origin/main", "origin/main"),
       "default",
     );
     assert.strictEqual(currentFileCompareKind("feature", "feature", "origin/main"), "ref");
+  });
+
+  // With no default branch to name, both labels are the bare word and the ref falls back to HEAD.
+  // The row the user is on is then the label's only witness.
+  test("recovers the row when the repository has no default branch", () => {
+    assert.strictEqual(currentFileCompareKind("HEAD", "stack-base", undefined), "stackBase");
+    assert.strictEqual(currentFileCompareKind("HEAD", "merge-base", undefined), "mergeBase");
   });
 });
 
@@ -2516,5 +2535,50 @@ suite("AgentStrategy agnosticism (a second, non-Claude harness)", () => {
     assert.strictEqual(resolvePlanApproveMode("off", claudeDefault), undefined);
     // A harness with no settable mode at all (Codex).
     assert.strictEqual(resolvePlanApproveMode(undefined, codexDefault), undefined);
+  });
+});
+
+suite("stage with unsaved changes (which documents a stage saves)", () => {
+  const doc = (fsPath: string, isDirty: boolean, scheme = "file") => ({
+    uri: { scheme, fsPath },
+    isDirty,
+  });
+  const target = (path: string, status: FileStatus = "M", repoRoot = "/repo") => ({
+    repoRoot,
+    path,
+    status,
+  });
+
+  test("dirtyTargetDocs keeps only dirty working-tree docs that a target names", () => {
+    const dirty = doc("/repo/src/a.ts", true);
+    const docs = [
+      dirty,
+      doc("/repo/src/clean.ts", false),
+      doc("/repo/src/virtual.ts", true, "paireto-review"),
+      doc("/elsewhere/b.ts", true),
+    ];
+    assert.deepStrictEqual(dirtyTargetDocs(docs, [target("src/a.ts"), target("src/clean.ts")]), [
+      { doc: dirty, path: "src/a.ts" },
+    ]);
+  });
+
+  test("dirtyTargetDocs reports a doc once even when the targets repeat it", () => {
+    const dirty = doc("/repo/src/a.ts", true);
+    assert.strictEqual(
+      dirtyTargetDocs([dirty], [target("src/a.ts"), target("src/a.ts")]).length,
+      1,
+    );
+  });
+
+  test("dirtyTargetDocs matches nothing when no target names the dirty doc", () => {
+    assert.deepStrictEqual(
+      dirtyTargetDocs([doc("/repo/src/a.ts", true)], [target("src/b.ts")]),
+      [],
+    );
+  });
+
+  test("dirtyTargetDocs skips a deleted target, whose save would re-create the file", () => {
+    const dirty = doc("/repo/src/gone.ts", true);
+    assert.deepStrictEqual(dirtyTargetDocs([dirty], [target("src/gone.ts", "D")]), []);
   });
 });

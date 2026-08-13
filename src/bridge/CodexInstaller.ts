@@ -2,7 +2,7 @@
 // stable local marketplace because VSIX install paths move between upgrades; Codex then owns plugin
 // discovery, component namespacing, caching, enablement, and hook trust.
 
-import { execFile, execFileSync } from "node:child_process";
+import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -12,6 +12,8 @@ import type { InstallState } from "../welcome/protocol.js";
 import type { InstallResult } from "./PluginInstaller.js";
 
 const MARKETPLACE_NAME = "paireto";
+/** A probe answers a render, so it waits far less than an install does. */
+const PROBE_TIMEOUT_MS = 5000;
 const PLUGIN_NAME = "paireto";
 const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
 
@@ -147,9 +149,14 @@ function resolveCodexBin(env: NodeJS.ProcessEnv, override?: string): string | un
   });
 }
 
-function run(bin: string, args: string[], env: NodeJS.ProcessEnv): Promise<RunResult> {
+function run(
+  bin: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+  timeoutMs = 60000,
+): Promise<RunResult> {
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: 60000, encoding: "utf8", env }, (err, stdout, stderr) => {
+    execFile(bin, args, { timeout: timeoutMs, encoding: "utf8", env }, (err, stdout, stderr) => {
       const rawCode = err ? (err as NodeJS.ErrnoException).code : 0;
       resolve({
         code: typeof rawCode === "number" ? rawCode : err ? 1 : 0,
@@ -282,26 +289,17 @@ export async function installCodex(
   }
 }
 
-/** Probe the public plugin registry. */
-export function codexInstalledProbe(ctx: { pluginsRoot: string }): InstallState {
+/** Probe the public plugin registry. Asynchronous because the answer comes from the Codex CLI, and
+ *  the extension host runs on one thread: a synchronous call here stops the whole window, including
+ *  every other extension, until the CLI answers. */
+export async function codexInstalledProbe(ctx: { pluginsRoot: string }): Promise<InstallState> {
   const version = readCodexPluginVersion(ctx.pluginsRoot);
   const env = { ...process.env };
   const bin = resolveCodexBin(env);
-  if (bin) {
-    try {
-      const stdout = execFileSync(bin, ["plugin", "list", "--json"], {
-        encoding: "utf8",
-        timeout: 5000,
-        env,
-        stdio: ["ignore", "pipe", "ignore"],
-      });
-      const state = codexPluginInstallState(stdout, version);
-      if (state !== "not-installed") {
-        return state;
-      }
-    } catch {
-      // Treat an unavailable plugin registry as not installed.
-    }
+  if (!bin) {
+    return "not-installed";
   }
-  return "not-installed";
+  const listed = await run(bin, ["plugin", "list", "--json"], env, PROBE_TIMEOUT_MS);
+  // An unavailable plugin registry reads as not installed.
+  return listed.code === 0 ? codexPluginInstallState(listed.stdout, version) : "not-installed";
 }

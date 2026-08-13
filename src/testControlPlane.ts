@@ -86,6 +86,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       gateHasFeedback: deps.coordinator.current?.hasFeedback() ?? false,
       refreshCounts: deps.reviewController.getRefreshCounts(),
       compareTo: review.compareTo,
+      openDiffs: deps.reviewController.openDiffRows(),
       repositories: review.repositories.map((repository) => ({
         repoRoot: repository.repoRoot,
         compareRef: repository.changes.compareRef,

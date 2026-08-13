@@ -9,11 +9,9 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { log } from "../log.js";
+import type { AgentInstallStatus } from "./AgentInstallStatus.js";
 import {
   type AgentTerminalProfile,
-  type InstallContext,
-  type OnboardingAgent,
-  ONBOARDING_AGENTS,
   buildTerminalProfile,
   findAgent,
   profilePlatformKey,
@@ -29,12 +27,12 @@ import {
   parseKeybindings,
   recommendedKey,
 } from "./keybindings.js";
-import type { AgentState, InstallState, ShortcutState, WelcomeState } from "./protocol.js";
+import type { AgentState, ShortcutState, WelcomeState } from "./protocol.js";
 
 export class WelcomePanel {
   private static current: WelcomePanel | undefined;
 
-  static show(context: vscode.ExtensionContext): void {
+  static show(context: vscode.ExtensionContext, status: AgentInstallStatus): void {
     if (WelcomePanel.current) {
       WelcomePanel.current.panel.reveal(vscode.ViewColumn.One);
       return;
@@ -53,7 +51,7 @@ export class WelcomePanel {
       },
     );
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "paireto.svg");
-    WelcomePanel.current = new WelcomePanel(panel, context);
+    WelcomePanel.current = new WelcomePanel(panel, context, status);
   }
 
   private readonly disposables: vscode.Disposable[] = [];
@@ -61,6 +59,7 @@ export class WelcomePanel {
   private constructor(
     private readonly panel: vscode.WebviewPanel,
     private readonly context: vscode.ExtensionContext,
+    private readonly status: AgentInstallStatus,
   ) {
     // NB: never reveal the Output panel here — opening Welcome must not force-show the "bottom bar".
     // Logs land in the shared "Paireto" channel (gated on `paireto.logLevel`); open it manually.
@@ -71,6 +70,7 @@ export class WelcomePanel {
       this.disposables,
     );
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
+    this.disposables.push(this.status.onDidChange(() => this.post()));
   }
 
   private dispose(): void {
@@ -133,35 +133,6 @@ export class WelcomePanel {
     }
   }
 
-  /** The shipped plugin tree, built into dist/ alongside the extension bundle. */
-  private pluginsRoot(): string {
-    return vscode.Uri.joinPath(this.context.extensionUri, "dist", "plugins").fsPath;
-  }
-
-  /** Per-agent writable dir under globalStorage. Pure path (no mkdir) — probes only read; setupAgent
-   *  mkdirp's it before install. */
-  private stableDirPath(agentId: string): string {
-    return vscode.Uri.joinPath(this.context.globalStorageUri, "adapters", agentId).fsPath;
-  }
-
-  private installContext(agent: OnboardingAgent): InstallContext {
-    return { pluginsRoot: this.pluginsRoot(), stableDir: this.stableDirPath(agent.id) };
-  }
-
-  private agentInstallState(agent: OnboardingAgent): InstallState {
-    if (!agent.available || !agent.installedProbe) {
-      return "not-installed";
-    }
-    try {
-      return agent.installedProbe(this.installContext(agent));
-    } catch (err) {
-      log.info(
-        `[welcome] installedProbe failed for ${agent.id}: ${err instanceof Error ? err.message : err}`,
-      );
-      return "not-installed";
-    }
-  }
-
   /** True when the agent's terminal profile already exists in the user's settings for this platform. */
   private isProfileConfigured(profile: AgentTerminalProfile): boolean {
     const key = profilePlatformKey(process.platform);
@@ -187,15 +158,17 @@ export class WelcomePanel {
       );
     }
 
-    const agents: AgentState[] = ONBOARDING_AGENTS.map((a) => ({
-      id: a.id,
-      name: a.name,
-      available: a.available,
-      installState: this.agentInstallState(a),
-      profileName: a.profile?.name,
-      profileConfigured: a.profile ? this.isProfileConfigured(a.profile) : false,
-      note: a.note,
-    }));
+    // The cache, never a probe: a keybinding toggle posts state too, and the Codex probe asks its
+    // CLI. A probe that moves a row posts again through onDidChange.
+    const agents: AgentState[] = this.status.snapshot().map((row) => {
+      const agent = findAgent(row.id);
+      return {
+        ...row,
+        profileName: agent?.profile?.name,
+        profileConfigured: agent?.profile ? this.isProfileConfigured(agent.profile) : false,
+        note: agent?.note,
+      };
+    });
 
     const shortcuts: ShortcutState[] = MANAGED_SHORTCUTS.map((s) => {
       const current = effectiveBinding(entries, s, platform);
@@ -214,8 +187,14 @@ export class WelcomePanel {
     return { logoUri: this.mediaUri("PairetoHeader2x.png").toString(), agents, shortcuts };
   }
 
-  private postState(): void {
+  private post(): void {
     void this.panel.webview.postMessage({ type: "state", state: this.buildState() });
+  }
+
+  /** Post now, then ask the agents: an install state that moved comes back through onDidChange. */
+  private postState(): void {
+    this.post();
+    void this.status.refresh();
   }
 
   // ---- actions -----------------------------------------------------------
@@ -257,7 +236,7 @@ export class WelcomePanel {
       return;
     }
     void this.panel.webview.postMessage({ type: "agentBusy", agentId });
-    const ctx = this.installContext(agent);
+    const ctx = this.status.installContext(agent.id);
     // The installer stages files here and stamps the installed version — mkdirp it first.
     fs.mkdirSync(ctx.stableDir, { recursive: true });
     const result = await agent.install(ctx);
@@ -279,7 +258,9 @@ export class WelcomePanel {
       ok: result.ok,
       detail: result.detail,
     });
-    this.postState();
+    // The user waits on this one, so the card shows the state the install left behind.
+    await this.status.refresh();
+    this.post();
   }
 
   /** Add the agent's terminal profile to User settings (so it shows in the new-terminal-with-profile

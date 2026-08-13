@@ -14,7 +14,7 @@ import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry, type GateKind } from "../gate/GateCoordinator.js";
-import { repoRelativePath } from "../protocol/paths.js";
+import { canonicalize, repoRelativePath } from "../protocol/paths.js";
 import { closeTabsWhere } from "../gate/tabs.js";
 import {
   DiffService,
@@ -65,6 +65,7 @@ import {
   type GuidedReviewState,
 } from "./guidedPlan.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
+import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
@@ -492,13 +493,31 @@ export class ReviewController implements vscode.Disposable {
     map: (result: ReviewGateResult) => T,
     kind: GateKind = "review",
   ): Promise<T> {
-    await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
+    // Take the pending slot BEFORE the UI goes up: registering foregrounds the gate, so Approve and
+    // Send Feedback reach this review while that registration is still running, and fulfill() drops
+    // an answer for an id nothing is waiting on yet — leaving the agent blocked on a resolved review.
+    const decision = this.gate.awaitDecision(requestId);
     // A dropped connection ends the review (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
       this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    const result = await this.gate.awaitDecision(requestId);
+    try {
+      await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
+    } catch (err) {
+      // The pending slot was taken before the UI went up, so a failure here has to give it back.
+      // Nothing else can: the entry, the listener and the review slot are all held here, and the
+      // agent waits until this returns an answer.
+      log.error(
+        `review ${requestId} failed to open: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
+      signal.removeEventListener("abort", onAbort);
+      await this.cleanupReview(requestId);
+      // Settled by the fulfill above, or by an answer that landed while the UI was going up.
+      return map(await decision);
+    }
+    const result = await decision;
     signal.removeEventListener("abort", onAbort);
     if (this.activeRequestId === requestId) {
       await this.cleanupReview(requestId);
@@ -546,7 +565,7 @@ export class ReviewController implements vscode.Disposable {
     await this.setGuidedContext(false);
     await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
     await this.setReviewContext(false);
-    this.resetComments();
+    this.clearComments();
     await this.coordinator.unregister(requestId);
     this.releaseReviewSlot();
     this.changeEmitter.fire();
@@ -577,6 +596,12 @@ export class ReviewController implements vscode.Disposable {
   /** True while a review is in progress (drives the gate buttons), even if backgrounded. */
   isSessionActive(): boolean {
     return this.activeRequestId !== undefined;
+  }
+
+  /** The tree row each open diff tab stands for, for `paireto.test.inspect` — lets a test pin that a
+   *  tab which outlives a write-op still names the row the file is on. */
+  openDiffRows(): { path: string; group: FileGroup }[] {
+    return Array.from(this.openDiffs.values(), (open) => ({ path: open.path, group: open.group }));
   }
 
   /** Per-reason refresh() tally for `paireto.test.inspect` — lets a test pin that a flow (e.g.
@@ -866,12 +891,32 @@ export class ReviewController implements vscode.Disposable {
 
   // ── Git write-ops ──────────────────────────────────────────────────────────
   private async stageFiles(files: RepoChangedFile[]): Promise<void> {
+    if (!files.length) {
+      return;
+    }
+    if (!(await this.saveBeforeStage(files))) {
+      return;
+    }
     for (const [repoRoot, repoFiles] of filesByRoot(files)) {
       const paths = repoFiles.map((f) => f.path);
       await this.diff.stage(repoRoot, paths);
       await this.refresh();
       await this.reconcileOpenDiffsAfterWrite(repoRoot, paths, "staged");
     }
+  }
+
+  /**
+   * Git stages the file as it is on disk, so a stage means "stage the version I am looking at" only
+   * when the editor's unsaved edits are written first. Returns whether the stage may run.
+   */
+  private async saveBeforeStage(files: RepoChangedFile[]): Promise<boolean> {
+    for (const { doc, path } of dirtyTargetDocs(vscode.workspace.textDocuments, files)) {
+      if (!(await doc.save())) {
+        void vscode.window.showErrorMessage(saveFailureMessage(path));
+        return false;
+      }
+    }
+    return true;
   }
 
   private async unstageFiles(files: RepoChangedFile[]): Promise<void> {
@@ -887,16 +932,8 @@ export class ReviewController implements vscode.Disposable {
     if (!files.length) {
       return;
     }
-    const label =
-      files.length === 1 ? `the changes in ${files[0].path}` : `changes in ${files.length} files`;
-    const choice = await vscode.window.showWarningMessage(
-      `Discard ${label}? This cannot be undone.`,
-      { modal: true },
-      "Discard Changes",
-    );
-    if (choice !== "Discard Changes") {
-      return;
-    }
+    const dirty = dirtyTargetDocs(vscode.workspace.textDocuments, files);
+    await this.dropUnsavedEdits(dirty.map((target) => target.doc));
     for (const [repoRoot, repoFiles] of filesByRoot(files)) {
       await this.diff.discard(
         repoRoot,
@@ -907,6 +944,20 @@ export class ReviewController implements vscode.Disposable {
         repoRoot,
         repoFiles.map((f) => f.path),
       );
+    }
+  }
+
+  /**
+   * Throw away the unsaved editor content for files a discard is about to revert. The edits are part
+   * of the change the user chose to discard, and a tab still holding them cannot be closed — VS Code
+   * raises its own save dialog and the reconcile has to leave the stale tab where it is. Reverting
+   * writes nothing to disk, so the buffer never reaches the file.
+   */
+  private async dropUnsavedEdits(docs: vscode.TextDocument[]): Promise<void> {
+    for (const doc of docs) {
+      // Revert acts on the active editor, so the document has to hold it first.
+      await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
+      await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
     }
   }
 
@@ -965,7 +1016,8 @@ export class ReviewController implements vscode.Disposable {
    * different group (e.g. unstaged→staged), re-point the tab by closing it and reopening the diff at
    * its new location (preserving the column); if it's still present at the same level, leave it (the
    * refresh()'s content re-render already covers it). A file that already has a comment is left
-   * untouched so we never yank a diff the user is reviewing.
+   * untouched so we never yank a diff the user is reviewing. A tab holding unsaved edits also stays
+   * open, but what we record about it follows the file all the same.
    */
   private async reconcileOpenDiffsAfterWrite(
     repoRoot: string,
@@ -998,14 +1050,19 @@ export class ReviewController implements vscode.Disposable {
         continue; // still present at the same level — content refresh handles it
       }
       const located = this.locateReviewTab(baseKey);
-      this.openDiffs.delete(baseKey);
-      if (
-        this.openDiffFile?.repoRoot === repoRoot &&
-        this.openDiffFile.path === relPath &&
-        this.openDiffFile.group === oldGroup
-      ) {
-        this.openDiffFile = undefined;
+      // Closing a tab with unsaved edits makes VS Code raise its own save dialog and can drop the
+      // buffer, so the tab stays. What we record about it still follows the file: an entry naming a
+      // group the file has left points the tree at a row that is no longer there.
+      if (located && this.hasUnsavedEdits(repoRoot, relPath)) {
+        if (target === "close") {
+          this.forgetOpenDiff(baseKey, open);
+        } else {
+          this.moveOpenDiff(baseKey, open, target);
+        }
+        this.debug(`reconcile: ${relPath} has unsaved edits — kept the tab, tracked "${target}"`);
+        continue;
       }
+      this.forgetOpenDiff(baseKey, open);
       await closeTabsWhere((tab) => reviewTabKey(tab.input) === baseKey);
       if (target === "close") {
         this.debug(`reconcile: ${relPath} gone — closed diff tab`);
@@ -1029,6 +1086,34 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
+  /** Stop tracking a tab's tree row. The tab itself is left alone. */
+  private forgetOpenDiff(tabKey: string, at: OpenDiffState): void {
+    this.openDiffs.delete(tabKey);
+    if (this.openDiffFile && sameReviewFile(this.openDiffFile, at)) {
+      this.openDiffFile = undefined;
+    }
+  }
+
+  /** Follow a file that changed git layer, keeping the tab and its pinned comparison. */
+  private moveOpenDiff(tabKey: string, at: OpenDiffState, group: FileGroup): void {
+    this.openDiffs.set(tabKey, { ...at, group });
+    const current = this.openDiffFile;
+    if (current && sameReviewFile(current, at)) {
+      this.openDiffFile = { ...current, group };
+    }
+  }
+
+  /** True while an editor holds unsaved edits for this file. Only the working-tree side of a review
+   *  diff can be edited — the base side is read-only — so the document behind that side answers for
+   *  the tab, and it answers sooner: the tab's own dirty flag is a view of this document and can lag
+   *  it by a frame. */
+  private hasUnsavedEdits(repoRoot: string, relPath: string): boolean {
+    const target = canonicalize(join(repoRoot, relPath));
+    return vscode.workspace.textDocuments.some(
+      (doc) => doc.isDirty && doc.uri.scheme === "file" && canonicalize(doc.uri.fsPath) === target,
+    );
+  }
+
   /** The open review tab whose virtual URI matches `tabKey`: its column, active and preview state. */
   private locateReviewTab(
     tabKey: string,
@@ -1036,7 +1121,11 @@ export class ReviewController implements vscode.Disposable {
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
         if (reviewTabKey(tab.input) === tabKey) {
-          return { viewColumn: group.viewColumn, active: tab.isActive, preview: tab.isPreview };
+          return {
+            viewColumn: group.viewColumn,
+            active: tab.isActive,
+            preview: tab.isPreview,
+          };
         }
       }
     }
@@ -1740,7 +1829,7 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.getComments();
-    const feedback = renderReviewFeedback(comments, this.roots.gitRoots.length > 1);
+    const feedback = renderReviewFeedback(comments, this.isMultiRepository());
     if (!feedback) {
       void vscode.window.showWarningMessage(
         "No comments to send. Add a comment, or Approve to proceed with no changes.",
@@ -1755,7 +1844,12 @@ export class ReviewController implements vscode.Disposable {
 
   /** True when there's ≥1 comment to send (drives which gate button shows). */
   hasFeedback(): boolean {
-    return renderReviewFeedback(this.getComments(), this.roots.gitRoots.length > 1).length > 0;
+    return renderReviewFeedback(this.getComments(), this.isMultiRepository()).length > 0;
+  }
+
+  /** True when comment file paths need their repo root prefixed to stay unambiguous. */
+  isMultiRepository(): boolean {
+    return this.roots.gitRoots.length > 1;
   }
 
   /** True if any comment is anchored on this file (so reconcile won't yank the diff out from it). */
@@ -1765,7 +1859,8 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  private resetComments(): void {
+  /** Empties the comment bucket once its comments are delivered, so they cannot be sent twice. */
+  clearComments(): void {
     this.commentSession.reset();
     this.comments.clear();
     this.changeEmitter.fire();
@@ -2040,6 +2135,11 @@ function mergeChangesForPath(
     }
   }
   return { changes: next, changed };
+}
+
+/** Two records naming the same file at the same git layer of the same repository. */
+function sameReviewFile(a: OpenDiffState, b: OpenDiffState): boolean {
+  return a.repoRoot === b.repoRoot && a.path === b.path && a.group === b.group;
 }
 
 /**

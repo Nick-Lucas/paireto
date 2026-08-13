@@ -17,7 +17,15 @@ import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { closeTabsForUri, tabUri } from "../gate/tabs.js";
 import { log } from "../log.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
-import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
+import { type PlanCommentData } from "./planFeedback.js";
+import {
+  codeFeedbackPromptText,
+  composePlanFeedback,
+  planSendDecision,
+  INCLUDE_FILE_COMMENTS,
+  PLAN_FEEDBACK_ONLY,
+  type CodeFeedbackSource,
+} from "./planCodeFeedback.js";
 import { planDocLabel } from "./planTitle.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
 import type { Harness } from "../protocol/types.js";
@@ -53,6 +61,7 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly registry: PlanGateRegistry,
     private readonly coordinator: GateCoordinator,
     private readonly locator: AgentServiceLocator,
+    private readonly codeFeedback: CodeFeedbackSource,
   ) {
     this.comments = new CommentSession("paireto.plan", "Paireto: Add Comment", Schemes.plan, {
       prompt: "Add plan feedback",
@@ -118,7 +127,34 @@ export class PlanReviewController implements vscode.Disposable {
       foreground: () => this.foreground(review),
       background: () => this.background(review),
     };
-    await this.coordinator.register(entry);
+    // Take the pending slot BEFORE the UI goes up: registering foregrounds the gate, so Approve and
+    // Send Feedback reach this plan while that registration is still running, and fulfill() drops an
+    // answer for a key nothing is waiting on yet — leaving the agent blocked on an answered plan.
+    const decision = this.registry.awaitDecision(key);
+
+    // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
+    const onAbort = (): void => {
+      this.registry.fulfill(key, { decision: "deny", reason: "Plan review connection closed." });
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
+    try {
+      await this.coordinator.register(entry);
+    } catch (err) {
+      // The pending slot was taken before the UI went up, so a failure here has to give it back.
+      // Nothing else can: the plan holds a pending answer, a document and a tab, and the agent waits
+      // until one of them gives it a decision.
+      const detail = err instanceof Error ? err.message : String(err);
+      log.error(`plan review failed to open for agent ${sessionId.slice(0, 8)}: ${detail}`);
+      this.registry.fulfill(key, {
+        decision: "deny",
+        reason: `Paireto could not open the plan for review (${detail}). Ask the user how to continue.`,
+      });
+      signal.removeEventListener("abort", onAbort);
+      await this.finish(review);
+      // Settled by the fulfill above, or by an answer that landed while the UI was going up.
+      return decision;
+    }
     this.updatePendingContext();
     this.changeEmitter.fire();
     const planTool = this.locator.strategyFor(review.harness).planToolName;
@@ -127,13 +163,7 @@ export class PlanReviewController implements vscode.Disposable {
     );
     this.notifyPlanOpened(review);
 
-    // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
-    const onAbort = (): void => {
-      this.registry.fulfill(key, { decision: "deny", reason: "Plan review connection closed." });
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-
-    const result = await this.registry.awaitDecision(key);
+    const result = await decision;
     signal.removeEventListener("abort", onAbort);
     await this.finish(review);
     return result;
@@ -221,25 +251,62 @@ export class PlanReviewController implements vscode.Disposable {
     this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
 
-  private sendFeedback(review: PlanReview): void {
+  private async sendFeedback(review: PlanReview): Promise<void> {
     if (!this.plans.has(review.id)) {
       return;
     }
     const comments = this.collect(review);
-    if (comments.length === 0) {
+    const codeComments = this.codeFeedback.getComments();
+    const decision = planSendDecision({
+      planComments: comments.length,
+      codeComments: codeComments.length,
+      reviewInProgress: this.codeFeedback.isSessionActive(),
+    });
+
+    if (decision.action === "refuse") {
+      const queued =
+        codeComments.length > 0 ? " Your file comments stay queued for the next code review." : "";
       void vscode.window.showWarningMessage(
-        "No comments to send. Add at least one comment, or use Approve.",
+        `No plan comments to send. Add a comment on the plan, or use Approve.${queued}`,
       );
       return;
     }
+
+    let include = false;
+    if (decision.action === "ask") {
+      const { message, detail } = codeFeedbackPromptText(decision.codeCount);
+      const choice = await vscode.window.showWarningMessage(
+        message,
+        { modal: true, detail },
+        INCLUDE_FILE_COMMENTS,
+        PLAN_FEEDBACK_ONLY,
+      );
+      if (!this.plans.has(review.id)) {
+        return; // resolved while the dialog was open
+      }
+      if (choice !== INCLUDE_FILE_COMMENTS && choice !== PLAN_FEEDBACK_ONLY) {
+        log.info("plan review feedback cancelled at the file-comment prompt");
+        return;
+      }
+      include = choice === INCLUDE_FILE_COMMENTS;
+    }
+
+    const sentCode = include ? codeComments : [];
     log.info(
-      `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s)`,
+      `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
-    const planTool = this.locator.strategyFor(review.harness).planToolName;
     this.registry.fulfill(review.key, {
       decision: "deny",
-      reason: renderPlanFeedback(comments, planTool),
+      reason: composePlanFeedback({
+        planComments: comments,
+        codeComments: sentCode,
+        toolName: this.locator.strategyFor(review.harness).planToolName,
+        multiRepository: this.codeFeedback.isMultiRepository(),
+      }),
     });
+    if (include) {
+      this.codeFeedback.clearComments();
+    }
   }
 
   private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
@@ -345,14 +412,13 @@ export class PlanReviewController implements vscode.Disposable {
     if (choice === APPROVE) {
       await this.approve(review);
     } else if (choice === FEEDBACK) {
-      if (this.collect(review).length === 0) {
+      await this.sendFeedback(review);
+      // Send Feedback answers nothing when there are no plan comments to send, and the file-comment
+      // prompt can be cancelled. The tab is already closed, so bring the plan back in both cases or
+      // the user can no longer read it or comment on it.
+      if (this.registry.has(review.key)) {
         await this.reopen(review);
-        void vscode.window.showWarningMessage(
-          "Add at least one comment before sending feedback, or Approve.",
-        );
-        return;
       }
-      this.sendFeedback(review);
     } else {
       await this.reopen(review); // dismissed — keep the gate alive
     }
