@@ -138,7 +138,23 @@ export class PlanReviewController implements vscode.Disposable {
     };
     signal.addEventListener("abort", onAbort, { once: true });
 
-    await this.coordinator.register(entry);
+    try {
+      await this.coordinator.register(entry);
+    } catch (err) {
+      // The pending slot was taken before the UI went up, so a failure here has to give it back.
+      // Nothing else can: the plan holds a pending answer, a document and a tab, and the agent waits
+      // until one of them gives it a decision.
+      const detail = err instanceof Error ? err.message : String(err);
+      log.error(`plan review failed to open for agent ${sessionId.slice(0, 8)}: ${detail}`);
+      this.registry.fulfill(key, {
+        decision: "deny",
+        reason: `Paireto could not open the plan for review (${detail}). Ask the user how to continue.`,
+      });
+      signal.removeEventListener("abort", onAbort);
+      await this.finish(review);
+      // Settled by the fulfill above, or by an answer that landed while the UI was going up.
+      return decision;
+    }
     this.updatePendingContext();
     this.changeEmitter.fire();
     const planTool = this.locator.strategyFor(review.harness).planToolName;
@@ -396,16 +412,10 @@ export class PlanReviewController implements vscode.Disposable {
     if (choice === APPROVE) {
       await this.approve(review);
     } else if (choice === FEEDBACK) {
-      if (this.collect(review).length === 0) {
-        await this.reopen(review);
-        void vscode.window.showWarningMessage(
-          "Add at least one comment before sending feedback, or Approve.",
-        );
-        return;
-      }
       await this.sendFeedback(review);
-      // The file-comment prompt can be cancelled, which answers nothing. The tab is already closed,
-      // so bring the plan back or the user can no longer read it or comment on it.
+      // Send Feedback answers nothing when there are no plan comments to send, and the file-comment
+      // prompt can be cancelled. The tab is already closed, so bring the plan back in both cases or
+      // the user can no longer read it or comment on it.
       if (this.registry.has(review.key)) {
         await this.reopen(review);
       }

@@ -501,7 +501,21 @@ export class ReviewController implements vscode.Disposable {
       this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
+    try {
+      await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
+    } catch (err) {
+      // The pending slot was taken before the UI went up, so a failure here has to give it back.
+      // Nothing else can: the entry, the listener and the review slot are all held here, and the
+      // agent waits until this returns an answer.
+      log.error(
+        `review ${requestId} failed to open: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
+      signal.removeEventListener("abort", onAbort);
+      await this.cleanupReview(requestId);
+      // Settled by the fulfill above, or by an answer that landed while the UI was going up.
+      return map(await decision);
+    }
     const result = await decision;
     signal.removeEventListener("abort", onAbort);
     if (this.activeRequestId === requestId) {

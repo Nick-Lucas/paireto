@@ -144,7 +144,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       coordinator.current?.sendFeedback(),
     ),
     // Palette entry point: one action that submits queued feedback, or approves when there is none.
-    vscode.commands.registerCommand(Commands.gateSubmit, () => {
+    // Awaited because a plan's Send Feedback can raise a modal, and the command must not report done
+    // while the user still has that modal in front of them.
+    vscode.commands.registerCommand(Commands.gateSubmit, async () => {
       const gate = coordinator.current;
       if (!gate) {
         void vscode.window.showWarningMessage(
@@ -153,9 +155,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       if (gate.hasFeedback()) {
-        gate.sendFeedback();
+        await gate.sendFeedback();
       } else {
-        gate.approve();
+        await gate.approve();
       }
     }),
     registerCommentEditingCommands(),

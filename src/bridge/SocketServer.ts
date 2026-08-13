@@ -167,7 +167,13 @@ export class SocketServer {
           this.handlers.onSessionAttached(attachedSessionId);
           continue;
         }
-        void this.route(msg, send, inflight);
+        // A handler that rejects sends no reply, so the agent waits on a socket that will never
+        // answer. Log it, or that silence has no trace anywhere.
+        void this.route(msg, send, inflight).catch((err) => {
+          log.error(
+            `bridge handler for ${msg.t} failed: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        });
       }
     });
   }

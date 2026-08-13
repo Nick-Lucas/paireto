@@ -92,4 +92,35 @@ suite("plan early close with queued file comments", () => {
       (await inspect()).commentBucketCount === 0 ? true : undefined,
     );
   });
+
+  test("send feedback with no plan comments means the file comments stay queued", async function () {
+    this.timeout(90_000);
+    warnings = stubWarnings((message) =>
+      message.includes("still waiting on this plan") ? "Send Feedback" : undefined,
+    );
+
+    await queueFileComment("Rename this file.");
+    const tab = await openPlan(wire, {
+      repoRoot,
+      id: `${PLAN_REQUEST_ID}-refusal`,
+      sessionId: "early-close-session",
+    });
+
+    await vscode.window.tabGroups.close(tab);
+
+    const refusal = await waitFor("the refusal message", () =>
+      warnings!.seen.find((m) => m.includes("No plan comments to send")),
+    );
+    assert.ok(
+      refusal.includes("stay queued"),
+      `the refusal must say the file comments survive: ${refusal}`,
+    );
+    const reopened = await waitFor("the plan document to come back", () => planTab());
+    assert.ok(reopened, "a refusal answers nothing, so the plan must come back");
+    assert.strictEqual(
+      wire.messages.some((m) => m.t === "plan.review.response"),
+      false,
+      "a refusal must leave the plan gate pending",
+    );
+  });
 });
