@@ -89,6 +89,8 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       repositories: review.repositories.map((repository) => ({
         repoRoot: repository.repoRoot,
         compareRef: repository.changes.compareRef,
+        stagedPaths: repository.changes.staged.map((file) => file.path),
+        unstagedPaths: repository.changes.unstaged.map((file) => file.path),
         committedPaths: repository.changes.committed.map((file) => file.path),
       })),
       guided: guidedSnapshot(),

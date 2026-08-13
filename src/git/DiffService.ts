@@ -95,9 +95,8 @@ export class DiffService {
 
   /**
    * The one working-state scan behind {@link getChanges} and {@link changesForPath} — shared so the
-   * group a path lands in (notably the committed-while-also-staged/unstaged suppression) can never
-   * diverge between the tree's model and openDiff's scoped sync. Optional `paths` scope the result
-   * to the given files.
+   * groups for a path can never diverge between the tree's model and openDiff's scoped sync.
+   * Optional `paths` scope the result to the given files.
    */
   private async scan(
     repoRoot: string,
@@ -110,10 +109,9 @@ export class DiffService {
     const stagedAll = await this.collect(repoRoot, ["diff", "--cached"], "staged");
     const unstagedAll = await this.collect(repoRoot, ["diff"], "unstaged");
 
-    // Committed = changed between Compare-To and HEAD, minus anything already staged/unstaged (the
-    // `here` filter below). A bad/unresolvable compare ref is a persistent condition, so degrade to
-    // empty here rather than failing the whole model (staged/unstaged failures, by contrast,
-    // propagate and keep last-good).
+    // A bad or unresolvable compare ref is a persistent condition, so degrade the committed group
+    // to empty rather than failing the whole model. Staged and unstaged failures still propagate so
+    // the caller can keep the last good model.
     let committedAll: ChangedFile[] = [];
     if (compareRef) {
       try {
@@ -156,10 +154,7 @@ export class DiffService {
       });
     }
 
-    // The widened scope keeps this suppression in full-scan parity: a committed entry in scope has
-    // both rename halves in scope, so any staged/unstaged/untracked change at its path is in `here`.
-    const here = new Set([...staged, ...unstaged].map((f) => f.path));
-    const committed = scope(committedAll).filter((f) => !here.has(f.path));
+    const committed = scope(committedAll);
     return { staged, unstaged, committed };
   }
 
