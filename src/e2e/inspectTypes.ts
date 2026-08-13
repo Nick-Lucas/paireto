@@ -48,6 +48,8 @@ export interface InspectGuided {
 export interface InspectRepositoryChanges {
   repoRoot: string;
   compareRef: string | null;
+  stagedPaths: string[];
+  unstagedPaths: string[];
   committedPaths: string[];
 }
 

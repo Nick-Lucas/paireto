@@ -31,11 +31,11 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
   const diff = new DiffService();
   let repo: string;
   let compareRef: string;
+  const git = (args: string[]): string =>
+    execFileSync("git", args, { cwd: repo }).toString().trim();
 
   suiteSetup(() => {
     repo = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-scoped-"));
-    const git = (args: string[]): string =>
-      execFileSync("git", args, { cwd: repo }).toString().trim();
     const write = (name: string, content: string): void =>
       fs.writeFileSync(path.join(repo, name), content);
     git(["init", "-q"]);
@@ -54,8 +54,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     git(["commit", "-q", "-m", "second"]);
     // Working state: solo + other modified (unstaged), moved modified + staged, new untracked,
     // ren-old staged-renamed to ren-new with an untracked stub left at the old path, and the
-    // committed crn rename shadowed by an unstaged edit at its new path + an untracked stub at
-    // its old one.
+    // committed crn rename with an unstaged edit at its new path + an untracked stub at its old one.
     write("solo.txt", "solo v2\n");
     write("other.txt", "other v2\n");
     write("moved.txt", "moved v2\n");
@@ -131,16 +130,14 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     );
   });
 
-  test("a committed rename shadowed at its new path stays suppressed when queried by the old path", async () => {
-    // Full-scan parity: the committed R crn-old→crn-new is suppressed because crn-new has an
-    // unstaged edit. A scope that misses that edit would resurrect the committed row AND drop the
-    // unstaged one from the merged model.
+  test("a committed rename remains when its new path has a Working Tree change", async () => {
     const fresh = await diff.changesForPath(repo, ["crn-old.txt"], compareRef);
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [
         { path: "crn-new.txt", group: "unstaged", status: "M" },
         { path: "crn-old.txt", group: "unstaged", status: "U" },
+        { path: "crn-new.txt", group: "committed", status: "R" },
       ],
     );
   });
@@ -157,18 +154,31 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     );
   });
 
-  test("committed entries appear against the compare ref, suppressed by a lower-layer change", async () => {
+  test("committed entries remain against the compare ref with a lower-layer change", async () => {
     const committed = await diff.changesForPath(repo, ["hist.txt"], compareRef);
     assert.deepStrictEqual(
       committed.map((f) => ({ path: f.path, group: f.group })),
       [{ path: "hist.txt", group: "committed" }],
     );
     fs.writeFileSync(path.join(repo, "hist.txt"), "hist v3\n");
-    const shadowed = await diff.changesForPath(repo, ["hist.txt"], compareRef);
+    const withWorkingChange = await diff.changesForPath(repo, ["hist.txt"], compareRef);
     assert.deepStrictEqual(
-      shadowed.map((f) => ({ path: f.path, group: f.group })),
-      [{ path: "hist.txt", group: "unstaged" }],
-      "the committed entry is dropped while the path also has a working change (getChanges parity)",
+      withWorkingChange.map((f) => ({ path: f.path, group: f.group })),
+      [
+        { path: "hist.txt", group: "unstaged" },
+        { path: "hist.txt", group: "committed" },
+      ],
+      "the committed and Working Tree comparisons must both remain available",
+    );
+    git(["add", "hist.txt"]);
+    const withStagedChange = await diff.changesForPath(repo, ["hist.txt"], compareRef);
+    assert.deepStrictEqual(
+      withStagedChange.map((f) => ({ path: f.path, group: f.group })),
+      [
+        { path: "hist.txt", group: "staged" },
+        { path: "hist.txt", group: "committed" },
+      ],
+      "the committed and Staged comparisons must both remain available",
     );
   });
 });
