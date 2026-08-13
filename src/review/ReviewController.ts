@@ -2137,17 +2137,17 @@ function mergeChangesForPath(
   return { changes: next, changed };
 }
 
+/** Two records naming the same file at the same git layer of the same repository. */
+function sameReviewFile(a: OpenDiffState, b: OpenDiffState): boolean {
+  return a.repoRoot === b.repoRoot && a.path === b.path && a.group === b.group;
+}
+
 /**
  * Decide what to do with an open diff tab after a git write-op moved its file. `candidates` is the set
  * of groups that now contain the path (after refresh). Returns "keep" if it's still at the same level,
  * "close" if the change is gone entirely, otherwise the group to re-point the tab to (preferring the
  * write-op's destination group when the file landed in several).
  */
-/** Two records naming the same file at the same git layer of the same repository. */
-function sameReviewFile(a: OpenDiffState, b: OpenDiffState): boolean {
-  return a.repoRoot === b.repoRoot && a.path === b.path && a.group === b.group;
-}
-
 export function reconcileDiffTarget(
   oldGroup: FileGroup,
   candidates: FileGroup[],

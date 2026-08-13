@@ -1,9 +1,7 @@
-// Staging a file whose editor still holds unsaved edits used to put the ON-DISK content in the
-// index and then close the diff tab, which made VS Code raise its own save dialog. The user's save
-// landed AFTER the `git add`, so the very edits they thought they staged came back as a new
-// unstaged change. Stage now means "stage the version I am looking at": the target documents are
-// saved BEFORE the git write, without a question. Driven through the activated extension's real
-// commands, like openDiffReconcile.test.ts.
+// Staging a file whose editor still holds unsaved edits. Git stages the content that is ON DISK, so
+// a stage means "stage the version I am looking at" only when the target documents are saved BEFORE
+// the git write, without a question. Driven through the activated extension's real commands, like
+// openDiffReconcile.test.ts.
 
 import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
@@ -95,7 +93,7 @@ async function openDirtyDiff(
   }, 20_000);
   assert.ok(tab, `diff tab for ${name} must open`);
 
-  // Type into the working-tree side without saving — the state that used to lose the edits.
+  // Type into the working-tree side without saving — the state every test here starts from.
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
   const edit = new vscode.WorkspaceEdit();
   edit.insert(doc.uri, new vscode.Position(doc.lineCount, 0), "three\n");
