@@ -159,8 +159,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     mainTree.register(),
   );
 
-  // The Codex probe calls its CLI and can block for seconds, so the first probe waits until
-  // activation has returned.
+  // The Codex probe calls its CLI, which can take seconds to answer, so activation does not wait on
+  // it. The sidebar renders from the cache and redraws when the answer lands.
   installStatus.scheduleRefresh();
 
   // Env-gated E2E test control plane (inert unless PAIRETO_TEST === "1"): read-only inspect + a

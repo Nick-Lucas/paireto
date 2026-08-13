@@ -70,6 +70,7 @@ export class WelcomePanel {
       this.disposables,
     );
     this.panel.onDidDispose(() => this.dispose(), undefined, this.disposables);
+    this.disposables.push(this.status.onDidChange(() => this.post()));
   }
 
   private dispose(): void {
@@ -157,9 +158,9 @@ export class WelcomePanel {
       );
     }
 
-    // Refreshing here (not just reading the cache) keeps the sidebar's nudge in step with every
-    // state the panel posts, including the one right after an install finishes.
-    const agents: AgentState[] = this.status.refresh().map((row) => {
+    // The cache, never a probe: a keybinding toggle posts state too, and the Codex probe asks its
+    // CLI. A probe that moves a row posts again through onDidChange.
+    const agents: AgentState[] = this.status.snapshot().map((row) => {
       const agent = findAgent(row.id);
       return {
         ...row,
@@ -186,8 +187,15 @@ export class WelcomePanel {
     return { logoUri: this.mediaUri("PairetoHeader2x.png").toString(), agents, shortcuts };
   }
 
-  private postState(): void {
+  /** Post the state we hold. */
+  private post(): void {
     void this.panel.webview.postMessage({ type: "state", state: this.buildState() });
+  }
+
+  /** Post now, then ask the agents: an install state that moved comes back through onDidChange. */
+  private postState(): void {
+    this.post();
+    void this.status.refresh();
   }
 
   // ---- actions -----------------------------------------------------------
@@ -251,7 +259,9 @@ export class WelcomePanel {
       ok: result.ok,
       detail: result.detail,
     });
-    this.postState();
+    // The user waits on this one, so the card shows the state the install left behind.
+    await this.status.refresh();
+    this.post();
   }
 
   /** Add the agent's terminal profile to User settings (so it shows in the new-terminal-with-profile

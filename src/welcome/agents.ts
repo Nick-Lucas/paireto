@@ -44,11 +44,12 @@ export interface OnboardingAgent {
   available: boolean;
   /** Installer for an available agent. Absent for planned ones. */
   install?: (ctx: InstallContext) => Promise<InstallResult>;
-  /** Synchronous probe the Welcome screen runs to render the card's action (Set up / Update / ✓
-   *  Installed): "installed" iff this agent's plugin is present at the SHIPPED version,
-   *  "update-available" iff it's present but at a stale version (installers are idempotent upgraders,
-   *  so Update just re-runs install), else "not-installed". Absent → treated as not-installed. */
-  installedProbe?: (ctx: InstallContext) => InstallState;
+  /** Probe behind the card's action (Set up / Update / ✓ Installed): "installed" iff this agent's
+   *  plugin is present at the SHIPPED version, "update-available" iff it's present but at a stale
+   *  version (installers are idempotent upgraders, so Update just re-runs install), else
+   *  "not-installed". Absent → treated as not-installed. May answer asynchronously: a probe that
+   *  asks a CLI must not hold the extension host thread. */
+  installedProbe?: (ctx: InstallContext) => InstallState | Promise<InstallState>;
   /** Terminal profile written to User settings on setup (powers the quick-launch profile picker). */
   profile?: AgentTerminalProfile;
   /** Static setup note rendered under the agent's card — e.g. an opt-in feature the user must enable

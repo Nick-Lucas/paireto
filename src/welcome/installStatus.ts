@@ -18,12 +18,16 @@ export type SetupPrompt = { kind: "install" } | { kind: "update"; agentNames: st
 
 /** Run one agent's probe. A planned agent, a missing probe, or a throwing probe (e.g. an absent
  *  plugin tree) all read as not-installed. */
-export function agentInstallState(agent: OnboardingAgent, ctx: InstallContext): InstallState {
+export async function agentInstallState(
+  agent: OnboardingAgent,
+  ctx: InstallContext,
+): Promise<InstallState> {
   if (!agent.available || !agent.installedProbe) {
     return "not-installed";
   }
   try {
-    return agent.installedProbe(ctx);
+    // Awaited inside the try, so a probe that rejects degrades the same way as one that throws.
+    return await agent.installedProbe(ctx);
   } catch (err) {
     log.info(
       `[welcome] installedProbe failed for ${agent.id}: ${err instanceof Error ? err.message : err}`,
@@ -32,16 +36,19 @@ export function agentInstallState(agent: OnboardingAgent, ctx: InstallContext): 
   }
 }
 
-/** Probe every registered agent. Blocking — Codex asks its CLI — so keep this off render paths. */
+/** Probe every registered agent at once. Slow — Codex asks its CLI — so keep this off render
+ *  paths and read the cache there instead. */
 export function probeAgentInstallStates(
   installContextFor: (agentId: string) => InstallContext,
-): AgentInstallRow[] {
-  return ONBOARDING_AGENTS.map((agent) => ({
-    id: agent.id,
-    name: agent.name,
-    available: agent.available,
-    installState: agentInstallState(agent, installContextFor(agent.id)),
-  }));
+): Promise<AgentInstallRow[]> {
+  return Promise.all(
+    ONBOARDING_AGENTS.map(async (agent) => ({
+      id: agent.id,
+      name: agent.name,
+      available: agent.available,
+      installState: await agentInstallState(agent, installContextFor(agent.id)),
+    })),
+  );
 }
 
 /** The nudge for a set of probe results. A stale plugin always wins, because a mismatched plugin

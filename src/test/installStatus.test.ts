@@ -6,7 +6,8 @@ import * as assert from "node:assert";
 import * as vscode from "vscode";
 
 import { Commands } from "../config.js";
-import { type AgentInstallRow, setupPrompt } from "../welcome/installStatus.js";
+import type { InstallContext, OnboardingAgent } from "../welcome/agents.js";
+import { type AgentInstallRow, agentInstallState, setupPrompt } from "../welcome/installStatus.js";
 import { setupNoticeItem } from "../views/MainTreeProvider.js";
 
 function row(
@@ -57,6 +58,44 @@ suite("agent setup prompt", () => {
 
   test("unavailable agents never raise a prompt", () => {
     assert.strictEqual(setupPrompt([row("pi", "not-installed", false)]), undefined);
+  });
+});
+
+suite("one agent's probe", () => {
+  const ctx: InstallContext = { pluginsRoot: "/plugins", stableDir: "/storage/adapters/x" };
+  const agent = (installedProbe: OnboardingAgent["installedProbe"]): OnboardingAgent => ({
+    id: "codex",
+    name: "Codex TUI",
+    available: true,
+    installedProbe,
+  });
+
+  test("a probe that rejects reads as not-installed", async () => {
+    const state = await agentInstallState(
+      agent(() => Promise.reject(new Error("no plugin manifest"))),
+      ctx,
+    );
+    assert.strictEqual(state, "not-installed");
+  });
+
+  test("a probe that answers at once still works", async () => {
+    assert.strictEqual(
+      await agentInstallState(
+        agent(() => "installed"),
+        ctx,
+      ),
+      "installed",
+    );
+  });
+
+  test("a probe that throws reads as not-installed", async () => {
+    const state = await agentInstallState(
+      agent(() => {
+        throw new Error("no plugin manifest");
+      }),
+      ctx,
+    );
+    assert.strictEqual(state, "not-installed");
   });
 });
 
