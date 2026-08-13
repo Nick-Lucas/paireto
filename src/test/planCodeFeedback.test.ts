@@ -111,7 +111,7 @@ suite("codeFeedbackPromptText", () => {
   test("uses singular wording for one comment", () => {
     const { message, detail } = codeFeedbackPromptText(1);
     assert.strictEqual(message, "Send the file comment with this plan feedback?");
-    assert.ok(detail.includes("stay queued for the next code review"));
+    assert.ok(detail.includes("will remain for the next code review"));
   });
 
   test("names the count for several comments", () => {

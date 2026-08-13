@@ -492,13 +492,17 @@ export class ReviewController implements vscode.Disposable {
     map: (result: ReviewGateResult) => T,
     kind: GateKind = "review",
   ): Promise<T> {
-    await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
+    // Take the pending slot BEFORE the UI goes up: registering foregrounds the gate, so Approve and
+    // Send Feedback reach this review while that registration is still running, and fulfill() drops
+    // an answer for an id nothing is waiting on yet — leaving the agent blocked on a resolved review.
+    const decision = this.gate.awaitDecision(requestId);
     // A dropped connection ends the review (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
       this.gate.fulfill(requestId, { status: "cancelled", feedback: "" });
     };
     signal.addEventListener("abort", onAbort, { once: true });
-    const result = await this.gate.awaitDecision(requestId);
+    await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
+    const result = await decision;
     signal.removeEventListener("abort", onAbort);
     if (this.activeRequestId === requestId) {
       await this.cleanupReview(requestId);
