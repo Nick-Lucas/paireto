@@ -56,6 +56,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
 
   const inspect = (): InspectSnapshot => {
     const gates = deps.coordinator.allEntries();
+    const review = deps.reviewController.getState();
     const planTexts: Record<string, string> = {};
     for (const gate of gates) {
       if (gate.kind === "plan") {
@@ -84,6 +85,12 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       commentBucketCount: deps.reviewController.getComments().length,
       gateHasFeedback: deps.coordinator.current?.hasFeedback() ?? false,
       refreshCounts: deps.reviewController.getRefreshCounts(),
+      compareTo: review.compareTo,
+      repositories: review.repositories.map((repository) => ({
+        repoRoot: repository.repoRoot,
+        compareRef: repository.changes.compareRef,
+        committedPaths: repository.changes.committed.map((file) => file.path),
+      })),
       guided: guidedSnapshot(),
     };
   };

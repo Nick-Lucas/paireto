@@ -1,6 +1,5 @@
 // The "Compare To" QuickPick: choose the point the Committed group is diffed against.
-// Presets: HEAD, merge-base, the auto-detected default branch, up to 3 recent refs, and a
-// Branch/Ref… picker (whose choice is added to the recents).
+// Presets: HEAD, merge-base, the auto-detected default branch, and a Branch/Ref… picker.
 
 import * as vscode from "vscode";
 
@@ -45,12 +44,6 @@ export async function pickCompareTo(
       value: current,
     });
   }
-  if (recentRefs.length) {
-    items.push({ label: "Recent", kind: vscode.QuickPickItemKind.Separator });
-    for (const ref of recentRefs) {
-      items.push({ label: `$(history) ${ref}`, value: { kind: "ref", ref } });
-    }
-  }
   items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
   items.push({
     label: "$(git-branch) Branch/Ref…",
@@ -67,7 +60,7 @@ export async function pickCompareTo(
     return undefined;
   }
   if (choice.pickRef) {
-    return pickRef(repoRoot, diff, current.kind === "ref" ? current.ref : undefined);
+    return pickRef(repoRoot, diff, recentRefs, current.kind === "ref" ? current.ref : undefined);
   }
   return choice.value;
 }
@@ -156,16 +149,6 @@ export async function pickFileCompareTo(
       comparisonRef: currentBaseRef,
     });
   }
-  if (recentRefs.length) {
-    items.push({ label: "Recent", kind: vscode.QuickPickItemKind.Separator });
-    for (const ref of recentRefs) {
-      items.push({
-        label: `$(history) ${ref}`,
-        value: { kind: "ref", ref },
-        comparisonRef: ref,
-      });
-    }
-  }
   items.push({ label: "", kind: vscode.QuickPickItemKind.Separator });
   items.push({
     label: "$(git-branch) Branch/Ref…",
@@ -187,7 +170,7 @@ export async function pickFileCompareTo(
     const currentRef = ["EMPTY", "INDEX", "HEAD", "WORKING"].includes(currentBaseRef)
       ? undefined
       : currentBaseRef;
-    return pickRef(repoRoot, diff, currentRef);
+    return pickRef(repoRoot, diff, recentRefs, currentRef);
   }
   return choice.value;
 }
@@ -195,14 +178,12 @@ export async function pickFileCompareTo(
 async function pickRef(
   repoRoot: string,
   diff: DiffService,
+  recentRefs: string[],
   currentRef?: string,
 ): Promise<CompareTo | undefined> {
-  const refs = await diff.listRefs(repoRoot);
-  const items = refs.map((ref) => ({ label: ref, ref }));
-  const picked = await showComparePicker(
-    items,
-    "Compare To: branch / ref",
-    (item) => item.ref === currentRef,
+  const items = recentRefs.map((ref) => ({ label: `$(history) ${ref}`, ref }));
+  const picked = await showRefPicker(items, currentRef, (query) =>
+    Promise.all([diff.searchRefs(repoRoot, query), diff.refExists(repoRoot, query)]),
   );
   return picked ? { kind: "ref", ref: picked.ref } : undefined;
 }
@@ -267,8 +248,80 @@ async function showComparePicker<T extends vscode.QuickPickItem>(
       resolve(choice);
     };
     const accept = picker.onDidAccept(() =>
-      finish(picker.selectedItems[0] ?? picker.activeItems[0]),
+      finish(picker.activeItems[0] ?? picker.selectedItems[0]),
     );
+    const hide = picker.onDidHide(() => finish());
+    picker.show();
+  });
+}
+
+interface RefItem extends vscode.QuickPickItem {
+  ref: string;
+}
+
+async function showRefPicker(
+  items: RefItem[],
+  currentRef: string | undefined,
+  search: (query: string) => Promise<[matches: string[], exact: boolean]>,
+): Promise<RefItem | undefined> {
+  const picker = vscode.window.createQuickPick<RefItem>();
+  picker.title = "Compare To: branch / ref";
+  picker.items = items;
+  const current = items.find((item) => item.ref === currentRef);
+  if (current) {
+    picker.activeItems = [current];
+  }
+
+  return new Promise<RefItem | undefined>((resolve) => {
+    let settled = false;
+    let searchSequence = 0;
+    let visibleItems = items;
+    const finish = (choice?: RefItem): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      accept.dispose();
+      change.dispose();
+      hide.dispose();
+      picker.dispose();
+      resolve(choice);
+    };
+    const accept = picker.onDidAccept(() => {
+      const entered = picker.value.trim();
+      const matched = entered ? visibleItems.find((item) => item.ref === entered) : undefined;
+      const choice = entered
+        ? (matched ?? visibleItems[0])
+        : (picker.activeItems[0] ?? picker.selectedItems[0]);
+      if (choice) {
+        finish(choice);
+      }
+    });
+    const change = picker.onDidChangeValue(async (value) => {
+      const ref = value.trim();
+      if (!ref) {
+        searchSequence += 1;
+        picker.busy = false;
+        visibleItems = items;
+        picker.items = items;
+        picker.activeItems = current ? [current] : [];
+        return;
+      }
+      const sequence = ++searchSequence;
+      picker.busy = true;
+      const [matches, exact] = await search(ref);
+      if (settled || sequence !== searchSequence) {
+        return;
+      }
+      const found = matches.map((match) => ({ label: match, ref: match }));
+      if (exact && !matches.includes(ref)) {
+        found.unshift({ label: ref, ref });
+      }
+      visibleItems = found;
+      picker.items = found;
+      picker.activeItems = found.length ? [found[0]] : [];
+      picker.busy = false;
+    });
     const hide = picker.onDidHide(() => finish());
     picker.show();
   });

@@ -66,6 +66,7 @@ import { compareToEqual, currentFileCompareKind } from "../review/reviewSelector
 import { getAutoRevealSetting } from "../util/editorSettings.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
+import type { InspectSnapshot } from "../e2e/inspectTypes.js";
 
 /** Minimal valid `background_tasks`/`session_crons` entries for tests — only the counts matter, but
  *  the types require all their documented fields. */
@@ -1621,7 +1622,201 @@ suite("open diff comparison stability", () => {
   });
 });
 
-suite("Compare To picker defaults", () => {
+suite("Compare To picker", () => {
+  test("shows recent refs and searches for a branch or SHA", async function () {
+    this.timeout(60_000);
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder, "the test harness must open the fixture git workspace");
+    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+    const root = folder.uri.fsPath;
+    const repoRoot = canonicalize(root);
+    const branch = "compare-picker-base";
+    const searchedBranch = "compare-picker-searchable";
+    const fileName = "compare-picker.txt";
+    execFileSync("git", ["branch", branch, "HEAD"], { cwd: root });
+    execFileSync("git", ["branch", searchedBranch, "HEAD"], { cwd: root });
+    const baseSha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: root,
+      encoding: "utf8",
+    }).trim();
+    fs.writeFileSync(path.join(root, fileName), "changed after the comparison point\n");
+    execFileSync("git", ["add", fileName], { cwd: root });
+    execFileSync("git", ["commit", "-q", "-m", "compare picker fixture", "--", fileName], {
+      cwd: root,
+    });
+
+    const pickers: Array<{
+      picker: vscode.QuickPick<vscode.QuickPickItem>;
+      accept?: () => unknown;
+      hide?: () => unknown;
+    }> = [];
+    const createQuickPick = vscode.window.createQuickPick;
+    const replaced = Reflect.set(vscode.window, "createQuickPick", () => {
+      const picker = createQuickPick<vscode.QuickPickItem>();
+      const driver: (typeof pickers)[number] = { picker };
+      const onDidAccept = picker.onDidAccept.bind(picker);
+      Reflect.set(picker, "onDidAccept", (listener: () => unknown) => {
+        driver.accept = listener;
+        return onDidAccept(listener);
+      });
+      const onDidHide = picker.onDidHide.bind(picker);
+      Reflect.set(picker, "onDidHide", (listener: () => unknown) => {
+        driver.hide = listener;
+        return onDidHide(listener);
+      });
+      pickers.push(driver);
+      return picker;
+    });
+    assert.ok(replaced, "the test must be able to observe the real Compare To pickers");
+    const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+    const waitForPicker = async (index: number): Promise<(typeof pickers)[number]> => {
+      const deadline = Date.now() + 5_000;
+      while (!pickers[index]) {
+        assert.ok(Date.now() <= deadline, `Compare To picker ${index + 1} did not open`);
+        await wait(25);
+      }
+      return pickers[index];
+    };
+    const openRefPicker = async (): Promise<{
+      command: Thenable<unknown>;
+      compareDriver: (typeof pickers)[number];
+      driver: (typeof pickers)[number];
+    }> => {
+      const firstPicker = pickers.length;
+      const command = vscode.commands.executeCommand("paireto.review.pickCompareTo");
+      const compareDriver = await waitForPicker(firstPicker);
+      const comparePicker = compareDriver.picker;
+      comparePicker.value = "Branch/Ref";
+      const branchRefItem = comparePicker.items.find((item) => item.label.includes("Branch/Ref"));
+      assert.ok(branchRefItem, "the Compare To picker must contain the Branch/Ref item");
+      comparePicker.activeItems = [branchRefItem];
+      await wait(25);
+      assert.strictEqual(comparePicker.value, "Branch/Ref");
+      assert.ok(compareDriver.accept, "the Compare To picker must register an accept listener");
+      compareDriver.accept();
+      return {
+        command,
+        compareDriver,
+        driver: await waitForPicker(firstPicker + 1),
+      };
+    };
+    const enterRef = async (
+      ref: string,
+      input = ref,
+      inspectInitial?: (
+        comparePicker: vscode.QuickPick<vscode.QuickPickItem>,
+        refPicker: vscode.QuickPick<vscode.QuickPickItem>,
+      ) => void,
+    ): Promise<void> => {
+      const { command, compareDriver, driver: refDriver } = await openRefPicker();
+      inspectInitial?.(compareDriver.picker, refDriver.picker);
+      refDriver.picker.value = input;
+      const searchDeadline = Date.now() + 5_000;
+      await wait(25);
+      while (
+        (refDriver.picker.busy ||
+          !refDriver.picker.items.some(
+            (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === ref,
+          )) &&
+        Date.now() <= searchDeadline
+      ) {
+        await wait(25);
+      }
+      assert.strictEqual(refDriver.picker.value, input);
+      assert.ok(
+        refDriver.picker.items.some(
+          (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === ref,
+        ),
+        `${input} must find ${ref}`,
+      );
+      if (input !== ref) {
+        assert.ok(
+          !refDriver.picker.items.some(
+            (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === input,
+          ),
+          `${input} must not be selectable because it is not a ref`,
+        );
+      }
+      assert.ok(refDriver.accept, "the ref picker must register an accept listener");
+      refDriver.accept();
+      const completed = await Promise.race([
+        command.then(() => true),
+        wait(5_000).then(() => false),
+      ]);
+      if (!completed) {
+        await vscode.commands.executeCommand("workbench.action.closeQuickOpen");
+        await command;
+      }
+      assert.ok(completed, `the ref picker did not accept ${ref}`);
+    };
+    const rejectRef = async (input: string): Promise<void> => {
+      const { command, driver: refDriver } = await openRefPicker();
+      refDriver.picker.value = input;
+      const deadline = Date.now() + 5_000;
+      do {
+        await wait(25);
+      } while (refDriver.picker.busy && Date.now() <= deadline);
+      assert.deepStrictEqual(refDriver.picker.items, [], `${input} must not be selectable`);
+      assert.ok(refDriver.hide, "the ref picker must register a hide listener");
+      refDriver.hide();
+      await command;
+    };
+    const expectComparison = async (ref: string): Promise<void> => {
+      const deadline = Date.now() + 5_000;
+      let snapshot: InspectSnapshot;
+      let repository: InspectSnapshot["repositories"][number] | undefined;
+      do {
+        snapshot = (await vscode.commands.executeCommand(
+          "paireto.test.inspect",
+        )) as InspectSnapshot;
+        repository = snapshot.repositories.find((candidate) => candidate.repoRoot === repoRoot);
+        if (snapshot.compareTo.ref === ref && repository?.compareRef === ref) {
+          break;
+        }
+        await wait(25);
+      } while (Date.now() <= deadline);
+      assert.deepStrictEqual(snapshot.compareTo, { kind: "ref", ref });
+      assert.ok(repository, "the refreshed Changes model must include the fixture repository");
+      assert.strictEqual(repository.compareRef, ref);
+      assert.ok(
+        repository.committedPaths.includes(fileName),
+        `${fileName} must be a committed change against ${ref}`,
+      );
+    };
+
+    try {
+      await enterRef(branch, "picker-ba");
+      await expectComparison(branch);
+      await enterRef(searchedBranch, "picker-search", (comparePicker, refPicker) => {
+        assert.ok(
+          !comparePicker.items.some((item) => item.label.includes(branch)),
+          "recent refs must not appear in the parent Compare To picker",
+        );
+        assert.ok(
+          refPicker.items.some(
+            (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === branch,
+          ),
+          "the ref picker must show the recent branch before a search",
+        );
+        assert.ok(
+          !refPicker.items.some(
+            (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === searchedBranch,
+          ),
+          "the ref picker must not list an unused branch before a search",
+        );
+      });
+      await expectComparison(searchedBranch);
+      await enterRef(baseSha);
+      await expectComparison(baseSha);
+      await rejectRef("not-a-real-ref");
+      await expectComparison(baseSha);
+    } finally {
+      Reflect.set(vscode.window, "createQuickPick", createQuickPick);
+    }
+  });
+
   test("matches the persisted global comparison by kind and ref", () => {
     assert.strictEqual(compareToEqual({ kind: "mergeBase" }, { kind: "mergeBase" }), true);
     assert.strictEqual(
