@@ -25,14 +25,14 @@ export async function pickCompareTo(
   const items: CompareItem[] = [
     { label: "$(git-commit) HEAD", description: "working changes only", value: { kind: "head" } },
     {
-      label: "$(git-pull-request) Merge base",
-      description: "since the default branch",
-      value: { kind: "mergeBase" },
-    },
-    {
       label: "$(layers) Stack base",
       description: "since the branch below in the stack",
       value: { kind: "stackBase" },
+    },
+    {
+      label: "$(git-pull-request) Merge base",
+      description: "since the default branch",
+      value: { kind: "mergeBase" },
     },
   ];
   if (defaultBranch) {
@@ -77,14 +77,14 @@ export async function pickMultiCompareTo(current: CompareTo): Promise<CompareTo 
   const items: CompareItem[] = [
     { label: "$(git-commit) HEAD", description: "working changes only", value: { kind: "head" } },
     {
-      label: "$(git-pull-request) Merge base",
-      description: "resolve independently per repository",
-      value: { kind: "mergeBase" },
-    },
-    {
       label: "$(layers) Stack base",
       description: "resolve independently per repository",
       value: { kind: "stackBase" },
+    },
+    {
+      label: "$(git-pull-request) Merge base",
+      description: "resolve independently per repository",
+      value: { kind: "mergeBase" },
     },
     {
       label: "$(git-branch) Default branch",
@@ -136,16 +136,16 @@ export async function pickFileCompareTo(
       comparisonRef: "HEAD",
     },
     {
-      label: "$(git-pull-request) Merge base",
-      description: "where this branch diverged",
-      value: { kind: "mergeBase" },
-      comparisonRef: mergeBase.ref ?? "HEAD",
-    },
-    {
       label: "$(layers) Stack base",
       description: "where this branch was created",
       value: { kind: "stackBase" },
       comparisonRef: stackBase.ref ?? "HEAD",
+    },
+    {
+      label: "$(git-pull-request) Merge base",
+      description: "where this branch diverged",
+      value: { kind: "mergeBase" },
+      comparisonRef: mergeBase.ref ?? "HEAD",
     },
   );
   if (defaultBranch) {
