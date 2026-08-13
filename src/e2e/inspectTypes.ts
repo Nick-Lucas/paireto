@@ -2,7 +2,7 @@
 // (src/testControlPlane.ts, which produces it) and the E2E test (src/e2e/tests/fullflow.e2e.ts,
 // which polls it). Type-only, no runtime deps, so both the host and pure-node sides can import it.
 
-import type { AgentState, FileGroup } from "../types.js";
+import type { AgentState, CompareTo, FileGroup } from "../types.js";
 import type { Harness } from "../protocol/types.js";
 import type { GateKind } from "../gate/GateCoordinator.js";
 
@@ -45,6 +45,12 @@ export interface InspectGuided {
   changesets: InspectGuidedChangeset[];
 }
 
+export interface InspectRepositoryChanges {
+  repoRoot: string;
+  compareRef: string | null;
+  committedPaths: string[];
+}
+
 /** The full read-only snapshot the E2E test asserts against. `planTexts` maps a plan gate id to a
  *  cheap fingerprint (`<sha1>:<length>`) so a re-proposed plan is detectable without shipping the
  *  whole markdown across the command boundary. */
@@ -57,6 +63,8 @@ export interface InspectSnapshot {
   gateHasFeedback: boolean;
   /** Per-reason ReviewController.refresh() tally (e.g. proves openDiff never ran the full refresh). */
   refreshCounts: Record<string, number>;
+  compareTo: CompareTo;
+  repositories: InspectRepositoryChanges[];
   /** Present only while a guided review is open. */
   guided?: InspectGuided;
 }

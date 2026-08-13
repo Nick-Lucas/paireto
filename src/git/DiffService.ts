@@ -232,17 +232,24 @@ export class DiffService {
     return undefined;
   }
 
-  /** List local + remote branches (for the Compare-To "Branch/Ref…" picker). */
-  async listRefs(repoRoot: string): Promise<string[]> {
+  /** Keep wildcard lookup separate from exact validation so commit ids and revision expressions
+   * remain selectable even though they are not in Git's named-ref namespace. */
+  async searchRefs(repoRoot: string, query: string): Promise<string[]> {
+    const fragment = query.trim();
+    if (!fragment || /[[\]*?\\]/.test(fragment)) {
+      return [];
+    }
     const out = await gitSafe(repoRoot, [
       "for-each-ref",
-      "--format=%(refname:short)",
+      "--format=%(refname:short)%00",
       "--sort=-committerdate",
-      "-z",
-      "refs/heads",
-      "refs/remotes",
+      `refs/heads/*${fragment}*`,
+      `refs/remotes/*${fragment}*`,
+      `refs/tags/*${fragment}*`,
     ]);
-    return splitNul(out).filter((r) => r.length > 0 && !r.endsWith("/HEAD"));
+    return splitNul(out)
+      .map((ref) => ref.trim())
+      .filter((ref) => ref.length > 0 && !ref.endsWith("/HEAD"));
   }
 
   /** Resolve base/modified content refs for a file, given the committed group's compare ref. */
