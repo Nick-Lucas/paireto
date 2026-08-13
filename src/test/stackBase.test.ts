@@ -49,12 +49,11 @@ suite("stack base — pickStackBase", () => {
     });
   });
 
-  test("finds a merge-style stack parent, which a first-parent walk omits entirely", () => {
-    const log = ["f7f9482\tfeat/b", "b567943\t", "cea21c6\tfeat/a", "0e91303\t"].join("\n");
-    assert.deepStrictEqual(pickStackBase(log, "feat/b"), {
-      commit: "cea21c6",
-      branch: "feat/a",
-    });
+  // The walk reads a first-parent log, so a branch merged into this layer is never in the output.
+  // With nothing else below, the merge base is the comparison point.
+  test("a layer's own line of commits with no branch on it has no stack parent", () => {
+    const log = ["f7f9482\tfeat/b", "b567943\t", "0e91303\t"].join("\n");
+    assert.strictEqual(pickStackBase(log, "feat/b"), undefined);
   });
 
   test("a branch made straight from the default branch has no stack parent", () => {
@@ -134,6 +133,77 @@ suite("stack base — DiffService.resolveCompareTo", () => {
       merge.committed.map((f) => f.path),
       ["a.txt", "b.txt"],
     );
+  });
+});
+
+// A layer can merge another branch into itself. That branch is not the branch below — it is work
+// this layer took in — so it must not become the comparison point, or the layer below stays in the
+// review under its name.
+suite("stack base — a side branch merged into the layer", () => {
+  const diff = new DiffService();
+  let repo: TestRepo;
+  let featATip: string;
+
+  suiteSetup(() => {
+    repo = makeRepo("paireto-stackbase-merge-");
+    repo.commit("base.txt");
+    repo.git(["checkout", "-q", "-b", "feat/a"]);
+    featATip = repo.commit("a.txt");
+    repo.git(["checkout", "-q", "-b", "feat/b"]);
+    repo.commit("b.txt");
+    repo.git(["checkout", "-q", "-b", "side", "main"]);
+    repo.commit("side.txt");
+    repo.git(["checkout", "-q", "feat/b"]);
+    repo.git(["merge", "-q", "--no-ff", "-m", "merge side", "side"]);
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(repo.root, { recursive: true, force: true });
+  });
+
+  test("the branch below is still the layer under this one", async () => {
+    assert.deepStrictEqual(await diff.resolveCompareTo(repo.root, { kind: "stackBase" }), {
+      ref: featATip,
+      label: "stack-base(feat/a)",
+    });
+  });
+
+  test("the committed group holds this layer's own work and what it merged in", async () => {
+    const stack = await diff.getChanges(repo.root, { kind: "stackBase" });
+    assert.deepStrictEqual(stack.committed.map((f) => f.path).sort(), ["b.txt", "side.txt"]);
+  });
+});
+
+// A layer can merge the branch below it in instead of rebasing onto it. That parent is then off this
+// layer's own line of commits, so the merge base is the comparison point.
+suite("stack base — a layer that merges its parent in", () => {
+  const diff = new DiffService();
+  let repo: TestRepo;
+  let mainTip: string;
+
+  suiteSetup(() => {
+    repo = makeRepo("paireto-stackbase-parentmerge-");
+    mainTip = repo.commit("base.txt");
+    repo.git(["checkout", "-q", "-b", "feat/a"]);
+    repo.commit("a1.txt");
+    repo.git(["checkout", "-q", "-b", "feat/b"]);
+    repo.commit("b1.txt");
+    // feat/a moves on, and feat/b takes that work in with a merge instead of a rebase.
+    repo.git(["checkout", "-q", "feat/a"]);
+    repo.commit("a2.txt");
+    repo.git(["checkout", "-q", "feat/b"]);
+    repo.git(["merge", "-q", "--no-ff", "-m", "merge feat/a", "feat/a"]);
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(repo.root, { recursive: true, force: true });
+  });
+
+  test("the merge base is the comparison point, under the default branch's name", async () => {
+    assert.deepStrictEqual(await diff.resolveCompareTo(repo.root, { kind: "stackBase" }), {
+      ref: mainTip,
+      label: "stack-base(main)",
+    });
   });
 });
 

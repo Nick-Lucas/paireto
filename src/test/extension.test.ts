@@ -1854,6 +1854,13 @@ suite("Compare To picker", () => {
     );
     assert.strictEqual(currentFileCompareKind("feature", "feature", "origin/main"), "ref");
   });
+
+  // With no default branch to name, both labels are the bare word and the ref falls back to HEAD.
+  // The row the user is on is then the label's only witness.
+  test("recovers the row when the repository has no default branch", () => {
+    assert.strictEqual(currentFileCompareKind("HEAD", "stack-base", undefined), "stackBase");
+    assert.strictEqual(currentFileCompareKind("HEAD", "merge-base", undefined), "mergeBase");
+  });
 });
 
 suite("durable review comment attachments", () => {

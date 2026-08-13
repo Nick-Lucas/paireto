@@ -179,20 +179,25 @@ export class DiffService {
     return files;
   }
 
-  /** Resolve a Compare-To descriptor to a concrete ref (null = HEAD, no committed group) + label. */
+  /** Resolve a Compare-To descriptor to a concrete ref (null = HEAD, no committed group) + label.
+   *  `knownDefaultBranch` spares a caller that resolves several descriptors at once one probe per
+   *  descriptor — the picker asks for three. */
   async resolveCompareTo(
     repoRoot: string,
     compareTo: CompareTo,
+    knownDefaultBranch?: string,
   ): Promise<{ ref: string | null; label: string }> {
+    const defaultBranch = async (): Promise<string | undefined> =>
+      knownDefaultBranch ?? (await this.defaultBranch(repoRoot));
     switch (compareTo.kind) {
       case "head":
         return { ref: null, label: "HEAD" };
       case "default": {
-        const branch = await this.defaultBranch(repoRoot);
+        const branch = await defaultBranch();
         return { ref: branch ?? null, label: branch ?? "default" };
       }
       case "mergeBase": {
-        const branch = await this.defaultBranch(repoRoot);
+        const branch = await defaultBranch();
         if (!branch) {
           return { ref: null, label: "merge-base" };
         }
@@ -200,7 +205,7 @@ export class DiffService {
         return { ref: base || branch, label: `merge-base(${branch})` };
       }
       case "stackBase": {
-        const branch = await this.defaultBranch(repoRoot);
+        const branch = await defaultBranch();
         if (!branch) {
           return { ref: null, label: "stack-base" };
         }
@@ -227,8 +232,9 @@ export class DiffService {
 
   /** The branch below this one in a stack: the nearest ancestor commit another local branch points
    *  at. Bounded by the merge base because a stack always sits above it, which keeps the walk short.
-   *  `--topo-order` (never `--first-parent`) so a stack layer that merges its parent in, rather than
-   *  rebasing onto it, still reaches that parent. */
+   *  `--first-parent` gives this layer's own line of commits, and a stack is built along that line.
+   *  A branch merged into the layer sits off it and is work this layer took in, not the branch it
+   *  was built on. */
   private async stackParent(
     repoRoot: string,
     mergeBase: string,
@@ -236,7 +242,7 @@ export class DiffService {
     const [log, checkedOut] = await Promise.all([
       gitSafe(repoRoot, [
         "log",
-        "--topo-order",
+        "--first-parent",
         "--format=%H%x09%D",
         // `%D` follows the log.decorate config, and only short names can match a branch name.
         "--decorate=short",
@@ -421,9 +427,11 @@ export function parseNameStatus(output: string, group: FileGroup): ChangedFile[]
   return files;
 }
 
-/** Read `git log --format=%H%x09%D` output nearest-first and return the first commit that a local
- *  branch other than the checked-out one points at. Git marks the checked-out branch with an arrow,
- *  so that prefix comes off before the name is compared.
+/** Read `git log --first-parent --format=%H%x09%D` output nearest-first and return the first commit
+ *  that a local branch other than the checked-out one points at. Git marks the checked-out branch
+ *  with an arrow, so that prefix comes off before the name is compared. The walk runs out at the
+ *  merge base, where the range ends: there is no branch below, and the merge base is the comparison
+ *  point instead.
  *
  *  A branch on the HEAD commit is the branch below only when the checked-out branch is known: it is
  *  then a stack layer with no commits of its own. Without that name — a detached HEAD, which is the

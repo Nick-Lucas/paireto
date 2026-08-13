@@ -108,10 +108,11 @@ export async function pickFileCompareTo(
   currentBaseRef: string,
   currentBaseLabel?: string,
 ): Promise<FileCompareTo | undefined> {
-  const [defaultBranch, mergeBase, stackBase] = await Promise.all([
-    diff.defaultBranch(repoRoot),
-    diff.resolveCompareTo(repoRoot, { kind: "mergeBase" }),
-    diff.resolveCompareTo(repoRoot, { kind: "stackBase" }),
+  // Both computed rows resolve the default branch, so it is asked for once and passed down.
+  const defaultBranch = await diff.defaultBranch(repoRoot);
+  const [mergeBase, stackBase] = await Promise.all([
+    diff.resolveCompareTo(repoRoot, { kind: "mergeBase" }, defaultBranch),
+    diff.resolveCompareTo(repoRoot, { kind: "stackBase" }, defaultBranch),
   ]);
   const items: CompareItem<FileCompareTo>[] = [];
   if (currentBaseRef === "EMPTY") {
@@ -218,11 +219,12 @@ export function currentFileCompareKind(
   defaultBranch: string | undefined,
 ): FileCompareTo["kind"] | undefined {
   // A stack base can resolve to the same commit as the merge base, so the label is the only thing
-  // that keeps the two rows apart.
-  if (baseLabel?.startsWith("stack-base(")) {
+  // that keeps the two rows apart. Without a default branch neither label names one, so the bracket
+  // is not part of the match.
+  if (baseLabel?.startsWith("stack-base")) {
     return "stackBase";
   }
-  if (baseLabel?.startsWith("merge-base(")) {
+  if (baseLabel?.startsWith("merge-base")) {
     return "mergeBase";
   }
   if (defaultBranch && baseRef === defaultBranch && baseLabel === defaultBranch) {
