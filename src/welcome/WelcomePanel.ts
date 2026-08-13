@@ -187,7 +187,6 @@ export class WelcomePanel {
     return { logoUri: this.mediaUri("PairetoHeader2x.png").toString(), agents, shortcuts };
   }
 
-  /** Post the state we hold. */
   private post(): void {
     void this.panel.webview.postMessage({ type: "state", state: this.buildState() });
   }
