@@ -19,7 +19,6 @@ export const Commands = {
   commentDelete: "paireto.comment.delete",
   planAddQuestion: "paireto.plan.addQuestion",
   planAddComment: "paireto.plan.addComment",
-  planAddProblem: "paireto.plan.addProblem",
   reviewPickCompareTo: "paireto.review.pickCompareTo",
   reviewPickDiffCompareTo: "paireto.review.pickDiffCompareTo",
   reviewToggleLayout: "paireto.review.toggleLayout",
@@ -34,9 +33,9 @@ export const Commands = {
   reviewDiscardAll: "paireto.review.discardAll",
   reviewAddQuestion: "paireto.review.addQuestion",
   reviewAddComment: "paireto.review.addComment",
-  reviewAddProblem: "paireto.review.addProblem",
   reviewRevealComment: "paireto.review.revealComment",
   reviewDeleteComment: "paireto.review.deleteComment",
+  reviewClearFeedback: "paireto.review.clearFeedback",
   /** Open the diff for a file named by the agent's review plan. */
   guidedReviewOpenFile: "paireto.guidedReview.openFile",
   /** Open a changeset's description as a read-only, commentable markdown tab. */

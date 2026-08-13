@@ -17,13 +17,14 @@ import type { AgentStrategy } from "../harness/AgentStrategy.js";
 import type { AppEvent, AppEventKind } from "../harness/appEvent.js";
 import { summarizeActivity } from "../agents/activitySummary.js";
 import { parseWorktrees } from "../git/WorktreeService.js";
-import { branchFromRevParse, gitToplevel } from "../git/gitCli.js";
+import { branchFromRevParse, currentFeedbackRef, gitToplevel } from "../git/gitCli.js";
 import { buildSwitcherSections } from "../status/switcherRows.js";
 import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderPlanFeedback } from "../plan/planFeedback.js";
 import { renderReviewFeedback } from "../review/reviewFeedback.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import type { CommentKind } from "../comments/kinds.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
 import { PlanGateRegistry } from "../plan/PlanGateRegistry.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
@@ -205,7 +206,6 @@ suite("command manifest", () => {
       "paireto.comment.delete",
       "paireto.plan.addComment",
       "paireto.plan.addQuestion",
-      "paireto.plan.addProblem",
       "paireto.review.openDiff",
       "paireto.review.openFile",
       "paireto.review.stage",
@@ -213,7 +213,6 @@ suite("command manifest", () => {
       "paireto.review.discard",
       "paireto.review.addComment",
       "paireto.review.addQuestion",
-      "paireto.review.addProblem",
       "paireto.review.revealComment",
       "paireto.review.deleteComment",
       "paireto.guidedReview.openFile",
@@ -252,6 +251,28 @@ suite("command manifest", () => {
     );
     assert.match(planSource, /new CommentSession\("paireto\.plan", "Paireto: Add Comment"/);
     assert.match(reviewSource, /"paireto\.review",\s*"Paireto: Add Comment"/);
+  });
+
+  test("feedback commands expose Clear All only on the Feedback section and omit Problem", () => {
+    const commands = manifest.contributes.commands.map(({ command }) => command);
+    assert.ok(commands.includes("paireto.review.clearFeedback"));
+    assert.ok(!commands.some((command) => command.toLowerCase().includes("problem")));
+    const viewMenus = (
+      manifest.contributes.menus as unknown as Record<
+        string,
+        Array<{ command: string; when?: string; group?: string }>
+      >
+    )["view/item/context"];
+    assert.deepStrictEqual(
+      viewMenus.filter(({ command }) => command === "paireto.review.clearFeedback"),
+      [
+        {
+          command: "paireto.review.clearFeedback",
+          when: "view == paireto.main && viewItem == section:feedback",
+          group: "inline@1",
+        },
+      ],
+    );
   });
 });
 
@@ -344,6 +365,40 @@ suite("gitToplevel (real git CLI, worktree fixture)", () => {
     } finally {
       fs.rmSync(outside, { recursive: true, force: true });
     }
+  });
+});
+
+suite("currentFeedbackRef (real git CLI)", () => {
+  let repo: string;
+  let commit: string;
+
+  suiteSetup(() => {
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-ref-"));
+    const git = (args: string[]): string =>
+      execFileSync("git", args, { cwd: repo }).toString().trim();
+    git(["init", "-q"]);
+    git(["config", "user.email", "test@example.com"]);
+    git(["config", "user.name", "Test"]);
+    fs.writeFileSync(path.join(repo, "a.txt"), "a");
+    git(["add", "a.txt"]);
+    git(["commit", "-q", "-m", "init"]);
+    commit = git(["rev-parse", "HEAD"]);
+  });
+
+  suiteTeardown(() => {
+    fs.rmSync(repo, { recursive: true, force: true });
+  });
+
+  test("uses the branch name while attached", async () => {
+    assert.deepStrictEqual(await currentFeedbackRef(repo), {
+      kind: "branch",
+      value: execFileSync("git", ["branch", "--show-current"], { cwd: repo }).toString().trim(),
+    });
+  });
+
+  test("uses the exact HEAD commit while detached", async () => {
+    execFileSync("git", ["checkout", "--detach", "-q", commit], { cwd: repo });
+    assert.deepStrictEqual(await currentFeedbackRef(repo), { kind: "commit", value: commit });
   });
 });
 
@@ -507,42 +562,67 @@ suite("buildFileTree", () => {
 });
 
 suite("renderPlanFeedback", () => {
-  test("orders problem before question/comment and includes all kinds", () => {
+  test("orders questions before comments and includes both kinds", () => {
     const out = renderPlanFeedback([
       { line: 5, quote: "do X", body: "make it Y", kind: "comment" },
-      { line: 1, quote: "do Z", body: "must not Z", kind: "problem" },
       { line: 9, quote: "fyi", body: "consider this", kind: "question" },
     ]);
     assert.ok(/feedback/i.test(out));
-    assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
     assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
     assert.ok(out.includes("consider this"));
-    assert.ok(out.includes("(1 problem, 1 question, 1 comment)"));
+    assert.ok(out.includes("(1 question, 1 comment)"));
   });
 });
 
 suite("renderReviewFeedback", () => {
-  const mk = (over: Partial<ReviewComment>): ReviewComment => ({
-    id: "x",
-    repoRoot: "/repo",
-    filePath: "src/a.ts",
-    side: "modified",
-    line: 0,
-    kind: "comment",
-    body: "fix",
-    quote: "line",
-    anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
-    ...over,
+  const mk = (
+    over: Partial<ReviewThread> & { feedbackKind?: CommentKind; body?: string; quote?: string },
+  ): ReviewThread => {
+    const { feedbackKind = "comment", body = "fix", quote = "line", ...thread } = over;
+    return {
+      id: "x",
+      repoRoot: "/repo",
+      filePath: "src/a.ts",
+      side: "modified",
+      line: 0,
+      anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
+      delivery: "pending",
+      createdAt: "2026-08-12T20:00:00.000Z",
+      updatedAt: "2026-08-12T20:00:00.000Z",
+      activities: [
+        {
+          kind: "feedback",
+          feedbackKind,
+          body,
+          quote,
+          at: "2026-08-12T20:00:00.000Z",
+        },
+      ],
+      ...thread,
+    };
+  };
+
+  test("includes stable IDs and omits already-sent feedback", () => {
+    const out = renderReviewFeedback([
+      mk({ id: "pending-id", body: "new feedback" }),
+      mk({ id: "sent-id", body: "old feedback", delivery: "sent" }),
+    ]);
+    assert.ok(out.includes("pending-id"));
+    assert.ok(out.includes("new feedback"));
+    assert.ok(out.includes("paireto_reply_to_feedback"));
+    assert.ok(out.includes("paireto_resolve_feedback"));
+    assert.ok(!out.includes("sent-id"));
+    assert.ok(!out.includes("old feedback"));
   });
 
-  test("includes all kinds, problems first", () => {
+  test("includes both kinds, questions first", () => {
     const out = renderReviewFeedback([
-      mk({ kind: "question", body: "a-question" }),
-      mk({ kind: "problem", body: "real-issue", line: 41 }),
+      mk({ feedbackKind: "question", body: "a-question" }),
+      mk({ feedbackKind: "comment", body: "a-comment", line: 41 }),
     ]);
-    assert.ok(out.includes("real-issue"));
+    assert.ok(out.includes("a-comment"));
     assert.ok(out.includes("a-question"));
-    assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
+    assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
     assert.ok(out.includes("src/a.ts:42"));
   });
 
@@ -2128,14 +2208,14 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
   const base = {
     reviewInProgress: false,
     changedThisTurn: false,
-    hasComments: false,
+    hasPendingFeedback: false,
     automatic: true,
   };
   test("opens a review when the agent's turn edited files", () => {
     assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
   });
   test("opens a review when the user has comments to deliver", () => {
-    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasComments: true }), true);
+    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasPendingFeedback: true }), true);
   });
   test("does NOT open a review for a turn that changed nothing (no uncommitted-changes fallback)", () => {
     assert.strictEqual(shouldOpenTurnEndReview(base), false);
@@ -2154,7 +2234,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
   });
   test("manual mode: queued comments still open a review", () => {
     assert.strictEqual(
-      shouldOpenTurnEndReview({ ...base, automatic: false, hasComments: true }),
+      shouldOpenTurnEndReview({ ...base, automatic: false, hasPendingFeedback: true }),
       true,
     );
   });

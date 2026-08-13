@@ -28,6 +28,7 @@ import {
   changesetItem,
   guidedDescription,
   reviewCommentItem,
+  feedbackActivityItem,
 } from "../views/MainTreeProvider.js";
 import {
   buildGuidedState,
@@ -49,7 +50,7 @@ import {
   selectCommentFile,
   sharedCompareToHolds,
 } from "../review/ReviewController.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 import { ChangesetIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
 import type { CompareTo, FileGroup } from "../types.js";
 
@@ -320,16 +321,25 @@ suite("guided review — a planned row opens against the plan's comparison point
 });
 
 suite("guided review — feedback rows", () => {
-  const comment = (over: Partial<ReviewComment>): ReviewComment => ({
+  const comment = (over: Partial<ReviewThread>): ReviewThread => ({
     id: "c1",
     repoRoot: REPO,
     filePath: "src/a.ts",
     side: "modified",
     line: 3,
-    kind: "comment",
-    body: "split this up",
-    quote: "> why",
     anchor: { lineText: "", contextBefore: [], contextAfter: [], lineHash: "" },
+    delivery: "pending",
+    createdAt: "2026-08-12T20:00:00.000Z",
+    updatedAt: "2026-08-12T20:00:00.000Z",
+    activities: [
+      {
+        kind: "feedback",
+        feedbackKind: "comment",
+        body: "split this up",
+        quote: "> why",
+        at: "2026-08-12T20:00:00.000Z",
+      },
+    ],
     ...over,
   });
 
@@ -349,6 +359,49 @@ suite("guided review — feedback rows", () => {
     const item = reviewCommentItem(comment({}));
     assert.strictEqual(item.label, "a.ts:4");
     assert.ok(String(item.description).includes("src"));
+  });
+
+  test("a feedback row expands to clear reply and resolution activity", () => {
+    const item = reviewCommentItem(
+      comment({
+        resolvedAt: "2026-08-12T20:02:00.000Z",
+        activities: [
+          {
+            kind: "feedback",
+            feedbackKind: "comment",
+            body: "split this up",
+            quote: "> why",
+            at: "2026-08-12T20:00:00.000Z",
+          },
+          {
+            kind: "reply",
+            body: "Changed the guard.",
+            at: "2026-08-12T20:01:00.000Z",
+            harness: "codex",
+          },
+          { kind: "resolved", at: "2026-08-12T20:02:00.000Z", harness: "codex" },
+        ],
+      }),
+    );
+    assert.strictEqual(item.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+    assert.match(String(item.description), /resolved/i);
+    assert.strictEqual(
+      feedbackActivityItem({
+        kind: "reply",
+        body: "Changed the guard.",
+        at: "2026-08-12T20:01:00.000Z",
+        harness: "codex",
+      }).label,
+      "Agent replied",
+    );
+    assert.strictEqual(
+      feedbackActivityItem({
+        kind: "resolved",
+        at: "2026-08-12T20:02:00.000Z",
+        harness: "codex",
+      }).label,
+      "Resolved",
+    );
   });
 });
 
@@ -688,6 +741,25 @@ suite("guided review — command arguments", () => {
     // A wired-up-wrong menu must be loud: silently doing nothing is the hardest version to find.
     assert.throws(() => run({ kind: "file" }), /command argument rejected/);
     assert.deepStrictEqual(seen, ["cs0"], "the handler never ran on a rejected argument");
+  });
+
+  test("withArg returns an asynchronous handler's completion", async () => {
+    let release!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let finished = false;
+    const run = withArg(ChangesetIdArg, async () => {
+      await blocked;
+      finished = true;
+    });
+
+    const completion = run({ changesetId: "cs0" }) as unknown;
+    assert.ok(completion instanceof Promise);
+    assert.strictEqual(finished, false);
+    release();
+    await completion;
+    assert.strictEqual(finished, true);
   });
 
   // The schemas name only the fields a command reads, so a node that grows one keeps working — while

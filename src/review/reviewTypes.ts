@@ -1,7 +1,36 @@
 // Data shapes for code-review comments and their re-attachment anchors.
 
 import type { CommentKind } from "../comments/kinds.js";
+import type { Harness } from "../protocol/types.js";
 import type { FileGroup } from "../types.js";
+
+/**
+ * The feedback ID the E2E control plane assigns instead of a nanoid, so a recorded cassette can match
+ * on it. A test holding more than one item names each of them itself.
+ */
+export const TEST_FEEDBACK_ID = "PAIRETO_E2E_FEEDBACK_ID";
+
+export type FeedbackActivity =
+  | {
+      kind: "feedback";
+      feedbackKind: CommentKind;
+      body: string;
+      quote: string;
+      at: string;
+    }
+  | {
+      kind: "reply";
+      body: string;
+      at: string;
+      harness: Harness;
+      sessionId?: string;
+    }
+  | {
+      kind: "resolved";
+      at: string;
+      harness: Harness;
+      sessionId?: string;
+    };
 
 export interface ReviewAnchor {
   lineText: string;
@@ -10,7 +39,7 @@ export interface ReviewAnchor {
   lineHash: string;
 }
 
-export interface ReviewComment {
+export interface ReviewThread {
   id: string;
   /** Canonical repository root; filePath is relative to this root. */
   repoRoot: string;
@@ -21,11 +50,16 @@ export interface ReviewComment {
   changeset?: { id: string; title: string };
   side: "base" | "modified";
   line: number; // 0-based on the side's document
-  kind: CommentKind;
-  body: string;
-  quote: string;
   anchor: ReviewAnchor;
-  /** Durable location metadata. Optional for compatibility with older exported review artifacts. */
+  /** Pending items are included the next time the user sends feedback. */
+  delivery: "pending" | "sent";
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+  activities: [Extract<FeedbackActivity, { kind: "feedback" }>, ...FeedbackActivity[]];
+  /** Durable content for a guided changeset document after its review plan has closed. */
+  sourceDocument?: { uri: string; markdown: string };
+  /** Durable location metadata for file-backed feedback. */
   attachment?: {
     /** Git layer where the comment was last attached. */
     group: FileGroup;
@@ -35,4 +69,10 @@ export interface ReviewComment {
     /** Exact document URI used as a final historical fallback. */
     sourceUri: string;
   };
+}
+
+export function userFeedback(
+  thread: ReviewThread,
+): Extract<FeedbackActivity, { kind: "feedback" }> {
+  return thread.activities[0];
 }

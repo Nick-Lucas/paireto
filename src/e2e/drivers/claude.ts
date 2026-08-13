@@ -45,6 +45,8 @@ const PERMISSION_POLL_MS = 500;
 const PRE_APPROVED_TOOLS = [
   "mcp__bridge__paireto_review",
   "mcp__bridge__paireto_start_guided_review",
+  "mcp__bridge__paireto_reply_to_feedback",
+  "mcp__bridge__paireto_resolve_feedback",
   "Write",
   "Edit",
 ];

@@ -259,10 +259,12 @@ export class MockServerController {
     await this.mcp.callTool("reset", {});
     const fixtureName = fixtureFileName(testCase, driver);
     const fixture = path.join(this.fixturesHostDir, fixtureName);
-    const { recordedWith, recordedOn, expectations } = readFixture(
-      JSON.parse(fs.readFileSync(fixture, "utf8")),
-      driver,
-    );
+    const {
+      recordedWith,
+      recordedOn,
+      expectations: storedExpectations,
+    } = readFixture(JSON.parse(fs.readFileSync(fixture, "utf8")), driver);
+    const expectations = stripVolatileRequestMatchers(storedExpectations, driver);
     // Report drift before the run, while it can still explain the miss that follows.
     // Platform first: it explains far more of the body than a CLI version bump does.
     this.driftNote =

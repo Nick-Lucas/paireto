@@ -46,7 +46,9 @@
     "dedent": "^1.7.2",
     "jsonc-parser": "^3.3.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "nanoid": "^6.0.1",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -121,11 +123,6 @@
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.plan.addProblem",
-        "title": "Problem",
-        "enablement": "!commentIsEmpty"
-      },
-      {
         "command": "paireto.review.refresh",
         "title": "Paireto: Refresh",
         "icon": "$(refresh)"
@@ -195,11 +192,6 @@
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.review.addProblem",
-        "title": "Problem",
-        "enablement": "!commentIsEmpty"
-      },
-      {
         "command": "paireto.review.revealComment",
         "title": "Reveal Comment"
       },
@@ -207,6 +199,11 @@
         "command": "paireto.review.deleteComment",
         "title": "Delete Comment",
         "icon": "$(trash)"
+      },
+      {
+        "command": "paireto.review.clearFeedback",
+        "title": "Clear All Feedback",
+        "icon": "$(clear-all)"
       },
       {
         "command": "paireto.focusAgent",
@@ -292,19 +289,11 @@
           "when": "false"
         },
         {
-          "command": "paireto.plan.addProblem",
-          "when": "false"
-        },
-        {
           "command": "paireto.review.addQuestion",
           "when": "false"
         },
         {
           "command": "paireto.review.addComment",
-          "when": "false"
-        },
-        {
-          "command": "paireto.review.addProblem",
           "when": "false"
         },
         {
@@ -337,6 +326,10 @@
         },
         {
           "command": "paireto.review.deleteComment",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.clearFeedback",
           "when": "false"
         },
         {
@@ -413,11 +406,6 @@
           "group": "inline@2"
         },
         {
-          "command": "paireto.plan.addProblem",
-          "when": "commentController == paireto.plan",
-          "group": "inline@3"
-        },
-        {
           "command": "paireto.review.addComment",
           "when": "commentController == paireto.review",
           "group": "inline@1"
@@ -426,11 +414,6 @@
           "command": "paireto.review.addQuestion",
           "when": "commentController == paireto.review",
           "group": "inline@2"
-        },
-        {
-          "command": "paireto.review.addProblem",
-          "when": "commentController == paireto.review",
-          "group": "inline@3"
         }
       ],
       "comments/comment/title": [
@@ -481,6 +464,11 @@
         {
           "command": "paireto.review.deleteComment",
           "when": "view == paireto.main && viewItem == reviewComment",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.clearFeedback",
+          "when": "view == paireto.main && viewItem == section:feedback",
           "group": "inline@1"
         },
         {

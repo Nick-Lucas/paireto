@@ -27,9 +27,9 @@ import type {
   GuidedFileRow,
   GuidedReviewState,
 } from "../review/guidedPlan.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
 import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
 import type { SetupPrompt } from "../welcome/installStatus.js";
+import { userFeedback, type FeedbackActivity, type ReviewThread } from "../review/reviewTypes.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import type { AgentState, FileGroup } from "../types.js";
 import { repoKey } from "../protocol/paths.js";
@@ -94,7 +94,12 @@ type Node =
     }
   | { kind: "file"; file: RepoChangedFile }
   | { kind: "agent"; session: AgentSession }
-  | { kind: "reviewComment"; comment: ReviewComment }
+  | { kind: "reviewComment"; comment: ReviewThread }
+  | {
+      kind: "feedbackActivity";
+      commentId: string;
+      activity: Exclude<FeedbackActivity, { kind: "feedback" }>;
+    }
   | { kind: "planComment"; comment: PlanCommentData }
   | { kind: "placeholder"; label: string };
 
@@ -338,6 +343,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return { kind: "section", id: "agents", label: "Agents" };
       case "reviewComment":
         return { kind: "section", id: "feedback", label: "Feedback" };
+      case "feedbackActivity": {
+        const comment = this.review.getComments().find((item) => item.id === node.commentId);
+        return comment
+          ? { kind: "reviewComment", comment }
+          : { kind: "section", id: "feedback", label: "Feedback" };
+      }
       case "planComment":
         return { kind: "section", id: "plan", label: "Plan Review" };
       default:
@@ -425,6 +436,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       }
       case "reviewComment":
         return reviewCommentItem(node.comment);
+      case "feedbackActivity":
+        return feedbackActivityItem(node.activity);
       case "planComment":
         return planCommentItem(node.comment);
       case "placeholder": {
@@ -450,6 +463,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return this.groupChildren(node.repoRoot, node.group);
       case "folder":
         return node.entry.children.map((e) => entryToNode(e, node.repoRoot, node.group));
+      case "reviewComment":
+        return node.comment.activities.flatMap((activity) =>
+          activity.kind === "feedback"
+            ? []
+            : [{ kind: "feedbackActivity" as const, commentId: node.comment.id, activity }],
+        );
       default:
         return [];
     }
@@ -882,7 +901,8 @@ export function changesetFileItem(
   return item;
 }
 
-export function reviewCommentItem(c: ReviewComment): vscode.TreeItem {
+export function reviewCommentItem(c: ReviewThread): vscode.TreeItem {
+  const feedback = userFeedback(c);
   // A comment on a changeset description is about the grouping, not about a line of code: it carries
   // no file path, so it is named by the changeset it belongs to.
   const [label, where] = c.changeset
@@ -891,19 +911,43 @@ export function reviewCommentItem(c: ReviewComment): vscode.TreeItem {
         `${path.basename(c.filePath)}:${c.line + 1}`,
         `${path.join(c.repoRoot, c.filePath)}:${c.line + 1}`,
       ];
-  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
-  item.description = `${commentScope(c)} · ${c.body}`;
-  item.iconPath = kindThemeIcon(c.kind);
+  const item = new vscode.TreeItem(
+    label,
+    c.activities.length > 1
+      ? vscode.TreeItemCollapsibleState.Expanded
+      : vscode.TreeItemCollapsibleState.None,
+  );
+  const state = c.resolvedAt ? "Resolved" : c.delivery === "pending" ? "Pending" : "Sent";
+  item.description = `${state} · ${commentScope(c)} · ${feedback.body}`;
+  item.iconPath = kindThemeIcon(feedback.feedbackKind);
   item.tooltip = new vscode.MarkdownString(
-    `**${kindLabel(c.kind)}** · ${where}\n\n> ${c.quote}\n\n${c.body}`,
+    `**${kindLabel(feedback.feedbackKind)}** · ${where}\n\n> ${feedback.quote}\n\n${feedback.body}`,
   );
   item.contextValue = "reviewComment";
   item.command = { command: Commands.reviewRevealComment, title: "Reveal Comment", arguments: [c] };
   return item;
 }
 
+export function feedbackActivityItem(
+  activity: Exclude<FeedbackActivity, { kind: "feedback" }>,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    activity.kind === "reply" ? "Agent replied" : "Resolved",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.description = activity.kind === "reply" ? activity.body : activity.harness;
+  item.iconPath = new vscode.ThemeIcon(activity.kind === "reply" ? "reply" : "pass-filled");
+  item.tooltip = new vscode.MarkdownString(
+    activity.kind === "reply"
+      ? `**Agent reply** · ${activity.harness}\n\n${activity.body}`
+      : `**Resolved** · ${activity.harness}`,
+  );
+  item.contextValue = "feedbackActivity";
+  return item;
+}
+
 /** Where a feedback row sits, shown ahead of its body: the changeset, or the file's directory. */
-function commentScope(c: ReviewComment): string {
+function commentScope(c: ReviewThread): string {
   if (c.changeset) {
     return "Changeset";
   }
@@ -923,7 +967,7 @@ function planCommentItem(c: PlanCommentData): vscode.TreeItem {
   return item;
 }
 
-function kindThemeIcon(kind: ReviewComment["kind"]): vscode.ThemeIcon {
+function kindThemeIcon(kind: ReturnType<typeof userFeedback>["feedbackKind"]): vscode.ThemeIcon {
   const colorId = kindColorId(kind);
   return new vscode.ThemeIcon(kindIcon(kind), colorId ? new vscode.ThemeColor(colorId) : undefined);
 }

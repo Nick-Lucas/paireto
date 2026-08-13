@@ -12,7 +12,6 @@ import { INCLUDE_FILE_COMMENTS } from "../plan/planCodeFeedback.js";
 import {
   activateForFixtureRepo,
   addPlanComment,
-  inspect,
   openPlan,
   openWire,
   planTab,
@@ -20,6 +19,7 @@ import {
   resetWorkbench,
   stubWarnings,
   waitFor,
+  waitForFeedbackDelivered,
   type WarningStub,
   type Wire,
 } from "./planGateHarness.js";
@@ -88,9 +88,7 @@ suite("plan early close with queued file comments", () => {
     const reason = String(response.reason);
     assert.ok(reason.includes("Split step two."), "the plan feedback rides in the response");
     assert.ok(reason.includes("notes.txt"), "the file comment rides in the response");
-    await waitFor("the file comments to clear", async () =>
-      (await inspect()).commentBucketCount === 0 ? true : undefined,
-    );
+    await waitForFeedbackDelivered();
   });
 
   test("send feedback with no plan comments means the file comments stay queued", async function () {

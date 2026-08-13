@@ -17,18 +17,49 @@ import {
   textResult,
 } from "../plugins/core/mcp/reviewTool.js";
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
+import {
+  FEEDBACK_REPLY_TOOL_NAME,
+  FEEDBACK_RESOLVE_TOOL_NAME,
+  runFeedbackReply,
+} from "../plugins/core/mcp/feedbackTools.js";
+import { ackWith, startServer } from "./fakeBridgeServer.js";
 
 suite("MCP paireto_review tool", () => {
+  test("registers independent reply and resolve tools with strict schemas", async () => {
+    const server = createMcpServer({
+      serverName: "paireto-test",
+      harness: "codex" as const,
+      resolveReviewTarget: () => undefined,
+      startLiveness: () => () => {},
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "0.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const listed = await client.request({ method: "tools/list" }, ListToolsResultSchema);
+      const tools = new Map(listed.tools.map((tool) => [tool.name, tool]));
+      assert.deepStrictEqual(tools.get(FEEDBACK_REPLY_TOOL_NAME)?.inputSchema.required, [
+        "feedbackId",
+        "message",
+      ]);
+      assert.deepStrictEqual(tools.get(FEEDBACK_RESOLVE_TOOL_NAME)?.inputSchema.required, [
+        "feedbackId",
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+
   test("the tool name is the one the skills and commands invoke", () => {
     assert.strictEqual(REVIEW_TOOL_NAME, "paireto_review");
   });
 
-  test("the description is unchanged", () => {
+  test("the description says feedback includes stable IDs", () => {
     assert.strictEqual(
       REVIEW_TOOL_DESCRIPTION,
       "Open an interactive code review in the connected VS Code window and wait for the user to " +
-        "submit feedback. Blocks until the user clicks Send Feedback or Cancel, then returns the " +
-        "review comments (file:line, kind, note) to act on. Call this when the user asks for a review.",
+        "submit feedback. Blocks until the user clicks Send Feedback or Approve, then returns " +
+        "review comments with stable feedback IDs. Call this when the user asks for a review.",
     );
   });
 
@@ -82,6 +113,25 @@ suite("MCP paireto_review tool", () => {
     });
     assert.strictEqual(result.isError, true);
     assert.match(result.content[0].text, /No VS Code Paireto is listening/);
+  });
+
+  test("a feedback mutation the extension never answers reports an error rather than hanging", async () => {
+    // The extension logs and sends nothing when a handler throws, so only a deadline on the request
+    // settles the tool call. Without one the agent waits until the socket drops.
+    const server = await startServer(ackWith(true));
+    try {
+      const result = await runFeedbackReply(
+        { target: server.target, cwd: server.target.repoRoot },
+        "codex",
+        { feedbackId: "feedback-1", message: "I changed it." },
+        undefined,
+        150,
+      );
+      assert.strictEqual(result.isError, true);
+      assert.match(result.content[0].text, /did not complete/);
+    } finally {
+      await server.dispose();
+    }
   });
 
   test("a path that exists but is not a listening socket reports a connection failure", async () => {
