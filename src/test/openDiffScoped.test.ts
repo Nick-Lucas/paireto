@@ -17,7 +17,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import type { InspectSnapshot } from "../e2e/inspectTypes.js";
-import { DiffService, type ChangedFile } from "../git/DiffService.js";
+import { DiffService, type ChangedFile, type ChangesModel } from "../git/DiffService.js";
 import { canonicalize } from "../protocol/paths.js";
 import {
   syncFileForOpenDiff,
@@ -26,6 +26,110 @@ import {
   type RepositoryReviewState,
 } from "../review/ReviewController.js";
 import type { FileGroup } from "../types.js";
+
+interface RootRepoWithSubmodule {
+  rootRepo: string;
+  untrackedPath: string;
+  dispose(): void;
+}
+
+function runGit(cwd: string, args: string[]): void {
+  execFileSync("git", args, { cwd });
+}
+
+function createRepository(directory: string, fileName: string, content: string): void {
+  fs.mkdirSync(directory);
+  runGit(directory, ["init", "-q"]);
+  runGit(directory, ["config", "user.email", "test@example.com"]);
+  runGit(directory, ["config", "user.name", "Test"]);
+  fs.writeFileSync(path.join(directory, fileName), content);
+  runGit(directory, ["add", "."]);
+  runGit(directory, ["commit", "-q", "-m", "base"]);
+}
+
+function createRootRepoWithSubmodule(): RootRepoWithSubmodule {
+  const fixture = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-submodule-root-"));
+  const rootRepo = path.join(fixture, "root");
+  const submoduleSource = path.join(fixture, "submodule-source");
+  const untrackedPath = "docs/implementation-plans/root-plan.md";
+
+  createRepository(rootRepo, "README.md", "root\n");
+  createRepository(submoduleSource, "tracked.txt", "submodule\n");
+  runGit(rootRepo, [
+    "-c",
+    "protocol.file.allow=always",
+    "submodule",
+    "add",
+    "-q",
+    submoduleSource,
+    "vendor/sub",
+  ]);
+  runGit(rootRepo, ["commit", "-q", "-am", "add submodule"]);
+  fs.mkdirSync(path.dirname(path.join(rootRepo, untrackedPath)), { recursive: true });
+  fs.writeFileSync(path.join(rootRepo, untrackedPath), "plan\n");
+
+  return {
+    rootRepo,
+    untrackedPath,
+    dispose: () => fs.rmSync(fixture, { recursive: true, force: true }),
+  };
+}
+
+function repositoryState(rootRepo: string, changes: ChangesModel): RepositoryReviewState {
+  const withRoot = (file: ChangedFile): RepoChangedFile => ({ ...file, repoRoot: rootRepo });
+  return {
+    repoRoot: rootRepo,
+    displayName: "repo",
+    branch: "main",
+    changes: {
+      ...changes,
+      staged: changes.staged.map(withRoot),
+      unstaged: changes.unstaged.map(withRoot),
+      committed: changes.committed.map(withRoot),
+    },
+  };
+}
+
+async function syncWithLiteralPathspecs(
+  diff: DiffService,
+  initialState: RepositoryReviewState,
+  relPath: string,
+): Promise<RepositoryReviewState> {
+  const previousLiteralPathspecs = process.env.GIT_LITERAL_PATHSPECS;
+  process.env.GIT_LITERAL_PATHSPECS = "1";
+  try {
+    return await syncRepositoryState(diff, initialState, relPath);
+  } finally {
+    if (previousLiteralPathspecs === undefined) {
+      delete process.env.GIT_LITERAL_PATHSPECS;
+    } else {
+      process.env.GIT_LITERAL_PATHSPECS = previousLiteralPathspecs;
+    }
+  }
+}
+
+async function syncRepositoryState(
+  diff: DiffService,
+  initialState: RepositoryReviewState,
+  relPath: string,
+): Promise<RepositoryReviewState> {
+  let state = initialState;
+  await syncFileForOpenDiff(
+    {
+      changesForPath: (root, relPaths, ref) => diff.changesForPath(root, relPaths, ref),
+      getRepository: () => state,
+      setRepository: (next) => {
+        state = next;
+      },
+      getRefreshSeq: () => 0,
+      fullRefresh: () => Promise.resolve(),
+      fireChange: () => {},
+    },
+    initialState.repoRoot,
+    { path: relPath },
+  );
+  return state;
+}
 
 suite("DiffService.changesForPath (scoped per-file git check)", () => {
   const diff = new DiffService();
@@ -148,13 +252,66 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
   test("an untracked file whose name starts with ':' is still found by the scoped scan", async () => {
     // A raw leading-':' path is consumed as pathspec magic by ls-files (returns empty, exit 0), so
     // the scoped scan would miss the file the full scan reports and the merge would drop its row
-    // with no replacement — the pathspec must use the `:(literal)` magic prefix.
+    // with no replacement. The scan must force literal parsing for every requested path.
     fs.writeFileSync(path.join(repo, ":colon.txt"), "one\n");
     const fresh = await diff.changesForPath(repo, [":colon.txt"], null);
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [{ path: ":colon.txt", group: "unstaged", status: "U" }],
     );
+  });
+
+  test("a root untracked file stays in the model with literal pathspecs and submodules", async () => {
+    const fixture = createRootRepoWithSubmodule();
+    try {
+      const changes = await diff.getChanges(fixture.rootRepo, { kind: "head" });
+      const initialState = repositoryState(fixture.rootRepo, changes);
+
+      const refreshedState = await syncWithLiteralPathspecs(
+        diff,
+        initialState,
+        fixture.untrackedPath,
+      );
+
+      assert.deepStrictEqual(
+        refreshedState.changes.unstaged
+          .filter((file) => file.path === fixture.untrackedPath)
+          .map((file) => ({ path: file.path, group: file.group, status: file.status })),
+        [{ path: fixture.untrackedPath, group: "unstaged", status: "U" }],
+        "clicking the row must find the same root untracked file during its scoped refresh",
+      );
+    } finally {
+      fixture.dispose();
+    }
+  });
+
+  test("a root untracked file with a non-UTF-8 name stays in the model after its scoped scan", async function () {
+    if (process.platform !== "linux") {
+      this.skip();
+    }
+    const fixture = createRootRepoWithSubmodule();
+    try {
+      const directory = path.join(fixture.rootRepo, "docs", "implementation-plans");
+      const invalidPath = Buffer.concat([
+        Buffer.from(directory + path.sep + "root-plan-"),
+        Buffer.from([0xff]),
+        Buffer.from(".md"),
+      ]);
+      fs.writeFileSync(invalidPath, "plan\n");
+      const changes = await diff.getChanges(fixture.rootRepo, { kind: "head" });
+      const lossyPath = changes.unstaged.find((file) => file.path.includes("root-plan-"))?.path;
+      assert.ok(lossyPath, "the full changes scan must contain the non-UTF-8 root file");
+      const initialState = repositoryState(fixture.rootRepo, changes);
+
+      const refreshedState = await syncRepositoryState(diff, initialState, lossyPath);
+
+      assert.ok(
+        refreshedState.changes.unstaged.some((file) => file.path === lossyPath),
+        "the scoped refresh must not remove a path returned by the full scan",
+      );
+    } finally {
+      fixture.dispose();
+    }
   });
 
   test("committed entries appear against the compare ref, suppressed by a lower-layer change", async () => {

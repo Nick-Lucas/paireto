@@ -135,18 +135,25 @@ export class DiffService {
 
     // Untracked files are working-tree changes → Unstaged group. ls-files keeps the (widened)
     // pathspec — untracked files can't be rename halves, and the untracked walk is the expensive
-    // call here. `:(literal)` so a path starting with ':' (pathspec magic) or holding glob
-    // characters still matches itself exactly.
-    const pathspec =
-      scoped === undefined ? [] : ["--", ...[...scoped].map((p) => `:(literal)${p}`)];
-    const untrackedOut = await gitSafe(repoRoot, [
-      "ls-files",
-      "--others",
-      "--exclude-standard",
-      "-z",
-      ...pathspec,
-    ]);
-    for (const p of splitNul(untrackedOut)) {
+    // call here. The global literal mode also works when GIT_LITERAL_PATHSPECS is already set;
+    // embedded pathspec magic becomes plain text in that environment and silently matches nothing.
+    const hasLossyPath = scoped !== undefined && [...scoped].some((p) => p.includes("\uFFFD"));
+    const literalMode = scoped === undefined || hasLossyPath ? [] : ["--literal-pathspecs"];
+    const pathspec = scoped === undefined || hasLossyPath ? [] : ["--", ...scoped];
+    const untrackedOut = (
+      await git(repoRoot, [
+        ...literalMode,
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        ...pathspec,
+      ])
+    ).stdout;
+    const untrackedPaths = splitNul(untrackedOut).filter(
+      (p) => scoped === undefined || scoped.has(p),
+    );
+    for (const p of untrackedPaths) {
       unstaged.push({
         path: p,
         status: "U",
