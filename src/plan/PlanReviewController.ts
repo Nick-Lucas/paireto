@@ -127,6 +127,17 @@ export class PlanReviewController implements vscode.Disposable {
       foreground: () => this.foreground(review),
       background: () => this.background(review),
     };
+    // Take the pending slot BEFORE the UI goes up: registering foregrounds the gate, so Approve and
+    // Send Feedback reach this plan while that registration is still running, and fulfill() drops an
+    // answer for a key nothing is waiting on yet — leaving the agent blocked on an answered plan.
+    const decision = this.registry.awaitDecision(key);
+
+    // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
+    const onAbort = (): void => {
+      this.registry.fulfill(key, { decision: "deny", reason: "Plan review connection closed." });
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+
     await this.coordinator.register(entry);
     this.updatePendingContext();
     this.changeEmitter.fire();
@@ -136,13 +147,7 @@ export class PlanReviewController implements vscode.Disposable {
     );
     this.notifyPlanOpened(review);
 
-    // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
-    const onAbort = (): void => {
-      this.registry.fulfill(key, { decision: "deny", reason: "Plan review connection closed." });
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-
-    const result = await this.registry.awaitDecision(key);
+    const result = await decision;
     signal.removeEventListener("abort", onAbort);
     await this.finish(review);
     return result;

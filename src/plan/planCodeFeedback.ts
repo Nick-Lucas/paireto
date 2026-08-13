@@ -19,8 +19,8 @@ export type PlanSendAction =
   | { action: "send" }
   | { action: "ask"; codeCount: number };
 
-export const INCLUDE_FILE_COMMENTS = "Include File Comments";
-export const PLAN_FEEDBACK_ONLY = "Plan Feedback Only";
+export const INCLUDE_FILE_COMMENTS = "Include Review Comments";
+export const PLAN_FEEDBACK_ONLY = "Plan Comments Only";
 
 /** Ask about file comments only when they exist and no code review owns them. */
 export function planSendDecision(input: {
@@ -41,9 +41,7 @@ export function codeFeedbackPromptText(count: number): { message: string; detail
   const subject = count === 1 ? "the file comment" : `the ${count} file comments`;
   return {
     message: `Send ${subject} with this plan feedback?`,
-    detail:
-      "Include them with the plan feedback, or send the plan feedback only. " +
-      "Comments you do not send stay queued for the next code review.",
+    detail: "Comments you do not send will remain for the next code review.",
   };
 }
 
