@@ -7,7 +7,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { activityPath, canonicalize, indexPath, repoKey, stateDir } from "../protocol/paths.js";
-import { ContextKeys, Schemes } from "../config.js";
+import { Commands, ContextKeys, Schemes } from "../config.js";
 import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { relatedWorkspaceFolder } from "../git/WorkspaceRootCatalog.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
@@ -51,6 +51,7 @@ import {
   changedFileCount,
   commandSession,
   computeViewBadge,
+  openDiffRowCommand,
   repositoryBranchLabel,
   shortSessionId,
 } from "../views/MainTreeProvider.js";
@@ -2483,6 +2484,25 @@ suite("changedFileContextValue (which rows offer rename)", () => {
     assert.strictEqual(canRenameFile(file("U", "unstaged")), true);
     assert.strictEqual(canRenameFile(file("D", "staged")), false);
     assert.strictEqual(canRenameFile(undefined), false);
+  });
+});
+
+suite("openDiffRowCommand (a click on a changed-file row)", () => {
+  const file = {
+    path: "src/a.ts",
+    status: "M" as FileStatus,
+    group: "unstaged" as FileGroup,
+    additions: 1,
+    deletions: 0,
+    repoRoot: "/repo",
+  };
+
+  test("opens the diff and leaves focus on the row, like a click in the explorer", () => {
+    // Focus that jumps to the editor takes the row's keys with it: F2/Enter (rename) and the arrow
+    // keys that walk to the next file then act on the editor instead of the list.
+    const command = openDiffRowCommand(file);
+    assert.strictEqual(command.command, Commands.reviewOpenDiff);
+    assert.deepStrictEqual(command.arguments, [file, { preserveFocus: true }]);
   });
 });
 

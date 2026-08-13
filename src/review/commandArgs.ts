@@ -86,6 +86,11 @@ export const BulkTargetArg = z.union([
 ]);
 export type BulkTargetArg = z.infer<typeof BulkTargetArg>;
 
+/** How a caller wants a diff shown. Sent by the tree row, which opens without taking focus; a menu
+ *  entry sends its own second argument (the multi-selection) instead, which this rejects. */
+export const ShowOptionsArg = z.object({ preserveFocus: z.boolean() });
+export type ShowOptionsArg = z.infer<typeof ShowOptionsArg>;
+
 /** A review comment, by id. Only the id travels: the live comment is looked up from it, so a stale
  *  copy carried on a tree node can never be acted on. */
 export const CommentIdArg = z.object({ id: z.string() }).transform((comment) => comment.id);
@@ -108,16 +113,16 @@ export type CommentReplyArg = z.infer<typeof CommentReplyArg>;
  */
 export function withArg<S extends z.ZodTypeAny>(
   schema: S,
-  run: (value: z.infer<S>) => unknown,
-): (arg: unknown) => void {
-  return (arg: unknown) => {
+  run: (value: z.infer<S>, ...rest: unknown[]) => unknown,
+): (arg: unknown, ...rest: unknown[]) => void {
+  return (arg: unknown, ...rest: unknown[]) => {
     const parsed = schema.safeParse(arg);
     if (!parsed.success) {
       const message = `command argument rejected —\n${prettifyError(parsed.error)}`;
       log.error(message);
       throw new Error(message);
     }
-    void run(parsed.data);
+    void run(parsed.data, ...rest);
   };
 }
 

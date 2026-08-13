@@ -802,6 +802,20 @@ export function changedFileContextValue(file: ChangedFile): string {
   return canRenameFile(file) ? `changedFile:${file.group}` : `changedFile:${file.group}:deleted`;
 }
 
+/**
+ * What a click on a changed-file row does: open the diff as a preview WITHOUT taking focus, which is
+ * what a single click in the explorer does. Focus stays on the row, so the arrow keys walk to the
+ * next file and the rename key reaches it. The Open Diff context-menu entry passes no options and so
+ * still moves focus into the editor — an explicit open, like the explorer's.
+ */
+export function openDiffRowCommand(file: RepoChangedFile): vscode.Command {
+  return {
+    command: Commands.reviewOpenDiff,
+    title: "Open Diff",
+    arguments: [file, { preserveFocus: true }],
+  };
+}
+
 /** `scope` namespaces the row id. The same file can legitimately appear under two changesets and in
  *  Changed Files, and VS Code rejects a tree with a duplicate TreeItem.id. */
 function fileItem(
@@ -819,7 +833,7 @@ function fileItem(
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${file.path}\n${statusWord(file.status)} · ${counts}`;
   item.contextValue = changedFileContextValue(file);
-  item.command = { command: Commands.reviewOpenDiff, title: "Open Diff", arguments: [file] };
+  item.command = openDiffRowCommand(file);
   return item;
 }
 

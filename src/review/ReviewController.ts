@@ -43,6 +43,8 @@ import {
   FileArg,
   FilesArg,
   GuidedRowArg,
+  ShowOptionsArg,
+  readArg,
   withArg,
 } from "./commandArgs.js";
 import {
@@ -237,7 +239,7 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
       reg(
         Commands.reviewOpenDiff,
-        withArg(FileArg, (file) => this.openDiff(file)),
+        withArg(FileArg, (file, show) => this.openDiff(file, readArg(ShowOptionsArg, show))),
       ),
       reg(
         Commands.reviewOpenFile,
