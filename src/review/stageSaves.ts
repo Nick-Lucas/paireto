@@ -56,3 +56,9 @@ export function dirtyTargetDocs<T extends DocLike>(
   }
   return Array.from(found, ([doc, path]) => ({ doc, path }));
 }
+
+/** The error shown when a save fails during a stage. It names the file git could not be given, and
+ *  says the stage did not run. */
+export function saveFailureMessage(path: string): string {
+  return `Could not save ${path}. No files were staged.`;
+}

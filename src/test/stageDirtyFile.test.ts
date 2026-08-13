@@ -13,18 +13,28 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { Schemes } from "../config.js";
+import type { InspectSnapshot } from "../e2e/inspectTypes.js";
 import { canonicalize } from "../protocol/paths.js";
 import type { RepoChangedFile } from "../review/ReviewController.js";
+import { revertDirtyDocs } from "./workbench.js";
 
-async function waitFor<T>(probe: () => T | undefined, timeoutMs: number): Promise<T | undefined> {
+async function waitFor<T>(
+  probe: () => T | undefined | Promise<T | undefined>,
+  timeoutMs: number,
+): Promise<T | undefined> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const value = probe();
+    const value = await probe();
     if (value !== undefined || Date.now() > deadline) {
       return value;
     }
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
+}
+
+/** The read-only control plane exposed under PAIRETO_TEST (see .vscode-test.mjs). */
+function inspect(): Thenable<InspectSnapshot> {
+  return vscode.commands.executeCommand<InspectSnapshot>("paireto.test.inspect");
 }
 
 /** Every open review diff tab (any tab group). */
@@ -122,9 +132,12 @@ suite("staging a file with unsaved changes", () => {
     );
     assert.strictEqual(doc.isDirty, false, "the document must be saved by the stage");
     // A clean document lets the tab follow the file to the staged group without VS Code raising its
-    // own save dialog.
-    const tabs = reviewDiffTabs();
-    assert.strictEqual(tabs.length, 1, "the review diff tab must still be open after the stage");
+    // own save dialog. The tab is closed and reopened at its new group, so wait for it to settle.
+    const tabs = await waitFor(() => {
+      const open = reviewDiffTabs();
+      return open.length === 1 ? open : undefined;
+    }, 20_000);
+    assert.ok(tabs, "the review diff tab must still be open after the stage");
     assert.strictEqual(tabs[0].isDirty, false, "the review diff tab must hold no unsaved edits");
   });
 
@@ -171,5 +184,59 @@ suite("staging a file with unsaved changes", () => {
       `the deletion must reach the index, got: ${JSON.stringify(stagedStatus(root, name))}`,
     );
     assert.strictEqual(fs.existsSync(filePath), false, "the stage must not re-create the file");
+  });
+
+  test("an unstage leaves the unsaved edits alone, and the record follows the file", async function () {
+    this.timeout(60_000);
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    assert.ok(folder, "the test harness must open the fixture git workspace");
+    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
+
+    const root = folder.uri.fsPath;
+    const name = "unstage-dirty-modified.txt";
+    const filePath = path.join(root, name);
+    fs.writeFileSync(filePath, "one\n");
+    execFileSync("git", ["add", name], { cwd: root });
+    execFileSync("git", ["commit", "-q", "-m", `fixture ${name}`], { cwd: root });
+    fs.writeFileSync(filePath, "one\ntwo\n");
+    execFileSync("git", ["add", name], { cwd: root });
+
+    const staged: RepoChangedFile = {
+      path: name,
+      group: "staged",
+      status: "M",
+      additions: 1,
+      deletions: 0,
+      repoRoot: canonicalize(root),
+    };
+    await vscode.commands.executeCommand("paireto.review.openDiff", staged);
+    assert.ok(
+      await waitFor(() => (reviewDiffTabs().length === 1 ? "yes" : undefined), 20_000),
+      "the staged diff tab must open",
+    );
+
+    // An unstage does not touch the working tree, so, unlike a stage, it must not write the buffer.
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
+    const edit = new vscode.WorkspaceEdit();
+    edit.insert(doc.uri, new vscode.Position(doc.lineCount, 0), "three\n");
+    assert.ok(await vscode.workspace.applyEdit(edit), "the document must accept an edit");
+
+    await vscode.commands.executeCommand("paireto.review.unstage", staged);
+
+    const moved = await waitFor(async () => {
+      const rows = (await inspect()).openDiffs.filter((row) => row.path === name);
+      return rows.length === 1 && rows[0].group === "unstaged" ? rows : undefined;
+    }, 20_000);
+    assert.ok(moved, "the record must name the group the file is on now");
+    assert.strictEqual(doc.isDirty, true, "the unstage must not write the buffer to disk");
+    assert.strictEqual(
+      reviewDiffTabs().length,
+      1,
+      "the diff tab must follow the file, not multiply",
+    );
+
+    // The unsaved buffer this test relies on cannot be left for the next test file to close.
+    await revertDirtyDocs();
   });
 });

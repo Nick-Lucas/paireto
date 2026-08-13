@@ -14,7 +14,7 @@ import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry, type GateKind } from "../gate/GateCoordinator.js";
-import { repoRelativePath } from "../protocol/paths.js";
+import { canonicalize, repoRelativePath } from "../protocol/paths.js";
 import { closeTabsWhere } from "../gate/tabs.js";
 import {
   DiffService,
@@ -65,7 +65,7 @@ import {
   type GuidedReviewState,
 } from "./guidedPlan.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
-import { dirtyTargetDocs } from "./stageSaves.js";
+import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
@@ -598,6 +598,12 @@ export class ReviewController implements vscode.Disposable {
     return this.activeRequestId !== undefined;
   }
 
+  /** The tree row each open diff tab stands for, for `paireto.test.inspect` — lets a test pin that a
+   *  tab which outlives a write-op still names the row the file is on. */
+  openDiffRows(): { path: string; group: FileGroup }[] {
+    return Array.from(this.openDiffs.values(), (open) => ({ path: open.path, group: open.group }));
+  }
+
   /** Per-reason refresh() tally for `paireto.test.inspect` — lets a test pin that a flow (e.g.
    *  openDiff's scoped sync) never ran the full refresh. */
   getRefreshCounts(): Record<string, number> {
@@ -906,7 +912,7 @@ export class ReviewController implements vscode.Disposable {
   private async saveBeforeStage(files: RepoChangedFile[]): Promise<boolean> {
     for (const { doc, path } of dirtyTargetDocs(vscode.workspace.textDocuments, files)) {
       if (!(await doc.save())) {
-        void vscode.window.showErrorMessage(`Could not save ${path}. Nothing was staged.`);
+        void vscode.window.showErrorMessage(saveFailureMessage(path));
         return false;
       }
     }
@@ -926,16 +932,8 @@ export class ReviewController implements vscode.Disposable {
     if (!files.length) {
       return;
     }
-    const label =
-      files.length === 1 ? `the changes in ${files[0].path}` : `changes in ${files.length} files`;
-    const choice = await vscode.window.showWarningMessage(
-      `Discard ${label}? This cannot be undone.`,
-      { modal: true },
-      "Discard Changes",
-    );
-    if (choice !== "Discard Changes") {
-      return;
-    }
+    const dirty = dirtyTargetDocs(vscode.workspace.textDocuments, files);
+    await this.dropUnsavedEdits(dirty.map((target) => target.doc));
     for (const [repoRoot, repoFiles] of filesByRoot(files)) {
       await this.diff.discard(
         repoRoot,
@@ -946,6 +944,20 @@ export class ReviewController implements vscode.Disposable {
         repoRoot,
         repoFiles.map((f) => f.path),
       );
+    }
+  }
+
+  /**
+   * Throw away the unsaved editor content for files a discard is about to revert. The edits are part
+   * of the change the user chose to discard, and a tab still holding them cannot be closed — VS Code
+   * raises its own save dialog and the reconcile has to leave the stale tab where it is. Reverting
+   * writes nothing to disk, so the buffer never reaches the file.
+   */
+  private async dropUnsavedEdits(docs: vscode.TextDocument[]): Promise<void> {
+    for (const doc of docs) {
+      // Revert acts on the active editor, so the document has to hold it first.
+      await vscode.window.showTextDocument(doc, { preview: true, preserveFocus: false });
+      await vscode.commands.executeCommand("workbench.action.revertAndCloseActiveEditor");
     }
   }
 
@@ -1004,7 +1016,8 @@ export class ReviewController implements vscode.Disposable {
    * different group (e.g. unstaged→staged), re-point the tab by closing it and reopening the diff at
    * its new location (preserving the column); if it's still present at the same level, leave it (the
    * refresh()'s content re-render already covers it). A file that already has a comment is left
-   * untouched so we never yank a diff the user is reviewing.
+   * untouched so we never yank a diff the user is reviewing. A tab holding unsaved edits also stays
+   * open, but what we record about it follows the file all the same.
    */
   private async reconcileOpenDiffsAfterWrite(
     repoRoot: string,
@@ -1038,18 +1051,18 @@ export class ReviewController implements vscode.Disposable {
       }
       const located = this.locateReviewTab(baseKey);
       // Closing a tab with unsaved edits makes VS Code raise its own save dialog and can drop the
-      // buffer. The working-tree side of the diff still shows live content where it is.
-      if (located?.dirty) {
+      // buffer, so the tab stays. What we record about it still follows the file: an entry naming a
+      // group the file has left points the tree at a row that is no longer there.
+      if (located && this.hasUnsavedEdits(repoRoot, relPath)) {
+        if (target === "close") {
+          this.forgetOpenDiff(baseKey, open);
+        } else {
+          this.moveOpenDiff(baseKey, open, target);
+        }
+        this.debug(`reconcile: ${relPath} has unsaved edits — kept the tab, tracked "${target}"`);
         continue;
       }
-      this.openDiffs.delete(baseKey);
-      if (
-        this.openDiffFile?.repoRoot === repoRoot &&
-        this.openDiffFile.path === relPath &&
-        this.openDiffFile.group === oldGroup
-      ) {
-        this.openDiffFile = undefined;
-      }
+      this.forgetOpenDiff(baseKey, open);
       await closeTabsWhere((tab) => reviewTabKey(tab.input) === baseKey);
       if (target === "close") {
         this.debug(`reconcile: ${relPath} gone — closed diff tab`);
@@ -1073,12 +1086,38 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  /** The open review tab whose virtual URI matches `tabKey`: its column, active, preview and dirty state. */
+  /** Stop tracking a tab's tree row. The tab itself is left alone. */
+  private forgetOpenDiff(tabKey: string, at: OpenDiffState): void {
+    this.openDiffs.delete(tabKey);
+    if (this.openDiffFile && sameReviewFile(this.openDiffFile, at)) {
+      this.openDiffFile = undefined;
+    }
+  }
+
+  /** Follow a file that changed git layer, keeping the tab and its pinned comparison. */
+  private moveOpenDiff(tabKey: string, at: OpenDiffState, group: FileGroup): void {
+    this.openDiffs.set(tabKey, { ...at, group });
+    const current = this.openDiffFile;
+    if (current && sameReviewFile(current, at)) {
+      this.openDiffFile = { ...current, group };
+    }
+  }
+
+  /** True while an editor holds unsaved edits for this file. Only the working-tree side of a review
+   *  diff can be edited — the base side is read-only — so the document behind that side answers for
+   *  the tab, and it answers sooner: the tab's own dirty flag is a view of this document and can lag
+   *  it by a frame. */
+  private hasUnsavedEdits(repoRoot: string, relPath: string): boolean {
+    const target = canonicalize(join(repoRoot, relPath));
+    return vscode.workspace.textDocuments.some(
+      (doc) => doc.isDirty && doc.uri.scheme === "file" && canonicalize(doc.uri.fsPath) === target,
+    );
+  }
+
+  /** The open review tab whose virtual URI matches `tabKey`: its column, active and preview state. */
   private locateReviewTab(
     tabKey: string,
-  ):
-    | { viewColumn: vscode.ViewColumn; active: boolean; preview: boolean; dirty: boolean }
-    | undefined {
+  ): { viewColumn: vscode.ViewColumn; active: boolean; preview: boolean } | undefined {
     for (const group of vscode.window.tabGroups.all) {
       for (const tab of group.tabs) {
         if (reviewTabKey(tab.input) === tabKey) {
@@ -1086,7 +1125,6 @@ export class ReviewController implements vscode.Disposable {
             viewColumn: group.viewColumn,
             active: tab.isActive,
             preview: tab.isPreview,
-            dirty: tab.isDirty,
           };
         }
       }
@@ -2105,6 +2143,11 @@ function mergeChangesForPath(
  * "close" if the change is gone entirely, otherwise the group to re-point the tab to (preferring the
  * write-op's destination group when the file landed in several).
  */
+/** Two records naming the same file at the same git layer of the same repository. */
+function sameReviewFile(a: OpenDiffState, b: OpenDiffState): boolean {
+  return a.repoRoot === b.repoRoot && a.path === b.path && a.group === b.group;
+}
+
 export function reconcileDiffTarget(
   oldGroup: FileGroup,
   candidates: FileGroup[],
