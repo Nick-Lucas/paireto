@@ -12,9 +12,9 @@ import { z } from "zod";
 export const CompareTo = z
   .object({
     kind: z
-      .enum(["head", "mergeBase", "default", "ref"])
+      .enum(["head", "mergeBase", "stackBase", "default", "ref"])
       .describe(
-        "head: uncommitted work\nmergeBase: this branch since it forked\ndefault: the default branch tip\nref: the named ref.",
+        "head: uncommitted work\nmergeBase: this branch and any stacked branches under it, since the default branch\nstackBase: only this branch's own commits, since the branch below it in a stack\ndefault: the default branch tip\nref: the named ref.",
       ),
     ref: z.string().optional().describe("The git ref to compare against, if kind is `ref`."),
   })
@@ -54,6 +54,7 @@ export type GuidedReviewArgs = z.infer<typeof GuidedReviewArgs>;
 const COMPARE_TO_LABEL: Record<CompareToKind, string> = {
   head: "HEAD",
   mergeBase: "the merge base",
+  stackBase: "the stack base",
   default: "the default branch",
   ref: "a named ref",
 };

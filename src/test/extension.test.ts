@@ -1828,6 +1828,7 @@ suite("Compare To picker", () => {
       compareToEqual({ kind: "ref", ref: "origin/main" }, { kind: "ref", ref: "main" }),
       false,
     );
+    assert.strictEqual(compareToEqual({ kind: "stackBase" }, { kind: "mergeBase" }), false);
   });
 
   test("recovers the semantic tab comparison when concrete refs overlap", () => {
@@ -1836,6 +1837,16 @@ suite("Compare To picker", () => {
     assert.strictEqual(
       currentFileCompareKind("abc123", "merge-base(origin/main)", "origin/main"),
       "mergeBase",
+    );
+    assert.strictEqual(
+      currentFileCompareKind("abc123", "stack-base(feat/a)", "origin/main"),
+      "stackBase",
+    );
+    // A branch sitting straight on the default branch resolves both rows to the SAME commit, so
+    // only the label separates them.
+    assert.strictEqual(
+      currentFileCompareKind("abc123", "stack-base(origin/main)", "origin/main"),
+      "stackBase",
     );
     assert.strictEqual(
       currentFileCompareKind("origin/main", "origin/main", "origin/main"),

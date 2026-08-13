@@ -661,6 +661,8 @@ function changesDescription(state: ReviewState): string | undefined {
         return "HEAD";
       case "mergeBase":
         return "Merge Base";
+      case "stackBase":
+        return "Stack Base";
       case "default":
         return "Default Branch";
       case "ref":

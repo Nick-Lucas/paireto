@@ -214,6 +214,7 @@ suite("guided review — parseCompareTo", () => {
   test("accepts every Compare To kind the window understands", () => {
     assert.deepStrictEqual(parseCompareTo({ kind: "head" }), { kind: "head" });
     assert.deepStrictEqual(parseCompareTo({ kind: "mergeBase" }), { kind: "mergeBase" });
+    assert.deepStrictEqual(parseCompareTo({ kind: "stackBase" }), { kind: "stackBase" });
     assert.deepStrictEqual(parseCompareTo({ kind: "default" }), { kind: "default" });
     assert.deepStrictEqual(parseCompareTo({ kind: "ref", ref: "v1.2" }), {
       kind: "ref",
@@ -244,7 +245,7 @@ suite("guided review — parseCompareTo", () => {
   test("a resolvable ref, and every computed kind, is accepted", async () => {
     const resolvable = toGuidedPlan(REPO, [], { compareTo: { kind: "ref", ref: "v1.2" } });
     assert.strictEqual(await verifyGuidedCompareTo(resolvable, async () => true), undefined);
-    for (const kind of ["head", "default", "mergeBase"] as const) {
+    for (const kind of ["head", "default", "mergeBase", "stackBase"] as const) {
       const built = toGuidedPlan(REPO, [], { compareTo: { kind } });
       const rejection = await verifyGuidedCompareTo(built, async () => {
         throw new Error("a computed comparison point is never checked as a ref");
@@ -274,7 +275,7 @@ suite("guided review — comparison point per repository", () => {
   });
 
   test("a lone root shares every comparison point; several roots cannot share a ref", () => {
-    for (const kind of ["head", "default", "mergeBase"] as const) {
+    for (const kind of ["head", "default", "mergeBase", "stackBase"] as const) {
       assert.strictEqual(sharedCompareToHolds(3, { kind }), true, kind);
     }
     assert.strictEqual(sharedCompareToHolds(1, guided.compareTo), true);

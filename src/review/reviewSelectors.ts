@@ -1,5 +1,5 @@
 // The "Compare To" QuickPick: choose the point the Committed group is diffed against.
-// Presets: HEAD, merge-base, the auto-detected default branch, and a Branch/Ref… picker.
+// Presets: HEAD, merge-base, stack base, the auto-detected default branch, and a Branch/Ref… picker.
 
 import * as vscode from "vscode";
 
@@ -26,8 +26,13 @@ export async function pickCompareTo(
     { label: "$(git-commit) HEAD", description: "working changes only", value: { kind: "head" } },
     {
       label: "$(git-pull-request) Merge base",
-      description: "since you branched",
+      description: "since the default branch",
       value: { kind: "mergeBase" },
+    },
+    {
+      label: "$(layers) Stack base",
+      description: "since the branch below in the stack",
+      value: { kind: "stackBase" },
     },
   ];
   if (defaultBranch) {
@@ -77,6 +82,11 @@ export async function pickMultiCompareTo(current: CompareTo): Promise<CompareTo 
       value: { kind: "mergeBase" },
     },
     {
+      label: "$(layers) Stack base",
+      description: "resolve independently per repository",
+      value: { kind: "stackBase" },
+    },
+    {
       label: "$(git-branch) Default branch",
       description: "main/master/origin HEAD per repository",
       value: { kind: "default" },
@@ -98,8 +108,11 @@ export async function pickFileCompareTo(
   currentBaseRef: string,
   currentBaseLabel?: string,
 ): Promise<FileCompareTo | undefined> {
-  const defaultBranch = await diff.defaultBranch(repoRoot);
-  const mergeBase = await diff.resolveCompareTo(repoRoot, { kind: "mergeBase" });
+  const [defaultBranch, mergeBase, stackBase] = await Promise.all([
+    diff.defaultBranch(repoRoot),
+    diff.resolveCompareTo(repoRoot, { kind: "mergeBase" }),
+    diff.resolveCompareTo(repoRoot, { kind: "stackBase" }),
+  ]);
   const items: CompareItem<FileCompareTo>[] = [];
   if (currentBaseRef === "EMPTY") {
     items.push({
@@ -127,6 +140,12 @@ export async function pickFileCompareTo(
       description: "where this branch diverged",
       value: { kind: "mergeBase" },
       comparisonRef: mergeBase.ref ?? "HEAD",
+    },
+    {
+      label: "$(layers) Stack base",
+      description: "where this branch was created",
+      value: { kind: "stackBase" },
+      comparisonRef: stackBase.ref ?? "HEAD",
     },
   );
   if (defaultBranch) {
@@ -198,6 +217,11 @@ export function currentFileCompareKind(
   baseLabel: string | undefined,
   defaultBranch: string | undefined,
 ): FileCompareTo["kind"] | undefined {
+  // A stack base can resolve to the same commit as the merge base, so the label is the only thing
+  // that keeps the two rows apart.
+  if (baseLabel?.startsWith("stack-base(")) {
+    return "stackBase";
+  }
   if (baseLabel?.startsWith("merge-base(")) {
     return "mergeBase";
   }
