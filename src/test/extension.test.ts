@@ -61,16 +61,7 @@ import {
   shouldOpenStandaloneCommentTarget,
   shouldOpenTurnEndReview,
 } from "../review/ReviewController.js";
-import {
-  dirtyTargetDocs,
-  fileList,
-  SAVE_AND_STAGE,
-  saveBeforeStagePrompt,
-  stageSaveAction,
-  stageSaveChoice,
-  STAGE_SAVED,
-  unsavedAfterStageMessage,
-} from "../review/stageSaves.js";
+import { dirtyTargetDocs } from "../review/stageSaves.js";
 import { relocateReviewAnchor } from "../review/commentAnchors.js";
 import { compareToEqual, currentFileCompareKind } from "../review/reviewSelectors.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
@@ -2529,7 +2520,7 @@ suite("AgentStrategy agnosticism (a second, non-Claude harness)", () => {
   });
 });
 
-suite("stage with unsaved changes (decision helpers)", () => {
+suite("stage with unsaved changes (which documents a stage saves)", () => {
   const doc = (fsPath: string, isDirty: boolean, scheme = "file") => ({
     uri: { scheme, fsPath },
     isDirty,
@@ -2571,47 +2562,5 @@ suite("stage with unsaved changes (decision helpers)", () => {
   test("dirtyTargetDocs skips a deleted target, whose save would re-create the file", () => {
     const dirty = doc("/repo/src/gone.ts", true);
     assert.deepStrictEqual(dirtyTargetDocs([dirty], [target("src/gone.ts", "D")]), []);
-  });
-
-  test("stageSaveAction stages straight away when nothing is dirty", () => {
-    for (const setting of ["prompt", "always", "never"] as const) {
-      assert.strictEqual(stageSaveAction(setting, 0), "stage");
-    }
-  });
-
-  test("stageSaveAction obeys the setting when a target is dirty", () => {
-    assert.strictEqual(stageSaveAction("always", 1), "save");
-    assert.strictEqual(stageSaveAction("never", 1), "stage");
-    assert.strictEqual(stageSaveAction("prompt", 1), "ask");
-  });
-
-  test("stageSaveChoice maps the buttons, and a dismissed dialog cancels", () => {
-    assert.strictEqual(stageSaveChoice(SAVE_AND_STAGE), "save");
-    assert.strictEqual(stageSaveChoice(STAGE_SAVED), "stage");
-    assert.strictEqual(stageSaveChoice(undefined), "cancel");
-  });
-
-  test("fileList caps the names and counts the rest", () => {
-    assert.strictEqual(fileList(["a.ts", "b.ts"]), "a.ts, b.ts");
-    assert.strictEqual(
-      fileList(["a.ts", "b.ts", "c.ts", "d.ts", "e.ts", "f.ts", "g.ts"]),
-      "a.ts, b.ts, c.ts, d.ts, e.ts and 2 more",
-    );
-  });
-
-  test("the prompt names one file, or counts them, and lists the names", () => {
-    assert.strictEqual(saveBeforeStagePrompt(["a.ts"]).message, "a.ts has unsaved changes.");
-    const many = saveBeforeStagePrompt(["a.ts", "b.ts"]);
-    assert.strictEqual(many.message, "2 files have unsaved changes.");
-    assert.ok(many.detail.endsWith("Files: a.ts, b.ts"), many.detail);
-    assert.ok(
-      saveBeforeStagePrompt(["a", "b", "c", "d", "e", "f"]).detail.endsWith("and 1 more"),
-      "past the cap the prompt counts the rest",
-    );
-  });
-
-  test("the after-stage warning names the files it left out of the index", () => {
-    assert.ok(unsavedAfterStageMessage(["a.ts"]).endsWith("a.ts"));
-    assert.ok(unsavedAfterStageMessage(["a", "b", "c", "d", "e", "f", "g"]).endsWith("and 2 more"));
   });
 });

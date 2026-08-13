@@ -2,8 +2,8 @@
 // index and then close the diff tab, which made VS Code raise its own save dialog. The user's save
 // landed AFTER the `git add`, so the very edits they thought they staged came back as a new
 // unstaged change. Stage now means "stage the version I am looking at": the target documents are
-// saved BEFORE the git write. Driven through the activated extension's real commands, like
-// openDiffReconcile.test.ts.
+// saved BEFORE the git write, without a question. Driven through the activated extension's real
+// commands, like openDiffReconcile.test.ts.
 
 import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
@@ -60,7 +60,7 @@ function stagedStatus(root: string, name: string): string {
 async function openDirtyDiff(
   root: string,
   name: string,
-): Promise<{ file: RepoChangedFile; doc: vscode.TextDocument; tab: vscode.Tab }> {
+): Promise<{ file: RepoChangedFile; doc: vscode.TextDocument }> {
   const filePath = path.join(root, name);
   fs.writeFileSync(filePath, "one\n");
   execFileSync("git", ["add", name], { cwd: root });
@@ -94,17 +94,11 @@ async function openDirtyDiff(
     "the working-tree document must accept an edit",
   );
   assert.strictEqual(doc.isDirty, true, "the working-tree document must be dirty before staging");
-  return { file, doc, tab };
+  return { file, doc };
 }
 
 suite("staging a file with unsaved changes", () => {
-  teardown(async () => {
-    await vscode.workspace
-      .getConfiguration("paireto")
-      .update("review.saveBeforeStage", undefined, vscode.ConfigurationTarget.Global);
-  });
-
-  test("'always' saves the editor content first, so the index holds the unsaved line", async function () {
+  test("the stage saves the editor content first, so the index holds the unsaved line", async function () {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
@@ -112,12 +106,9 @@ suite("staging a file with unsaved changes", () => {
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
-    const name = "stage-dirty-always.txt";
+    const name = "stage-dirty-modified.txt";
     const { file, doc } = await openDirtyDiff(root, name);
 
-    await vscode.workspace
-      .getConfiguration("paireto")
-      .update("review.saveBeforeStage", "always", vscode.ConfigurationTarget.Global);
     await vscode.commands.executeCommand("paireto.review.stage", file);
 
     const staged = await waitFor(
@@ -130,9 +121,14 @@ suite("staging a file with unsaved changes", () => {
       `staging must put the editor content in the index, got: ${JSON.stringify(indexContent(root, name))}`,
     );
     assert.strictEqual(doc.isDirty, false, "the document must be saved by the stage");
+    // A clean document lets the tab follow the file to the staged group without VS Code raising its
+    // own save dialog.
+    const tabs = reviewDiffTabs();
+    assert.strictEqual(tabs.length, 1, "the review diff tab must still be open after the stage");
+    assert.strictEqual(tabs[0].isDirty, false, "the review diff tab must hold no unsaved edits");
   });
 
-  test("'always' does not save a deleted file, so the stage keeps the deletion", async function () {
+  test("the stage does not save a deleted file, so the deletion stays", async function () {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
@@ -163,9 +159,6 @@ suite("staging a file with unsaved changes", () => {
       deletions: 1,
       repoRoot: canonicalize(root),
     };
-    await vscode.workspace
-      .getConfiguration("paireto")
-      .update("review.saveBeforeStage", "always", vscode.ConfigurationTarget.Global);
     await vscode.commands.executeCommand("paireto.review.stage", file);
 
     const staged = await waitFor(
@@ -178,38 +171,5 @@ suite("staging a file with unsaved changes", () => {
       `the deletion must reach the index, got: ${JSON.stringify(stagedStatus(root, name))}`,
     );
     assert.strictEqual(fs.existsSync(filePath), false, "the stage must not re-create the file");
-  });
-
-  test("'never' stages the disk content, keeps the document dirty, and leaves the diff tab open", async function () {
-    this.timeout(60_000);
-    const folder = vscode.workspace.workspaceFolders?.[0];
-    assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
-    await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-
-    const root = folder.uri.fsPath;
-    const name = "stage-dirty-never.txt";
-    const { file, doc, tab } = await openDirtyDiff(root, name);
-
-    await vscode.workspace
-      .getConfiguration("paireto")
-      .update("review.saveBeforeStage", "never", vscode.ConfigurationTarget.Global);
-    await vscode.commands.executeCommand("paireto.review.stage", file);
-
-    const staged = await waitFor(
-      () => (indexContent(root, name) === "one\ntwo\n" ? "yes" : undefined),
-      20_000,
-    );
-    assert.strictEqual(
-      staged,
-      "yes",
-      `'never' must stage only the disk content, got: ${JSON.stringify(indexContent(root, name))}`,
-    );
-    assert.strictEqual(doc.isDirty, true, "'never' must leave the unsaved edits in the editor");
-    // Closing the tab is exactly what raises VS Code's save dialog. A re-point closes and reopens,
-    // so the SAME tab must survive the stage, not a replacement of it.
-    const tabs = reviewDiffTabs();
-    assert.strictEqual(tabs.length, 1, "the dirty review diff tab must stay open after the stage");
-    assert.strictEqual(tabs[0], tab, "the dirty review diff tab must be the very same tab");
   });
 });

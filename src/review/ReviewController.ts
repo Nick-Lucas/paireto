@@ -65,16 +65,7 @@ import {
   type GuidedReviewState,
 } from "./guidedPlan.js";
 import { renderReviewFeedback } from "./reviewFeedback.js";
-import {
-  dirtyTargetDocs,
-  SAVE_AND_STAGE,
-  saveBeforeStagePrompt,
-  stageSaveAction,
-  stageSaveChoice,
-  STAGE_SAVED,
-  unsavedAfterStageMessage,
-  type SaveBeforeStage,
-} from "./stageSaves.js";
+import { dirtyTargetDocs } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
@@ -883,9 +874,7 @@ export class ReviewController implements vscode.Disposable {
     if (!files.length) {
       return;
     }
-    // Asked once for the whole selection, so a bulk stage asks at most one question.
-    const prepared = await this.prepareStage(files);
-    if (!prepared.run) {
+    if (!(await this.saveBeforeStage(files))) {
       return;
     }
     for (const [repoRoot, repoFiles] of filesByRoot(files)) {
@@ -894,48 +883,20 @@ export class ReviewController implements vscode.Disposable {
       await this.refresh();
       await this.reconcileOpenDiffsAfterWrite(repoRoot, paths, "staged");
     }
-    if (prepared.unsaved.length) {
-      void vscode.window.showWarningMessage(unsavedAfterStageMessage(prepared.unsaved));
-    }
   }
 
   /**
    * Git stages the file as it is on disk, so a stage means "stage the version I am looking at" only
-   * when the editor's unsaved edits are written first. Returns whether the stage may run, and the
-   * files whose unsaved edits were deliberately left out of it.
+   * when the editor's unsaved edits are written first. Returns whether the stage may run.
    */
-  private async prepareStage(
-    files: RepoChangedFile[],
-  ): Promise<{ run: boolean; unsaved: string[] }> {
-    const dirty = dirtyTargetDocs(vscode.workspace.textDocuments, files);
-    const setting = vscode.workspace
-      .getConfiguration("paireto")
-      .get<SaveBeforeStage>("review.saveBeforeStage", "prompt");
-    let action = stageSaveAction(setting, dirty.length);
-    if (action === "ask") {
-      const prompt = saveBeforeStagePrompt(dirty.map((d) => d.path));
-      const answer = await vscode.window.showWarningMessage(
-        prompt.message,
-        { modal: true, detail: prompt.detail },
-        SAVE_AND_STAGE,
-        STAGE_SAVED,
-      );
-      const choice = stageSaveChoice(answer);
-      if (choice === "cancel") {
-        return { run: false, unsaved: [] };
-      }
-      action = choice;
-    }
-    if (action === "stage") {
-      return { run: true, unsaved: dirty.map((d) => d.path) };
-    }
-    for (const { doc, path } of dirty) {
+  private async saveBeforeStage(files: RepoChangedFile[]): Promise<boolean> {
+    for (const { doc, path } of dirtyTargetDocs(vscode.workspace.textDocuments, files)) {
       if (!(await doc.save())) {
         void vscode.window.showErrorMessage(`Could not save ${path}. Nothing was staged.`);
-        return { run: false, unsaved: [] };
+        return false;
       }
     }
-    return { run: true, unsaved: [] };
+    return true;
   }
 
   private async unstageFiles(files: RepoChangedFile[]): Promise<void> {
