@@ -3,12 +3,12 @@
 // shows the modal itself.
 
 import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 import { renderRejectedPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 
 /** What the plan gate needs from the code-review side. ReviewController satisfies this shape. */
 export interface CodeFeedbackSource {
-  getComments(): ReviewComment[];
+  getComments(): ReviewThread[];
   isMultiRepository(): boolean;
   isSessionActive(): boolean;
   clearComments(): void;
@@ -48,7 +48,7 @@ export function codeFeedbackPromptText(count: number): { message: string; detail
 /** The plan block, then the file comments when the user includes them. */
 export function composeRejectedPlanFeedback(args: {
   planComments: PlanCommentData[];
-  codeComments: ReviewComment[];
+  codeComments: ReviewThread[];
   toolName: string;
   rejectedPlanReviewInstructions?: string[];
   multiRepository: boolean;

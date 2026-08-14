@@ -26,7 +26,8 @@ import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffS
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderRejectedPlanFeedback } from "../plan/planFeedback.js";
 import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
+import type { CommentKind } from "../comments/kinds.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
 import { PlanGateRegistry } from "../plan/PlanGateRegistry.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
@@ -521,23 +522,34 @@ suite("renderRejectedPlanFeedback", () => {
 });
 
 suite("renderRejectedReviewFeedback", () => {
-  const mk = (over: Partial<ReviewComment>): ReviewComment => ({
-    id: "x",
-    repoRoot: "/repo",
-    filePath: "src/a.ts",
-    side: "modified",
-    line: 0,
-    kind: "comment",
-    body: "fix",
-    quote: "line",
-    anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
-    ...over,
-  });
+  const mk = (
+    over: Partial<ReviewThread> & {
+      feedbackKind?: CommentKind;
+      body?: string;
+      quote?: string;
+    } = {},
+  ): ReviewThread => {
+    const { feedbackKind = "comment", body = "fix", quote = "line", ...rest } = over;
+    const at = "2026-08-12T20:00:00.000Z";
+    return {
+      id: "x",
+      repoRoot: "/repo",
+      filePath: "src/a.ts",
+      side: "modified",
+      line: 0,
+      delivery: "pending",
+      createdAt: at,
+      updatedAt: at,
+      activities: [{ kind: "feedback", feedbackKind, body, quote, at }],
+      anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
+      ...rest,
+    };
+  };
 
   test("includes both kinds, questions first", () => {
     const out = renderRejectedReviewFeedback([
-      mk({ kind: "comment", body: "a-comment", line: 41 }),
-      mk({ kind: "question", body: "a-question" }),
+      mk({ feedbackKind: "comment", body: "a-comment", line: 41 }),
+      mk({ feedbackKind: "question", body: "a-question" }),
     ]);
     assert.ok(out.includes("a-comment"));
     assert.ok(out.includes("a-question"));

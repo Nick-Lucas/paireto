@@ -1,18 +1,18 @@
-// Renders code-review comments into the feedback block delivered to Claude (via additionalContext
-// on the next prompt). All comments are included; problems first, then questions, then plain comments.
+// Renders code-review feedback into the block delivered to the agent (via additionalContext on the
+// next prompt). All items are included; questions first, then plain comments.
 
 import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
-import type { ReviewComment } from "./reviewTypes.js";
+import { userFeedback, type ReviewThread } from "./reviewTypes.js";
 
 export function renderRejectedReviewFeedback(
-  comments: ReviewComment[],
+  items: ReviewThread[],
   multiRepository = false,
 ): string {
-  const actionable = [...comments].sort(
+  const actionable = [...items].sort(
     (a, b) =>
-      KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
+      KIND_RANK[userFeedback(a).feedbackKind] - KIND_RANK[userFeedback(b).feedbackKind] ||
       a.repoRoot.localeCompare(b.repoRoot) ||
       a.filePath.localeCompare(b.filePath) ||
       a.line - b.line,
@@ -22,10 +22,11 @@ export function renderRejectedReviewFeedback(
     return "";
   }
 
-  const items = actionable
-    .map((c) => {
-      const quote = c.quote.trim() ? `\n> ${c.quote.trim()}` : "";
-      return `${location(c, multiRepository)}${quote}\n${c.body.trim()}`;
+  const rendered = actionable
+    .map((item) => {
+      const feedback = userFeedback(item);
+      const quote = feedback.quote.trim() ? `\n> ${feedback.quote.trim()}` : "";
+      return `${location(item, multiRepository)}${quote}\n${feedback.body.trim()}`;
     })
     .join("\n\n");
 
@@ -34,16 +35,16 @@ export function renderRejectedReviewFeedback(
 
     Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
 
-    ${items}
+    ${rendered}
   `;
 }
 
-/** Where a comment was left: a file:line, or the changeset whose description it sits on. */
-function location(comment: ReviewComment, multiRepository: boolean): string {
-  const kind = `[${comment.kind.toUpperCase()}]`;
-  if (comment.changeset) {
-    return `Changeset "${comment.changeset.title}"  ${kind}`;
+/** Where feedback was left: a file:line, or the changeset whose description it sits on. */
+function location(item: ReviewThread, multiRepository: boolean): string {
+  const kind = `[${userFeedback(item).feedbackKind.toUpperCase()}]`;
+  if (item.changeset) {
+    return `Changeset "${item.changeset.title}"  ${kind}`;
   }
-  const filePath = multiRepository ? join(comment.repoRoot, comment.filePath) : comment.filePath;
-  return `${filePath}:${comment.line + 1}  ${kind}`;
+  const filePath = multiRepository ? join(item.repoRoot, item.filePath) : item.filePath;
+  return `${filePath}:${item.line + 1}  ${kind}`;
 }

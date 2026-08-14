@@ -49,7 +49,8 @@ import {
   selectCommentFile,
   sharedCompareToHolds,
 } from "../review/ReviewController.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
+import type { CommentKind } from "../comments/kinds.js";
 import { ChangesetIdArg, CommentIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
 import type { CompareTo, FileGroup } from "../types.js";
 
@@ -320,18 +321,25 @@ suite("guided review — a planned row opens against the plan's comparison point
 });
 
 suite("guided review — feedback rows", () => {
-  const comment = (over: Partial<ReviewComment>): ReviewComment => ({
-    id: "c1",
-    repoRoot: REPO,
-    filePath: "src/a.ts",
-    side: "modified",
-    line: 3,
-    kind: "comment",
-    body: "split this up",
-    quote: "> why",
-    anchor: { lineText: "", contextBefore: [], contextAfter: [], lineHash: "" },
-    ...over,
-  });
+  const comment = (
+    over: Partial<ReviewThread> & { feedbackKind?: CommentKind; body?: string } = {},
+  ): ReviewThread => {
+    const { feedbackKind = "comment", body = "split this up", ...rest } = over;
+    const at = "2026-08-12T20:00:00.000Z";
+    return {
+      id: "c1",
+      repoRoot: REPO,
+      filePath: "src/a.ts",
+      side: "modified",
+      line: 3,
+      delivery: "pending",
+      createdAt: at,
+      updatedAt: at,
+      activities: [{ kind: "feedback", feedbackKind, body, quote: "> why", at }],
+      anchor: { lineText: "", contextBefore: [], contextAfter: [], lineHash: "" },
+      ...rest,
+    };
+  };
 
   test("a changeset comment is named by its changeset, not by an empty file path", () => {
     const item = reviewCommentItem(
