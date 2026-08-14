@@ -76,9 +76,6 @@ export class PlanReviewController implements vscode.Disposable {
       vscode.commands.registerCommand(Commands.planAddComment, (r: vscode.CommentReply) =>
         this.addComment(r, "comment"),
       ),
-      vscode.commands.registerCommand(Commands.planAddProblem, (r: vscode.CommentReply) =>
-        this.addComment(r, "problem"),
-      ),
       vscode.window.tabGroups.onDidChangeTabs((e) => void this.onTabsChanged(e)),
     );
   }
@@ -222,17 +219,6 @@ export class PlanReviewController implements vscode.Disposable {
     if (!this.plans.has(review.id)) {
       return;
     }
-    const hasProblem = this.collect(review).some((c) => c.kind === "problem");
-    if (hasProblem) {
-      const choice = await vscode.window.showWarningMessage(
-        "This plan has unresolved problems. Approve anyway?",
-        { modal: true },
-        "Approve Anyway",
-      );
-      if (choice !== "Approve Anyway" || !this.plans.has(review.id)) {
-        return;
-      }
-    }
     // Approving a plan otherwise restores the pre-plan permission mode; default to the harness's own
     // plan-approve mode (Claude: auto) so the agent proceeds without re-prompting. The setting is a
     // per-harness key `planApprove.mode.<harness>` (an explicit value wins over the strategy default);
@@ -256,7 +242,7 @@ export class PlanReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.collect(review);
-    const codeComments = this.codeFeedback.getComments();
+    const codeComments = this.codeFeedback.getPendingComments();
     const decision = planSendDecision({
       planComments: comments.length,
       codeComments: codeComments.length,
@@ -295,18 +281,19 @@ export class PlanReviewController implements vscode.Disposable {
     log.info(
       `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
-    this.registry.fulfill(review.key, {
-      decision: "deny",
-      reason: composePlanFeedback({
-        planComments: comments,
-        codeComments: sentCode,
-        toolName: this.locator.strategyFor(review.harness).planToolName,
-        multiRepository: this.codeFeedback.isMultiRepository(),
-      }),
+    const reason = composePlanFeedback({
+      planComments: comments,
+      codeComments: sentCode,
+      toolName: this.locator.strategyFor(review.harness).planToolName,
+      multiRepository: this.codeFeedback.isMultiRepository(),
     });
-    if (include) {
-      this.codeFeedback.clearComments();
+    if (include && !(await this.codeFeedback.markCommentsSent(sentCode))) {
+      void vscode.window.showErrorMessage(
+        "Paireto could not save the file feedback. Plan feedback was not sent.",
+      );
+      return;
     }
+    this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
   private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
@@ -316,8 +303,8 @@ export class PlanReviewController implements vscode.Disposable {
     }
     this.comments.add(reply, kind, {
       onSaved: () => this.changeEmitter.fire(),
-      onDeleted: () => {
-        if (reply.thread.comments.length === 0) {
+      onDeleted: (threadDisposed) => {
+        if (threadDisposed) {
           this.comments.forget(reply.thread);
         }
         this.changeEmitter.fire();
@@ -481,7 +468,7 @@ export function resolvePlanApproveMode(
   return mode && mode !== "off" ? mode : undefined;
 }
 
-/** The highest-priority kind among a thread's comments (problem > question > comment). */
+/** The highest-priority kind among a thread's comments (question > comment). */
 function highestKind(comments: GateComment[]): CommentKind {
   return comments.map((c) => c.kind).sort((a, b) => KIND_RANK[a] - KIND_RANK[b])[0] ?? "comment";
 }

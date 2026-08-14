@@ -59,6 +59,14 @@ export interface InspectRepositoryChanges {
   committedPaths: string[];
 }
 
+export interface InspectFeedback {
+  id: string;
+  repoRoot: string;
+  delivery: "pending" | "sent";
+  resolved: boolean;
+  activityKinds: Array<"reply" | "resolved">;
+}
+
 /** The full read-only snapshot the E2E test asserts against. `planTexts` maps a plan gate id to a
  *  cheap fingerprint (`<sha1>:<length>`) so a re-proposed plan is detectable without shipping the
  *  whole markdown across the command boundary. */
@@ -68,6 +76,7 @@ export interface InspectSnapshot {
   planTexts: Record<string, string>;
   reviewActive: boolean;
   commentBucketCount: number;
+  feedback: InspectFeedback[];
   gateHasFeedback: boolean;
   /** Per-reason ReviewController.refresh() tally (e.g. proves openDiff never ran the full refresh). */
   refreshCounts: Record<string, number>;
@@ -88,6 +97,9 @@ export interface AddCommentArgs {
   repoRoot?: string;
   /** 0-based line to anchor on (default 0). */
   line?: number;
-  kind: "question" | "comment" | "problem";
+  kind: "question" | "comment";
   text: string;
+  /** Fixed feedback ID, so a recorded cassette can match on it. Defaults to `PAIRETO_E2E_FEEDBACK_ID`;
+   *  a test that holds more than one feedback item must name each, since the model keys them by ID. */
+  feedbackId?: string;
 }

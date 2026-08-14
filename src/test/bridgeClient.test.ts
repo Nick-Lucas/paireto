@@ -30,6 +30,8 @@ suite("plugin bridge client", () => {
 
   test("response tags cover every request tag", () => {
     assert.deepStrictEqual(Object.keys(RESPONSE_TAG).sort(), [
+      "feedback.reply.request",
+      "feedback.resolve.request",
       "guided.review.await.request",
       "plan.review.request",
       "review.await.request",
@@ -132,6 +134,81 @@ suite("plugin bridge client", () => {
     assert.ok(response);
     assert.strictEqual(response.status, "submitted");
     assert.strictEqual(response.feedback, "fix the thing");
+
+    result.connection.close();
+    await server.dispose();
+  });
+
+  test("feedback reply and resolve round trips preserve repository scope", async () => {
+    const server = await startServer((line, sock) => {
+      const msg = JSON.parse(line) as { t: string; id?: string };
+      if (msg.t === "hello") {
+        ackWith(true)(line, sock);
+        return;
+      }
+      if (msg.t === "feedback.reply.request" || msg.t === "feedback.resolve.request") {
+        sock.write(
+          JSON.stringify({
+            t:
+              msg.t === "feedback.reply.request"
+                ? "feedback.reply.response"
+                : "feedback.resolve.response",
+            v: PLUGIN_VERSION,
+            ts: new Date().toISOString(),
+            id: msg.id,
+            ok: true,
+            message: "saved",
+          }) + "\n",
+        );
+      }
+    });
+
+    const result = await connect(server.target);
+    assert.strictEqual(result.ok, true);
+    if (!result.ok) {
+      return;
+    }
+    const reply = await result.connection.request({
+      t: "feedback.reply.request",
+      repoRoot: server.target.repoRoot,
+      harness: "codex",
+      sessionId: "session-1",
+      feedbackId: "feedback-1",
+      message: "I changed it.",
+    });
+    const resolved = await result.connection.request({
+      t: "feedback.resolve.request",
+      repoRoot: server.target.repoRoot,
+      harness: "codex",
+      sessionId: "session-1",
+      feedbackId: "feedback-1",
+    });
+
+    assert.strictEqual(reply?.ok, true);
+    assert.strictEqual(resolved?.ok, true);
+    const sent = server.received.slice(1).map((line) => JSON.parse(line));
+    assert.deepStrictEqual(
+      sent.map(({ t, repoRoot, feedbackId, message }) => ({
+        t,
+        repoRoot,
+        feedbackId,
+        message,
+      })),
+      [
+        {
+          t: "feedback.reply.request",
+          repoRoot: server.target.repoRoot,
+          feedbackId: "feedback-1",
+          message: "I changed it.",
+        },
+        {
+          t: "feedback.resolve.request",
+          repoRoot: server.target.repoRoot,
+          feedbackId: "feedback-1",
+          message: undefined,
+        },
+      ],
+    );
 
     result.connection.close();
     await server.dispose();

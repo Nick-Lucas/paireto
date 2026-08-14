@@ -16,6 +16,7 @@ import type { GateCoordinator } from "./gate/GateCoordinator.js";
 import type { RepoService } from "./git/RepoService.js";
 import type { PlanReviewController } from "./plan/PlanReviewController.js";
 import type { ReviewController } from "./review/ReviewController.js";
+import { TEST_FEEDBACK_ID } from "./review/reviewTypes.js";
 import type { AddCommentArgs, InspectGuided, InspectSnapshot } from "./e2e/inspectTypes.js";
 
 export interface TestControlPlaneDeps {
@@ -34,12 +35,10 @@ const ADD_COMMENT_COMMAND: Record<
   plan: {
     question: Commands.planAddQuestion,
     comment: Commands.planAddComment,
-    problem: Commands.planAddProblem,
   },
   review: {
     question: Commands.reviewAddQuestion,
     comment: Commands.reviewAddComment,
-    problem: Commands.reviewAddProblem,
   },
 };
 
@@ -83,6 +82,15 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       planTexts,
       reviewActive: deps.reviewController.isSessionActive(),
       commentBucketCount: deps.reviewController.getComments().length,
+      feedback: deps.reviewController.getComments().map((item) => ({
+        id: item.id,
+        repoRoot: item.repoRoot,
+        delivery: item.delivery,
+        resolved: item.resolvedAt !== undefined,
+        activityKinds: item.activities.flatMap((activity) =>
+          activity.kind === "feedback" ? [] : [activity.kind],
+        ),
+      })),
       gateHasFeedback: deps.coordinator.current?.hasFeedback() ?? false,
       refreshCounts: deps.reviewController.getRefreshCounts(),
       compareTo: review.compareTo,
@@ -122,6 +130,10 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
     const line = args.line ?? 0;
     const range = new vscode.Range(line, 0, line, 0);
     const thread = controller.createCommentThread(uri, range, []);
+    // Provider replays must call the extension with the same ID that the current test review owns, so
+    // the ID is fixed rather than a fresh nanoid. The caller names it, because the model keys feedback
+    // by ID: one shared value makes a second comment overwrite the first.
+    thread.contextValue = args.feedbackId ?? TEST_FEEDBACK_ID;
     // Route through the real add-comment command with a CommentReply-shaped payload ({ thread, text }).
     await vscode.commands.executeCommand(ADD_COMMENT_COMMAND[args.surface][args.kind], {
       thread,

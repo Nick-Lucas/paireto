@@ -113,7 +113,7 @@ export type CommentReplyArg = z.infer<typeof CommentReplyArg>;
 export function withArg<S extends z.ZodTypeAny>(
   schema: S,
   run: (value: z.infer<S>) => unknown,
-): (arg: unknown) => void {
+): (arg: unknown) => unknown {
   return (arg: unknown) => {
     const parsed = schema.safeParse(arg);
     if (!parsed.success) {
@@ -121,7 +121,7 @@ export function withArg<S extends z.ZodTypeAny>(
       log.error(message);
       throw new Error(message);
     }
-    void run(parsed.data);
+    return run(parsed.data);
   };
 }
 

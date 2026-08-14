@@ -14,6 +14,16 @@ import {
 } from "./guidedReviewTool.js";
 import type { ReviewTarget } from "./reviewTool.js";
 import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTool.js";
+import {
+  FEEDBACK_REPLY_TOOL_DESCRIPTION,
+  FEEDBACK_REPLY_TOOL_NAME,
+  FEEDBACK_RESOLVE_TOOL_DESCRIPTION,
+  FEEDBACK_RESOLVE_TOOL_NAME,
+  FeedbackReplyArgs,
+  FeedbackResolveArgs,
+  runFeedbackReply,
+  runFeedbackResolve,
+} from "./feedbackTools.js";
 
 /** Everything a harness supplies to the shared core. */
 export interface McpHarnessAdapter {
@@ -48,6 +58,36 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
     },
     (args) =>
       runGuidedReview(
+        adapter.resolveReviewTarget(),
+        adapter.harness,
+        args,
+        adapter.noTargetMessage,
+      ),
+  );
+
+  server.registerTool(
+    FEEDBACK_REPLY_TOOL_NAME,
+    {
+      description: FEEDBACK_REPLY_TOOL_DESCRIPTION,
+      inputSchema: FeedbackReplyArgs.shape,
+    },
+    (args) =>
+      runFeedbackReply(
+        adapter.resolveReviewTarget(),
+        adapter.harness,
+        args,
+        adapter.noTargetMessage,
+      ),
+  );
+
+  server.registerTool(
+    FEEDBACK_RESOLVE_TOOL_NAME,
+    {
+      description: FEEDBACK_RESOLVE_TOOL_DESCRIPTION,
+      inputSchema: FeedbackResolveArgs.shape,
+    },
+    (args) =>
+      runFeedbackResolve(
         adapter.resolveReviewTarget(),
         adapter.harness,
         args,

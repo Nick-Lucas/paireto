@@ -9,6 +9,8 @@ import type * as net from "node:net";
 import type {
   AnyMessage,
   GuidedReviewAwaitRequest,
+  FeedbackReplyRequest,
+  FeedbackResolveRequest,
   HookEventMessage,
   PlanReviewRequest,
   ReviewAwaitRequest,
@@ -35,6 +37,8 @@ export type RequestBody =
   | Omit<PlanReviewRequest, Stamped | "id">
   | Omit<ReviewAwaitRequest, Stamped | "id">
   | Omit<GuidedReviewAwaitRequest, Stamped | "id">
+  | Omit<FeedbackReplyRequest, Stamped | "id">
+  | Omit<FeedbackResolveRequest, Stamped | "id">
   | Omit<StopGateRequest, Stamped | "id">;
 
 export type RequestTag = RequestBody["t"];
@@ -44,6 +48,8 @@ export interface ResponseTagOf {
   "plan.review.request": "plan.review.response";
   "review.await.request": "review.await.response";
   "guided.review.await.request": "guided.review.await.response";
+  "feedback.reply.request": "feedback.reply.response";
+  "feedback.resolve.request": "feedback.resolve.response";
   "stop.gate.request": "stop.gate.response";
 }
 
@@ -51,6 +57,8 @@ export const RESPONSE_TAG: ResponseTagOf = {
   "plan.review.request": "plan.review.response",
   "review.await.request": "review.await.response",
   "guided.review.await.request": "guided.review.await.response",
+  "feedback.reply.request": "feedback.reply.response",
+  "feedback.resolve.request": "feedback.resolve.response",
   "stop.gate.request": "stop.gate.response",
 };
 

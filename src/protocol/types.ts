@@ -56,6 +56,10 @@ export type MessageType =
   | "review.await.response"
   | "guided.review.await.request"
   | "guided.review.await.response"
+  | "feedback.reply.request"
+  | "feedback.reply.response"
+  | "feedback.resolve.request"
+  | "feedback.resolve.response"
   | "stop.gate.request"
   | "stop.gate.response";
 
@@ -218,6 +222,39 @@ export interface GuidedReviewAwaitResponse extends Envelope {
   feedback: string;
 }
 
+export interface FeedbackReplyRequest extends Envelope {
+  t: "feedback.reply.request";
+  id: string;
+  repoRoot: string;
+  harness: Harness;
+  sessionId?: string;
+  feedbackId: string;
+  message: string;
+}
+
+export interface FeedbackReplyResponse extends Envelope {
+  t: "feedback.reply.response";
+  id: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface FeedbackResolveRequest extends Envelope {
+  t: "feedback.resolve.request";
+  id: string;
+  repoRoot: string;
+  harness: Harness;
+  sessionId?: string;
+  feedbackId: string;
+}
+
+export interface FeedbackResolveResponse extends Envelope {
+  t: "feedback.resolve.response";
+  id: string;
+  ok: boolean;
+  message: string;
+}
+
 /**
  * Blocking turn-end (Stop) gate. Sent by the Stop hook on every turn-end; the extension holds it
  * open only when a review for this session is in progress or the turn touched files, then resolves
@@ -255,5 +292,9 @@ export type AnyMessage =
   | ReviewAwaitResponse
   | GuidedReviewAwaitRequest
   | GuidedReviewAwaitResponse
+  | FeedbackReplyRequest
+  | FeedbackReplyResponse
+  | FeedbackResolveRequest
+  | FeedbackResolveResponse
   | StopGateRequest
   | StopGateResponse;

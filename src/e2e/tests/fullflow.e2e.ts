@@ -21,6 +21,7 @@ import * as vscode from "vscode";
 
 import type { InspectGate, InspectSnapshot } from "../inspectTypes.js";
 import { E2E_DRIVERS, pairLabel } from "../mockserver/mode.js";
+import { TEST_FEEDBACK_ID } from "../../review/reviewTypes.js";
 import { makeDriver, makeSteps, requireDriver, requireEnv } from "./steps.js";
 
 /** This file's case name — the `<case>` half of every suite title it registers. */
@@ -30,7 +31,8 @@ const PLAN_PROMPT =
   "Plan how to add a file hello.txt containing 'hi'. Keep the plan to one short step. " +
   "Do not ask clarifying questions.";
 const PLAN_FEEDBACK = "Also add bye.txt containing 'bye', then resubmit.";
-const REVIEW_FEEDBACK = "Also create note.txt containing 'note'.";
+const REVIEW_FEEDBACK =
+  "Can you also create note.txt containing 'note'? Reply with what you changed.";
 
 const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
 
@@ -59,7 +61,7 @@ E2E_DRIVERS.forEach((harness) => {
       // / tmux) is a hard FAIL with the reason — never a silent skip.
       await requireDriver(driver, harness);
       const sessionId = `${harness}-${crypto.randomBytes(4).toString("hex")}`;
-      await driver.launch({ repoRoot, sessionId, log });
+      await driver.launch({ repoRoot, sessionId, log, loadPluginMcp: true });
       await driver.enterPlanMode();
     });
 
@@ -84,7 +86,7 @@ E2E_DRIVERS.forEach((harness) => {
       // Match on gate IDENTITY (a re-proposed plan gets a new id) AND foreground, so the approve step
       // never resolves the still-resolving original gate.
       await ensureComment(
-        { surface: "plan", kind: "problem", text: PLAN_FEEDBACK },
+        { surface: "plan", kind: "comment", text: PLAN_FEEDBACK },
         (snap) => snap.gateHasFeedback,
         "the plan feedback comment to register",
       );
@@ -135,10 +137,13 @@ E2E_DRIVERS.forEach((harness) => {
       });
       log.push(`review gate ${firstReview.id}`);
       await ensureComment(
-        { surface: "review", kind: "problem", path: "hello.txt", text: REVIEW_FEEDBACK },
+        { surface: "review", kind: "question", path: "hello.txt", text: REVIEW_FEEDBACK },
         (snap) => snap.commentBucketCount > 0,
         "the review feedback comment to register",
       );
+      if (!(await inspect()).feedback.some((item) => item.id === TEST_FEEDBACK_ID)) {
+        throw new Error(`the E2E feedback ID was not retained\n${await dump()}`);
+      }
       await driveUntil(
         "paireto.gate.sendFeedback",
         firstReview.id,
@@ -146,6 +151,15 @@ E2E_DRIVERS.forEach((harness) => {
         "the review gate to resolve on send-feedback",
       );
       await wait("note.txt to be written", () => Promise.resolve(fileIs("note.txt", "note")));
+      await wait("the agent reply and resolution to appear", async () => {
+        const feedback = (await inspect()).feedback[0];
+        return (
+          feedback?.delivery === "sent" &&
+          feedback.resolved &&
+          feedback.activityKinds.includes("reply") &&
+          feedback.activityKinds.includes("resolved")
+        );
+      });
       log.push("note.txt present");
     });
 
@@ -167,10 +181,16 @@ E2E_DRIVERS.forEach((harness) => {
       await wait("all gates to resolve and the session to settle", async () => {
         const snap = await inspect();
         const settled = snap.sessions.some((s) => s.state === "stopped" || s.state === "idle");
-        return snap.gates.length === 0 && !snap.reviewActive && settled;
+        return (
+          snap.gates.length === 0 && !snap.reviewActive && snap.feedback.length === 0 && settled
+        );
       });
       if (!(fileIs("hello.txt", "hi") && fileIs("bye.txt", "bye") && fileIs("note.txt", "note"))) {
-        throw new Error(`final file contents wrong\n${await dump()}`);
+        const files = ["hello.txt", "bye.txt", "note.txt"].map((file) => {
+          const absolute = path.join(repoRoot, file);
+          return [file, fs.existsSync(absolute) ? fs.readFileSync(absolute, "utf8") : undefined];
+        });
+        throw new Error(`final file contents wrong: ${JSON.stringify(files)}\n${await dump()}`);
       }
       const screen = await driver.screen();
       if (screen.includes("AGENT LOOP ERROR")) {

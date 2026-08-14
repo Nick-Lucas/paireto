@@ -11,8 +11,9 @@ for it to return.
 
 When it returns:
 
-- Address every review comment. Treat `PROBLEM` as a required fix, answer each `QUESTION`, and apply
-  each `COMMENT` unless it does not make sense; explain any suggestion you do not apply.
-- If the review was approved or closed without feedback, acknowledge that briefly and continue.
-
-Do not run a shell helper or ask the user to paste feedback manually; the tool returns it directly.
+- If it returns review comments (each has a feedback ID, `file:line`, a `QUESTION` or `COMMENT`
+  kind, the quoted line, and a note), address every one:
+  - **QUESTION**: answer it with `mcp__paireto__paireto_reply_to_feedback`, and adjust the code if needed.
+  - **COMMENT**: apply the suggestion unless it does not make sense, in which case explain why with `mcp__paireto__paireto_reply_to_feedback`.
+  - Call `mcp__paireto__paireto_resolve_feedback` after you finish each item.
+- If it says the review was cancelled or closed with no feedback no action is needed.

@@ -11,8 +11,8 @@ export const REVIEW_TOOL_NAME = "paireto_review";
 
 export const REVIEW_TOOL_DESCRIPTION =
   "Open an interactive code review in the connected VS Code window and wait for the user to " +
-  "submit feedback. Blocks until the user clicks Send Feedback or Cancel, then returns the " +
-  "review comments (file:line, kind, note) to act on. Call this when the user asks for a review.";
+  "submit feedback. Blocks until the user clicks Send Feedback or Approve, then returns " +
+  "review comments with stable feedback IDs. Call this when the user asks for a review.";
 
 export const REVIEW_APPROVED = "Review approved — proceeding with no changes.";
 
