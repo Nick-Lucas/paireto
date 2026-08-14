@@ -23,6 +23,8 @@ function stubHandlers(rejections: HandshakeRejection[]): BridgeHandlers {
     onStopGate: () => Promise.resolve({ block: false }),
     onSessionAttached: () => {},
     onSessionDetached: () => {},
+    onFeedbackReply: () => Promise.resolve({ ok: true, message: "" }),
+    onFeedbackResolve: () => Promise.resolve({ ok: true, message: "" }),
     onHandshakeRejected: (info) => rejections.push(info),
   };
 }

@@ -29,6 +29,23 @@ export class GateComment implements vscode.Comment {
   }
 }
 
+/** An agent's reply or resolution, shown under the comment it answers. Read-only: the reviewer edits
+ *  their own words, never the agent's. */
+export function feedbackActivityComment(
+  activity:
+    | { kind: "reply"; body: string; at: string; author: string }
+    | { kind: "resolved"; at: string; author: string },
+): vscode.Comment {
+  return {
+    body: activity.kind === "reply" ? activity.body : "Marked this feedback as resolved.",
+    mode: vscode.CommentMode.Preview,
+    author: { name: activity.author },
+    contextValue: "activity",
+    label: activity.kind === "reply" ? "Agent reply" : "Resolved",
+    timestamp: new Date(activity.at),
+  };
+}
+
 export function commentText(body: string | vscode.MarkdownString): string {
   return typeof body === "string" ? body : body.value;
 }
@@ -126,10 +143,15 @@ export class CommentSession implements vscode.Disposable {
     uri: vscode.Uri,
     range: vscode.Range,
     comment: GateComment,
+    activity: vscode.Comment[],
     label: string,
+    resolved: boolean,
   ): vscode.CommentThread {
-    const thread = this.controller.createCommentThread(uri, range, [comment]);
+    const thread = this.controller.createCommentThread(uri, range, [comment, ...activity]);
     thread.label = label;
+    thread.state = resolved
+      ? vscode.CommentThreadState.Resolved
+      : vscode.CommentThreadState.Unresolved;
     comment.thread = thread;
     comment.session = this;
     this.threadSet.add(thread);
@@ -182,8 +204,13 @@ export class CommentSession implements vscode.Disposable {
     }
 
     // Create first: if VS Code rejects the new attachment, the original thread remains intact.
-    const replacement = this.controller.createCommentThread(uri, range, [comment]);
+    const replacement = this.controller.createCommentThread(
+      uri,
+      range,
+      old ? [...old.comments] : [comment],
+    );
     replacement.label = label;
+    replacement.state = old?.state;
     replacement.collapsibleState =
       old?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded;
     this.threadSet.add(replacement);

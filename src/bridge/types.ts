@@ -4,6 +4,8 @@
 
 import type {
   GuidedReviewAwaitRequest,
+  FeedbackReplyRequest,
+  FeedbackResolveRequest,
   HookEventMessage,
   PlanReviewHookRequest,
   PlanReviewToolRequest,
@@ -62,6 +64,12 @@ export interface HandshakeRejection {
   repoRoot: string;
 }
 
+/** What a feedback reply or resolve reports back to the agent that asked for it. */
+export interface FeedbackMutationResult {
+  ok: boolean;
+  message: string;
+}
+
 /** Callbacks the socket server invokes for inbound messages. */
 export interface BridgeHandlers {
   /** Passive telemetry — update session state, refresh worktrees, etc. */
@@ -84,6 +92,8 @@ export interface BridgeHandlers {
     msg: GuidedReviewAwaitRequest,
     signal: AbortSignal,
   ): Promise<ReviewGateResult>;
+  onFeedbackReply(msg: FeedbackReplyRequest): Promise<FeedbackMutationResult>;
+  onFeedbackResolve(msg: FeedbackResolveRequest): Promise<FeedbackMutationResult>;
   /** Turn-end gated review session — resolve "allow" immediately unless a review is pending/in-progress for
    *  this session, in which case it holds until the user resolves the review. `signal` aborts on
    *  disconnect. */
