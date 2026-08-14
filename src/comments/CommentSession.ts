@@ -121,6 +121,21 @@ export class CommentSession implements vscode.Disposable {
     return comment;
   }
 
+  /** Put a stored comment back on a document, with its own thread, as `add` would have left it. */
+  restore(
+    uri: vscode.Uri,
+    range: vscode.Range,
+    comment: GateComment,
+    label: string,
+  ): vscode.CommentThread {
+    const thread = this.controller.createCommentThread(uri, range, [comment]);
+    thread.label = label;
+    comment.thread = thread;
+    comment.session = this;
+    this.threadSet.add(thread);
+    return thread;
+  }
+
   wouldRemove(comment: GateComment): GateComment[] {
     const onThread = comment.thread?.comments as GateComment[] | undefined;
     return onThread?.[0] === comment ? [...onThread] : [comment];
