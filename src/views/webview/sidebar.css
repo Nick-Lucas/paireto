@@ -1,0 +1,259 @@
+:root {
+  color-scheme: light dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden auto;
+  color: var(--vscode-sideBar-foreground, var(--vscode-foreground));
+  background: var(--vscode-sideBar-background, var(--vscode-editor-background));
+  font-family: var(--vscode-font-family);
+  font-size: var(--vscode-font-size);
+}
+
+button {
+  font: inherit;
+}
+
+.loading {
+  display: flex;
+  padding: 4px 12px 4px 18px;
+  color: inherit;
+}
+
+.tree {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0;
+  white-space: nowrap;
+  outline: none;
+}
+
+.tree-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 22px;
+  min-width: 0;
+  padding-right: 12px;
+  padding-left: calc(var(--tree-depth) * 16px);
+  overflow: hidden;
+  line-height: 22px;
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+
+.tree-row:hover {
+  color: var(--vscode-list-hoverForeground, inherit);
+  background: var(--vscode-list-hoverBackground);
+}
+
+.tree-row.selected {
+  color: var(--vscode-list-inactiveSelectionForeground, inherit);
+  background: var(--vscode-list-inactiveSelectionBackground);
+}
+
+.tree:focus-within .tree-row.selected {
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+  background: var(--vscode-list-activeSelectionBackground);
+}
+
+.tree-row.selected:focus,
+.tree-row.selected:focus-within {
+  outline: 1px solid var(--vscode-list-focusOutline);
+  outline-offset: -1px;
+}
+
+.twisty,
+.inline-actions button {
+  border: 0;
+  color: inherit;
+  background: transparent;
+}
+
+.twisty {
+  display: flex;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: content-box;
+  width: 16px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  padding-right: 6px;
+  font-size: 10px;
+  transform: translateX(3px);
+}
+
+.twisty .codicon {
+  font-size: 10px;
+  transition: transform 70ms linear;
+}
+
+.twisty.expanded .codicon {
+  transform: rotate(90deg);
+}
+
+.twisty.empty {
+  visibility: hidden;
+}
+
+.twisty:hover {
+  border-radius: 20px;
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.codicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-family: codicon;
+  font-size: 16px;
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+  text-align: center;
+  text-decoration: none;
+  text-rendering: auto;
+  -webkit-font-smoothing: antialiased;
+}
+
+.node-icon {
+  display: flex;
+  flex: 0 0 16px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: content-box;
+  width: 16px;
+  height: 22px;
+  margin: 0;
+  padding-right: 6px;
+}
+
+.node-icon.empty {
+  flex-basis: 0;
+  width: 0;
+  padding-right: 0;
+}
+
+.node-icon.tone-muted,
+.status.muted {
+  opacity: 0.55;
+}
+
+.node-icon.tone-blue {
+  color: var(--vscode-charts-blue);
+}
+
+.node-icon.tone-orange,
+.tree-row.attention .node-icon {
+  color: var(--vscode-charts-orange);
+}
+
+.tree-row.selected .node-icon:not(.status) {
+  color: inherit;
+}
+
+.status {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.status-M {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground);
+}
+
+.status-A,
+.status-U {
+  color: var(--vscode-gitDecoration-addedResourceForeground);
+}
+
+.status-D {
+  color: var(--vscode-gitDecoration-deletedResourceForeground);
+}
+
+.status-R,
+.status-C {
+  color: var(--vscode-gitDecoration-renamedResourceForeground);
+}
+
+.label {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.description {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: 0.5em;
+  overflow: hidden;
+  font-size: 0.9em;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: pre;
+  opacity: 0.7;
+}
+
+.vscode-light .description {
+  opacity: 0.95;
+}
+
+.tree-row.selected .description,
+.tree-row:focus .description {
+  opacity: 1;
+}
+
+.inline-actions {
+  display: none;
+  flex: 0 0 auto;
+  align-items: center;
+  height: 22px;
+  margin-left: auto;
+  background: inherit;
+}
+
+.tree-row:hover .inline-actions,
+.tree-row.selected .inline-actions,
+.tree-row:focus .inline-actions,
+.tree-row:focus-within .inline-actions {
+  display: flex;
+}
+
+.inline-actions button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 2px;
+  border-radius: var(--vscode-cornerRadius-medium, 4px);
+}
+
+.inline-actions button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+.inline-actions button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}

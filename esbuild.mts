@@ -57,7 +57,7 @@ const extensionConfig: BuildOptions = {
 };
 
 /** The React webview bundle (Welcome screen) — runs in the browser-like webview, self-contained IIFE. */
-const webviewConfig: BuildOptions = {
+const welcomeWebviewConfig: BuildOptions = {
   entryPoints: ["src/welcome/webview/index.tsx"],
   bundle: true,
   format: "iife",
@@ -67,6 +67,20 @@ const webviewConfig: BuildOptions = {
   platform: "browser",
   jsx: "automatic",
   outfile: "dist/welcome.js",
+  logLevel: "silent",
+  plugins: [esbuildProblemMatcherPlugin],
+};
+
+const sidebarWebviewConfig: BuildOptions = {
+  entryPoints: ["src/views/webview/index.tsx"],
+  bundle: true,
+  format: "iife",
+  minify: production,
+  sourcemap: !production,
+  sourcesContent: false,
+  platform: "browser",
+  jsx: "automatic",
+  outfile: "dist/sidebar.js",
   logLevel: "silent",
   plugins: [esbuildProblemMatcherPlugin],
 };
@@ -82,7 +96,7 @@ async function main(): Promise<void> {
 
   const configs: BuildOptions[] = emulatorBridgeOnly
     ? [emulatorBridgeConfig(ctx)]
-    : [extensionConfig, webviewConfig, ...pluginConfigs(ctx)];
+    : [extensionConfig, welcomeWebviewConfig, sidebarWebviewConfig, ...pluginConfigs(ctx)];
 
   const ctxs = await Promise.all(configs.map((config) => esbuild.context(config)));
   if (watch) {

@@ -50,6 +50,14 @@ export const Commands = {
   agentHide: "paireto.agent.hide",
   /** Show (unmute) a hidden agent row. */
   agentShow: "paireto.agent.show",
+  sidebarOpenFile: "paireto.sidebar.openFile",
+  sidebarOpenDiff: "paireto.sidebar.openDiff",
+  sidebarStage: "paireto.sidebar.stage",
+  sidebarUnstage: "paireto.sidebar.unstage",
+  sidebarDiscard: "paireto.sidebar.discard",
+  sidebarStageChangeset: "paireto.sidebar.stageChangeset",
+  sidebarUnstageChangeset: "paireto.sidebar.unstageChangeset",
+  sidebarDeleteComment: "paireto.sidebar.deleteComment",
 } as const;
 
 export const Schemes = {

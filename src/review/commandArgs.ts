@@ -42,6 +42,7 @@ export type FileArg = z.infer<typeof FileArg>;
 /** Every changed file a git action should act on: a folder row means all its descendants, matching
  *  the native git panel; anything else is the one file it names. */
 export const FilesArg = z.union([
+  z.array(ChangedFileArg),
   z
     .object({ kind: z.literal("folder"), entry: z.custom<TreeEntry>() })
     .transform((node) => filesInEntry(node.entry) as ChangedFileArg[]),

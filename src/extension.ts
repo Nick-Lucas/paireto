@@ -29,7 +29,7 @@ import { RecentRepoStore } from "./storage/RecentRepoStore.js";
 import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
-import { MainTreeProvider } from "./views/MainTreeProvider.js";
+import { MainWebviewProvider } from "./views/MainWebviewProvider.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
 import { exposeTestControlPlane } from "./testControlPlane.js";
@@ -90,7 +90,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewController,
   );
 
-  const mainTree = new MainTreeProvider(
+  const mainView = new MainWebviewProvider(
     agents,
     reviewController,
     planReview,
@@ -129,7 +129,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     activityPublisher,
     reviewContent,
     reviewController,
-    mainTree,
+    mainView,
     installStatus,
     switcher,
     vscode.commands.registerCommand(Commands.focusAgent, () =>
@@ -166,7 +166,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       isReadonly: true,
       isCaseSensitive: true,
     }),
-    mainTree.register(),
+    mainView.register(),
   );
 
   // The Codex probe calls its CLI, which can take seconds to answer, so activation does not wait on

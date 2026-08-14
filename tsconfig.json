@@ -23,5 +23,5 @@
   // The per-plugin esbuild.mts files are build tooling, not extension code: they run on Node's type
   // stripping and are typechecked by scripts/tsconfig.json alongside the root build script, so they
   // have no business being emitted into out/.
-  "exclude": ["src/welcome/webview", "src/plugins/**/*.mts"]
+  "exclude": ["src/welcome/webview", "src/views/webview", "src/plugins/**/*.mts"]
 }

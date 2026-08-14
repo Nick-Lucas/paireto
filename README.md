@@ -111,7 +111,7 @@ itself. Finish with the usual **Approve** or **Send Feedback**.
 
 ## Changed Files view
 
-**Changed Files** is the native git panel with extras: pick what to **Compare To** (HEAD, merge-base, stack-base, default branch, or any other ref), add review comments for your agent, and step in manually to fix code. 
+**Changed Files** follows the VS Code tree and Git-panel design, with extra controls: pick what to **Compare To** (HEAD, merge-base, stack-base, default branch, or any other ref), add review comments for your agent, and step in manually to fix code.
 
 ## Switch repo or worktree
 
