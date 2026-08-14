@@ -302,6 +302,9 @@ suite("provider-replay: fixture normalization", () => {
     assert.ok(
       recorded.includes("changesets"),
       "Paireto's own tool keeps its schema, so a lost parameter breaks replay",
+    );
+  });
+
   test("normalizes feedback ids in prompts, tool input, and tool output", () => {
     const body = (feedbackId: string): string =>
       JSON.stringify({
