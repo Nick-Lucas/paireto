@@ -148,11 +148,28 @@ suite("command manifest", () => {
     fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"),
   ) as {
     activationEvents: string[];
+    devDependencies: { "@types/vscode": string };
+    engines: { vscode: string };
     contributes: {
       commands: Array<{ command: string; title: string }>;
       menus: { commandPalette: Array<{ command: string; when?: string }> };
     };
   };
+
+  test("VS Code API types do not exceed the minimum supported VS Code version", () => {
+    const version = (range: string): [number, number] => {
+      const match = /^\^(\d+)\.(\d+)\.\d+$/.exec(range);
+      assert.ok(match, `expected a caret version, got ${range}`);
+      return [Number(match[1]), Number(match[2])];
+    };
+    const [engineMajor, engineMinor] = version(manifest.engines.vscode);
+    const [typesMajor, typesMinor] = version(manifest.devDependencies["@types/vscode"]);
+
+    assert.ok(
+      typesMajor < engineMajor || (typesMajor === engineMajor && typesMinor <= engineMinor),
+      `@types/vscode ${manifest.devDependencies["@types/vscode"]} exceeds engines.vscode ${manifest.engines.vscode}`,
+    );
+  });
 
   test("the review scheme pulls activation on demand (onFileSystem)", () => {
     // onStartupFinished fires AFTER the workbench restores editors, so a restored

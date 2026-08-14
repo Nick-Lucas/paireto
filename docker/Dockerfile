@@ -6,11 +6,13 @@
 # entrypoint. node_modules and .vscode-test are container-local named volumes, since the host's macOS
 # native binaries (esbuild/oxlint/oxfmt) and macOS VS Code download can't be reused on Linux.
 
-FROM node:24-bookworm
+FROM node:26-bookworm
 
 # --- System deps: virtual display, TUI tooling, and the Electron/Chromium runtime libraries VS Code
 #     needs to launch (test-electron downloads a Linux VS Code build that links against these). ---
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# The Debian CDN rejects some encoded package versions over plain HTTP.
+RUN sed -i 's|URIs: http://|URIs: https://|' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
       xvfb \
       xauth \
       dbus-x11 \

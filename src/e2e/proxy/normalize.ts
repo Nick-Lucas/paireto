@@ -280,6 +280,16 @@ function keyOf(entry: unknown): string {
  *  property of the machine, not of the tree, so two hosts holding identical files disagree — while
  *  the set of paths, which is what the model reasons about, is the same on both. */
 const DIRECTORY_LISTING = /^\s*(find|ls)\s/;
+const LONG_LISTING_TIMESTAMP =
+  /^([bcdlps-][rwxStTs-]{9}\s+\d+\s+\S+\s+\S+\s+\d+\s+)[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})(\s+.*)$/;
+
+function normalizeDirectoryListing(content: string): string {
+  return content
+    .split("\n")
+    .map((line) => line.replace(LONG_LISTING_TIMESTAMP, "$1TIMESTAMP$2"))
+    .sort()
+    .join("\n");
+}
 
 function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void {
   const toolNames = new Map<string, string>();
@@ -312,11 +322,10 @@ function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void
       object.content = `${name.toUpperCase()}_RESULT_NORMALIZED`;
       return;
     }
-    // Sorted, not replaced: a listing that gained or lost a path still keys differently, so only the
-    // order this host happened to report is dropped.
+    // Paths and file metadata stay in the key. Host-dependent order and timestamps do not.
     const command = shellCommands.get(object.tool_use_id);
     if (command && DIRECTORY_LISTING.test(command) && typeof object.content === "string") {
-      object.content = object.content.split("\n").sort().join("\n");
+      object.content = normalizeDirectoryListing(object.content);
     }
   });
 }
@@ -359,9 +368,56 @@ export function normalizeCodexBody(raw: string): string {
     body.input = body.input.filter((item) => !isStandaloneCollaborationMode(item));
   }
   stripInternalMetadata(body);
+  normalizeCodexWorkflowToolResults(body);
   canonicalizeItemIds(body);
   stripPluginVersion(body);
   return JSON.stringify(body);
+}
+
+function normalizeCodexWorkflowToolResults(body: Record<string, unknown>): void {
+  if (!Array.isArray(body.input)) {
+    return;
+  }
+  const shellCommands = new Map<string, string>();
+  for (const item of body.input) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const call = item as Record<string, unknown>;
+    if (
+      call.type !== "function_call" ||
+      call.name !== "bash" ||
+      typeof call.call_id !== "string" ||
+      typeof call.arguments !== "string"
+    ) {
+      continue;
+    }
+    try {
+      const args = JSON.parse(call.arguments) as { command?: unknown };
+      if (typeof args.command === "string") {
+        shellCommands.set(call.call_id, args.command);
+      }
+    } catch {
+      continue;
+    }
+  }
+  for (const item of body.input) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const output = item as Record<string, unknown>;
+    if (
+      output.type !== "function_call_output" ||
+      typeof output.call_id !== "string" ||
+      typeof output.output !== "string"
+    ) {
+      continue;
+    }
+    const command = shellCommands.get(output.call_id);
+    if (command && DIRECTORY_LISTING.test(command)) {
+      output.output = normalizeDirectoryListing(output.output);
+    }
+  }
 }
 
 /** Codex names the staged plugin's hooks.json inside every `hook_run_id`, and that path carries the

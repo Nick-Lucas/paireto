@@ -35,7 +35,7 @@ jobs:
           version: 11.21.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run check-types
@@ -44,6 +44,7 @@ jobs:
 
   build:
     name: Build VSIX
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -53,7 +54,7 @@ jobs:
           version: 11.21.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # `vsce package` runs `vscode:prepublish`, so this is the real production build, not a re-run
@@ -67,6 +68,7 @@ jobs:
 
   unit:
     name: Unit tests
+    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -76,7 +78,7 @@ jobs:
           version: 11.21.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
       # The suite launches a real VS Code, so it runs in the container's virtual display rather than
       # on the runner. pnpm is only needed to reach the script.
       - run: pnpm run docker:build
@@ -84,6 +86,7 @@ jobs:
 
   e2e:
     name: E2E (replay)
+    needs: [build, unit]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -93,6 +96,6 @@ jobs:
           version: 11.21.0
       - uses: actions/setup-node@v4
         with:
-          node-version: 24
+          node-version-file: .nvmrc
       - run: pnpm run docker:build
       - run: pnpm run e2e:check:docker
