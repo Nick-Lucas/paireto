@@ -25,11 +25,12 @@ const MOCK_SESSION_ID = "00000000-0000-4000-8000-0000000000c1";
 // session out of plan mode if the prompt lands too early. Each needs a DIFFERENT keystroke: the
 // "trust this folder" safety check (Enter = "Yes, I trust" — Esc picks "No, exit" and QUITS), and the
 // "fullscreen renderer" opt-in (Down+Enter = "Not now", so it never swaps to an alternate screen
-// buffer). Readiness is the "plan mode on" footer: only then is --permission-mode plan in effect, so
-// ExitPlanMode (hence the plan gate) will fire.
-const TRUST_DIALOG = /trust this folder/i;
+// buffer). A mode footer proves the TUI is interactive; in plan mode it also proves ExitPlanMode
+// (hence the plan gate) is available.
+const TRUST_DIALOG = /trust this folder|is this a project .*you trust/i;
 const FULLSCREEN_DIALOG = /fullscreen renderer|yes, try it/i;
 const PLAN_MODE_READY = /plan mode on/i;
+const MANUAL_MODE_READY = /manual mode on/i;
 const PLAN_FILE_PERMISSION = /allow all edits[^\n]*plans\//i;
 const PLAN_FILE_EDIT_PERMISSION = /do you want to make this edit to plan-[^?\n]+\.md\?/i;
 /** Each poll spawns a `tmux capture-pane` subprocess and this runs for the whole test, so keep the
@@ -157,13 +158,12 @@ export class ClaudeDriver implements HarnessDriver {
    * Clear first-run interstitials before typing — a prompt typed while a dialog is up is dropped.
    * In plan mode the readiness signal is the "plan mode on" footer: only then is ExitPlanMode (hence
    * the plan gate) reachable, and typing early lands the prompt in the wrong mode so the model
-   * answers directly. Outside plan mode there is no such footer, so readiness is simply two
-   * consecutive dialog-free screens.
+   * answers directly. Outside plan mode the "manual mode on" footer proves the TUI is interactive;
+   * quiet startup frames can precede a delayed trust screen.
    */
   private async waitForReady(): Promise<void> {
     const planMode = this.ctx?.planMode !== false;
     const deadline = Date.now() + 40_000;
-    let quietScreens = 0;
     while (Date.now() < deadline) {
       const screen = this.tmux.capture();
       const exitStatus = this.tmux.exitStatus();
@@ -175,19 +175,17 @@ export class ClaudeDriver implements HarnessDriver {
         return;
       }
       if (TRUST_DIALOG.test(screen)) {
-        quietScreens = 0;
         this.log('waitForReady: trust dialog — Enter (option 1 "Yes, I trust")');
         this.tmux.sendKeys("Enter");
       } else if (FULLSCREEN_DIALOG.test(screen)) {
-        quietScreens = 0;
         this.log('waitForReady: fullscreen dialog — Down+Enter (option 2 "Not now")');
         this.tmux.sendKeys("Down");
         this.tmux.sendKeys("Enter");
-      } else if (!planMode && ++quietScreens >= 2) {
-        this.log("waitForReady: no dialogs on screen — ready to prompt");
+      } else if (!planMode && MANUAL_MODE_READY.test(screen)) {
+        this.log("waitForReady: manual mode on — ready to prompt");
         return;
       }
-      await delay(1200);
+      await delay(300);
     }
     this.log("waitForReady: never became ready within 40s (typing anyway)");
   }
