@@ -15,6 +15,8 @@
 
 /** `<system-reminder>…</system-reminder>` — the delimiters are not JSON-escaped, so a raw-string strip
  *  safely reaches reminders at any nesting depth (top message, tool_result content, …). */
+import { TEST_FEEDBACK_ID } from "../../review/reviewTypes.js";
+
 const SYSTEM_REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 /** The per-run random plan-file path; only the slug varies (the home dir is pinned). */
 const PLAN_SLUG = /\/plans\/plan-[a-zA-Z0-9._-]+\.md/g;
@@ -22,6 +24,15 @@ const PLAN_SLUG = /\/plans\/plan-[a-zA-Z0-9._-]+\.md/g;
  *  so the same sandbox can still be spelled either way across machines. Collapsing the alias keeps a
  *  cassette replayable whichever root the recording used. */
 const TMP_ALIAS = /\/private\/tmp\//g;
+
+/** A feedback ID as `nanoid()` mints it: exactly 21 characters of its default `A-Za-z0-9_-` alphabet.
+ *  The trailing guard keeps a longer token whole — the placeholder is 23 characters, so normalizing an
+ *  already-normalized body leaves it alone. */
+const FEEDBACK_ID = "[A-Za-z0-9_-]{21}(?![A-Za-z0-9_-])";
+const FEEDBACK_ID_LINE = new RegExp(`(Feedback ID:\\s*)${FEEDBACK_ID}`, "g");
+const FEEDBACK_REFERENCE = new RegExp(`(\\bfeedback\\s+)${FEEDBACK_ID}`, "gi");
+const FEEDBACK_ID_FIELD = new RegExp(`("feedbackId"\\s*:\\s*")${FEEDBACK_ID}(")`, "g");
+const FEEDBACK_ID_PLACEHOLDER = TEST_FEEDBACK_ID;
 
 /** Codex injects these local/account-dependent developer blocks into Responses input items. */
 const CODEX_CONTEXT_BLOCK =
@@ -100,6 +111,65 @@ function scrubText(value: string): string {
   }
   for (const [pattern, replacement] of RUN_STAMPS) {
     out = out.replace(pattern, replacement);
+  }
+  return out;
+}
+
+/** Feedback ids are minted per run, and the agent quotes them back in prose and in tool arguments, so
+ *  a cassette that kept them could never match a second run. */
+function scrubFeedbackIds(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return scrubFeedbackText(raw);
+  }
+  return JSON.stringify(scrubFeedbackValue(parsed));
+}
+
+function scrubFeedbackText(value: string): string {
+  if (value.startsWith("---\nname: paireto-review\n")) {
+    return "NORMALIZED_PAIRETO_REVIEW_SKILL";
+  }
+  if (value.startsWith("---\nname: paireto-guided-review\n")) {
+    return "NORMALIZED_PAIRETO_GUIDED_REVIEW_SKILL";
+  }
+  if (
+    value.startsWith(
+      "Prepare a review plan so a human can review these changes, then hand it to Paireto.",
+    )
+  ) {
+    const argumentsAt = value.indexOf("\n\nARGUMENTS:");
+    return `NORMALIZED_PAIRETO_GUIDED_REVIEW_COMMAND${
+      argumentsAt >= 0 ? value.slice(argumentsAt) : ""
+    }`;
+  }
+  return value
+    .replace(
+      /(Code review feedback received from the user:\n\n)[\s\S]*?(?=\n\nFeedback ID:)/g,
+      "$1NORMALIZED_FEEDBACK_WORKFLOW",
+    )
+    .replace(FEEDBACK_ID_LINE, `$1${FEEDBACK_ID_PLACEHOLDER}`)
+    .replace(FEEDBACK_REFERENCE, `$1${FEEDBACK_ID_PLACEHOLDER}`)
+    .replace(FEEDBACK_ID_FIELD, `$1${FEEDBACK_ID_PLACEHOLDER}$2`);
+}
+
+function scrubFeedbackValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return scrubFeedbackText(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(scrubFeedbackValue);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+  const out: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    out[key] =
+      key === "feedbackId" && typeof child === "string"
+        ? FEEDBACK_ID_PLACEHOLDER
+        : scrubFeedbackValue(child);
   }
   return out;
 }
@@ -701,7 +771,7 @@ function kiroToolName(entry: unknown): string {
 
 /** Apply the harness-specific matcher transform. Record forwarding never calls this function. */
 export function normalizeRequestBody(driver: string, raw: string): string {
-  const scrubbed = scrubIdentity(raw).replace(TMP_ALIAS, "/tmp/");
+  const scrubbed = scrubFeedbackIds(scrubIdentity(raw)).replace(TMP_ALIAS, "/tmp/");
   if (driver === "claudecode") {
     return normalizeClaudeBody(scrubbed);
   }
