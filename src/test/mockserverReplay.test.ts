@@ -422,6 +422,31 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(normalized.input[1].output[1].text, "stable output");
   });
 
+  test("normalizes timestamps in Codex directory listings", () => {
+    const body = (time: string, name = "src"): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "function_call",
+            call_id: "call_1",
+            name: "bash",
+            arguments: JSON.stringify({ command: "ls -la && ls -la src" }),
+          },
+          {
+            type: "function_call_output",
+            call_id: "call_1",
+            output: `total 4\ndrwxr-xr-x 2 root root 4096 Aug 14 ${time} ${name}`,
+          },
+        ],
+      });
+
+    assert.strictEqual(normalizeOpenCodeBody(body("09:38")), normalizeOpenCodeBody(body("10:19")));
+    assert.notStrictEqual(
+      normalizeOpenCodeBody(body("09:38")),
+      normalizeOpenCodeBody(body("09:38", "docs")),
+    );
+  });
+
   test("orders parallel tool results by id, so a race between two commands cannot change the key", () => {
     const body = (first: string, second: string): string =>
       JSON.stringify({

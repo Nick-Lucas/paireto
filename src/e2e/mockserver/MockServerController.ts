@@ -441,7 +441,8 @@ export interface Fixture {
 /**
  * Parse a committed cassette. Both stamps are required: they are what turns a replay miss caused by
  * an unpinned CLI upgrade, or by replaying on another platform, into a named cause instead of an
- * opaque step timeout. writeNormalizedFixture always writes both, so a cassette missing one is stale.
+ * opaque step timeout. The current normalizer is applied at load time so fixture and live request
+ * match keys use the same rules. writeNormalizedFixture always writes both stamps.
  */
 export function readFixture(raw: unknown, driver: string): Fixture {
   const wrapped = raw as {
@@ -460,7 +461,7 @@ export function readFixture(raw: unknown, driver: string): Fixture {
   return {
     recordedWith,
     recordedOn,
-    expectations: unwrapExpectations(wrapped.expectations),
+    expectations: stripVolatileRequestMatchers(unwrapExpectations(wrapped.expectations), driver),
   };
 }
 
