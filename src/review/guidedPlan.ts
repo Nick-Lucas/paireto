@@ -243,13 +243,11 @@ function resolveChangeset(
   files: GuidedChangesetFile[],
   resolve: (path: string) => RepoChangedFile | undefined,
 ): GuidedChangesetState {
-  const rows = files.map(
-    (planned): GuidedFileRow => ({
-      changesetId: id,
-      path: planned.path,
-      file: resolve(planned.path),
-    }),
-  );
+  const rows = files.map((planned): GuidedFileRow => ({
+    changesetId: id,
+    path: planned.path,
+    file: resolve(planned.path),
+  }));
   const inGroup = (group: FileGroup): number =>
     rows.filter((row) => row.file?.group === group).length;
   return {

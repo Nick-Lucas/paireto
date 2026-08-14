@@ -95,7 +95,11 @@ export type CommentIdArg = z.infer<typeof CommentIdArg>;
  *  read; the rest is the editor's. */
 export const CommentReplyArg = z.custom<vscode.CommentReply>(
   (value) =>
-    !!value && typeof value === "object" && "thread" in value && typeof value.text === "string",
+    !!value &&
+    typeof value === "object" &&
+    "thread" in value &&
+    "text" in value &&
+    typeof value.text === "string",
   { message: "expected a comment reply with a thread and text" },
 );
 export type CommentReplyArg = z.infer<typeof CommentReplyArg>;
