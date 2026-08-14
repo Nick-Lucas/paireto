@@ -568,8 +568,9 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
 
+        Feedback ID: x
         src/a.ts:1  [COMMENT]
         > const x = 1;
         Rename this helper.
@@ -586,12 +587,14 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
 
+        Feedback ID: q
         src/a.ts:1  [QUESTION]
         > first();
         a-question
 
+        Feedback ID: c
         src/a.ts:42  [COMMENT]
         > later();
         a-comment
@@ -615,8 +618,9 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
 
+        Feedback ID: x
         src/a.ts:1  [QUESTION]
         > const x = y as T;
         Reviewer: Why the cast here?
@@ -641,8 +645,9 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
 
+        Feedback ID: x
         src/a.ts:1  [COMMENT]
         > const x = 1;
         Please simplify.
@@ -666,12 +671,14 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
 
+        Feedback ID: a
         /workspace/api/src/a.ts:1  [COMMENT]
         > a();
         api feedback
 
+        Feedback ID: w
         /workspace/web/src/a.ts:1  [COMMENT]
         > w();
         web feedback

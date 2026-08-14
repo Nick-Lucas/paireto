@@ -25,4 +25,6 @@ Call the Paireto MCP tool whose name ends in `paireto_start_guided_review` once,
 changeset and the `compareTo` from step 1. Its client-specific prefix can vary. It blocks until the
 reviewer responds.
 
-If it returns comments then action them appropriately.
+If it returns feedback, address every item. Reply to questions with
+`mcp__paireto__paireto_reply_to_feedback`, then call
+`mcp__paireto__paireto_resolve_feedback` after you finish each item.

@@ -26,14 +26,14 @@ export function serialiseRejectedReviewFeedback(
     .map((item) => {
       const feedback = getOpeningComment(item);
       const quote = feedback.quote.trim() ? `\n> ${feedback.quote.trim()}` : "";
-      return `${location(item, multiRepository)}${quote}\n${serialiseThreadItems(item)}`;
+      return `Feedback ID: ${item.id}\n${location(item, multiRepository)}${quote}\n${serialiseThreadItems(item)}`;
     })
     .join("\n\n");
 
   return dedent`
     Code review feedback received from the user:
 
-    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+    Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
 
     ${rendered}
   `;
