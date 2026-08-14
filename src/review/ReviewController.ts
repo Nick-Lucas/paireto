@@ -9,7 +9,7 @@ import { basename, join } from "node:path";
 import * as vscode from "vscode";
 
 import type { ReviewGateResult, StopGateResult } from "../bridge/types.js";
-import { CommentSession, type GateComment } from "../comments/CommentSession.js";
+import { CommentSession, deleteComment, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
@@ -1441,8 +1441,7 @@ export class ReviewController implements vscode.Disposable {
           }
         : undefined,
     };
-    let comment: GateComment;
-    comment = this.commentSession.add(reply, kind, {
+    const comment = this.commentSession.add(reply, kind, {
       id: model.id,
       onSaved: (newBody) => {
         model.body = newBody;
@@ -1450,14 +1449,13 @@ export class ReviewController implements vscode.Disposable {
       },
       onDeleted: () => {
         this.comments.delete(model.id);
-        const thread = comment.thread;
-        if (thread?.comments.length === 0) {
-          this.commentSession.forget(thread);
-        }
         this.changeEmitter.fire();
       },
     });
-    reply.thread.label = this.commentLocationLabel(repoRoot, relPath, line);
+    // The comment may have started a thread of its own, so label the one it is actually on.
+    if (comment.thread) {
+      comment.thread.label = this.commentLocationLabel(repoRoot, relPath, line);
+    }
     this.comments.set(model.id, { comment, model });
     // Comments accumulate in this bucket whether or not a review is in progress; a review (started by
     // /paireto-review or the turn-end gate) consumes whatever is in it. The Feedback section reveals
@@ -1500,8 +1498,7 @@ export class ReviewController implements vscode.Disposable {
         lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
       },
     };
-    let comment: GateComment;
-    comment = this.commentSession.add(reply, kind, {
+    const comment = this.commentSession.add(reply, kind, {
       id: model.id,
       onSaved: (newBody) => {
         model.body = newBody;
@@ -1509,14 +1506,12 @@ export class ReviewController implements vscode.Disposable {
       },
       onDeleted: () => {
         this.comments.delete(model.id);
-        const thread = comment.thread;
-        if (thread?.comments.length === 0) {
-          this.commentSession.forget(thread);
-        }
         this.changeEmitter.fire();
       },
     });
-    reply.thread.label = `Changeset: ${changeset.title}`;
+    if (comment.thread) {
+      comment.thread.label = `Changeset: ${changeset.title}`;
+    }
     this.comments.set(model.id, { comment, model });
     this.changeEmitter.fire();
   }
@@ -1724,21 +1719,12 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /** Delete a comment from the Feedback tree row (its in-diff thread also drops it). */
+  /** Delete a comment from its Feedback tree row. Runs the same removal as the in-diff delete. */
   private deleteComment(id: string): void {
     const entry = this.comments.get(id);
-    if (!entry) {
-      return;
+    if (entry) {
+      deleteComment(entry.comment);
     }
-    const thread = entry.comment.thread;
-    if (thread) {
-      thread.comments = thread.comments.filter((x) => x !== entry.comment);
-      if (thread.comments.length === 0) {
-        thread.dispose();
-        this.commentSession.forget(thread);
-      }
-    }
-    this.comments.delete(id);
-    this.changeEmitter.fire();
   }
 
   // ── Guided review ───────────────────────────────────────────────────────────

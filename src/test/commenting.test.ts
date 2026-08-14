@@ -100,28 +100,110 @@ suite("commenting integration", () => {
     }
   });
 
-  test("deleteComment removes the comment from its thread and fires onDeleted", async () => {
-    const controller = vscode.comments.createCommentController("paireto-test-del", "Test");
+  /** A CommentReply as VS Code hands one over: the widget's own empty thread plus the typed text. */
+  function replyOn(
+    session: CommentSession,
+    doc: vscode.TextDocument,
+    line: number,
+    text: string,
+  ): vscode.CommentReply {
+    const thread = session.controller.createCommentThread(
+      doc.uri,
+      new vscode.Range(line, 0, line, 0),
+      [],
+    );
+    return { thread, text };
+  }
+
+  test("a second comment on one line gets its own thread", async () => {
+    // VS Code routes a reply typed into an existing thread's box back to THAT thread. One thread per
+    // comment is what keeps deleting, moving or re-rendering one of them off the other.
+    const session = new CommentSession("paireto-test-one-per", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
     try {
       const doc = await openDoc(4);
-      const thread = controller.createCommentThread(doc.uri, new vscode.Range(1, 0, 1, 0), []);
-      const keep = new GateComment("keep", "comment");
-      const drop = new GateComment("drop", "question");
-      keep.thread = thread;
-      drop.thread = thread;
+      const first = session.add(replyOn(session, doc, 1, "first"), "comment");
+      // The user types into the first comment's reply box rather than the gutter widget.
+      const second = session.add({ thread: first.thread!, text: "second" }, "question");
+
+      assert.notStrictEqual(second.thread, first.thread, "the second comment needs its own thread");
+      assert.deepStrictEqual(first.thread!.comments, [first]);
+      assert.deepStrictEqual(second.thread!.comments, [second]);
+      assert.strictEqual(second.thread!.uri.toString(), first.thread!.uri.toString());
+      assert.strictEqual(second.thread!.range?.start.line, 1);
+      assert.strictEqual(session.threads().length, 2);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test("deleteComment takes the thread with it and leaves a line-mate alone", async () => {
+    const session = new CommentSession("paireto-test-del", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const doc = await openDoc(4);
+      const keep = session.add(replyOn(session, doc, 1, "keep"), "comment");
+      const drop = session.add({ thread: keep.thread!, text: "drop" }, "question");
       let deleted = false;
       drop.onDeleted = () => {
         deleted = true;
       };
-      thread.comments = [keep, drop];
 
       deleteComment(drop);
-      assert.strictEqual(deleted, true);
-      assert.deepStrictEqual(thread.comments, [keep]);
 
-      thread.dispose();
+      assert.strictEqual(deleted, true, "the owner is told so it can drop its model");
+      assert.strictEqual(drop.thread, undefined, "the deleted comment keeps no thread");
+      assert.deepStrictEqual(
+        session.threads(),
+        [keep.thread],
+        "only the line-mate is still tracked",
+      );
+      assert.deepStrictEqual(keep.thread!.comments, [keep]);
     } finally {
-      controller.dispose();
+      session.dispose();
+    }
+  });
+
+  test("a deleted comment's thread stops being collected", async () => {
+    // The plan gate gathers its feedback by walking session.threads(), so a thread left tracked
+    // after its comment was deleted would put the deleted text back into what the agent receives.
+    const session = new CommentSession("paireto-test-collect", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const doc = await openDoc(4);
+      const only = session.add(replyOn(session, doc, 2, "only"), "comment");
+
+      deleteComment(only);
+
+      assert.deepStrictEqual(session.threads(), []);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test("disposeThreads takes down the selected threads and stops tracking them", async () => {
+    const session = new CommentSession("paireto-test-dispose-many", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const doomed = await openDoc(3);
+      const kept = await openDoc(5);
+      session.add(replyOn(session, doomed, 0, "a"), "comment");
+      session.add(replyOn(session, doomed, 1, "b"), "comment");
+      const survivor = session.add(replyOn(session, kept, 0, "c"), "comment");
+
+      session.disposeThreads((thread) => thread.uri.toString() === doomed.uri.toString());
+
+      assert.deepStrictEqual(session.threads(), [survivor.thread]);
+    } finally {
+      session.dispose();
     }
   });
 
@@ -154,6 +236,7 @@ suite("commenting integration", () => {
       assert.strictEqual(replacement.range?.start.line, 4);
       assert.deepStrictEqual(replacement.comments, [comment]);
       assert.strictEqual(replacement.label, "file.ts:5");
+      assert.deepStrictEqual(session.threads(), [replacement], "the vacated thread is not kept");
     } finally {
       session.dispose();
     }
