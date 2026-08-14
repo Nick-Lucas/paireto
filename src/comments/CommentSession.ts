@@ -3,6 +3,12 @@
 // instances, and owns reset. The add/save/delete *commands* are global (registered once) and operate
 // on any GateComment via the callbacks the owning controller attaches — so editing and deleting work
 // identically in plan and review, while each flow keeps its own model/collect logic.
+//
+// ONE THREAD, ONE COMMENT. Every GateComment gets its own vscode.CommentThread, even when two
+// comments sit on the same line. VS Code stacks them, and the pairing means a comment can be deleted,
+// moved or re-rendered without reasoning about what else is on its thread. The session owns thread
+// lifetime — nothing outside disposes one — so a thread can never outlive the comment it carries, nor
+// stay in `threadSet` after it is gone.
 
 import * as vscode from "vscode";
 
@@ -21,9 +27,12 @@ export class GateComment implements vscode.Comment {
   thread?: vscode.CommentThread;
   /** Owner-supplied id (review uses the model id; plan leaves it unset). */
   id?: string;
+  /** The session that handed this comment out. It owns the thread, so the global delete command can
+   *  take the thread down through the one place that also stops tracking it. */
+  session?: CommentSession;
   /** Called with the edited text after the user saves an edit — sync your model here. */
   onSaved?: (newBody: string) => void;
-  /** Called after the comment is removed from its thread — clean up your model here. */
+  /** Called after the comment and its thread are gone — clean up your model here. */
   onDeleted?: () => void;
 
   constructor(
@@ -61,15 +70,9 @@ export function saveComment(comment: GateComment): void {
   comment.onSaved?.(commentText(comment.body));
 }
 
-/** Remove a comment from its thread (disposing the thread if it empties), then sync via onDeleted. */
+/** Delete a comment and the thread it owns, then sync via onDeleted. */
 export function deleteComment(comment: GateComment): void {
-  const thread = comment.thread;
-  if (thread) {
-    thread.comments = thread.comments.filter((c) => c !== comment);
-    if (thread.comments.length === 0) {
-      thread.dispose();
-    }
-  }
+  comment.session?.remove(comment);
   comment.onDeleted?.();
 }
 
@@ -112,16 +115,50 @@ export class CommentSession implements vscode.Disposable {
     };
   }
 
-  /** Append a new comment to the reply's thread and track the thread. */
+  /**
+   * Start a comment on a thread of its own. The reply's thread is adopted only while it is empty —
+   * that is the widget VS Code opens for a new comment. Typing into the reply box of a thread that
+   * already carries a comment starts a second comment on the same line, and it gets its own thread.
+   */
   add(reply: vscode.CommentReply, kind: CommentKind, cb?: CommentCallbacks): GateComment {
     const comment = new GateComment(reply.text, kind);
-    comment.thread = reply.thread;
     comment.onSaved = cb?.onSaved;
     comment.onDeleted = cb?.onDeleted;
     comment.id = cb?.id;
-    reply.thread.comments = [...reply.thread.comments, comment];
-    this.threadSet.add(reply.thread);
+    comment.session = this;
+    const thread =
+      reply.thread.comments.length === 0
+        ? reply.thread
+        : this.controller.createCommentThread(
+            reply.thread.uri,
+            reply.thread.range ?? new vscode.Range(0, 0, 0, 0),
+            [],
+          );
+    comment.thread = thread;
+    thread.comments = [comment];
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    this.threadSet.add(thread);
     return comment;
+  }
+
+  /** Take a comment's thread down and stop tracking it. The one place a thread is disposed. */
+  remove(comment: GateComment): void {
+    const thread = comment.thread;
+    if (!thread) {
+      return;
+    }
+    comment.thread = undefined;
+    this.threadSet.delete(thread);
+    thread.dispose();
+  }
+
+  /** Take down every tracked thread the predicate selects (a closing plan document, a repository
+   *  leaving the window). Threads live only here, so this is how a caller drops a group of them. */
+  disposeThreads(select: (thread: vscode.CommentThread) => boolean): void {
+    for (const thread of this.threads().filter(select)) {
+      this.threadSet.delete(thread);
+      thread.dispose();
+    }
   }
 
   /** Move a live comment to a new document/range without losing it when its backing diff changes. */
@@ -147,11 +184,9 @@ export class CommentSession implements vscode.Disposable {
     comment.thread = replacement;
 
     if (old) {
-      old.comments = old.comments.filter((item) => item !== comment);
-      if (old.comments.length === 0) {
-        this.threadSet.delete(old);
-        old.dispose();
-      }
+      // The old thread carried this comment and nothing else, so it goes with the move.
+      this.threadSet.delete(old);
+      old.dispose();
     }
     return replacement;
   }
@@ -159,11 +194,6 @@ export class CommentSession implements vscode.Disposable {
   /** All tracked threads (plan collects per-thread; review tracks per-comment). */
   threads(): vscode.CommentThread[] {
     return [...this.threadSet];
-  }
-
-  /** Forget a thread (after it has been disposed by a delete). */
-  forget(thread: vscode.CommentThread): void {
-    this.threadSet.delete(thread);
   }
 
   /** Dispose every thread and clear tracking. */

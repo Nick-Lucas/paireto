@@ -690,6 +690,36 @@ suite("guided review — command arguments", () => {
     assert.deepStrictEqual(seen, ["cs0"], "the handler never ran on a rejected argument");
   });
 
+  // executeCommand resolves with whatever the handler returns, so a caller that awaits a command is
+  // waiting for the work rather than for the dispatch.
+  test("withArg resolves with an asynchronous handler's completion", async () => {
+    let release = (): void => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let finished = false;
+    const run = withArg(ChangesetIdArg, async () => {
+      await blocked;
+      finished = true;
+      return "done";
+    });
+
+    const pending = run({ kind: "changeset", changeset: { id: "cs0" } }) as Promise<string>;
+    assert.strictEqual(finished, false, "the handler is still in flight");
+    release();
+
+    assert.strictEqual(await pending, "done");
+    assert.strictEqual(finished, true);
+  });
+
+  test("withArg hands a rejected handler back to its caller", async () => {
+    const run = withArg(ChangesetIdArg, () => Promise.reject(new Error("handler blew up")));
+    await assert.rejects(
+      run({ kind: "changeset", changeset: { id: "cs0" } }) as Promise<unknown>,
+      /handler blew up/,
+    );
+  });
+
   // The schemas name only the fields a command reads, so a node that grows one keeps working — while
   // anything that isn't one of the known shapes resolves to nothing rather than a half-built file.
   test("extra fields are tolerated; an unknown shape resolves to nothing", () => {
