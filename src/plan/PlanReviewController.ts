@@ -242,7 +242,7 @@ export class PlanReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.collect(review);
-    const codeComments = this.codeFeedback.getComments();
+    const codeComments = this.codeFeedback.getPendingComments();
     const decision = planSendDecision({
       planComments: comments.length,
       codeComments: codeComments.length,
@@ -282,19 +282,22 @@ export class PlanReviewController implements vscode.Disposable {
       `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
     const strategy = this.locator.strategyFor(review.harness);
-    this.registry.fulfill(review.key, {
-      decision: "deny",
-      reason: composeRejectedPlanFeedback({
-        planComments: comments,
-        codeComments: sentCode,
-        toolName: strategy.planToolName,
-        rejectedPlanReviewInstructions: strategy.rejectedPlanReviewInstructions,
-        multiRepository: this.codeFeedback.isMultiRepository(),
-      }),
+    const reason = composeRejectedPlanFeedback({
+      planComments: comments,
+      codeComments: sentCode,
+      toolName: strategy.planToolName,
+      rejectedPlanReviewInstructions: strategy.rejectedPlanReviewInstructions,
+      multiRepository: this.codeFeedback.isMultiRepository(),
     });
-    if (include) {
-      this.codeFeedback.clearComments();
+    // Record delivery BEFORE answering the agent: the reason is already composed, and feedback the
+    // agent has been given must never look pending again.
+    if (include && !(await this.codeFeedback.markCommentsSent(sentCode))) {
+      void vscode.window.showErrorMessage(
+        "Paireto could not record the file feedback as sent. Plan feedback was not sent.",
+      );
+      return;
     }
+    this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
   private addComment(reply: vscode.CommentReply, kind: CommentKind): void {

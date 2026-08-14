@@ -2139,7 +2139,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
   const base = {
     reviewInProgress: false,
     changedThisTurn: false,
-    hasComments: false,
+    hasPendingFeedback: false,
     automatic: true,
     harnessSupported: true,
   };
@@ -2147,8 +2147,18 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
     assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
   });
   test("opens a review when the user has comments to deliver", () => {
-    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasComments: true }), true);
+    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasPendingFeedback: true }), true);
   });
+  test("delivered feedback does not park the agent again", () => {
+    // The bucket keeps sent and resolved items as history. Counting them would open a gate at the
+    // end of every later turn over comments the agent has already answered.
+    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasPendingFeedback: false }), false);
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, automatic: false, hasPendingFeedback: false }),
+      false,
+    );
+  });
+
   test("does NOT open a review for a turn that changed nothing (no uncommitted-changes fallback)", () => {
     assert.strictEqual(shouldOpenTurnEndReview(base), false);
   });
@@ -2166,7 +2176,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
   });
   test("manual mode: queued comments still open a review", () => {
     assert.strictEqual(
-      shouldOpenTurnEndReview({ ...base, automatic: false, hasComments: true }),
+      shouldOpenTurnEndReview({ ...base, automatic: false, hasPendingFeedback: true }),
       true,
     );
   });
@@ -2179,7 +2189,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
       false,
     );
     assert.strictEqual(
-      shouldOpenTurnEndReview({ ...base, harnessSupported: false, hasComments: true }),
+      shouldOpenTurnEndReview({ ...base, harnessSupported: false, hasPendingFeedback: true }),
       false,
     );
   });

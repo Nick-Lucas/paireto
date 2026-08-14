@@ -10,7 +10,7 @@ import * as net from "node:net";
 
 import * as vscode from "vscode";
 
-import { Schemes } from "../config.js";
+import { Commands, Schemes } from "../config.js";
 import type { AddCommentArgs, InspectSnapshot } from "../e2e/inspectTypes.js";
 import { canonicalize, repoKey, socketPath } from "../protocol/paths.js";
 import type { Harness } from "../protocol/types.js";
@@ -187,6 +187,17 @@ export async function queueFileComment(
   );
 }
 
+/** Wait until nothing in the bucket is pending. Delivered feedback stays as history, so its delivery
+ *  state — not the size of the bucket — is what says it went out. */
+export async function waitForFeedbackDelivered(): Promise<void> {
+  await waitFor("the file comments to be delivered", async () => {
+    const { feedback } = await inspect();
+    return feedback.length > 0 && feedback.every((item) => item.delivery === "sent")
+      ? true
+      : undefined;
+  });
+}
+
 /** Comment on the open plan document. */
 export async function addPlanComment(
   text: string,
@@ -233,6 +244,23 @@ export async function resetWorkbench(wire: Wire): Promise<void> {
   await waitFor("the gates to clear", async () =>
     (await inspect()).gates.length === 0 ? true : undefined,
   );
+  await clearFeedback();
+}
+
+/** Delivered feedback stays in the bucket, so a test that sends any would hand it to the next one. */
+async function clearFeedback(): Promise<void> {
+  if ((await inspect()).commentBucketCount === 0) {
+    return;
+  }
+  const stub = stubWarnings(() => "Clear All");
+  try {
+    await vscode.commands.executeCommand(Commands.reviewClearFeedback);
+    await waitFor("the feedback bucket to empty", async () =>
+      (await inspect()).commentBucketCount === 0 ? true : undefined,
+    );
+  } finally {
+    stub.restore();
+  }
 }
 
 async function connectBridge(sockPath: string): Promise<Wire> {

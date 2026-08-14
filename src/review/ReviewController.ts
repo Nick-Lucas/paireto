@@ -68,7 +68,7 @@ import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { userFeedback, type ReviewThread } from "./reviewTypes.js";
-import { editFeedback } from "./feedbackState.js";
+import { editFeedback, markFeedbackSent, pendingFeedback } from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
 
 /** A review comment: the VS Code comment instance paired with its serializable model. */
@@ -293,6 +293,7 @@ export class ReviewController implements vscode.Disposable {
         Commands.reviewDeleteComment,
         withArg(CommentIdArg, (id) => this.confirmDeleteComment(id)),
       ),
+      reg(Commands.reviewClearFeedback, () => this.clearAllFeedback()),
       // Editing an editable staged/committed diff routes the change to the working tree. Track that
       // location immediately, but keep the tab's comparison point pinned.
       vscode.workspace.onDidChangeTextDocument((e) => this.maybeMarkAsUnstaged(e.document.uri)),
@@ -422,7 +423,7 @@ export class ReviewController implements vscode.Disposable {
     harnessSupported: boolean,
   ): Promise<StopGateResult> {
     const who = sessionId?.slice(0, 8) ?? "unknown";
-    const hasComments = this.hasComments();
+    const hasPendingFeedback = this.getPendingComments().length > 0;
     const automatic =
       vscode.workspace.getConfiguration("paireto").get<string>("review.mode", "automatic") ===
       "automatic";
@@ -433,7 +434,7 @@ export class ReviewController implements vscode.Disposable {
     const open = shouldOpenTurnEndReview({
       reviewInProgress: this.reviewBusy,
       changedThisTurn,
-      hasComments,
+      hasPendingFeedback,
       automatic,
       harnessSupported,
     });
@@ -446,7 +447,7 @@ export class ReviewController implements vscode.Disposable {
       return { block: false };
     }
     // Technical, not narrative: the raw decision inputs, for debugging exactly why the gate opened.
-    const reason = `changedThisTurn=${changedThisTurn} hasComments=${hasComments} automatic=${automatic} reviewInProgress=${this.reviewBusy}`;
+    const reason = `changedThisTurn=${changedThisTurn} hasPendingFeedback=${hasPendingFeedback} automatic=${automatic} reviewInProgress=${this.reviewBusy}`;
     log.info(`review opened for agent ${who}: turn-end (${reason})`);
     this.reviewBusy = true;
     const requestId = newReviewId();
@@ -565,7 +566,6 @@ export class ReviewController implements vscode.Disposable {
     await this.setGuidedContext(false);
     await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
     await this.setReviewContext(false);
-    this.clearComments();
     await this.coordinator.unregister(requestId);
     this.releaseReviewSlot();
     this.changeEmitter.fire();
@@ -1819,7 +1819,8 @@ export class ReviewController implements vscode.Disposable {
     return [...this.comments.values()].map((e) => e.model);
   }
 
-  /** True when the user has left review comments (the bucket), whether or not a review is in progress. */
+  /** True when the bucket holds anything at all, delivered history included — what the Feedback
+   *  section keys off. The turn-end gate asks for pending feedback instead. */
   hasComments(): boolean {
     return this.comments.size > 0;
   }
@@ -1833,11 +1834,11 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  sendFeedback(): void {
+  async sendFeedback(): Promise<void> {
     if (!this.activeRequestId) {
       return;
     }
-    const comments = this.getComments();
+    const comments = this.getPendingComments();
     const feedback = renderRejectedReviewFeedback(comments, this.isMultiRepository());
     if (!feedback) {
       void vscode.window.showWarningMessage(
@@ -1845,6 +1846,7 @@ export class ReviewController implements vscode.Disposable {
       );
       return;
     }
+    await this.markCommentsSent(comments);
     log.info(
       `review feedback sent for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}: ${comments.length} comment(s)`,
     );
@@ -1853,7 +1855,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** True when there's ≥1 comment to send (drives which gate button shows). */
   hasFeedback(): boolean {
-    return renderRejectedReviewFeedback(this.getComments(), this.isMultiRepository()).length > 0;
+    return this.getPendingComments().length > 0;
   }
 
   /** True when comment file paths need their repo root prefixed to stay unambiguous. */
@@ -1868,8 +1870,41 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  /** Empties the comment bucket once its comments are delivered, so they cannot be sent twice. */
-  clearComments(): void {
+  /** Only what has not been delivered — what the next send carries. */
+  getPendingComments(): ReviewThread[] {
+    return pendingFeedback(this.getComments());
+  }
+
+  /**
+   * Record that these items went to an agent. They stay in the bucket as history: the reviewer can
+   * see what was asked for, and an agent can reply to it long after the review closed.
+   */
+  markCommentsSent(items: ReviewThread[]): Promise<boolean> {
+    const now = new Date().toISOString();
+    for (const sent of markFeedbackSent(items, now)) {
+      const entry = this.comments.get(sent.id);
+      if (entry) {
+        Object.assign(entry.model, sent);
+      }
+    }
+    this.changeEmitter.fire();
+    return Promise.resolve(true);
+  }
+
+  /** Drop every item in the bucket, on the user's explicit say-so. */
+  private async clearAllFeedback(): Promise<void> {
+    const CLEAR = "Clear All";
+    const choice = await vscode.window.showWarningMessage(
+      "Clear all feedback shown for the current repositories and branches?",
+      {
+        modal: true,
+        detail: "This removes all pending and delivered feedback. This cannot be undone.",
+      },
+      CLEAR,
+    );
+    if (choice !== CLEAR) {
+      return;
+    }
     this.commentSession.reset();
     this.comments.clear();
     this.changeEmitter.fire();
@@ -2194,8 +2229,11 @@ export function isFileEditable(file: ChangedFile, changes: ChangesModel): boolea
 export function shouldOpenTurnEndReview(opts: {
   reviewInProgress: boolean;
   changedThisTurn: boolean;
-  hasComments: boolean;
-  /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only comments do. */
+  /** Feedback still waiting to be delivered. Sent and resolved items stay in the bucket as history
+   *  and must NOT park the agent again, or every later turn opens a gate over comments it has
+   *  already answered — including after a reload, which restores that history. */
+  hasPendingFeedback: boolean;
+  /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only feedback does. */
   automatic: boolean;
   /** The harness can carry a turn-end review at all — see AgentStrategy.supportsTurnEndReview. */
   harnessSupported: boolean;
@@ -2203,7 +2241,7 @@ export function shouldOpenTurnEndReview(opts: {
   return (
     opts.harnessSupported &&
     !opts.reviewInProgress &&
-    ((opts.automatic && opts.changedThisTurn) || opts.hasComments)
+    ((opts.automatic && opts.changedThisTurn) || opts.hasPendingFeedback)
   );
 }
 
