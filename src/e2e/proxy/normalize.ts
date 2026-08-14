@@ -50,6 +50,10 @@ const IDENTITY_PATTERNS: Array<[RegExp, string]> = [
  *  (`prompt_cache_key`, `turn_id`) are deleted from the request match key anyway; they are listed here
  *  because the provider echoes them back in the RESPONSE, which only scrubIdentity reaches. */
 const IDENTITY_KEYS = new Set([
+  // Codex's reasoning items carry an opaque blob bound to the session that produced them, and the CLI
+  // echoes it into every later request. It differs between the run that recorded a cassette and the
+  // run replaying it, so leaving it in the match key makes a Codex cassette unreplayable by anyone.
+  "encrypted_content",
   "account_id",
   "accountId",
   "account_uuid",
