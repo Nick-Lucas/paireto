@@ -32,9 +32,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          # Matches the Dockerfile's pin. There is no `packageManager` field to read it from — see
-          # the comment in docker/Dockerfile for why.
-          version: 10.24.0
+          version: 11.21.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -52,7 +50,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.24.0
+          version: 11.21.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -75,7 +73,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.24.0
+          version: 11.21.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -92,7 +90,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          version: 10.24.0
+          version: 11.21.0
       - uses: actions/setup-node@v4
         with:
           node-version: 24

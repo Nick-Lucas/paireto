@@ -39,10 +39,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       libx11-xcb1 \
     && rm -rf /var/lib/apt/lists/*
 
-# pnpm pinned to the host's version. There's no `packageManager` field, so corepack would otherwise
-# grab the latest (pnpm 11), which regressed `onlyBuiltDependencies` handling from pnpm-workspace.yaml
-# and exits non-zero on the resulting "ignored build scripts". 10.24.0 matches the host and lockfile v9.
-RUN npm install -g pnpm@10.24.0
+# Keep the container on the version declared in package.json and used by CI.
+RUN npm install -g pnpm@11.21.0
 
 # --- Harness CLIs for the E2E suite (full e2e support baked in). ---
 # claude:   @anthropic-ai/claude-code  -> `claude`
