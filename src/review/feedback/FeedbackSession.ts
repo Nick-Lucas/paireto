@@ -4,7 +4,11 @@
 
 import * as vscode from "vscode";
 
-import { GateComment, type CommentSession } from "../../comments/CommentSession.js";
+import {
+  feedbackActivityComment,
+  GateComment,
+  type CommentSession,
+} from "../../comments/CommentSession.js";
 import { kindLabel } from "../../comments/kinds.js";
 import type { FeedbackRef } from "../../git/gitCli.js";
 import { log } from "../../log.js";
@@ -127,6 +131,23 @@ export class FeedbackSession {
     });
   }
 
+  /**
+   * Apply an agent's answer to one item. Answers false when this session holds no bucket for the
+   * repository, or when the id is not in it — an agent that quoted a wrong id must be told.
+   */
+  amend(repoRoot: string, id: string, change: (item: ReviewThread) => ReviewThread): boolean {
+    const bucket = this.buckets.get(canonicalize(repoRoot));
+    if (!bucket?.threads().some((model) => model.id === id)) {
+      return false;
+    }
+    return this.write(repoRoot, (draft) => {
+      const model = draft.threads.find((item) => item.id === id);
+      if (model) {
+        Object.assign(model, change(model));
+      }
+    });
+  }
+
   /** A thread has one range, so a move applies to every comment on it. */
   relocate(id: string, patch: RelocatePatch): boolean {
     return this.writeTo(id, (draft) => {
@@ -204,6 +225,7 @@ export class FeedbackSession {
         }
         const opener = group.find((model) => model.id === openerId) ?? group[0];
         const feedback = userFeedback(opener);
+
         this.host.comments.place({
           uri: this.host.uriFor(opener),
           range: new vscode.Range(
@@ -213,7 +235,11 @@ export class FeedbackSession {
             Math.max(0, feedback.quote.length),
           ),
           label: this.host.labelFor(opener),
-          comments: group.map((model) => this.live.get(model.id)!),
+          comments: group.map((model) => ({
+            comment: this.live.get(model.id)!,
+            activity: activityComments(model),
+          })),
+          resolved: opener.resolvedAt !== undefined,
           // Any comment of the group names the one thread they share.
           previous: group
             .map((model) => this.live.get(model.id)?.thread)
@@ -285,6 +311,15 @@ export class FeedbackSession {
     this.host.changed();
     return true;
   }
+}
+
+/** An agent's answers on one item, in the order they arrived, ready to sit under the comment. */
+function activityComments(model: ReviewThread): vscode.Comment[] {
+  return model.activities.flatMap((activity) =>
+    activity.kind === "feedback"
+      ? []
+      : [feedbackActivityComment({ ...activity, author: `${activity.harness} agent` })],
+  );
 }
 
 /** A delete of `id` takes the comment itself and every reply that answers it. */

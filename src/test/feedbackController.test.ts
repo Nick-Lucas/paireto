@@ -106,15 +106,19 @@ function fakeComments(): CommentSession {
       uri: vscode.Uri;
       range: vscode.Range;
       label: string;
-      comments: GateComment[];
+      comments: Array<{ comment: GateComment; activity?: vscode.Comment[] }>;
       previous?: vscode.CommentThread;
     }): vscode.CommentThread {
       const reuse =
         args.previous?.uri.toString() === args.uri.toString() ? args.previous : undefined;
       const thread = reuse ?? ({ uri: args.uri, dispose() {} } as unknown as vscode.CommentThread);
-      Object.assign(thread, { range: args.range, label: args.label, comments: [...args.comments] });
-      for (const item of args.comments) {
-        item.thread = thread;
+      const rendered = args.comments.flatMap(({ comment, activity }) => [
+        comment,
+        ...(activity ?? []),
+      ]);
+      Object.assign(thread, { range: args.range, label: args.label, comments: rendered });
+      for (const { comment } of args.comments) {
+        comment.thread = thread;
       }
       return thread;
     },

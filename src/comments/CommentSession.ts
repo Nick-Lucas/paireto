@@ -29,6 +29,22 @@ export class GateComment implements vscode.Comment {
   }
 }
 
+/** An agent's reply or resolution, shown under the comment it answers. */
+export function feedbackActivityComment(
+  activity:
+    | { kind: "reply"; body: string; at: string; author: string }
+    | { kind: "resolved"; at: string; author: string },
+): vscode.Comment {
+  return {
+    body: activity.kind === "reply" ? activity.body : "Marked this feedback as resolved.",
+    mode: vscode.CommentMode.Preview,
+    author: { name: activity.author },
+    contextValue: "activity",
+    label: activity.kind === "reply" ? "Agent reply" : "Resolved",
+    timestamp: new Date(activity.at),
+  };
+}
+
 export function commentText(body: string | vscode.MarkdownString): string {
   return typeof body === "string" ? body : body.value;
 }
@@ -126,33 +142,36 @@ export class CommentSession implements vscode.Disposable {
     uri: vscode.Uri;
     range: vscode.Range;
     label: string;
-    comments: GateComment[];
+    /** Each reviewer comment, and the agent's answers that sit under it. Only the reviewer's own
+     *  comments are owned: an agent's answer has no owner to point back to. */
+    comments: Array<{ comment: GateComment; activity?: vscode.Comment[] }>;
     previous?: vscode.CommentThread;
+    resolved?: boolean;
   }): vscode.CommentThread {
-    const { uri, range, label, comments, previous } = args;
+    const { uri, range, label, comments, previous, resolved } = args;
+    const state = resolved
+      ? vscode.CommentThreadState.Resolved
+      : vscode.CommentThreadState.Unresolved;
+    const rendered = comments.flatMap(({ comment, activity }) => [comment, ...(activity ?? [])]);
     if (previous && previous.uri.toString() === uri.toString()) {
       previous.range = range;
       previous.label = label;
+      previous.state = state;
       // VS Code redraws a changed body only when the array is new.
-      previous.comments = [...comments];
-      for (const comment of comments) {
-        comment.thread = previous;
-        comment.session = this;
-      }
+      previous.comments = rendered;
+      this.own(comments, previous);
       this.threadSet.add(previous);
       return previous;
     }
 
     // Create first: if VS Code refuses the new attachment, the old thread stays whole.
-    const thread = this.controller.createCommentThread(uri, range, comments);
+    const thread = this.controller.createCommentThread(uri, range, rendered);
     thread.label = label;
+    thread.state = state;
     thread.collapsibleState =
       previous?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded;
     this.threadSet.add(thread);
-    for (const comment of comments) {
-      comment.thread = thread;
-      comment.session = this;
-    }
+    this.own(comments, thread);
     if (previous) {
       this.threadSet.delete(previous);
       previous.dispose();
@@ -160,9 +179,17 @@ export class CommentSession implements vscode.Disposable {
     return thread;
   }
 
-  /** What a delete of this comment takes: the whole thread if it opens it, else itself. */
+  private own(comments: Array<{ comment: GateComment }>, thread: vscode.CommentThread): void {
+    for (const { comment } of comments) {
+      comment.thread = thread;
+      comment.session = this;
+    }
+  }
+
+  /** What a delete of this comment takes: the whole thread if it opens it, else itself. An agent's
+   *  answers go down with the thread, but they are nobody's to hand back. */
   private takenWith(comment: GateComment): GateComment[] {
-    const onThread = comment.thread?.comments as GateComment[] | undefined;
+    const onThread = comment.thread?.comments.filter((item) => item instanceof GateComment);
     return onThread?.[0] === comment ? [...onThread] : [comment];
   }
 

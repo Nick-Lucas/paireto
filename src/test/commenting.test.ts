@@ -352,7 +352,7 @@ suite("commenting integration", () => {
         uri: newDoc.uri,
         range: new vscode.Range(4, 0, 4, 6),
         label: "file.ts:5",
-        comments: [opener, reply],
+        comments: [{ comment: opener }, { comment: reply }],
         previous: original,
       });
 
@@ -385,7 +385,7 @@ suite("commenting integration", () => {
         uri: doc.uri,
         range: new vscode.Range(4, 0, 4, 4),
         label: "f:5",
-        comments: [comment],
+        comments: [{ comment }],
         previous: original,
       });
 
@@ -413,7 +413,7 @@ suite("commenting integration", () => {
         uri: doc.uri,
         range: new vscode.Range(2, 0, 2, 3),
         label: "opener label",
-        comments: [opener, reply],
+        comments: [{ comment: opener }, { comment: reply }],
       });
 
       assert.strictEqual(thread.label, "opener label");

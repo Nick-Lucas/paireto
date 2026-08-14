@@ -27,7 +27,7 @@ import type {
   GuidedFileRow,
   GuidedReviewState,
 } from "../review/guidedPlan.js";
-import { userFeedback, type ReviewThread } from "../review/reviewTypes.js";
+import { userFeedback, type FeedbackActivity, type ReviewThread } from "../review/reviewTypes.js";
 import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
 import type { SetupPrompt } from "../welcome/installStatus.js";
 import type { AgentSession } from "../agents/AgentSession.js";
@@ -95,6 +95,11 @@ type Node =
   | { kind: "file"; file: RepoChangedFile }
   | { kind: "agent"; session: AgentSession }
   | { kind: "reviewComment"; comment: ReviewThread }
+  | {
+      kind: "feedbackActivity";
+      commentId: string;
+      activity: Exclude<FeedbackActivity, { kind: "feedback" }>;
+    }
   | { kind: "planComment"; comment: PlanCommentData }
   | { kind: "placeholder"; label: string };
 
@@ -337,6 +342,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "agent":
         return { kind: "section", id: "agents", label: "Agents" };
       case "reviewComment":
+      case "feedbackActivity":
         return { kind: "section", id: "feedback", label: "Feedback" };
       case "planComment":
         return { kind: "section", id: "plan", label: "Plan Review" };
@@ -425,6 +431,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       }
       case "reviewComment":
         return reviewCommentItem(node.comment);
+      case "feedbackActivity":
+        return feedbackActivityItem(node.activity);
       case "planComment":
         return planCommentItem(node.comment);
       case "placeholder": {
@@ -450,6 +458,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return this.groupChildren(node.repoRoot, node.group);
       case "folder":
         return node.entry.children.map((e) => entryToNode(e, node.repoRoot, node.group));
+      case "reviewComment":
+        return node.comment.activities.flatMap((activity) =>
+          activity.kind === "feedback"
+            ? []
+            : [{ kind: "feedbackActivity" as const, commentId: node.comment.id, activity }],
+        );
       default:
         return [];
     }
@@ -892,7 +906,13 @@ export function reviewCommentItem(c: ReviewThread): vscode.TreeItem {
         `${path.basename(c.filePath)}:${c.line + 1}`,
         `${path.join(c.repoRoot, c.filePath)}:${c.line + 1}`,
       ];
-  const item = new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.None);
+  // Expandable only when an agent has done something to it, so a row with no activity has no
+  // twisty to open onto nothing.
+  const hasActivity = c.activities.length > 1;
+  const item = new vscode.TreeItem(
+    label,
+    hasActivity ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+  );
   item.description = `${commentScope(c)} · ${feedback.body}`;
   item.iconPath = kindThemeIcon(feedback.feedbackKind);
   item.tooltip = new vscode.MarkdownString(
@@ -900,6 +920,25 @@ export function reviewCommentItem(c: ReviewThread): vscode.TreeItem {
   );
   item.contextValue = "reviewComment";
   item.command = { command: Commands.reviewRevealComment, title: "Reveal Comment", arguments: [c] };
+  return item;
+}
+
+/** One thing an agent did to a piece of feedback, shown under it. */
+export function feedbackActivityItem(
+  activity: Exclude<FeedbackActivity, { kind: "feedback" }>,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(
+    activity.kind === "reply" ? "Agent replied" : "Resolved",
+    vscode.TreeItemCollapsibleState.None,
+  );
+  item.description = activity.kind === "reply" ? activity.body : activity.harness;
+  item.iconPath = new vscode.ThemeIcon(activity.kind === "reply" ? "reply" : "pass-filled");
+  item.tooltip = new vscode.MarkdownString(
+    activity.kind === "reply"
+      ? `**Agent reply** · ${activity.harness}\n\n${activity.body}`
+      : `**Resolved** · ${activity.harness}`,
+  );
+  item.contextValue = "feedbackActivity";
   return item;
 }
 

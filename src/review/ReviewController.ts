@@ -29,6 +29,7 @@ import type { WorkspaceRootCatalog } from "../git/WorkspaceRootCatalog.js";
 import { TurnReviewState } from "./TurnReviewState.js";
 import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
+import type { Harness } from "../protocol/types.js";
 import { currentFeedbackRef, type FeedbackRef } from "../git/gitCli.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
@@ -69,7 +70,7 @@ import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { userFeedback, type ReviewThread } from "./reviewTypes.js";
-import { pendingFeedback } from "./feedbackState.js";
+import { appendFeedbackReply, pendingFeedback, resolveFeedback } from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
 import {
   contextKey,
@@ -2030,6 +2031,67 @@ export class ReviewController implements vscode.Disposable {
       return uri;
     }
     return vscode.Uri.file(join(model.repoRoot, model.filePath));
+  }
+
+  /**
+   * Add an agent's reply to one item. The window answers for the buckets it holds: an id in another
+   * branch's bucket is reported as not found, which is also what an agent quoting a wrong id gets.
+   */
+  async replyToFeedback(
+    repoRoot: string,
+    feedbackId: string,
+    message: string,
+    harness: Harness,
+    sessionId?: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    const body = message.trim();
+    if (!body) {
+      return { ok: false, message: "The feedback reply cannot be empty." };
+    }
+    const at = new Date().toISOString();
+    return this.amendFeedback(repoRoot, feedbackId, (item) =>
+      appendFeedbackReply(item, { body, at, harness, sessionId }),
+    )
+      ? { ok: true, message: `Reply added to feedback ${feedbackId.trim()}.` }
+      : this.feedbackMiss(repoRoot, feedbackId);
+  }
+
+  /** Mark one item resolved. Idempotent: a second resolve adds nothing and still reports success. */
+  async resolveFeedback(
+    repoRoot: string,
+    feedbackId: string,
+    harness: Harness,
+    sessionId?: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    const at = new Date().toISOString();
+    return this.amendFeedback(repoRoot, feedbackId, (item) =>
+      resolveFeedback(item, { at, harness, sessionId }),
+    )
+      ? { ok: true, message: `Feedback ${feedbackId.trim()} is resolved.` }
+      : this.feedbackMiss(repoRoot, feedbackId);
+  }
+
+  private amendFeedback(
+    repoRoot: string,
+    feedbackId: string,
+    change: (item: ReviewThread) => ReviewThread,
+  ): boolean {
+    const root = this.roots.gitRoots.find((candidate) => candidate.repoRoot === repoRoot);
+    return (
+      root !== undefined &&
+      (this.feedback?.amend(root.repoRoot, feedbackId.trim(), change) ?? false)
+    );
+  }
+
+  /** Why an answer had nowhere to land, in words an agent can act on. */
+  private feedbackMiss(repoRoot: string, feedbackId: string): { ok: boolean; message: string } {
+    const known = this.roots.gitRoots.some((candidate) => candidate.repoRoot === repoRoot);
+    return {
+      ok: false,
+      message: known
+        ? `Feedback ${feedbackId.trim()} was not found in this repository.`
+        : "The feedback repository is not open in this window.",
+    };
   }
 
   /** Only what has not been delivered — what the next send carries. */
