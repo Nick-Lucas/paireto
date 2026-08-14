@@ -88,6 +88,6 @@ export interface AddCommentArgs {
   repoRoot?: string;
   /** 0-based line to anchor on (default 0). */
   line?: number;
-  kind: "question" | "comment" | "problem";
+  kind: "question" | "comment";
   text: string;
 }

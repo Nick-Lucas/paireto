@@ -11,8 +11,7 @@ submits feedback or approves the changes. Wait for it to return.
 
 When it returns:
 
-- Address every review comment. Treat `PROBLEM` as a required fix, answer each `QUESTION`, and apply
-  each `COMMENT` unless it does not make sense; explain any suggestion you do not apply.
+- Address every review comment. Answer each `QUESTION`, and apply each `COMMENT` unless it does not make sense; explain any suggestion you do not apply.
 - If the review was approved or closed without feedback, acknowledge that briefly and continue.
 
 Do not run a shell helper or ask the user to paste feedback manually; the tool returns it directly.

@@ -85,9 +85,20 @@ export function scrubIdentity(raw: string): string {
   return JSON.stringify(scrubValue(parsed));
 }
 
+/** Codex wraps a local tool result in its own envelope, stamping it with an id and how long the call
+ *  took. Both differ on every run and ride into the next request, and they sit inside an embedded
+ *  JSON string rather than the document, so only a text pass reaches them. */
+const RUN_STAMPS: Array<[RegExp, string]> = [
+  [/(\\?"chunk_id\\?":\\?")[^"\\]+/g, "$1PAIRETO_E2E_CHUNK"],
+  [/(\\?"wall_time_seconds\\?":)[0-9.eE+-]+/g, "$10"],
+];
+
 function scrubText(value: string): string {
   let out = value;
   for (const [pattern, replacement] of IDENTITY_PATTERNS) {
+    out = out.replace(pattern, replacement);
+  }
+  for (const [pattern, replacement] of RUN_STAMPS) {
     out = out.replace(pattern, replacement);
   }
   return out;

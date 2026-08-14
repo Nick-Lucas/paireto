@@ -207,7 +207,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       await ensureComment(
         {
           surface: "review",
-          kind: "problem",
+          kind: "comment",
           path: plan.changesets[0].files[0].path,
           text: REVIEW_FEEDBACK,
         },

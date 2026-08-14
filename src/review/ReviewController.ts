@@ -284,10 +284,6 @@ export class ReviewController implements vscode.Disposable {
         withArg(CommentReplyArg, (reply) => this.addComment(reply, "comment")),
       ),
       reg(
-        Commands.reviewAddProblem,
-        withArg(CommentReplyArg, (reply) => this.addComment(reply, "problem")),
-      ),
-      reg(
         Commands.reviewRevealComment,
         withArg(CommentIdArg, (id) => this.revealComment(id)),
       ),

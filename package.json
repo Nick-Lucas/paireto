@@ -121,11 +121,6 @@
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.plan.addProblem",
-        "title": "Problem",
-        "enablement": "!commentIsEmpty"
-      },
-      {
         "command": "paireto.review.refresh",
         "title": "Paireto: Refresh",
         "icon": "$(refresh)"
@@ -192,11 +187,6 @@
       {
         "command": "paireto.review.addQuestion",
         "title": "Question",
-        "enablement": "!commentIsEmpty"
-      },
-      {
-        "command": "paireto.review.addProblem",
-        "title": "Problem",
         "enablement": "!commentIsEmpty"
       },
       {
@@ -292,19 +282,11 @@
           "when": "false"
         },
         {
-          "command": "paireto.plan.addProblem",
-          "when": "false"
-        },
-        {
           "command": "paireto.review.addQuestion",
           "when": "false"
         },
         {
           "command": "paireto.review.addComment",
-          "when": "false"
-        },
-        {
-          "command": "paireto.review.addProblem",
           "when": "false"
         },
         {
@@ -413,11 +395,6 @@
           "group": "inline@2"
         },
         {
-          "command": "paireto.plan.addProblem",
-          "when": "commentController == paireto.plan",
-          "group": "inline@3"
-        },
-        {
           "command": "paireto.review.addComment",
           "when": "commentController == paireto.review",
           "group": "inline@1"
@@ -426,11 +403,6 @@
           "command": "paireto.review.addQuestion",
           "when": "commentController == paireto.review",
           "group": "inline@2"
-        },
-        {
-          "command": "paireto.review.addProblem",
-          "when": "commentController == paireto.review",
-          "group": "inline@3"
         }
       ],
       "comments/comment/title": [

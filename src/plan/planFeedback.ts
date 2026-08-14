@@ -1,7 +1,7 @@
 // Renders plan review comments into the deny message Claude receives when the user sends feedback
 // on a plan. Mirrors the in-house voice of renderRejectedReviewFeedback (a short directive line
 // followed by itemized [KIND] entries) so plan and code-review feedback read as one system.
-// Problems first, then questions, then plain comments — every kind is included.
+// Questions come before plain comments and every item is included.
 
 import dedent from "dedent";
 import { KIND_RANK, type CommentKind } from "../comments/kinds.js";
@@ -66,5 +66,5 @@ function itemize(sorted: PlanCommentData[]): string {
 
 function summarize(comments: PlanCommentData[]): string {
   const n = (k: CommentKind): number => comments.filter((c) => c.kind === k).length;
-  return `(${n("problem")} problem, ${n("question")} question, ${n("comment")} comment)`;
+  return `(${n("question")} question, ${n("comment")} comment)`;
 }

@@ -208,7 +208,6 @@ suite("command manifest", () => {
       "paireto.comment.delete",
       "paireto.plan.addComment",
       "paireto.plan.addQuestion",
-      "paireto.plan.addProblem",
       "paireto.review.openDiff",
       "paireto.review.openFile",
       "paireto.review.stage",
@@ -216,7 +215,6 @@ suite("command manifest", () => {
       "paireto.review.discard",
       "paireto.review.addComment",
       "paireto.review.addQuestion",
-      "paireto.review.addProblem",
       "paireto.review.revealComment",
       "paireto.review.deleteComment",
       "paireto.guidedReview.openFile",
@@ -510,17 +508,15 @@ suite("buildFileTree", () => {
 });
 
 suite("renderRejectedPlanFeedback", () => {
-  test("orders problem before question/comment and includes all kinds", () => {
+  test("orders questions before comments and includes both kinds", () => {
     const out = renderRejectedPlanFeedback([
       { line: 5, quote: "do X", body: "make it Y", kind: "comment" },
-      { line: 1, quote: "do Z", body: "must not Z", kind: "problem" },
       { line: 9, quote: "fyi", body: "consider this", kind: "question" },
     ]);
     assert.ok(/feedback/i.test(out));
-    assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
     assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
     assert.ok(out.includes("consider this"));
-    assert.ok(out.includes("(1 problem, 1 question, 1 comment)"));
+    assert.ok(out.includes("(1 question, 1 comment)"));
   });
 });
 
@@ -538,14 +534,14 @@ suite("renderRejectedReviewFeedback", () => {
     ...over,
   });
 
-  test("includes all kinds, problems first", () => {
+  test("includes both kinds, questions first", () => {
     const out = renderRejectedReviewFeedback([
+      mk({ kind: "comment", body: "a-comment", line: 41 }),
       mk({ kind: "question", body: "a-question" }),
-      mk({ kind: "problem", body: "real-issue", line: 41 }),
     ]);
-    assert.ok(out.includes("real-issue"));
+    assert.ok(out.includes("a-comment"));
     assert.ok(out.includes("a-question"));
-    assert.ok(out.indexOf("[PROBLEM]") < out.indexOf("[QUESTION]"));
+    assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
     assert.ok(out.includes("src/a.ts:42"));
   });
 

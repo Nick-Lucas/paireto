@@ -23,6 +23,17 @@ function prepareFixtureWorkspace() {
 	return dir;
 }
 
+// The extension writes its per-repo socket, index and activity files below the XDG state dir. Left
+// unset, a test run lands in the developer's own ~/.local/state and two worktrees running the suite
+// at once contend for one index.lock. /private/tmp rather than os.tmpdir() because the socket path
+// sits under this root and must stay inside the ~104-byte sun_path limit.
+function prepareStateHome() {
+	// macOS resolves /tmp to /private/tmp, so prefer the canonical spelling where it exists and fall
+	// back to /tmp elsewhere — a Linux container has no /private.
+	const root = fs.existsSync('/private/tmp') ? '/private/tmp' : '/tmp';
+	return fs.mkdtempSync(path.join(root, 'pai-state-'));
+}
+
 export default defineConfig({
 	files: 'out/test/**/*.test.js',
 	workspaceFolder: prepareFixtureWorkspace(),
@@ -31,5 +42,5 @@ export default defineConfig({
 	launchArgs: process.env.PAIRETO_DOCKER ? ['--no-sandbox', '--disable-gpu'] : [],
 	// Registers the read-only `paireto.test.inspect` control plane so extension-host tests can
 	// assert on internal counters (e.g. that openDiff never runs the full refresh).
-	env: { PAIRETO_TEST: '1' },
+	env: { PAIRETO_TEST: '1', XDG_STATE_HOME: prepareStateHome() },
 });
