@@ -9,22 +9,32 @@ import {
   planSendDecision,
 } from "../plan/planCodeFeedback.js";
 import { renderRejectedPlanFeedback, type PlanCommentData } from "../plan/planFeedback.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 
 const PLAN_COMMENTS: PlanCommentData[] = [
   { line: 3, quote: "- Step two", body: "Split this step in two.", kind: "comment" },
 ];
 
-function reviewComment(overrides: Partial<ReviewComment> = {}): ReviewComment {
+function reviewComment(overrides: Partial<ReviewThread> = {}): ReviewThread {
+  const at = "2026-08-12T20:00:00.000Z";
   return {
     id: "c1",
     repoRoot: "/workspace/api",
     filePath: "src/a.ts",
     side: "modified",
     line: 41,
-    kind: "comment",
-    body: "Rename this helper.",
-    quote: "const x = 1;",
+    delivery: "pending",
+    createdAt: at,
+    updatedAt: at,
+    activities: [
+      {
+        kind: "feedback",
+        feedbackKind: "comment",
+        body: "Rename this helper.",
+        quote: "const x = 1;",
+        at,
+      },
+    ],
     anchor: { lineText: "const x = 1;", contextBefore: [], contextAfter: [], lineHash: "h" },
     ...overrides,
   };
