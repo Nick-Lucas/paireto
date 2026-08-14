@@ -1,13 +1,5 @@
 Do not ever edit this, this is for humans only to edit!
 
-# WIP NOW
-
-* Make the extension sidebar aware of the plugin versions of agents based on the welcome screen logic. If none are installed then prompt the user to the welcome screen, and if any plugin version is wrong then also prompt the user to update them (link to the welcome screen)
-* Allow file feedback to be sent in a plan review. When submitting the review if there is code feedback ask if it should be included and do so like normal if yes
-* When staging a file with unsaved changes, the file is currently closed and prompts to save. If you choose to save you should also commit the unsaved changes
-* pressing the Enter key on a changes entry should trigger renaming of the file just like in explorer
-* Support "stackBase" as well as "mergeBase" which compares to the commit the branch was branched from instead of the merge base
-
 # WIP Feedback Enhancements
 
 * Store feedback items per repo+branch persistently
