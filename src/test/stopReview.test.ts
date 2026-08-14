@@ -6,6 +6,7 @@ import * as vscode from "vscode";
 
 import {
   activateForFixtureRepo,
+  clearFeedback,
   inspect,
   waitFor,
   waitForForegroundGate,
@@ -190,6 +191,7 @@ suite("Stop review over the bridge", function () {
         await waitFor("review cleanup", async () =>
           (await inspect()).gates.length === 0 ? true : undefined,
         );
+        await clearFeedback();
       }
     });
   }

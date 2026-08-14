@@ -8,10 +8,14 @@ import { renderRejectedPlanFeedback, type PlanCommentData } from "./planFeedback
 
 /** What the plan gate needs from the code-review side. ReviewController satisfies this shape. */
 export interface CodeFeedbackSource {
+  /** Everything in the bucket, delivered history included — what the sidebar shows. */
   getComments(): ReviewThread[];
+  /** Only what has not been delivered yet — what a send would carry. */
+  getPendingComments(): ReviewThread[];
   isMultiRepository(): boolean;
   isSessionActive(): boolean;
-  clearComments(): void;
+  /** Mark these as delivered. False when the state could not be recorded. */
+  markCommentsSent(items: ReviewThread[]): Promise<boolean>;
 }
 
 export type PlanSendAction =

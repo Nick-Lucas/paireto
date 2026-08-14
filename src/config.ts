@@ -35,6 +35,7 @@ export const Commands = {
   reviewAddComment: "paireto.review.addComment",
   reviewRevealComment: "paireto.review.revealComment",
   reviewDeleteComment: "paireto.review.deleteComment",
+  reviewClearFeedback: "paireto.review.clearFeedback",
   /** Open the diff for a file named by the agent's review plan. */
   guidedReviewOpenFile: "paireto.guidedReview.openFile",
   /** Open a changeset's description as a read-only, commentable markdown tab. */
