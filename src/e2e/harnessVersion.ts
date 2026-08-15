@@ -10,6 +10,7 @@ import { execFileSync } from "node:child_process";
 const VERSION_COMMAND: Record<string, [string, string[]]> = {
   claudecode: ["claude", ["--version"]],
   codex: ["codex", ["--version"]],
+  kiro: ["kiro-cli", ["--version"]],
   opencode: ["opencode", ["--version"]],
 };
 

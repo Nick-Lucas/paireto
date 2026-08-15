@@ -240,18 +240,6 @@ export class WelcomePanel {
     // The installer stages files here and stamps the installed version — mkdirp it first.
     fs.mkdirSync(ctx.stableDir, { recursive: true });
     const result = await agent.install(ctx);
-    if (!result.ok && result.manualCommand) {
-      const choice = await vscode.window.showWarningMessage(
-        `Couldn't set up ${agent.name} automatically. Copy the manual command?`,
-        "Copy Command",
-      );
-      if (choice === "Copy Command") {
-        await vscode.env.clipboard.writeText(result.manualCommand);
-        void vscode.window.showInformationMessage(
-          "Command copied. Run it in a terminal, then restart the agent.",
-        );
-      }
-    }
     void this.panel.webview.postMessage({
       type: "agentResult",
       agentId,

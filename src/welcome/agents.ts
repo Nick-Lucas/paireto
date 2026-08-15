@@ -1,6 +1,4 @@
-// Registry of agents the Welcome screen can set up. Only Claude Code is functional today; the others
-// match the README's "planned" table and render disabled. Kept extensible so adding an agent later is
-// a single entry with its own install function + installed probe.
+// Registry of agents the Welcome screen can set up.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -15,6 +13,12 @@ import {
   openCodeInstalledProbe,
   readOpenCodeAdapterVersion,
 } from "../bridge/OpenCodeInstaller.js";
+import {
+  installKiro,
+  KIRO_MODEL,
+  kiroInstalledProbe,
+  readAgentPluginVersion,
+} from "../bridge/KiroInstaller.js";
 import { type InstallResult, installPlugin, readPluginVersion } from "../bridge/PluginInstaller.js";
 import type { InstallState } from "./protocol.js";
 
@@ -141,6 +145,24 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     note:
       "Plan review works automatically with OpenCode's built-in “plan” agent — no setup needed. " +
       "Custom planning agents aren't covered automatically yet.",
+  },
+  {
+    id: "kiro",
+    name: "Kiro CLI v3",
+    available: true,
+    install: async (ctx) => {
+      const result = await installKiro(ctx);
+      if (result.ok) {
+        writeInstalledStamp(ctx.stableDir, readAgentPluginVersion(ctx.pluginsRoot));
+      }
+      return result;
+    },
+    installedProbe: (ctx) => kiroInstalledProbe(ctx),
+    profile: {
+      name: "kiro",
+      command: `kiro-cli chat --v3 --model ${KIRO_MODEL} --tui`,
+    },
+    note: "Setup registers the global Power and installs global hooks.",
   },
   { id: "pi", name: "Pi TUI", available: false, profile: { name: "pi", command: "pi" } },
 ];

@@ -1,7 +1,6 @@
 // Installs + registers the bundled Claude Code plugin by driving the `claude` CLI — the supported,
 // schema-correct path. We deliberately do NOT hand-edit known_marketplaces.json / installed_plugins.json
-// (that risks corrupting the user's config). If the CLI can't be found or fails, we no-op and report a
-// manual command for the user to run.
+// (that risks corrupting the user's config).
 
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
@@ -12,7 +11,6 @@ import { log } from "../log.js";
 
 const MARKETPLACE_NAME = "paireto";
 const PLUGIN_NAME = "paireto";
-const PREVIOUS_MARKETPLACE_NAME = "tui-companion";
 
 /**
  * The installed-version marker compares against this, read straight from the shipped plugin
@@ -39,8 +37,6 @@ export function readPluginVersion(pluginsRoot: string): string {
 export interface InstallResult {
   ok: boolean;
   detail: string;
-  /** A command the user can run by hand if automatic install didn't complete. */
-  manualCommand?: string;
 }
 
 /** Locate the `claude` binary: explicit env, PATH, then common install locations. */
@@ -100,15 +96,6 @@ export interface MarketplaceListEntry {
   path?: string;
 }
 
-export function manualInstallCommand(pluginsRoot: string): string {
-  return (
-    `claude plugin marketplace remove ${PREVIOUS_MARKETPLACE_NAME} --scope user; ` +
-    `claude plugin marketplace remove ${MARKETPLACE_NAME} --scope user; ` +
-    `claude plugin marketplace add "${pluginsRoot}" --scope user && ` +
-    `claude plugin install ${PLUGIN_NAME}@${MARKETPLACE_NAME} --scope user`
-  );
-}
-
 export function marketplaceNamesToRemove(
   entries: MarketplaceListEntry[],
   pluginsRoot: string,
@@ -153,8 +140,6 @@ async function removeStaleMarketplaces(bin: string, pluginsRoot: string): Promis
  * @param pluginsRoot absolute path to the shipped `dist/plugins/` dir (contains .claude-plugin/marketplace.json)
  */
 export async function installPlugin(pluginsRoot: string): Promise<InstallResult> {
-  const manualCommand = manualInstallCommand(pluginsRoot);
-
   const marketplaceManifest = path.join(pluginsRoot, ".claude-plugin", "marketplace.json");
   if (!fs.existsSync(marketplaceManifest)) {
     return { ok: false, detail: `marketplace manifest not found at ${marketplaceManifest}` };
@@ -165,7 +150,6 @@ export async function installPlugin(pluginsRoot: string): Promise<InstallResult>
     return {
       ok: false,
       detail: "claude CLI not found",
-      manualCommand,
     };
   }
 
@@ -176,7 +160,6 @@ export async function installPlugin(pluginsRoot: string): Promise<InstallResult>
     return {
       ok: false,
       detail: `marketplace add failed: ${(add.stderr || add.stdout).trim().slice(0, 200)}`,
-      manualCommand,
     };
   }
 
@@ -191,7 +174,6 @@ export async function installPlugin(pluginsRoot: string): Promise<InstallResult>
     return {
       ok: false,
       detail: `install failed: ${(install.stderr || install.stdout).trim().slice(0, 200)}`,
-      manualCommand,
     };
   }
 

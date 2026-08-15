@@ -20,6 +20,7 @@ RUN sed -i 's|URIs: http://|URIs: https://|' /etc/apt/sources.list.d/debian.sour
       git \
       ca-certificates \
       openssl \
+      curl \
       libnss3 \
       libnspr4 \
       libatk1.0-0 \
@@ -53,6 +54,11 @@ RUN npm install -g \
       @anthropic-ai/claude-code \
       @openai/codex \
       opencode-ai
+
+RUN curl -fsSL https://cli.kiro.dev/install | bash \
+    && test -x /root/.local/bin/kiro-cli \
+    && ln -s /root/.local/bin/kiro-cli /usr/local/bin/kiro-cli \
+    && kiro-cli --version
 
 # OpenCode installs the plugin SDK (@opencode-ai/plugin) from npm at runtime, which credential-free
 # `check` runs cannot do. Without it our plugin advertises paireto_submit_plan with no `plan`

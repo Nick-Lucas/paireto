@@ -23,6 +23,9 @@ const ASSET_ENTRY = "paireto:assets";
 
 /** Every file and directory under `root`, so an asset tree can be declared to esbuild's watcher. */
 function assetPaths(root: string): { files: string[]; dirs: string[] } {
+  if (!fs.statSync(root).isDirectory()) {
+    return { files: [root], dirs: [path.dirname(root)] };
+  }
   const files: string[] = [];
   const dirs: string[] = [root];
   for (const entry of fs.readdirSync(root, { withFileTypes: true, recursive: true })) {
@@ -62,7 +65,8 @@ export function copyAssets(from: string, to: string): Plugin {
       });
 
       build.onEnd(() => {
-        fs.mkdirSync(to, { recursive: true });
+        const sourceIsDirectory = fs.statSync(from).isDirectory();
+        fs.mkdirSync(sourceIsDirectory ? to : path.dirname(to), { recursive: true });
         fs.cpSync(from, to, { recursive: true });
       });
     },

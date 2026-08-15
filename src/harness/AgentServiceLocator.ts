@@ -9,6 +9,7 @@ import type { Harness } from "../protocol/types.js";
 import type { AgentStrategy } from "./AgentStrategy.js";
 import { ClaudeCodeStrategy } from "./ClaudeCodeStrategy.js";
 import { CodexStrategy } from "./CodexStrategy.js";
+import { KiroStrategy } from "./KiroStrategy.js";
 import { OpenCodeStrategy } from "./OpenCodeStrategy.js";
 
 export class AgentServiceLocator {
@@ -17,6 +18,7 @@ export class AgentServiceLocator {
     [
       ["claudecode", new ClaudeCodeStrategy()],
       ["codex", new CodexStrategy()],
+      ["kiro", new KiroStrategy()],
       ["opencode", new OpenCodeStrategy()],
     ],
   );

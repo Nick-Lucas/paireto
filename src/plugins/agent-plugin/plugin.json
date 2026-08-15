@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "paireto",
+  "version": "0.7.0",
+  "description": "Pair-programming with Paireto in VS Code.",
+  "author": {
+    "name": "Paireto"
+  },
+  "repository": "https://github.com/Nick-Lucas/paireto",
+  "license": "Elastic-2.0",
+  "keywords": ["code review", "guided review", "pair programming", "VS Code"],
+  "extensions": {
+    "com.openai.codex": {},
+    "dev.kiro": {}
+  }
+}

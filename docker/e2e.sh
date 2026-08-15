@@ -29,6 +29,7 @@ if [ "$mode" = "record" ]; then
   bash docker/prepare-e2e.sh
   files+=(-f docker/docker-compose.e2e.yml)
   env_args+=(-e ANTHROPIC_API_KEY)
+  env_args+=(-e KIRO_API_KEY)
 fi
 
 docker compose "${files[@]}" up -d --wait

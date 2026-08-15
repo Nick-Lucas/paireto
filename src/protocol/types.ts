@@ -2,13 +2,14 @@
 // scripts and MCP servers. The plugins are TypeScript under src/plugins/ and import these types
 // directly, so both sides of the wire are checked against this one file.
 
-import pluginManifest from "../plugins/claude-code/assets/.claude-plugin/plugin.json";
+import pluginManifest from "../plugins/agent-plugin/plugin.json";
 
 // The per-harness raw-event dialects live in their strategy files (agent-specific types belong with
 // the one module that consumes them); this file imports them TYPE-ONLY for the HarnessHookEvent
 // union below. The resulting cycle (strategies import Harness from here) is erased at compile time.
 import type { ClaudeCodeHookEvent } from "../harness/ClaudeCodeStrategy.js";
 import type { CodexHookEvent } from "../harness/CodexStrategy.js";
+import type { KiroHookEvent } from "../harness/KiroStrategy.js";
 import type { OpenCodeForwardedEvent } from "../harness/OpenCodeStrategy.js";
 
 /**
@@ -26,12 +27,16 @@ export const PLUGIN_VERSION: string = pluginManifest.version;
  *  `src/harness/AgentStrategy.ts` (and the per-harness strategies) for the mapping into a common
  *  internal representation.
  *  A new harness extends this union and gets its own strategy; nothing else needs to change. */
-export type Harness = "claudecode" | "codex" | "opencode";
+export type Harness = "claudecode" | "codex" | "kiro" | "opencode";
 
 /** The raw hook/event payload carried on the wire, in whichever harness's dialect the `harness`
  *  field names. Each strategy consumes only its own member (narrowed at the boundary by the runtime
  *  `harness` tag — see AgentStrategy's bivariance note). */
-export type HarnessHookEvent = ClaudeCodeHookEvent | CodexHookEvent | OpenCodeForwardedEvent;
+export type HarnessHookEvent =
+  | ClaudeCodeHookEvent
+  | CodexHookEvent
+  | KiroHookEvent
+  | OpenCodeForwardedEvent;
 
 /** Adapter-injected enrichment travelling ALONGSIDE the raw `event`, never merged into it: `event`
  *  is BY DEFINITION the harness's own untouched payload (the self-describing-events invariant), so

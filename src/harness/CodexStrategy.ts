@@ -4,7 +4,7 @@
 // wire types) — everything downstream sees only AppEvent. Empirically pinned against codex-cli
 // 0.144.1 (see the adapter design notes): no Notification / SessionEnd / CwdChanged / FileChanged
 // (Codex has no equivalents) and no background_tasks/session_crons. Process death IS caught early by
-// the stdio-MCP liveness server (plugins/codex/mcp/liveness.js, PPID handoff) via the generic
+// the stdio-MCP liveness server (PPID handoff) via the generic
 // session.attach path, but supportsLiveness stays FALSE so the silence sweep remains the backstop for
 // a never-attached session (see the CodexStrategy notes below).
 

@@ -76,10 +76,12 @@ const FIXED_MOCK_NAMES = new Set([
   "paireto-e2e-claudecode",
   "paireto-e2e-codex",
   "paireto-e2e-opencode",
+  "paireto-e2e-kiro",
   "paireto-e2e-sandbox-root-test",
   "pai-e2e-claude-home",
   "pai-e2e-codex-home",
   "pai-e2e-opencode-home",
+  "pai-e2e-kiro-home",
 ]);
 
 /** A fixed, cross-platform-stable path for a mock run's sandbox or harness home. */
@@ -319,6 +321,16 @@ export function probeOpenCode(mode: E2EMode = "record"): Availability {
   return fs.existsSync(dataAuth) ? true : "no opencode auth.json";
 }
 
+export function probeKiro(mode: E2EMode = "record"): Availability {
+  if (!onPath("kiro-cli")) {
+    return "kiro-cli binary not on PATH";
+  }
+  if (mode === "check") {
+    return true;
+  }
+  return process.env.KIRO_API_KEY ? true : "no KIRO_API_KEY";
+}
+
 /**
  * Build an isolated claude home: temp CLAUDE_CONFIG_DIR seeded from the Claude config + the OAuth
  * credential (or ANTHROPIC_API_KEY when present, for CI). The credential comes from a host-staged
@@ -453,6 +465,24 @@ export function buildOpenCodeHome(
   }
   return {
     env: { XDG_CONFIG_HOME: configHome, XDG_DATA_HOME: dataHome },
+    cleanup: () => rm(dir, Boolean(opts.homeDir)),
+  };
+}
+
+export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = {}): HarnessHome {
+  const dir = opts.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-kiro-"));
+  if (opts.homeDir) {
+    prepareFixedMockDir(opts.homeDir);
+  }
+  const kiroHome = path.join(dir, ".kiro");
+  fs.mkdirSync(kiroHome, { recursive: true });
+  const apiKey = opts.checkMode ? "ksk_paireto_e2e_check_fake" : process.env.KIRO_API_KEY;
+  return {
+    env: {
+      HOME: dir,
+      KIRO_HOME: kiroHome,
+      ...(apiKey ? { KIRO_API_KEY: apiKey } : {}),
+    },
     cleanup: () => rm(dir, Boolean(opts.homeDir)),
   };
 }

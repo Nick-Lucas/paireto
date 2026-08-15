@@ -58,9 +58,9 @@ export interface CodexInstallOptions {
   codexBin?: string;
 }
 
-/** Read the native plugin version from the bundled `.codex-plugin/plugin.json`. */
+/** Read the version from the common Agent Plugin manifest. */
 export function readCodexPluginVersion(pluginsRoot: string): string {
-  const manifest = path.join(pluginsRoot, "codex", ".codex-plugin", "plugin.json");
+  const manifest = path.join(pluginsRoot, "agent-plugin", "plugin.json");
   const parsed: unknown = JSON.parse(fs.readFileSync(manifest, "utf8"));
   if (
     !parsed ||
@@ -72,11 +72,17 @@ export function readCodexPluginVersion(pluginsRoot: string): string {
   return (parsed as { version: string }).version;
 }
 
+/** Stage the common Agent Plugin package for Codex. */
+export function materializeCodexPlugin(sourcePlugin: string, stagedPlugin: string): void {
+  fs.rmSync(stagedPlugin, { recursive: true, force: true });
+  fs.cpSync(sourcePlugin, stagedPlugin, { recursive: true });
+}
+
 /** Stable local marketplace layout staged below the extension's globalStorage directory. */
 export function codexMarketplacePlan(pluginsRoot: string, stableDir: string): CodexMarketplacePlan {
   const marketplaceRoot = path.join(stableDir, "marketplace");
   return {
-    sourcePlugin: path.join(pluginsRoot, "codex"),
+    sourcePlugin: path.join(pluginsRoot, "agent-plugin"),
     marketplaceRoot,
     stagedPlugin: path.join(marketplaceRoot, "plugins", PLUGIN_NAME),
     marketplaceManifest: path.join(marketplaceRoot, ".agents", "plugins", "marketplace.json"),
@@ -219,13 +225,10 @@ export async function installCodex(
   options: CodexInstallOptions = {},
 ): Promise<InstallResult> {
   const plan = codexMarketplacePlan(ctx.pluginsRoot, ctx.stableDir);
-  const manualCommand =
-    `codex plugin marketplace add "${plan.marketplaceRoot}" && ` + `codex plugin add ${PLUGIN_ID}`;
   try {
     const version = readCodexPluginVersion(ctx.pluginsRoot);
-    fs.rmSync(plan.stagedPlugin, { recursive: true, force: true });
     fs.mkdirSync(path.dirname(plan.stagedPlugin), { recursive: true });
-    fs.cpSync(plan.sourcePlugin, plan.stagedPlugin, { recursive: true });
+    materializeCodexPlugin(plan.sourcePlugin, plan.stagedPlugin);
     fs.mkdirSync(path.dirname(plan.marketplaceManifest), { recursive: true });
     fs.writeFileSync(plan.marketplaceManifest, renderCodexMarketplace(), "utf8");
 
@@ -235,7 +238,7 @@ export async function installCodex(
     }
     const bin = resolveCodexBin(baseEnv, options.codexBin);
     if (!bin) {
-      return { ok: false, detail: "codex CLI not found", manualCommand };
+      return { ok: false, detail: "codex CLI not found" };
     }
 
     await repointStaleMarketplace(bin, plan.marketplaceRoot, baseEnv);
@@ -248,7 +251,6 @@ export async function installCodex(
       return {
         ok: false,
         detail: `marketplace add failed: ${(addMarketplace.stderr || addMarketplace.stdout).trim().slice(0, 240)}`,
-        manualCommand,
       };
     }
 
@@ -261,7 +263,6 @@ export async function installCodex(
         return {
           ok: false,
           detail: `old plugin removal failed: ${(removed.stderr || removed.stdout).trim().slice(0, 240)}`,
-          manualCommand,
         };
       }
     }
@@ -271,7 +272,6 @@ export async function installCodex(
       return {
         ok: false,
         detail: `plugin install failed: ${(addPlugin.stderr || addPlugin.stdout).trim().slice(0, 240)}`,
-        manualCommand,
       };
     }
 
@@ -284,7 +284,6 @@ export async function installCodex(
     return {
       ok: false,
       detail: `codex plugin install failed: ${err instanceof Error ? err.message : String(err)}`,
-      manualCommand,
     };
   }
 }

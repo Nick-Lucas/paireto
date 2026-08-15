@@ -218,8 +218,8 @@ suite("onboarding install stamp + installedProbe", () => {
     assert.strictEqual(claude.installedProbe(ctx), "installed", "current stamp");
   });
 
-  test("codex + opencode are available with an installer and a probe", () => {
-    for (const id of ["codex", "opencode"]) {
+  test("codex, kiro, and opencode are available with an installer and a probe", () => {
+    for (const id of ["codex", "kiro", "opencode"]) {
       const agent = findAgent(id);
       assert.strictEqual(agent?.available, true, `${id} available`);
       assert.ok(agent?.install, `${id} has an installer`);

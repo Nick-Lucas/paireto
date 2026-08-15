@@ -48,7 +48,7 @@ so a test exec never races the install.
 ## How it works
 
 - `Dockerfile` — node + Electron/Chromium runtime libs + `xvfb`, `tmux`, `git`, OpenSSL,
-  and the `claude` / `codex` / `opencode` CLIs. OpenSSL creates the long-lived, machine-local proxy
+  and the `claude` / `codex` / `kiro-cli` / `opencode` CLIs. OpenSSL creates the long-lived, machine-local proxy
   identity under the ignored bind-mounted cert directory; no test private keys live in the image or
   Git. pnpm is pinned to the host's version. `DISPLAY=:99` is an image ENV so exec'd commands (which
   skip the entrypoint) inherit it.
