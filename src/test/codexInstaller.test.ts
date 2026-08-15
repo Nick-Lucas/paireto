@@ -1,22 +1,23 @@
-// Pure coverage for the native Codex plugin installer. These tests exercise the bundled component
-// contract, staged marketplace, and public plugin-list probe.
+// Pure coverage for the Codex plugin installer.
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 import {
   codexMarketplacePlan,
   codexPluginInstallState,
+  materializeCodexPlugin,
   readCodexPluginVersion,
   renderCodexMarketplace,
 } from "../bridge/CodexInstaller.js";
 import { PLUGIN_VERSION } from "../protocol/types.js";
 
-const bundledPlugin = path.resolve(__dirname, "../../dist/plugins/codex");
+const bundledPlugin = path.resolve(__dirname, "../../dist/plugins/agent-plugin");
 
 suite("Codex bundled plugin contract", () => {
-  test("reads its version from the native manifest, not the removed adapter manifest", () => {
+  test("reads its version from the common Agent Plugin manifest", () => {
     const pluginsRoot = path.dirname(bundledPlugin);
     // Pinned to the shared version rather than a literal: versionLockstep.test.ts already asserts
     // every plugin manifest equals PLUGIN_VERSION, so a bump shouldn't need editing in two places.
@@ -26,22 +27,30 @@ suite("Codex bundled plugin contract", () => {
 
   test("ships native hooks, MCP, and the review skill without installer placeholders", () => {
     const manifest = JSON.parse(
-      fs.readFileSync(path.join(bundledPlugin, ".codex-plugin", "plugin.json"), "utf8"),
+      fs.readFileSync(
+        path.join(bundledPlugin, "com.openai.codex", ".codex-plugin", "plugin.json"),
+        "utf8",
+      ),
     ) as { name: string; skills: string; mcpServers: string };
     assert.strictEqual(manifest.name, "paireto");
     assert.strictEqual(manifest.skills, "./skills/");
     assert.strictEqual(manifest.mcpServers, "./.mcp.json");
 
-    const hooks = fs.readFileSync(path.join(bundledPlugin, "hooks", "hooks.json"), "utf8");
-    assert.ok(hooks.includes("${PLUGIN_ROOT}/scripts/on-event.js"));
+    const hooks = fs.readFileSync(
+      path.join(bundledPlugin, "com.openai.codex", "hooks", "hooks.json"),
+      "utf8",
+    );
+    assert.ok(hooks.includes("${PLUGIN_ROOT}/com.openai.codex/runtime/on-event.js"));
     assert.ok(!hooks.includes("{{PAIRETO_SCRIPTS}}"));
 
-    const mcp = JSON.parse(fs.readFileSync(path.join(bundledPlugin, ".mcp.json"), "utf8")) as {
+    const mcp = JSON.parse(
+      fs.readFileSync(path.join(bundledPlugin, "com.openai.codex", ".mcp.json"), "utf8"),
+    ) as {
       mcpServers: { paireto: { args: string[]; cwd: string; tool_timeout_sec: number } };
       mcp_servers?: unknown;
     };
     assert.strictEqual(mcp.mcp_servers, undefined);
-    assert.deepStrictEqual(mcp.mcpServers.paireto.args, ["./mcp/liveness.js"]);
+    assert.deepStrictEqual(mcp.mcpServers.paireto.args, ["./runtime/mcp.js"]);
     assert.strictEqual(mcp.mcpServers.paireto.cwd, ".");
     assert.strictEqual(mcp.mcpServers.paireto.tool_timeout_sec, 86_400);
 
@@ -49,16 +58,16 @@ suite("Codex bundled plugin contract", () => {
       path.join(bundledPlugin, "skills", "paireto-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(skill.includes("`mcp__paireto__paireto_review`"));
+    assert.ok(skill.includes("ends in `paireto_review`"));
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "paireto-plan", "SKILL.md")));
     const guided = fs.readFileSync(
       path.join(bundledPlugin, "skills", "paireto-guided-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(guided.includes("`mcp__paireto__paireto_start_guided_review`"));
+    assert.ok(guided.includes("ends in `paireto_start_guided_review`"));
     // The built server, not the source: this asserts the artifact the installer actually stages.
     // Match on the bare tool names, which survive minification, rather than a source spelling.
-    const server = fs.readFileSync(path.join(bundledPlugin, "mcp", "liveness.js"), "utf8");
+    const server = fs.readFileSync(path.join(bundledPlugin, "runtime", "mcp.js"), "utf8");
     assert.ok(server.includes("paireto_review"));
     assert.ok(server.includes("paireto_start_guided_review"));
     assert.ok(
@@ -70,7 +79,7 @@ suite("Codex bundled plugin contract", () => {
 suite("Codex native marketplace", () => {
   test("stages a stable, self-contained plugin tree", () => {
     assert.deepStrictEqual(codexMarketplacePlan("/extension/plugins", "/global/codex"), {
-      sourcePlugin: "/extension/plugins/codex",
+      sourcePlugin: "/extension/plugins/agent-plugin",
       marketplaceRoot: "/global/codex/marketplace",
       stagedPlugin: "/global/codex/marketplace/plugins/paireto",
       marketplaceManifest: "/global/codex/marketplace/.agents/plugins/marketplace.json",
@@ -95,6 +104,26 @@ suite("Codex native marketplace", () => {
         category: "Developer Tools",
       },
     ]);
+  });
+
+  test("materializes the complete common Agent Plugin package", () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-view-"));
+    const stagedPlugin = path.join(tempRoot, "paireto");
+    try {
+      materializeCodexPlugin(bundledPlugin, stagedPlugin);
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "skills", "paireto-review", "SKILL.md")));
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "runtime", "mcp.js")));
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "plugin.json")));
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "mcp.json")));
+      assert.ok(
+        fs.existsSync(path.join(stagedPlugin, "com.openai.codex", ".codex-plugin", "plugin.json")),
+      );
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "com.openai.codex", "hooks", "hooks.json")));
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "dev.kiro", "bridge", "hooks.json")));
+      assert.ok(!fs.existsSync(path.join(stagedPlugin, "dev.kiro", "runtime", "mcp.js")));
+    } finally {
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   });
 });
 

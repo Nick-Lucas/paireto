@@ -29,6 +29,8 @@ export function baseHarnessEnv(): NodeJS.ProcessEnv {
   // Clear anything that could point a harness at the real user config; drivers set their own.
   delete env.CLAUDE_CONFIG_DIR;
   delete env.CODEX_HOME;
+  delete env.KIRO_HOME;
+  delete env.KIRO_API_KEY;
   delete env.XDG_CONFIG_HOME;
   delete env.XDG_DATA_HOME;
   env.PATH = `${nodeBinDir()}${path.delimiter}${process.env.PATH ?? ""}`;

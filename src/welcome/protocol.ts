@@ -1,8 +1,7 @@
 // Shared message + state contracts between the node extension host (WelcomePanel) and the React
 // webview. Type-only — imported as `import type` on both sides, so no runtime code crosses over.
 
-/** Tri-state bridge-plugin install status → the card's action: not-installed → "Set up",
- *  update-available (present but at a stale version) → "Update", installed → "✓ Installed". */
+/** Bridge-plugin install status used by the Welcome card. */
 export type InstallState = "installed" | "update-available" | "not-installed";
 
 export interface AgentState {

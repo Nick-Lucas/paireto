@@ -6,9 +6,9 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 
-import type { CodexHandoff } from "../plugins/codex/handoff.js";
-import { handoffPath, writeHandoff } from "../plugins/codex/handoff.js";
-import { startCodexLiveness } from "../plugins/codex/liveness.js";
+import type { CodexHandoff } from "../plugins/agent-plugin/com.openai.codex/handoff.js";
+import { handoffPath, writeHandoff } from "../plugins/agent-plugin/com.openai.codex/handoff.js";
+import { startCodexLiveness } from "../plugins/agent-plugin/com.openai.codex/liveness.js";
 
 /** Not a live process: the pid is only the handoff file's key here. */
 const FAKE_CODEX_PID = 999000001;

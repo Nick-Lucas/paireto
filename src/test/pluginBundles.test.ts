@@ -21,9 +21,8 @@ const HOOK_BUNDLE_MAX_BYTES = 80 * 1024;
 /** Each plugin's static asset tree and where the build copies it. `skip` names entries of the output
  *  directory that belong to another tree — the root manifest's output is the whole plugin tree. */
 const ASSET_TREES = [
-  { src: "src/plugins/assets", out: PLUGINS, skip: ["claude-code", "codex", "opencode"] },
+  { src: "src/plugins/assets", out: PLUGINS, skip: ["agent-plugin", "claude-code", "opencode"] },
   { src: "src/plugins/claude-code/assets", out: `${PLUGINS}/claude-code`, skip: [] },
-  { src: "src/plugins/codex/assets", out: `${PLUGINS}/codex`, skip: [] },
   { src: "src/plugins/opencode/assets", out: `${PLUGINS}/opencode`, skip: [] },
 ];
 
@@ -77,35 +76,49 @@ function hookScriptPaths(pluginDir: string): string[] {
 }
 
 suite("plugin bundles match their manifests", () => {
-  for (const pluginDir of [`${PLUGINS}/claude-code`, `${PLUGINS}/codex`]) {
-    test(`${pluginDir}: every hooks.json script exists after a build`, () => {
-      const scripts = hookScriptPaths(pluginDir);
-      assert.ok(scripts.length > 0, `no hook scripts found in ${pluginDir}/hooks/hooks.json`);
+  for (const hookBundle of [
+    {
+      label: `${PLUGINS}/claude-code`,
+      manifest: `${PLUGINS}/claude-code`,
+      root: `${PLUGINS}/claude-code`,
+    },
+    {
+      label: `${PLUGINS}/agent-plugin namespaced Codex view`,
+      manifest: `${PLUGINS}/agent-plugin/com.openai.codex`,
+      root: `${PLUGINS}/agent-plugin`,
+    },
+  ]) {
+    test(`${hookBundle.label}: every hooks.json script exists after a build`, () => {
+      const scripts = hookScriptPaths(hookBundle.manifest);
+      assert.ok(
+        scripts.length > 0,
+        `no hook scripts found in ${hookBundle.manifest}/hooks/hooks.json`,
+      );
       for (const script of scripts) {
-        const full = path.join(repoRoot, pluginDir, script);
-        assert.ok(fs.existsSync(full), `${pluginDir}/${script} is missing — run the build`);
+        const full = path.join(repoRoot, hookBundle.root, script);
+        assert.ok(fs.existsSync(full), `${hookBundle.root}/${script} is missing — run the build`);
       }
     });
 
-    test(`${pluginDir}: hook bundles stay small enough for a 5s timeout`, () => {
-      for (const script of hookScriptPaths(pluginDir)) {
-        const full = path.join(repoRoot, pluginDir, script);
-        assert.ok(fs.existsSync(full), `${pluginDir}/${script} is missing — run the build`);
+    test(`${hookBundle.label}: hook bundles stay small enough for a 5s timeout`, () => {
+      for (const script of hookScriptPaths(hookBundle.manifest)) {
+        const full = path.join(repoRoot, hookBundle.root, script);
+        assert.ok(fs.existsSync(full), `${hookBundle.root}/${script} is missing — run the build`);
         const size = fs.statSync(full).size;
         assert.ok(
           size <= HOOK_BUNDLE_MAX_BYTES,
-          `${pluginDir}/${script} is ${size} bytes, over the ${HOOK_BUNDLE_MAX_BYTES} ceiling — ` +
+          `${hookBundle.root}/${script} is ${size} bytes, over the ${HOOK_BUNDLE_MAX_BYTES} ceiling — ` +
             "something pulled the MCP SDK or another heavy dependency into a hook",
         );
       }
     });
 
-    test(`${pluginDir}: no hook bundle carries the MCP SDK`, () => {
-      for (const script of hookScriptPaths(pluginDir)) {
-        const text = fs.readFileSync(path.join(repoRoot, pluginDir, script), "utf8");
+    test(`${hookBundle.label}: no hook bundle carries the MCP SDK`, () => {
+      for (const script of hookScriptPaths(hookBundle.manifest)) {
+        const text = fs.readFileSync(path.join(repoRoot, hookBundle.root, script), "utf8");
         assert.ok(
           !text.includes("modelcontextprotocol"),
-          `${pluginDir}/${script} bundles the MCP SDK; hooks must not import from core/mcp`,
+          `${hookBundle.root}/${script} bundles the MCP SDK; hooks must not import from core/mcp`,
         );
       }
     });
@@ -120,12 +133,18 @@ suite("plugin bundles match their manifests", () => {
     assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/claude-code`, claudeArg)), claudeArg);
 
     const codex = readJson<{ mcpServers: Record<string, { args: string[] }> }>(
-      `${PLUGINS}/codex`,
+      `${PLUGINS}/agent-plugin/com.openai.codex`,
       ".mcp.json",
     );
-    // Codex uses a relative path resolved against the staged plugin directory.
     const codexArg = codex.mcpServers.paireto.args[0];
-    assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/codex`, codexArg)), codexArg);
+    assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/agent-plugin`, codexArg)), codexArg);
+
+    const standard = readJson<{ mcpServers: Record<string, { args: string[] }> }>(
+      `${PLUGINS}/agent-plugin`,
+      "mcp.json",
+    );
+    const standardArg = standard.mcpServers.paireto.args[0].replace("${PLUGIN_ROOT}/", "");
+    assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/agent-plugin`, standardArg)));
   });
 
   // OpenCode's plugin loader treats EVERY export as a plugin factory: functions are invoked as
@@ -147,7 +166,7 @@ suite("plugin bundles match their manifests", () => {
   test("the MCP servers do carry the SDK — the shared core is really in use", () => {
     for (const server of [
       `${PLUGINS}/claude-code/mcp/server.js`,
-      `${PLUGINS}/codex/mcp/liveness.js`,
+      `${PLUGINS}/agent-plugin/runtime/mcp.js`,
     ]) {
       const text = fs.readFileSync(path.join(repoRoot, server), "utf8");
       assert.ok(text.includes("modelcontextprotocol"), `${server} does not bundle the MCP SDK`);

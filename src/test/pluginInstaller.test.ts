@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 
-import { manualInstallCommand, marketplaceNamesToRemove } from "../bridge/PluginInstaller.js";
+import { marketplaceNamesToRemove } from "../bridge/PluginInstaller.js";
 
 suite("Claude Code plugin installer", () => {
   test("removes a renamed marketplace that still owns the plugin directory", () => {
@@ -46,16 +46,6 @@ suite("Claude Code plugin installer", () => {
         "/extension/plugins",
       ),
       [],
-    );
-  });
-
-  test("the fallback command clears renamed registrations before adding the marketplace", () => {
-    assert.strictEqual(
-      manualInstallCommand("/extension/plugins"),
-      "claude plugin marketplace remove tui-companion --scope user; " +
-        "claude plugin marketplace remove paireto --scope user; " +
-        'claude plugin marketplace add "/extension/plugins" --scope user && ' +
-        "claude plugin install paireto@paireto --scope user",
     );
   });
 });

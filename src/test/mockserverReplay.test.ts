@@ -28,11 +28,12 @@ import {
   isPairetoTool,
   normalizeClaudeBody,
   normalizeCodexBody,
+  normalizeKiroBody,
   normalizeOpenCodeBody,
 } from "../e2e/proxy/normalize.js";
 import { isEventStreamContentType } from "../e2e/proxy/normalizingProxy.js";
 
-import { readPlanTurn as readPlanTurnFrom } from "../plugins/codex/planTurn.js";
+import { readPlanTurn as readPlanTurnFrom } from "../plugins/agent-plugin/com.openai.codex/planTurn.js";
 
 interface NormalizedTool {
   description?: string;
@@ -150,6 +151,29 @@ suite("provider-replay: recorded endpoints", () => {
 });
 
 suite("provider-replay: fixture normalization", () => {
+  test("normalizes Kiro request identities without using the Codex schema", () => {
+    const first = normalizeKiroBody(
+      JSON.stringify({
+        conversationId: "conversation-a",
+        messages: [
+          { messageId: "message-a", requestId: "request-a", text: "Keep this prompt" },
+          { parentMessageId: "message-a", timestamp: "2026-08-14T10:00:00Z" },
+        ],
+      }),
+    );
+    const second = normalizeKiroBody(
+      JSON.stringify({
+        conversationId: "conversation-b",
+        messages: [
+          { messageId: "message-b", requestId: "request-b", text: "Keep this prompt" },
+          { parentMessageId: "message-b", timestamp: "2027-01-01T00:00:00Z" },
+        ],
+      }),
+    );
+    assert.strictEqual(first, second);
+    assert.ok(first.includes("Keep this prompt"));
+  });
+
   test("keeps successful captures and drops transient provider failures", () => {
     assert.strictEqual(isSuccessfulRecording({ httpResponse: { statusCode: 200 } }), true);
     assert.strictEqual(isSuccessfulRecording({ httpResponse: { statusCode: 302 } }), true);

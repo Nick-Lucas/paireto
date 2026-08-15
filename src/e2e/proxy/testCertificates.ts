@@ -18,6 +18,12 @@ const HOSTS = [
   "ab.chatgpt.com",
   "auth.openai.com",
   "api.github.com",
+  "q.us-east-1.amazonaws.com",
+  "q.eu-central-1.amazonaws.com",
+  "runtime.us-east-1.kiro.dev",
+  "runtime.eu-central-1.kiro.dev",
+  "management.us-east-1.kiro.dev",
+  "management.eu-central-1.kiro.dev",
   "registry.npmjs.org",
   "models.dev",
   // OpenCode resolves its model catalogue from either host. An unlisted host fails the TLS handshake

@@ -37,9 +37,18 @@ suite("onboarding agents", () => {
     assert.deepStrictEqual(claude.profile, { name: "claudecode", command: "claude" });
   });
 
-  test("opencode is available; pi stays planned", () => {
+  test("opencode and Kiro are available; pi stays planned", () => {
     assert.strictEqual(ONBOARDING_AGENTS.filter((a) => !a.available).length >= 1, true);
     assert.strictEqual(findAgent("opencode")?.available, true);
+    assert.strictEqual(findAgent("kiro")?.available, true);
+    assert.deepStrictEqual(findAgent("kiro")?.profile, {
+      name: "kiro",
+      command: "kiro-cli chat --v3 --model qwen3-coder-next --tui",
+    });
+    assert.strictEqual(
+      findAgent("kiro")?.note,
+      "Setup registers the global Power and installs global hooks.",
+    );
     assert.strictEqual(findAgent("pi")?.available, false);
   });
 });

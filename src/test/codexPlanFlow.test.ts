@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 
-import { planGateOutcome } from "../plugins/codex/planFlow.js";
+import { planGateOutcome } from "../plugins/agent-plugin/com.openai.codex/planFlow.js";
 
 suite("Codex Paireto plan continuation", () => {
   test("approval allows Stop so Codex can present its native mode-switch selector", () => {

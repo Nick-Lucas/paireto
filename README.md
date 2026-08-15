@@ -61,11 +61,10 @@ Paireto comes in two parts:
 
 ### Agent harness setup
 
-On first install a **Welcome** wizard will take you through setup of your agents, you can return to this screen as any time via the Command Palette by opening `Paireto: Open Welcome`
+On first install a **Welcome** wizard will take you through setup of your agents. You can return to
+this screen at any time from the Command Palette by opening `Paireto: Open Welcome`.
 
-After plugin setup, **Restart your agent** to load the Paireto integration. That's it — open a repo in VS Code, start
-the agent in its terminal, and the agent appears in the Paireto sidebar.
-
+After plugin setup, **restart your agent** to load the Paireto integration. Open a repo in VS Code, start the agent in its terminal, and the agent appears in the Paireto sidebar.
 
 # Agent support
 
@@ -73,12 +72,12 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 
 | Agent | Status |
 | --- | --- |
-| **Claude Code** | ✅ Supported (bundled plugin, set up from the Welcome screen) |
-| Codex TUI | 🔜 Planned |
-| OpenCode TUI | 🔜 Planned |
+| **Claude Code** | ✅ Supported |
+| **Codex TUI** | ✅ Supported |
+| **Kiro CLI v3** | ✅ Supported |
+| **OpenCode TUI** | ✅ Supported |
 | Pi TUI | 🔜 Planned |
 | Others? | ＃ Open an Issue |
-
 
 # Workflows
 
@@ -123,7 +122,6 @@ its agent activity. Manage all your VS Code windows and worktrees from any other
 
 - **Agent doesn't appear in the sidebar.** Make sure you restarted the agent after installing, and that
   the repo is open in VS Code. Set `paireto.logLevel` to `debug` and check the *Paireto* output channel.
-- **Plugin didn't register.** Re-run the manual command from
-  [Register the agent-side plugin](#2-register-the-agent-side-plugin), then restart the agent.
+- **Plugin didn't register.** Open `Paireto: Open Welcome`, run setup again, then restart the agent.
 - **No sound on notifications.** Confirm `paireto.notify.type` is `sound` and `paireto.notify.sound`
   names a valid system sound or file path.

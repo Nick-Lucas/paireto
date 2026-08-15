@@ -7,9 +7,13 @@
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 
-import type { CodexHandoff } from "../plugins/codex/handoff.js";
-import { codexPid, handoffPath, writeHandoff } from "../plugins/codex/handoff.js";
-import { startCodexLiveness } from "../plugins/codex/liveness.js";
+import type { CodexHandoff } from "../plugins/agent-plugin/com.openai.codex/handoff.js";
+import {
+  codexPid,
+  handoffPath,
+  writeHandoff,
+} from "../plugins/agent-plugin/com.openai.codex/handoff.js";
+import { startCodexLiveness } from "../plugins/agent-plugin/com.openai.codex/liveness.js";
 import { ackWith, startServer } from "./fakeBridgeServer.js";
 
 /** The key liveness reads its handoff under. No codex is running, so this file is the test's alone. */
