@@ -12,7 +12,10 @@ export interface KiroInstallPlan {
   installedPower: string;
   registryFile: string;
   hookFile: string;
+  skillsDir: string;
 }
+
+const KIRO_SKILLS = ["paireto-review", "paireto-guided-review"] as const;
 
 export interface KiroInstallOptions {
   kiroHome?: string;
@@ -28,6 +31,7 @@ export function kiroInstallPlan(pluginsRoot: string, kiroHome: string): KiroInst
     installedPower: path.join(kiroHome, "powers", "installed", "paireto"),
     registryFile: path.join(kiroHome, "powers", "installed.json"),
     hookFile: path.join(kiroHome, "hooks", "paireto.json"),
+    skillsDir: path.join(kiroHome, "skills"),
   };
 }
 
@@ -36,6 +40,13 @@ function commandFor(root: string, script: string): string {
   return `node "${target}"`;
 }
 
+/**
+ * Both plan gates are needed, because Kiro presents a plan in two different ways. Its planner writes
+ * the plan and ends the turn rather than switching to execution, so the FIRST proposal is only
+ * visible at Stop. Kiro then runs Stop hooks once per user turn — a hook that asks it to continue
+ * does not get a second run — so a revised plan comes back through `switch_to_execution`, which is
+ * exactly what Paireto's plan feedback tells the agent to call.
+ */
 export function renderKiroHooks(stagedPower: string): string {
   const event = commandFor(stagedPower, "on-event.js");
   const plan = commandFor(stagedPower, "on-plan-gate.js");
@@ -224,18 +235,6 @@ function writeFileTransactionally(file: string, content: string): void {
   }
 }
 
-function hasKiroPowerRegistration(file: string): boolean {
-  try {
-    return readKiroPowerRegistry(file).installedPowers.some(isPairetoRegistryEntry);
-  } catch {
-    return false;
-  }
-}
-
-function hasKiroCliFiles(plan: KiroInstallPlan): boolean {
-  return fs.existsSync(plan.hookFile) && hasKiroPowerRegistration(plan.registryFile);
-}
-
 export function kiroFilesInstallState(
   integrationFilesExist: boolean,
   installedStamp: string | undefined,
@@ -271,10 +270,10 @@ export function kiroInstalledProbe(
   options: KiroInstallOptions = {},
 ): InstallState {
   const kiroHome = options.kiroHome || defaultKiroHome();
-  const plan = kiroInstallPlan(ctx.pluginsRoot, kiroHome);
   const installedPower = findInstalledKiroPower(kiroHome);
+
   return kiroFilesInstallState(
-    installedPower !== undefined && hasKiroCliFiles(plan),
+    installedPower !== undefined,
     readStamp(ctx.stableDir),
     installedPower?.version,
     readAgentPluginVersion(ctx.pluginsRoot),
@@ -291,6 +290,12 @@ export async function installKiro(
     const version = readAgentPluginVersion(ctx.pluginsRoot);
     const registry = renderKiroPowerRegistry(plan.registryFile);
     replaceDirectory(plan.sourcePlugin, plan.installedPower);
+    for (const skill of KIRO_SKILLS) {
+      replaceDirectory(
+        path.join(plan.sourcePlugin, "skills", skill),
+        path.join(plan.skillsDir, skill),
+      );
+    }
     writeFileTransactionally(plan.registryFile, registry);
     // Kiro Powers do not load hooks from Agent Plugin client extensions.
     // GitHub issue: https://github.com/kirodotdev/Kiro/issues/9007
@@ -300,7 +305,7 @@ export async function installKiro(
     return {
       ok: true,
       detail:
-        "Registered the Kiro Power and installed its global hooks. Restart Kiro to load them.",
+        "Registered the Kiro Power, slash-command skills, and global hooks. Restart Kiro to load them.",
     };
   } catch (error) {
     return {

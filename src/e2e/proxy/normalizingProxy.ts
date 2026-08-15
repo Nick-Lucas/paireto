@@ -50,6 +50,8 @@ export interface NormalizingProxyOptions {
   /** Endpoints whose replay miss ends the run. Scoped to the harness's inference traffic, because a
    *  miss on incidental traffic (a model catalogue, a registry) is survivable and expected offline. */
   fatalMissPaths?: RegExp[];
+  /** Optional request operation filter for providers that multiplex calls on one path. */
+  fatalMissTargets?: RegExp[];
   /** File the first miss is recorded in, for the in-host test to abort on. */
   missFilePath?: string;
   log: (line: string) => void;
@@ -104,7 +106,13 @@ async function handleRequest(
   if (opts.normalizeDriver && req.method === "POST" && raw.length && isJson) {
     const digest = createHash("sha256").update(body).digest("hex").slice(0, 12);
     bodyDigest = digest;
-    opts.log(`shim normalized ${opts.normalizeDriver} ${req.url ?? "/"} body=${digest}`);
+    // A provider that multiplexes every operation onto one path says which it is in the operation
+    // header, so the path alone would not tell these log lines apart.
+    const target = req.headers["x-amz-target"];
+    const operation = typeof target === "string" ? ` target=${target}` : "";
+    opts.log(
+      `shim normalized ${opts.normalizeDriver} ${req.url ?? "/"}${operation} body=${digest}`,
+    );
     // Env-gated dump of the exact match key, for diffing against the cassette's when a strict-VCR
     // miss needs explaining.
     if (process.env.PAIRETO_SHIM_DUMP) {
@@ -114,7 +122,7 @@ async function handleRequest(
   }
 
   // Forward to MockServer as a direct mock request (path preserved; the Host header is set so the
-  // fixture — whose matcher is method+path+body only — matches regardless of the shim endpoint).
+  // fixture matches regardless of the shim endpoint).
   const headers: Record<string, string> = {};
   for (const [k, v] of Object.entries(req.headers)) {
     if (!HOP_BY_HOP.has(k.toLowerCase()) && typeof v === "string") {
@@ -257,7 +265,11 @@ function noteStrictMiss(
   const path = (req.url ?? "/").split("?")[0];
   if (
     statusCode !== STRICT_MISS_STATUS ||
-    !opts.fatalMissPaths?.some((matcher) => matcher.test(path))
+    !opts.fatalMissPaths?.some((matcher) => matcher.test(path)) ||
+    (opts.fatalMissTargets !== undefined &&
+      !opts.fatalMissTargets.some((matcher) =>
+        matcher.test(String(req.headers["x-amz-target"] ?? "")),
+      ))
   ) {
     return;
   }

@@ -14,6 +14,9 @@ export interface AgentStrategy {
   readonly displayName: string;
   /** Wording for the plan tool in user-facing feedback prose (Claude: "ExitPlanMode"). */
   readonly planToolName: string;
+  /** Extra rules added to plan feedback when this harness's agent needs telling how to bring the
+   *  revised plan back. Empty for harnesses whose agent re-submits on its own. */
+  readonly extraPlanReviewResponseInstructions?: string[];
   /** Default plan-approve permission mode when the user hasn't configured one; undefined = the
    *  harness has no settable mode (leave it unchanged). */
   readonly defaultPlanApproveMode: string | undefined;

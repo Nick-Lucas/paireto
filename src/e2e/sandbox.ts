@@ -12,6 +12,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { canonicalize } from "../protocol/paths.js";
+import { resolveKiroSecrets, seedKiroSecrets } from "./kiroCredentials.js";
 import type { E2EMode } from "./mockserver/mode.js";
 
 export interface Sandbox {
@@ -328,7 +329,12 @@ export function probeKiro(mode: E2EMode = "record"): Availability {
   if (mode === "check") {
     return true;
   }
-  return process.env.KIRO_API_KEY ? true : "no KIRO_API_KEY";
+  if (process.env.KIRO_API_KEY) {
+    return true;
+  }
+  return Object.keys(resolveKiroSecrets()).length > 0
+    ? true
+    : "no Kiro credential — sign in with `kiro-cli login`, or set KIRO_API_KEY";
 }
 
 /**
@@ -476,7 +482,13 @@ export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = 
   }
   const kiroHome = path.join(dir, ".kiro");
   fs.mkdirSync(kiroHome, { recursive: true });
+  // check mode: a syntactically valid fake API key so Kiro is "logged in" and sends the requests the
+  // fixture answers, while the proxy + MockServer SIMULATE keep it fully offline. Recording instead
+  // copies the machine's real sign-in into this throwaway home, the way the other harnesses do.
   const apiKey = opts.checkMode ? "ksk_paireto_e2e_check_fake" : process.env.KIRO_API_KEY;
+  if (!opts.checkMode && !apiKey) {
+    seedKiroSecrets(dir, resolveKiroSecrets());
+  }
   return {
     env: {
       HOME: dir,

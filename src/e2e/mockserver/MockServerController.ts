@@ -34,6 +34,8 @@ interface HarnessProfile {
    *  discarded. Whatever matches here is committed, so a path whose response carries account state
    *  belongs in LOCAL_BOOTSTRAP instead. */
   fixturePaths: RegExp[];
+  /** Further limits a shared provider path to the operations that carry model inference. */
+  fixtureTargets?: RegExp[];
 }
 
 export interface BootstrapExpectation {
@@ -121,14 +123,41 @@ const PROFILES: Record<string, HarnessProfile> = {
   codex: {
     fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
   },
+  // Kiro multiplexes every operation onto `/`, so the operation header is what selects the
+  // conversation traffic. Two lookups are recorded alongside it because their answers end up INSIDE
+  // the next request: `GetFeatureConfiguration` decides which built-in tools Kiro advertises, and
+  // `ListAvailableModels` supplies the model's display name, which Kiro writes into its system
+  // prompt ("The current model is Claude Haiku 4.5" against the raw id when unanswered). Left out,
+  // a replay misses on its own preamble rather than on anything the model said. The account-state
+  // operations (GetProfile, GetUsageLimits) are deliberately NOT recorded.
+  kiro: {
+    fixturePaths: [/^\/$/],
+    fixtureTargets: [
+      /^KiroRuntimeService\.GenerateAssistantResponse$/,
+      /^KiroRuntimeService\.GetFeatureConfiguration$/,
+      /^KiroControlPlaneBearerService\.ListAvailableModels$/,
+    ],
+  },
   opencode: {
     fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
   },
 };
 
-/** Whether a recorded exchange on this path is committed to the cassette. */
-export function recordsPath(driver: E2EDriver, requestPath: string): boolean {
-  return profileFor(driver).fixturePaths.some((matcher) => matcher.test(requestPath));
+/** Whether a recorded exchange is committed to the cassette. */
+export function recordsRequest(
+  driver: E2EDriver,
+  request: { path?: string; headers?: Record<string, unknown> },
+): boolean {
+  const profile = profileFor(driver);
+  const requestPath = request.path;
+  if (!requestPath || !profile.fixturePaths.some((matcher) => matcher.test(requestPath))) {
+    return false;
+  }
+  if (!profile.fixtureTargets) {
+    return true;
+  }
+  const target = requestHeaderValue(request.headers, "x-amz-target");
+  return Boolean(target && profile.fixtureTargets.some((matcher) => matcher.test(target)));
 }
 
 /** The locally-answered startup calls for a driver, empty when it makes none. */
@@ -141,6 +170,7 @@ export interface NormalizingProxyPlan {
   normalizeDriver: E2EDriver | undefined;
   /** Only strict replay misses on inference endpoints end the run. */
   fatalMissPaths: RegExp[] | undefined;
+  fatalMissTargets: RegExp[] | undefined;
 }
 
 /** Every mode uses the shim. Recording is pass-through; replay uses the selected driver normalizer. */
@@ -148,6 +178,7 @@ export function normalizingProxyPlan(mode: E2EMode, driver: E2EDriver): Normaliz
   return {
     normalizeDriver: mode === "check" ? driver : undefined,
     fatalMissPaths: mode === "check" ? profileFor(driver).fixturePaths : undefined,
+    fatalMissTargets: mode === "check" ? profileFor(driver).fixtureTargets : undefined,
   };
 }
 
@@ -228,6 +259,7 @@ export class MockServerController {
       mockCaPath: opts.mockServerCaPath,
       normalizeDriver: plan.normalizeDriver,
       fatalMissPaths: plan.fatalMissPaths,
+      fatalMissTargets: plan.fatalMissTargets,
       missFilePath: opts.missFilePath,
       log: opts.log,
     });
@@ -326,7 +358,12 @@ export class MockServerController {
 }
 
 interface FixtureExpectation {
-  httpRequest?: { method?: string; path?: string; body?: unknown };
+  httpRequest?: {
+    method?: string;
+    path?: string;
+    headers?: Record<string, unknown>;
+    body?: unknown;
+  };
   httpResponse?: {
     statusCode?: number;
     headers?: Record<string, unknown>;
@@ -360,9 +397,10 @@ export function isSuccessfulRecording(expectation: FixtureExpectation): boolean 
 }
 
 /**
- * Reduce every expectation's request matcher to `{method, path, body}` and NORMALIZE the body the same
- * way the check-mode shim normalizes incoming requests. Dropping the volatile promoted-recording metadata
- * (the Host header, accept, keepAlive/secure/protocol/local+remoteAddress) fixes header-mismatch 599s;
+ * Reduce every expectation's request matcher to `{method, path, body}` plus Kiro's operation header,
+ * and NORMALIZE the body the same way the check-mode shim normalizes incoming requests. Dropping the
+ * volatile promoted-recording metadata (Host, accept, keepAlive/secure/protocol/local+remoteAddress)
+ * fixes header-mismatch 599s;
  * normalizing the body (blank `metadata`/`system`, strip `<system-reminder>` blocks) fixes the harder
  * content-mismatch — Claude embeds account/env/random content there. Pure + unit-tested; the shim
  * (normalizingProxy) applies the SAME normalizer to incoming requests so both sides match exactly.
@@ -376,9 +414,11 @@ export function stripVolatileRequestMatchers(
     if (!req) {
       continue;
     }
+    const target = driver === "kiro" ? requestHeaderValue(req.headers, "x-amz-target") : undefined;
     exp.httpRequest = {
       method: req.method,
       path: req.path,
+      ...(target ? { headers: { "x-amz-target": [target] } } : {}),
       ...(req.body !== undefined ? { body: normalizeBodyValue(req.body, driver) } : {}),
     };
   }
@@ -486,7 +526,7 @@ function writeNormalizedFixture(
     const requestPath = expectation.httpRequest?.path;
     return (
       requestPath !== undefined &&
-      recordsPath(driver, requestPath) &&
+      recordsRequest(driver, expectation.httpRequest ?? {}) &&
       isSuccessfulRecording(expectation)
     );
   });
@@ -508,6 +548,22 @@ function writeNormalizedFixture(
   fs.mkdirSync(path.dirname(hostPath), { recursive: true });
   fs.writeFileSync(hostPath, `${JSON.stringify(fixture, null, 2)}\n`);
   return list.length;
+}
+
+function requestHeaderValue(
+  headers: Record<string, unknown> | undefined,
+  name: string,
+): string | undefined {
+  const value = Object.entries(headers ?? {}).find(
+    ([key]) => key.toLowerCase() === name.toLowerCase(),
+  )?.[1];
+  if (typeof value === "string") {
+    return value;
+  }
+  if (Array.isArray(value) && typeof value[0] === "string") {
+    return value[0];
+  }
+  return undefined;
 }
 
 function profileFor(driver: string): HarnessProfile {

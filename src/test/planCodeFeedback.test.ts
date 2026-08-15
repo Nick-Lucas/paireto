@@ -60,6 +60,31 @@ suite("planSendDecision", () => {
   });
 });
 
+suite("renderPlanFeedback extra instructions", () => {
+  // Kiro's planner revises a plan and then asks the user whether it is good, so without being told
+  // otherwise it never calls its plan tool and the revised plan never reaches the reviewer. These are
+  // per-harness so the wording every other harness already recorded stays byte-identical.
+  test("a harness that needs them gets one rule each", () => {
+    const first = "Do not ask the user whether the plan is good; call switch_to_execution.";
+    const second = "Keep the changeset names stable.";
+    const rendered = renderPlanFeedback(PLAN_COMMENTS, "switch_to_execution", [first, second]);
+
+    assert.ok(rendered.includes(`- ${first}`));
+    assert.ok(rendered.includes(`- ${second}`));
+    assert.ok(
+      rendered.indexOf(first) < rendered.indexOf("[PROBLEM]"),
+      "the rules belong above the comments",
+    );
+  });
+
+  test("a harness without any gets exactly the text it always got", () => {
+    assert.strictEqual(
+      renderPlanFeedback(PLAN_COMMENTS, "ExitPlanMode", []),
+      renderPlanFeedback(PLAN_COMMENTS, "ExitPlanMode"),
+    );
+  });
+});
+
 suite("composePlanFeedback", () => {
   test("with no code comments returns the plan feedback unchanged", () => {
     const composed = composePlanFeedback({

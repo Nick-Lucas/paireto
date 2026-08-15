@@ -73,19 +73,18 @@ async function reviewGate(event: KiroHookEvent, target: BridgeTarget): Promise<v
 
 async function main(): Promise<void> {
   const event = parseEvent<KiroHookEvent>(await readStdin());
-  if (!event || event.hook_event_name !== "stop") {
+  if (!event || event.hook_event_name !== "Stop") {
     allow();
   }
   const cwd = event.cwd || process.cwd();
-  writeKiroHandoff(kiroPid(), event.session_id, cwd);
   const target = resolveTarget(cwd);
   if (!target) {
     allow();
   }
+  writeKiroHandoff(kiroPid(), event.session_id, cwd, target);
   const turn = readKiroPlanTurn({
     kiroHome: kiroHome(),
     sessionId: event.session_id,
-    assistantResponse: event.assistant_response,
   });
   if (turn.kind === "plan") {
     await planGate(event, target, turn.planMarkdown);

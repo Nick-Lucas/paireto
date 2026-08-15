@@ -13,9 +13,23 @@ export interface PlanCommentData {
   kind: CommentKind;
 }
 
-/** "Send Feedback": deny + a directive to revise the plan to address the feedback. */
-export function renderPlanFeedback(comments: PlanCommentData[], toolName = "ExitPlanMode"): string {
+/**
+ * "Send Feedback": deny + a directive to revise the plan to address the feedback.
+ *
+ * `extraPlanReviewResponseInstructions` are rules a harness adds when its own agent needs telling how
+ * to get the revised plan back — Kiro's planner otherwise asks the user whether the plan is good and
+ * waits. They are per-harness rather than shared so the wording every other harness has already
+ * recorded stays byte-identical.
+ */
+export function renderPlanFeedback(
+  comments: PlanCommentData[],
+  toolName = "ExitPlanMode",
+  extraPlanReviewResponseInstructions: string[] = [],
+): string {
   const sorted = sortComments(comments);
+  const extraRules = extraPlanReviewResponseInstructions
+    .map((instruction) => `\n    - ${instruction}`)
+    .join("");
   return dedent`
     "Your plan has feedback provided by the user."
 
@@ -24,7 +38,7 @@ export function renderPlanFeedback(comments: PlanCommentData[], toolName = "Exit
     Rules:
     - Do not resubmit the same plan unchanged.
     - Do NOT change the plan title (first # heading) unless explicitly asked.
-    - Keep the existing plan structure unless the user asks for a rewrite.
+    - Keep the existing plan structure unless the user asks for a rewrite.${extraRules}
 
     ${itemize(sorted)}
 

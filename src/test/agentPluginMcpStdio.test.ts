@@ -15,11 +15,11 @@ suite("built Agent Plugin MCP stdio server", () => {
     const wrapper = [
       'const { spawn } = require("node:child_process");',
       'process.title = "kiro-cli";',
-      'const child = spawn(process.execPath, [process.argv[1]], { env: process.env, stdio: "inherit" });',
+      'const child = spawn("node", [process.argv[1]], { env: process.env, stdio: "inherit" });',
       'child.once("exit", code => process.exit(code ?? 1));',
     ].join("");
     const transport = new StdioClientTransport({
-      command: process.execPath,
+      command: "node",
       args: ["-e", wrapper, server],
       env: {
         PATH: process.env.PATH ?? "",

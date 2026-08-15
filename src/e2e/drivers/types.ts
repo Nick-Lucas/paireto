@@ -9,6 +9,9 @@ export interface DriverCaps {
   turnEndReview: "blocking" | "post-hoc";
   /** How the user asks this harness for a guided review (its command / skill invocation). */
   guidedReviewInvocation: string;
+  /** How the user asks this harness for an interactive review by hand — the canonical path for a
+   *  harness whose turn-end hooks cannot carry one. */
+  reviewInvocation: string;
 }
 
 /** Everything a driver needs to launch its agent against the sandbox repo. */

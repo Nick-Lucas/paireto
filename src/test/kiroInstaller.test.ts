@@ -19,10 +19,11 @@ suite("Kiro install plan", () => {
       installedPower: "/user/.kiro/powers/installed/paireto",
       registryFile: "/user/.kiro/powers/installed.json",
       hookFile: "/user/.kiro/hooks/paireto.json",
+      skillsDir: "/user/.kiro/skills",
     });
   });
 
-  test("renders unified v1 hooks with exact Plan and review gates", () => {
+  test("renders unified v1 hooks with both plan gates and the review gate", () => {
     const rendered = JSON.parse(renderKiroHooks("/stable path/power")) as {
       version: string;
       hooks: Array<{
@@ -34,17 +35,25 @@ suite("Kiro install plan", () => {
       }>;
     };
     assert.strictEqual(rendered.version, "v1");
+    const stopHooks = rendered.hooks.filter((hook) => hook.trigger === "Stop");
+    const stopCommands = stopHooks.map((hook) => hook.action.command);
+    assert.ok(stopCommands.some((command) => command.includes("on-event.js")));
+    assert.ok(stopCommands.some((command) => command.includes("on-stop-gate.js")));
+    assert.ok(
+      stopCommands.some((command) =>
+        command.includes('"/stable path/power/dev.kiro/runtime/on-stop-gate.js"'),
+      ),
+    );
+    assert.ok(stopHooks.every((hook) => hook.confirm === undefined));
+
+    // The planner presents its FIRST plan by ending the turn, and Kiro runs Stop hooks once per user
+    // turn, so a REVISED plan can only come back through switch_to_execution. Both gates are needed.
     const plan = rendered.hooks.find((hook) => hook.matcher === "^switch_to_execution$");
     assert.strictEqual(plan?.trigger, "PreToolUse");
     assert.ok(
       plan?.action.command.includes('"/stable path/power/dev.kiro/runtime/on-plan-gate.js"'),
     );
     assert.strictEqual(plan?.confirm, undefined);
-    const stopCommands = rendered.hooks
-      .filter((hook) => hook.trigger === "Stop")
-      .map((hook) => hook.action.command);
-    assert.ok(stopCommands.some((command) => command.includes("on-event.js")));
-    assert.ok(stopCommands.some((command) => command.includes("on-stop-gate.js")));
   });
 });
 
@@ -122,6 +131,9 @@ suite("Kiro installer", () => {
       assert.strictEqual(result.ok, true);
       const installedPower = path.join(kiroHome, "powers", "installed", "paireto");
       assert.ok(fs.existsSync(path.join(installedPower, "plugin.json")));
+      for (const skill of ["paireto-review", "paireto-guided-review"]) {
+        assert.ok(fs.existsSync(path.join(kiroHome, "skills", skill, "SKILL.md")));
+      }
       assert.ok(!fs.existsSync(path.join(stableDir, "power")));
       assert.ok(fs.existsSync(path.join(kiroHome, "hooks", "paireto.json")));
       assert.ok(

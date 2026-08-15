@@ -38,6 +38,7 @@ import {
   SPEC_ENV,
 } from "./mockserver/mode.js";
 import { ensureTestCertificates } from "./proxy/testCertificates.js";
+import { casesIn, discoverSpecs, specFileFor } from "./specRouting.js";
 import { MISS_FILE_ENV } from "./replayMiss.js";
 import { createSandbox, mockPath } from "./sandbox.js";
 import { TEST_TIMEOUT_MS } from "./testUtils.js";
@@ -50,8 +51,6 @@ import { TEST_TIMEOUT_MS } from "./testUtils.js";
  *  progress. */
 const PAIR_TIMEOUT_MS = 45 * 60 * 1000;
 
-const SPEC_SUFFIX = ".e2e.js";
-
 /** The phase the watchdog names if it fires, so a hang points at what was in flight. */
 let phase = "startup";
 const at = (next: string): void => {
@@ -59,19 +58,6 @@ const at = (next: string): void => {
 };
 
 const log = (line: string): void => console.log(`[runE2E] ${line}`);
-
-/**
- * Every case, read off the compiled specs. The host enumerates them because each one needs its own
- * window, sandbox and cassette, so the matrix has to exist before any window does. Inside a window,
- * Mocha does its own discovery from the spec it is given.
- */
-function allCases(specsDir: string): string[] {
-  return fs
-    .readdirSync(specsDir)
-    .filter((entry) => entry.endsWith(SPEC_SUFFIX))
-    .map((entry) => entry.slice(0, -SPEC_SUFFIX.length))
-    .sort();
-}
 
 /**
  * Run one pair in a real VS Code, through the `vscode-test` CLI, and settle when it exits. The case
@@ -256,13 +242,24 @@ async function main(): Promise<void> {
   // here, because the window is already restricted to the one pair it was prepared for.
   const passThrough = passThroughArgs(argv);
 
-  const matrix: Pair[] = allCases(specsDir).flatMap((testCase) =>
-    E2E_DRIVERS.map((driver) => ({
-      label: pairLabel(testCase, driver),
-      testCase,
-      driver,
-      spec: path.join(specsDir, `${testCase}${SPEC_SUFFIX}`),
-    })),
+  // Each case needs its own window, sandbox and cassette, so the whole matrix has to exist before
+  // any window does. A driver's override spec replaces the shared one for that pair; inside the
+  // window, Mocha discovers the suites from whichever file it was handed.
+  const specs = discoverSpecs(specsDir);
+  const matrix: Pair[] = casesIn(specs).flatMap((testCase) =>
+    E2E_DRIVERS.flatMap((driver) => {
+      const fileName = specFileFor(specs, testCase, driver);
+      return fileName
+        ? [
+            {
+              label: pairLabel(testCase, driver),
+              testCase,
+              driver,
+              spec: path.join(specsDir, fileName),
+            },
+          ]
+        : [];
+    }),
   );
   const pairs = filterPairs(matrix, filter);
   if (pairs.length === 0) {

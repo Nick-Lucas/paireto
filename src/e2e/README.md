@@ -16,6 +16,7 @@ substrate the product uses.
   one Mocha pattern selects pairs out here and tests inside the window. There is no selection env
   var. One pair runs per window, because each needs its own sandbox repo and its own cassette, both
   armed before VS Code starts.
+- **A driver can override a case by file name.** `<case>.e2e.ts` defines the case for every driver; `<case>.<driver>.e2e.ts` replaces it for that one driver, and a case may exist as overrides alone.
 - **`runE2E.ts` owns everything around the window**, but not the window itself: it builds the sandbox
   and arms MockServer, then hands the launch to the `vscode-test` CLI (`.vscode-test.e2e.mjs`). That
   config is deliberately separate from `.vscode-test.mjs` so `pnpm test` and the VS Code Test Explorer
@@ -114,8 +115,8 @@ Each recording run **uses the selected subscription** and takes ~1–3 min. You 
 binary/auth is missing the run **FAILs** with the reason (`E2E: FAIL — driver "<x>" cannot run:
 <reason>`) — never a silent skip.
 
-All three drivers must complete the full flow. Codex uses native Plan mode. Plan feedback returns a
-supported Stop `decision:"block"`, which Codex turns into a new continuation prompt using the hook's
+The other three drivers must complete the full flow. Codex uses native Plan mode. Plan feedback
+returns a supported Stop `decision:"block"`, which Codex turns into a new continuation prompt using the hook's
 reason. Plan approval emits no hook output and finishes the turn. Codex Stop hooks receive
 `permission_mode` but cannot output a collaboration-mode change; `PermissionRequest` approval applies
 to tool escalations, not the native Plan transition. Codex therefore shows "Implement this plan?",
@@ -190,13 +191,21 @@ Each driver builds a throwaway home seeded with a **copy** of your real credenti
 deleted in teardown, contents never logged). Your real `~/.codex`, `~/.config/opencode`, `~/.claude`
 are never written.
 
-| driver       | binary            | auth material                                                                  |
-| ------------ | ----------------- | ------------------------------------------------------------------------------ |
-| `claudecode` | `claude` + `tmux` | `~/.claude.json` + keychain `Claude Code-credentials` (or `ANTHROPIC_API_KEY`) |
-| `codex`      | `codex` + `tmux`  | `~/.codex/auth.json`                                                           |
-| `opencode`   | `opencode`        | `~/.local/share/opencode/auth.json` (built-in OpenAI OAuth provider)           |
+| driver       | binary              | auth material                                                                     |
+| ------------ | ------------------- | --------------------------------------------------------------------------------- |
+| `claudecode` | `claude` + `tmux`   | `~/.claude.json` + keychain `Claude Code-credentials` (or `ANTHROPIC_API_KEY`)    |
+| `codex`      | `codex` + `tmux`    | `~/.codex/auth.json`                                                              |
+| `kiro`       | `kiro-cli` + `tmux` | keychain `kirocli:*` (or `auth_kv` in `kiro-cli/data.sqlite3`), or `KIRO_API_KEY` |
+| `opencode`   | `opencode`          | `~/.local/share/opencode/auth.json` (built-in OpenAI OAuth provider)              |
 
-- `claudecode` / `codex` need **tmux** on PATH for startup keystrokes and failure-screen capture.
+- `claudecode` / `codex` / `kiro` need **tmux** on PATH for startup keystrokes and failure-screen capture.
+- `kiro` keeps its sign-in in a per-platform secret store rather than a file, so recording stages it
+  the way Claude's keychain credential is staged: `docker/prepare-e2e.sh` lifts the entries into
+  `docker/.secrets/kiro-auth.json` and `buildKiroHome` writes them into the run's throwaway home
+  (`src/e2e/kiroCredentials.ts`). Replay needs none of this.
+- The Kiro copy shares ONE refresh token with your real sign-in, and whichever side refreshes first
+  spends it — so a run can report `You are not logged in` even though you are. Run `kiro-cli whoami`
+  once to refresh your own copy, then record again. Back-to-back Kiro recordings hit this most.
 - `opencode` runs a persistent `opencode serve` + one `opencode run --attach` turn with
   `openai/gpt-5.6-luna`. Both modes use an empty temporary config plus only the bundled Paireto plugin.
 

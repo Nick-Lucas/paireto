@@ -18,11 +18,17 @@ import {
   nativeMockServerDockerArgs,
   normalizingProxyPlan,
   normalizeCapturedResponses,
-  recordsPath,
+  recordsRequest,
   stripVolatileRequestMatchers,
   unwrapExpectations,
 } from "../e2e/mockserver/MockServerController.js";
-import { filterPairs, fixtureFileName, pairLabel, resolveMode } from "../e2e/mockserver/mode.js";
+import {
+  E2E_DRIVERS,
+  filterPairs,
+  fixtureFileName,
+  pairLabel,
+  resolveMode,
+} from "../e2e/mockserver/mode.js";
 import { mockProxyEnv, resolveMockProxy } from "../e2e/mockserver/proxyEnv.js";
 import {
   isPairetoTool,
@@ -71,24 +77,30 @@ suite("provider-replay: mode parsing", () => {
 
 suite("provider-replay: matrix selection", () => {
   const matrix = ["fullflow", "plan-only"].flatMap((testCase) =>
-    (["claudecode", "codex", "opencode"] as const).map((driver) => ({
+    E2E_DRIVERS.map((driver) => ({
       label: pairLabel(testCase, driver),
+      testCase,
+      driver,
     })),
   );
   const labels = (pairs: { label: string }[]): string[] => pairs.map((pair) => pair.label);
+
+  test("includes every supported terminal harness", () => {
+    assert.deepStrictEqual(E2E_DRIVERS, ["claudecode", "codex", "kiro", "opencode"]);
+  });
 
   test("a pair is labelled with its case and a driver tag, which is its suite title", () => {
     assert.strictEqual(pairLabel("fullflow", "codex"), "fullflow @codex");
   });
 
   test("no filter selects the whole matrix", () => {
-    assert.strictEqual(filterPairs(matrix, {}).length, 6);
+    assert.strictEqual(filterPairs(matrix, {}).length, 8);
   });
 
   test("a driver tag selects that driver across every case", () => {
-    assert.deepStrictEqual(filterPairs(matrix, { grep: "@codex" }), [
-      { label: "fullflow @codex" },
-      { label: "plan-only @codex" },
+    assert.deepStrictEqual(labels(filterPairs(matrix, { grep: "@codex" })), [
+      "fullflow @codex",
+      "plan-only @codex",
     ]);
   });
 
@@ -96,6 +108,7 @@ suite("provider-replay: matrix selection", () => {
     assert.deepStrictEqual(labels(filterPairs(matrix, { grep: "^fullflow " })), [
       "fullflow @claudecode",
       "fullflow @codex",
+      "fullflow @kiro",
       "fullflow @opencode",
     ]);
   });
@@ -115,16 +128,41 @@ suite("provider-replay: matrix selection", () => {
 suite("provider-replay: recorded endpoints", () => {
   test("only conversation endpoints are recorded", () => {
     for (const driver of ["claudecode", "codex", "opencode"] as const) {
-      assert.strictEqual(recordsPath(driver, "/backend-api/wham/usage"), false, driver);
       assert.strictEqual(
-        recordsPath(driver, "/backend-api/wham/rate-limit-reset-credits"),
+        recordsRequest(driver, { path: "/backend-api/wham/usage" }),
+        false,
+        driver,
+      );
+      assert.strictEqual(
+        recordsRequest(driver, { path: "/backend-api/wham/rate-limit-reset-credits" }),
         false,
         driver,
       );
     }
-    assert.strictEqual(recordsPath("claudecode", "/v1/messages"), true);
-    assert.strictEqual(recordsPath("codex", "/backend-api/codex/responses"), true);
-    assert.strictEqual(recordsPath("opencode", "/backend-api/codex/responses"), true);
+    assert.strictEqual(recordsRequest("claudecode", { path: "/v1/messages" }), true);
+    assert.strictEqual(recordsRequest("codex", { path: "/backend-api/codex/responses" }), true);
+    assert.strictEqual(recordsRequest("opencode", { path: "/backend-api/codex/responses" }), true);
+  });
+
+  test("records only Kiro model inference on its shared AWS path", () => {
+    const request = (target: string) => ({
+      path: "/",
+      headers: { "x-amz-target": [target] },
+    });
+    assert.strictEqual(
+      recordsRequest("kiro", request("KiroRuntimeService.GenerateAssistantResponse")),
+      true,
+    );
+    assert.strictEqual(recordsRequest("kiro", request("KiroRuntimeService.InvokeMCP")), false);
+    // Recorded because their answers end up inside the next request: the feature configuration
+    // decides the advertised tool inventory, the model catalogue supplies the display name Kiro
+    // writes into its own system prompt.
+    assert.ok(recordsRequest("kiro", request("KiroRuntimeService.GetFeatureConfiguration")));
+    assert.ok(recordsRequest("kiro", request("KiroControlPlaneBearerService.ListAvailableModels")));
+    assert.strictEqual(
+      recordsRequest("kiro", request("AmazonCodeWhispererService.GetProfile")),
+      false,
+    );
   });
 
   // Codex refuses to start a turn without them, so dropping them from the cassette only works if the
@@ -155,23 +193,99 @@ suite("provider-replay: fixture normalization", () => {
     const first = normalizeKiroBody(
       JSON.stringify({
         conversationId: "conversation-a",
-        messages: [
-          { messageId: "message-a", requestId: "request-a", text: "Keep this prompt" },
-          { parentMessageId: "message-a", timestamp: "2026-08-14T10:00:00Z" },
-        ],
+        agentContinuationId: "continuation-a",
+        messages: [{ toolUseId: "tool-a", text: "Keep this prompt" }],
       }),
     );
     const second = normalizeKiroBody(
       JSON.stringify({
         conversationId: "conversation-b",
-        messages: [
-          { messageId: "message-b", requestId: "request-b", text: "Keep this prompt" },
-          { parentMessageId: "message-b", timestamp: "2027-01-01T00:00:00Z" },
-        ],
+        agentContinuationId: "continuation-b",
+        messages: [{ toolUseId: "tool-b", text: "Keep this prompt" }],
       }),
     );
     assert.strictEqual(first, second);
     assert.ok(first.includes("Keep this prompt"));
+  });
+
+  // normalizeKiroBody walks every object, so an array named `tools` that is NOT an inventory (a tool
+  // result quoting one, say) must be left exactly as it is — sorting it would reorder content.
+  test("leaves an array named tools alone when it is not an inventory", () => {
+    const body = JSON.stringify({
+      conversationState: {
+        history: [{ userInputMessage: { content: "x", tools: ["zebra", "apple"] } }],
+      },
+    });
+
+    const parsed = JSON.parse(normalizeKiroBody(body)) as {
+      conversationState: { history: Array<{ userInputMessage: { tools: string[] } }> };
+    };
+    assert.deepStrictEqual(parsed.conversationState.history[0].userInputMessage.tools, [
+      "zebra",
+      "apple",
+    ]);
+  });
+
+  // The recorder signs in with OAuth and sends a profile ARN; replay uses an API key and sends none.
+  // The ARN also spells out an AWS account id, so it must not reach a committed cassette.
+  test("drops the Kiro profile ARN, which differs by auth method and names an account", () => {
+    const withArn = normalizeKiroBody(
+      JSON.stringify({
+        origin: "KIRO_CLI",
+        version: "2.18.0",
+        profileArn: "arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK",
+      }),
+    );
+    const withoutArn = normalizeKiroBody(JSON.stringify({ origin: "KIRO_CLI", version: "2.18.0" }));
+
+    assert.strictEqual(withArn, withoutArn);
+    assert.ok(!withArn.includes("699475941385"));
+  });
+
+  // Kiro advertises its built-in tools with full JSON Schemas, and which ones it offers depends on
+  // what its account/governance lookup answered — a check run reaches none of that, so the schemas
+  // it sends differ from the recording. Reduce them the way the other harnesses are reduced.
+  test("reduces Kiro's built-in tool inventory but keeps Paireto's own tools whole", () => {
+    const inventory = (tools: unknown[]): string =>
+      JSON.stringify({
+        conversationState: {
+          currentMessage: {
+            userInputMessage: { userInputMessageContext: { tools } },
+          },
+        },
+      });
+    const builtin = (name: string, property: string): unknown => ({
+      toolSpecification: {
+        name,
+        description: `does ${property} things on ${name}`,
+        inputSchema: { json: { type: "object", properties: { [property]: { type: "string" } } } },
+      },
+    });
+    const paireto = {
+      toolSpecification: {
+        name: "paireto_start_guided_review",
+        description: "Hand a review plan to the human reviewer and wait for feedback.",
+        inputSchema: { json: { type: "object", properties: { changesets: { type: "array" } } } },
+      },
+    };
+
+    // The recorder is signed in and is offered remote_web_search; the credential-free replay is not,
+    // so an entitled tool must not reach the match key.
+    const recorded = normalizeKiroBody(
+      inventory([builtin("web_search", "query"), builtin("remote_web_search", "query"), paireto]),
+    );
+    const replayed = normalizeKiroBody(inventory([paireto, builtin("web_search", "command")]));
+
+    assert.strictEqual(recorded, replayed, "a churning built-in schema must not break replay");
+    assert.ok(recorded.includes("web_search"), "a tool that stops being offered must break replay");
+    assert.ok(
+      recorded.includes("Hand a review plan to the human reviewer"),
+      "Paireto's own tool keeps its description, so a regression in it breaks replay",
+    );
+    assert.ok(
+      recorded.includes("changesets"),
+      "Paireto's own tool keeps its schema, so a lost parameter breaks replay",
+    );
   });
 
   test("keeps successful captures and drops transient provider failures", () => {
@@ -212,6 +326,33 @@ suite("provider-replay: fixture normalization", () => {
     // the response side is untouched
     assert.deepStrictEqual((list[0] as { httpResponse?: unknown }).httpResponse, {
       statusCode: 200,
+    });
+  });
+
+  test("keeps only Kiro's operation header so POST root requests remain distinct", () => {
+    const [exp] = stripVolatileRequestMatchers(
+      [
+        {
+          httpRequest: {
+            method: "POST",
+            path: "/",
+            headers: {
+              authorization: ["Bearer must-never-be-stored"],
+              "x-amz-target": ["KiroRuntimeService.GenerateAssistantResponse"],
+            },
+            body: "{}",
+          },
+        },
+      ],
+      "kiro",
+    );
+    assert.deepStrictEqual(exp.httpRequest, {
+      method: "POST",
+      path: "/",
+      headers: {
+        "x-amz-target": ["KiroRuntimeService.GenerateAssistantResponse"],
+      },
+      body: "{}",
     });
   });
 
@@ -879,11 +1020,18 @@ suite("provider-replay: normalizing proxy plan", () => {
       assert.deepStrictEqual(normalizingProxyPlan("record", driver), {
         normalizeDriver: undefined,
         fatalMissPaths: undefined,
+        fatalMissTargets: undefined,
       });
       const check = normalizingProxyPlan("check", driver);
       assert.strictEqual(check.normalizeDriver, driver);
       assert.ok(check.fatalMissPaths?.length);
     }
+    const kiro = normalizingProxyPlan("check", "kiro");
+    assert.ok(
+      kiro.fatalMissTargets?.some((target) =>
+        target.test("KiroRuntimeService.GenerateAssistantResponse"),
+      ),
+    );
   });
 });
 
@@ -927,5 +1075,31 @@ suite("provider-replay: MCP response parsing", () => {
 
   test("throws on an unparseable body", () => {
     assert.throws(() => extractJsonRpc("not json and no data lines"), /no parseable body/);
+  });
+});
+
+// Kiro states the wall-clock date in its own system prompt, so a cassette recorded on one day would
+// otherwise stop matching the next.
+suite("provider-replay: Kiro wall-clock date", () => {
+  const prompt = (date: string, day: string): string =>
+    JSON.stringify({
+      conversationState: {
+        currentMessage: {
+          userInputMessage: {
+            content: `<current_date_and_time>\nDate: ${date}\nDay of Week: ${day}\n\nUse this carefully.`,
+          },
+        },
+      },
+    });
+
+  test("a cassette still matches on a later day", () => {
+    assert.strictEqual(
+      normalizeKiroBody(prompt("August 15, 2026", "Saturday")),
+      normalizeKiroBody(prompt("August 16, 2026", "Sunday")),
+    );
+  });
+
+  test("the surrounding prompt is left intact", () => {
+    assert.ok(normalizeKiroBody(prompt("August 15, 2026", "Saturday")).includes("Use this carefully"));
   });
 });

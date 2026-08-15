@@ -106,21 +106,29 @@ suite("Codex native marketplace", () => {
     ]);
   });
 
-  test("materializes the complete common Agent Plugin package", () => {
+  // Codex resolves a plugin's parts from fixed names at the plugin ROOT, and keys a hook's trust
+  // entry on the literal path `hooks/hooks.json`. Staging therefore has to LIFT the files authored
+  // under com.openai.codex/ rather than copy the portable package verbatim.
+  test("stages the Codex-native layout at the plugin root", () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-view-"));
     const stagedPlugin = path.join(tempRoot, "paireto");
     try {
       materializeCodexPlugin(bundledPlugin, stagedPlugin);
+
+      assert.ok(fs.existsSync(path.join(stagedPlugin, ".codex-plugin", "plugin.json")));
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "hooks", "hooks.json")));
+      assert.ok(fs.existsSync(path.join(stagedPlugin, ".mcp.json")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, "skills", "paireto-review", "SKILL.md")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, "runtime", "mcp.js")));
-      assert.ok(fs.existsSync(path.join(stagedPlugin, "plugin.json")));
-      assert.ok(fs.existsSync(path.join(stagedPlugin, "mcp.json")));
+      // The hook commands address the namespace runtime, so that directory has to survive staging.
       assert.ok(
-        fs.existsSync(path.join(stagedPlugin, "com.openai.codex", ".codex-plugin", "plugin.json")),
+        fs.existsSync(path.join(stagedPlugin, "com.openai.codex", "runtime", "on-event.js")),
       );
-      assert.ok(fs.existsSync(path.join(stagedPlugin, "com.openai.codex", "hooks", "hooks.json")));
-      assert.ok(fs.existsSync(path.join(stagedPlugin, "dev.kiro", "bridge", "hooks.json")));
-      assert.ok(!fs.existsSync(path.join(stagedPlugin, "dev.kiro", "runtime", "mcp.js")));
+
+      const manifest = JSON.parse(
+        fs.readFileSync(path.join(stagedPlugin, ".codex-plugin", "plugin.json"), "utf8"),
+      ) as { version: string };
+      assert.strictEqual(manifest.version, PLUGIN_VERSION);
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }

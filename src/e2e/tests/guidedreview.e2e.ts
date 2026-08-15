@@ -15,7 +15,8 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import type { InspectGate, InspectGuided, InspectSnapshot } from "../inspectTypes.js";
-import { E2E_DRIVERS, pairLabel } from "../mockserver/mode.js";
+import { pairLabel } from "../mockserver/mode.js";
+import { driversForSharedSpec } from "../specRouting.js";
 import { makeDriver, makeSteps, requireDriver, requireEnv } from "./steps.js";
 
 /** This file's case name — the `<case>` half of every suite title it registers. */
@@ -74,7 +75,7 @@ function tabsOnScheme(scheme: string): Array<{ scheme: string; path: string }> {
 
 const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
 
-E2E_DRIVERS.forEach((harness) => {
+driversForSharedSpec(__dirname, CASE).forEach((harness) => {
   suite(pairLabel(CASE, harness), () => {
     const driver = makeDriver(harness);
     const { inspect, dump, wait, driveUntil, ensureComment } = makeSteps(driver);
