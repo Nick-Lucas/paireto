@@ -481,11 +481,123 @@ export function normalizeOpenCodeBody(raw: string): string {
   return JSON.stringify(body);
 }
 
+/** The per-run ids Kiro puts in a request. Each is replaced by a stable name in first-seen order, so
+ *  a replay that generates different ids still matches. */
+const KIRO_SCOPED_ID_KEYS = new Set(["agentContinuationId", "conversationId", "toolUseId"]);
+
+/**
+ * Kiro states the wall-clock date in its own system prompt:
+ *
+ *     <current_date_and_time>
+ *     Date: August 15, 2026
+ *     Day of Week: Saturday
+ *
+ * Left alone, every Kiro cassette stops matching at midnight — the run that recorded it and the run
+ * replaying it disagree about the day, which is a property of the calendar rather than of Paireto.
+ */
+const KIRO_CURRENT_DATE = /Date: [A-Z][a-z]+ \d{1,2}, \d{4}\nDay of Week: [A-Z][a-z]+/g;
+
+function normalizeKiroDates(value: string): string {
+  return value.replace(KIRO_CURRENT_DATE, "Date: NORMALIZED\nDay of Week: NORMALIZED");
+}
+
+export function normalizeKiroBody(raw: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+  const renamed = new Map<string, string>();
+  walk(parsed, (object) => {
+    for (const [key, value] of Object.entries(object)) {
+      // The recorder signs in with OAuth and carries a profile ARN; replay authenticates with an API
+      // key and carries none. It also spells out an AWS account id, so it has no business in a
+      // committed cassette either way.
+      if (key === "profileArn") {
+        delete object[key];
+        continue;
+      }
+      if (typeof value === "string" && !KIRO_SCOPED_ID_KEYS.has(key)) {
+        object[key] = normalizeKiroDates(value);
+        continue;
+      }
+      if (!KIRO_SCOPED_ID_KEYS.has(key) || typeof value !== "string" || value === "") {
+        continue;
+      }
+      let replacement = renamed.get(value);
+      if (replacement === undefined) {
+        replacement = `paireto-kiro-id-${renamed.size}`;
+        renamed.set(value, replacement);
+      }
+      object[key] = replacement;
+    }
+  });
+  normalizeKiroToolInventory(parsed);
+  return JSON.stringify(parsed);
+}
+
+/**
+ * Reduce Kiro's advertised tools the way {@link normalizeToolInventory} reduces the other harnesses'.
+ *
+ * Kiro nests each tool under `toolSpecification` and ships full JSON Schemas, and WHICH built-ins it
+ * offers follows what its account/governance lookup answered — a replay reaches none of that, so the
+ * inventory it sends is not the one that was recorded. Names are kept (a tool that stops being
+ * offered still breaks replay) and Paireto's own tools stay whole.
+ */
+/**
+ * Tools Kiro offers only when the signed-in account is entitled to them. The recorder is signed in
+ * and IS offered these; a credential-free replay never is, so leaving them in the match key makes
+ * every recorded request unmatchable.
+ *
+ * Dropping this set looks harmless against an existing cassette — that cassette was written with the
+ * set applied, so neither side carries the tool. It only breaks on the NEXT recording.
+ */
+const KIRO_ENTITLED_TOOLS = new Set(["remote_web_search"]);
+
+function normalizeKiroToolInventory(parsed: unknown): void {
+  walk(parsed, (object) => {
+    const tools = object.tools;
+    // An inventory is recognised by its entries, not by the key alone: this walks every object, and
+    // sorting some other `tools` array would reorder data the model reasons about.
+    if (!Array.isArray(tools) || !tools.every(isKiroToolEntry)) {
+      return;
+    }
+    object.tools = tools
+      .filter((entry) => !KIRO_ENTITLED_TOOLS.has(kiroToolName(entry)))
+      .map((entry) => {
+        const spec = (entry as { toolSpecification?: unknown } | null)?.toolSpecification;
+        if (!spec || typeof spec !== "object") {
+          return entry;
+        }
+        const name = (spec as { name?: unknown }).name;
+        return typeof name === "string" && !isPairetoTool(name)
+          ? { toolSpecification: { name } }
+          : entry;
+      })
+      .sort((left, right) => kiroToolName(left).localeCompare(kiroToolName(right)));
+  });
+}
+
+function isKiroToolEntry(entry: unknown): boolean {
+  const spec = (entry as { toolSpecification?: unknown } | null)?.toolSpecification;
+  return Boolean(spec) && typeof spec === "object";
+}
+
+function kiroToolName(entry: unknown): string {
+  const name = (entry as { toolSpecification?: { name?: unknown } } | null)?.toolSpecification
+    ?.name;
+  return typeof name === "string" ? name : JSON.stringify(entry);
+}
+
 /** Apply the harness-specific matcher transform. Record forwarding never calls this function. */
 export function normalizeRequestBody(driver: string, raw: string): string {
   const scrubbed = scrubIdentity(raw).replace(TMP_ALIAS, "/tmp/");
   if (driver === "claudecode") {
     return normalizeClaudeBody(scrubbed);
+  }
+  if (driver === "kiro") {
+    return normalizeKiroBody(scrubbed);
   }
   return driver === "opencode" ? normalizeOpenCodeBody(scrubbed) : normalizeCodexBody(scrubbed);
 }

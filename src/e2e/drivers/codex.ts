@@ -46,6 +46,10 @@ export interface CodexTimings {
   acceptPollMs: number;
   /** Gap before Enter — Codex drops an Enter that lands in the same tick as a literal paste. */
   submitGapMs: number;
+  /** Quiet time after launch before ANY key is sent. The composer becomes interactive while the MCP
+   *  servers are still starting, and that startup draws nothing, so a settled screen does not mean
+   *  the handshake is done — under load it routinely is not. */
+  mcpStartupMs: number;
 }
 
 const DEFAULT_TIMINGS: CodexTimings = {
@@ -55,6 +59,7 @@ const DEFAULT_TIMINGS: CodexTimings = {
   acceptTimeoutMs: 5_000,
   acceptPollMs: 500,
   submitGapMs: 1_500,
+  mcpStartupMs: 8_000,
 };
 
 export class CodexDriver implements HarnessDriver {
@@ -62,9 +67,11 @@ export class CodexDriver implements HarnessDriver {
   readonly caps: DriverCaps = {
     turnEndReview: "blocking",
     guidedReviewInvocation: "$paireto-guided-review",
+    reviewInvocation: "$paireto-review",
   };
 
   private home?: HarnessHome;
+  private launchedAt = 0;
   private ctx?: DriverContext;
   private stopPaneWatch?: () => void;
   private mcpWatch?: NodeJS.Timeout;
@@ -111,6 +118,7 @@ export class CodexDriver implements HarnessDriver {
     const command = codexLaunchCommand(ctx.repoRoot, process.env.PAIRETO_DOCKER === "1");
     this.log(`launch: ${command} (CODEX_HOME=${codexHome})`);
     this.tmux.launch({ cwd: ctx.repoRoot, env, command });
+    this.launchedAt = Date.now();
     this.stopPaneWatch = startPaneWatch(this.harness, this.tmux, (reason) => {
       this.fatal ??= reason;
     });
@@ -135,7 +143,7 @@ export class CodexDriver implements HarnessDriver {
   }
 
   async enterPlanMode(): Promise<void> {
-    await waitForCodexReady(this.tmux, (line) => this.log(line));
+    await this.readyToType();
     this.tmux.sendKeys("BTab"); // Shift-Tab cycles to native Plan mode
     const deadline = Date.now() + 15_000;
     while (Date.now() < deadline) {
@@ -150,9 +158,20 @@ export class CodexDriver implements HarnessDriver {
 
   async prompt(text: string): Promise<void> {
     const log = (line: string): void => this.log(line);
-    await waitForCodexReady(this.tmux, log);
+    await this.readyToType();
     this.log(`prompt: ${text}`);
     await typeCodexPrompt(this.tmux, text, log);
+  }
+
+  /** Settled composer AND the MCP grace window elapsed — both, because a key that lands during the
+   *  invisible MCP startup abandons it and leaves the session with none of Paireto's tools. */
+  private async readyToType(): Promise<void> {
+    await waitForCodexReady(this.tmux, (line) => this.log(line));
+    const remaining = DEFAULT_TIMINGS.mcpStartupMs - (Date.now() - this.launchedAt);
+    if (remaining > 0) {
+      this.log(`readyToType: holding ${remaining}ms more for MCP startup`);
+      await delay(remaining);
+    }
   }
 
   async afterPlanApprove(): Promise<void> {

@@ -1,5 +1,0 @@
-{
-  "version": "v1",
-  "template": true,
-  "runtimeRoot": "{{PAIRETO_POWER_ROOT}}/dev.kiro/runtime"
-}

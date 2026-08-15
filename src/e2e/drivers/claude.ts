@@ -57,6 +57,7 @@ export class ClaudeDriver implements HarnessDriver {
   readonly caps: DriverCaps = {
     turnEndReview: "blocking",
     guidedReviewInvocation: "/paireto:guided-review",
+    reviewInvocation: "/paireto:review",
   };
 
   private home?: HarnessHome;

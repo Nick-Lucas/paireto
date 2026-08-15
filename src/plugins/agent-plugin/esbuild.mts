@@ -51,7 +51,6 @@ export function agentPluginConfigs(ctx: PluginBuildContext): BuildOptions[] {
       "src/plugins/agent-plugin/com.openai.codex/hooks/hooks.json",
       `${OUT}/com.openai.codex/hooks/hooks.json`,
     ),
-    assetOnlyBundle(ctx, "src/plugins/agent-plugin/dev.kiro/bridge", `${OUT}/dev.kiro/bridge`),
     assetOnlyBundle(ctx, "src/plugins/agent-plugin/README.md", `${OUT}/README.md`),
   ];
 }

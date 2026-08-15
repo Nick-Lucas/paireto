@@ -182,16 +182,22 @@ suite("fixture privacy", () => {
 
   // The deny-by-default header policy is what stops a future provider header — a Set-Cookie above all
   // — becoming committable, so the committed shape is asserted, not just the transform that makes it.
-  test("a cassette stores no request headers and only Content-Type on responses", () => {
+  test("a cassette stores only the Kiro operation request header and response Content-Type", () => {
     for (const file of fixtureFiles()) {
       expectationsOf(file).forEach((expectation, index) => {
         const where = `${path.basename(file)}#${index}`;
+        const isKiro = path.basename(file).endsWith(".kiro.json");
         assert.deepStrictEqual(
           Object.keys(expectation.httpRequest ?? {}).filter(
-            (key) => !["method", "path", "body"].includes(key),
+            (key) => !["method", "path", "body", ...(isKiro ? ["headers"] : [])].includes(key),
           ),
           [],
-          `${where} stores request matcher fields beyond method/path/body`,
+          `${where} stores request matcher fields beyond the whitelist`,
+        );
+        assert.deepStrictEqual(
+          Object.keys((expectation.httpRequest?.headers as Record<string, unknown>) ?? {}),
+          isKiro ? ["x-amz-target"] : [],
+          `${where} stores a request header outside the whitelist`,
         );
         assert.deepStrictEqual(
           Object.keys(expectation.httpResponse?.headers ?? {}).filter(

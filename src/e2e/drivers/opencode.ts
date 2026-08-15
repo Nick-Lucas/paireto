@@ -81,6 +81,7 @@ export class OpenCodeDriver implements HarnessDriver {
   readonly caps: DriverCaps = {
     turnEndReview: "post-hoc", // session.idle is fire-and-forget; the agent is already idle
     guidedReviewInvocation: "/paireto-guided-review",
+    reviewInvocation: "/paireto-review",
   };
 
   private home?: HarnessHome;

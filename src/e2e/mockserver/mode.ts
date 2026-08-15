@@ -9,8 +9,8 @@
 //   check  — harness talks to MockServer, which replays a committed fixture (NO creds, NO network).
 
 export type E2EMode = "record" | "check";
-export type E2EDriver = "claudecode" | "codex" | "opencode";
-export const E2E_DRIVERS: readonly E2EDriver[] = ["claudecode", "codex", "opencode"];
+export type E2EDriver = "claudecode" | "codex" | "kiro" | "opencode";
+export const E2E_DRIVERS: readonly E2EDriver[] = ["claudecode", "codex", "kiro", "opencode"];
 
 /** Env var selecting the mode (unset = `record`). */
 export const MODE_ENV = "PAIRETO_E2E_MODE";

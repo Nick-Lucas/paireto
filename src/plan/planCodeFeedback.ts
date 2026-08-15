@@ -50,9 +50,14 @@ export function composePlanFeedback(args: {
   planComments: PlanCommentData[];
   codeComments: ReviewComment[];
   toolName: string;
+  extraPlanReviewResponseInstructions?: string[];
   multiRepository: boolean;
 }): string {
-  const plan = renderPlanFeedback(args.planComments, args.toolName);
+  const plan = renderPlanFeedback(
+    args.planComments,
+    args.toolName,
+    args.extraPlanReviewResponseInstructions,
+  );
   const code = renderReviewFeedback(args.codeComments, args.multiRepository);
   if (!code) {
     return plan;

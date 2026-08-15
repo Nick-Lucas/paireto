@@ -21,22 +21,21 @@ async function main(): Promise<void> {
     return;
   }
   const cwd = event.cwd || process.cwd();
-  writeKiroHandoff(kiroPid(), event.session_id, cwd);
   const target = resolveTarget(cwd);
   if (!target) {
     return;
   }
+  writeKiroHandoff(kiroPid(), event.session_id, cwd, target);
   const result = await connect(target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
     return;
   }
 
   let meta: HarnessEventMeta | undefined;
-  if (event.hook_event_name === "stop") {
+  if (event.hook_event_name === "Stop") {
     const turn = readKiroPlanTurn({
       kiroHome: kiroHome(),
       sessionId: event.session_id,
-      assistantResponse: event.assistant_response,
     });
     if (turn.kind === "plan") {
       meta = { planMarkdown: turn.planMarkdown };

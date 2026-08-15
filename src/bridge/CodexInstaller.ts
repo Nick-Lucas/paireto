@@ -12,6 +12,8 @@ import type { InstallState } from "../welcome/protocol.js";
 import type { InstallResult } from "./PluginInstaller.js";
 
 const MARKETPLACE_NAME = "paireto";
+/** The Agent Plugins client namespace holding the Codex-only files. */
+const CODEX_NAMESPACE = "com.openai.codex";
 /** A probe answers a render, so it waits far less than an install does. */
 const PROBE_TIMEOUT_MS = 5000;
 const PLUGIN_NAME = "paireto";
@@ -72,10 +74,50 @@ export function readCodexPluginVersion(pluginsRoot: string): string {
   return (parsed as { version: string }).version;
 }
 
-/** Stage the common Agent Plugin package for Codex. */
+/**
+ * Stage the common Agent Plugin package as a plugin Codex can read.
+ *
+ * Codex resolves a plugin's parts from fixed names at the plugin ROOT — it reads
+ * `.codex-plugin/plugin.json` there, and it identifies a hook by the literal path `hooks/hooks.json`
+ * (that path is the key of the `[hooks.state."<plugin>@<marketplace>:hooks/hooks.json:...]` trust
+ * entries it writes). It never descends into an Agent Plugins client namespace. So the portable
+ * package keeps its `com.openai.codex/` directory as the single place a Codex-only file is authored,
+ * and staging lifts those files to the root Codex looks at.
+ *
+ * The portable `plugin.json` has to go: a root manifest carrying the Agent Plugins schema makes Codex
+ * load the package as a PORTABLE plugin, which has no concept of hooks, so no hook fires and the MCP
+ * server answers "could not identify this Codex session". Everything else the portable package ships
+ * is left alone — Codex only looks for fixed names, so files it does not know are inert.
+ */
 export function materializeCodexPlugin(sourcePlugin: string, stagedPlugin: string): void {
   fs.rmSync(stagedPlugin, { recursive: true, force: true });
   fs.cpSync(sourcePlugin, stagedPlugin, { recursive: true });
+
+  const namespace = path.join(stagedPlugin, CODEX_NAMESPACE);
+  for (const entry of [".codex-plugin", ".mcp.json", "hooks"]) {
+    const from = path.join(namespace, entry);
+    if (fs.existsSync(from)) {
+      fs.renameSync(from, path.join(stagedPlugin, entry));
+    }
+  }
+  fs.rmSync(path.join(stagedPlugin, "plugin.json"), { force: true });
+
+  syncCodexManifestVersion(sourcePlugin, stagedPlugin);
+}
+
+/** Carry the shared manifest's version onto the Codex manifest, so one file owns the number. */
+function syncCodexManifestVersion(sourcePlugin: string, stagedPlugin: string): void {
+  const manifest = path.join(stagedPlugin, ".codex-plugin", "plugin.json");
+  const parsed: unknown = JSON.parse(fs.readFileSync(manifest, "utf8"));
+  if (!parsed || typeof parsed !== "object") {
+    throw new Error(`invalid Codex plugin manifest at ${manifest}`);
+  }
+  const version = readCodexPluginVersion(path.dirname(sourcePlugin));
+  fs.writeFileSync(
+    manifest,
+    `${JSON.stringify({ ...(parsed as Record<string, unknown>), version }, null, 2)}\n`,
+    "utf8",
+  );
 }
 
 /** Stable local marketplace layout staged below the extension's globalStorage directory. */

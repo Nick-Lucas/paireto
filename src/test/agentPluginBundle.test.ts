@@ -4,8 +4,6 @@ import * as path from "node:path";
 import Ajv2020 from "ajv/dist/2020.js";
 import type { AnySchemaObject } from "ajv";
 
-import { PLUGIN_VERSION } from "../protocol/types.js";
-
 const bundle = path.resolve(__dirname, "../../dist/plugins/agent-plugin");
 const source = path.resolve(__dirname, "../../src/plugins/agent-plugin");
 

@@ -19,7 +19,7 @@ function block(reason: string): never {
 
 function planIn(event: KiroHookEvent): string | undefined {
   if (
-    event.hook_event_name !== "preToolUse" ||
+    event.hook_event_name !== "PreToolUse" ||
     event.tool_name !== "switch_to_execution" ||
     !event.tool_input ||
     typeof event.tool_input !== "object"
@@ -36,11 +36,11 @@ async function main(): Promise<void> {
     allow();
   }
   const cwd = event.cwd || process.cwd();
-  writeKiroHandoff(kiroPid(), event.session_id, cwd);
   const target = resolveTarget(cwd);
   if (!target) {
     allow();
   }
+  writeKiroHandoff(kiroPid(), event.session_id, cwd, target);
   const result = await connect(target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
     allow();

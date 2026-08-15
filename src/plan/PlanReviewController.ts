@@ -301,6 +301,8 @@ export class PlanReviewController implements vscode.Disposable {
         planComments: comments,
         codeComments: sentCode,
         toolName: this.locator.strategyFor(review.harness).planToolName,
+        extraPlanReviewResponseInstructions: this.locator.strategyFor(review.harness)
+          .extraPlanReviewResponseInstructions,
         multiRepository: this.codeFeedback.isMultiRepository(),
       }),
     });
