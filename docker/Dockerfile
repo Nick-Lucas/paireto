@@ -55,10 +55,16 @@ RUN npm install -g \
       @openai/codex \
       opencode-ai
 
+# Every kiro-cli* binary is linked, not just the entry point: `kiro-cli chat` re-execs its sibling
+# `kiro-cli-chat` BY NAME through PATH (2.18.1 split chat and term out of the single binary), so
+# linking the entry point alone leaves every chat session dying with "os error 2" before it starts.
 RUN curl -fsSL https://cli.kiro.dev/install | bash \
     && test -x /root/.local/bin/kiro-cli \
-    && ln -s /root/.local/bin/kiro-cli /usr/local/bin/kiro-cli \
-    && kiro-cli --version
+    && for bin in /root/.local/bin/kiro-cli*; do \
+         ln -sf "$bin" "/usr/local/bin/$(basename "$bin")"; \
+       done \
+    && kiro-cli --version \
+    && command -v kiro-cli-chat >/dev/null
 
 # OpenCode installs the plugin SDK (@opencode-ai/plugin) from npm at runtime, which credential-free
 # `check` runs cannot do. Without it our plugin advertises paireto_submit_plan with no `plan`
