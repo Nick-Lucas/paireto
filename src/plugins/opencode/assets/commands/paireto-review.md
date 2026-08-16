@@ -1,5 +1,5 @@
 ---
-description: Start an interactive code review in VS Code and act on the feedback
+description: Start an interactive code review with a human reviewer and act on the returned feedback
 ---
 
 Start an interactive code review of the current changes in VS Code.

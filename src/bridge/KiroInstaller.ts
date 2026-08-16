@@ -15,7 +15,9 @@ export interface KiroInstallPlan {
   skillsDir: string;
 }
 
-const KIRO_SKILLS = ["paireto-review", "paireto-guided-review"] as const;
+/** Marks a global skill directory as ours, so a reinstall can clear one we no longer ship without
+ *  touching a skill the user or another Power owns. */
+const KIRO_SKILL_PREFIX = "paireto";
 
 export interface KiroInstallOptions {
   kiroHome?: string;
@@ -139,27 +141,39 @@ export function readInstalledKiroPowerVersion(kiroHome: string): string | undefi
   return findInstalledKiroPower(kiroHome)?.version;
 }
 
-function replaceDirectory(source: string, target: string): void {
-  const temporary = `${target}.${process.pid}.tmp`;
-  const backup = `${target}.${process.pid}.backup`;
+/**
+ * Install a directory by REPLACING it: whatever was there is removed first, so a reinstall cannot
+ * leave a file from an older version behind to be loaded alongside the new one.
+ */
+function installDirectory(source: string, target: string): void {
+  fs.rmSync(target, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.rmSync(temporary, { recursive: true, force: true });
-  fs.rmSync(backup, { recursive: true, force: true });
-  fs.cpSync(source, temporary, { recursive: true });
-  let movedExisting = false;
-  try {
-    if (fs.existsSync(target)) {
-      fs.renameSync(target, backup);
-      movedExisting = true;
+  fs.cpSync(source, target, { recursive: true });
+}
+
+/**
+ * Install the shipped skills a SECOND time, as user-level skills.
+ *
+ * Copying the Power satisfies the Agent Plugins standard and makes the skills available dynamically to the agent.
+ * But it does not make slash commands available to the user (as of kiro-cli 2.18.1 in v3 mode)
+ * So we also copy the skills to the global skills directory so they appear as slash commands
+ */
+function installSkillsAsSlashCommands(sourcePlugin: string, skillsDir: string): void {
+  const source = path.join(sourcePlugin, "skills");
+
+  for (const entry of fs.existsSync(skillsDir) ? fs.readdirSync(skillsDir) : []) {
+    if (entry.startsWith(KIRO_SKILL_PREFIX)) {
+      fs.rmSync(path.join(skillsDir, entry), { recursive: true, force: true });
     }
-    fs.renameSync(temporary, target);
-    fs.rmSync(backup, { recursive: true, force: true });
-  } catch (error) {
-    fs.rmSync(temporary, { recursive: true, force: true });
-    if (movedExisting && !fs.existsSync(target)) {
-      fs.renameSync(backup, target);
-    }
-    throw error;
+  }
+
+  const shipped = fs
+    .readdirSync(source, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name);
+
+  for (const skill of shipped) {
+    installDirectory(path.join(source, skill), path.join(skillsDir, skill));
   }
 }
 
@@ -289,13 +303,8 @@ export async function installKiro(
   try {
     const version = readAgentPluginVersion(ctx.pluginsRoot);
     const registry = renderKiroPowerRegistry(plan.registryFile);
-    replaceDirectory(plan.sourcePlugin, plan.installedPower);
-    for (const skill of KIRO_SKILLS) {
-      replaceDirectory(
-        path.join(plan.sourcePlugin, "skills", skill),
-        path.join(plan.skillsDir, skill),
-      );
-    }
+    installDirectory(plan.sourcePlugin, plan.installedPower);
+    installSkillsAsSlashCommands(plan.sourcePlugin, plan.skillsDir);
     writeFileTransactionally(plan.registryFile, registry);
     // Kiro Powers do not load hooks from Agent Plugin client extensions.
     // GitHub issue: https://github.com/kirodotdev/Kiro/issues/9007
@@ -305,7 +314,8 @@ export async function installKiro(
     return {
       ok: true,
       detail:
-        "Registered the Kiro Power, slash-command skills, and global hooks. Restart Kiro to load them.",
+        "Registered the Kiro Power, its slash-command skills, and global hooks. Restart Kiro with " +
+        "`kiro-cli chat --agent-engine v3`.",
     };
   } catch (error) {
     return {
