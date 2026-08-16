@@ -1100,6 +1100,8 @@ suite("provider-replay: Kiro wall-clock date", () => {
   });
 
   test("the surrounding prompt is left intact", () => {
-    assert.ok(normalizeKiroBody(prompt("August 15, 2026", "Saturday")).includes("Use this carefully"));
+    assert.ok(
+      normalizeKiroBody(prompt("August 15, 2026", "Saturday")).includes("Use this carefully"),
+    );
   });
 });
