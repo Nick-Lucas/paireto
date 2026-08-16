@@ -74,7 +74,7 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 | --- | --- |
 | **Claude Code** | ✅ Supported |
 | **Codex TUI** | ✅ Supported |
-| **Kiro CLI v3** | ✅ Supported |
+| **Kiro CLI v3** | ✅ Supported (V3+ only) |
 | **OpenCode TUI** | ✅ Supported |
 | Pi TUI | 🔜 Planned |
 | Others? | ＃ Open an Issue |
