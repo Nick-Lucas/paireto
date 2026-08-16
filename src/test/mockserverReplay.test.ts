@@ -1105,3 +1105,23 @@ suite("provider-replay: Kiro wall-clock date", () => {
     );
   });
 });
+
+// Kiro stamps its own build into every request, so pinning it would expire each cassette on the
+// harness's next release — and the Dockerfile installs the CLI unpinned.
+suite("provider-replay: Kiro CLI version", () => {
+  const body = (version: string): string =>
+    JSON.stringify({
+      origin: "KIRO_CLI",
+      version,
+      conversationState: { currentMessage: { userInputMessage: { content: "hello" } } },
+    });
+
+  test("a cassette survives a CLI upgrade", () => {
+    assert.strictEqual(normalizeKiroBody(body("2.18.0")), normalizeKiroBody(body("2.18.1")));
+  });
+
+  test("a version that is not Kiro's own is left alone", () => {
+    const other = JSON.stringify({ origin: "SOMETHING_ELSE", version: "2.18.0" });
+    assert.ok(normalizeKiroBody(other).includes("2.18.0"));
+  });
+});

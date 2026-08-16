@@ -497,6 +497,18 @@ const KIRO_SCOPED_ID_KEYS = new Set(["agentContinuationId", "conversationId", "t
  */
 const KIRO_CURRENT_DATE = /Date: [A-Z][a-z]+ \d{1,2}, \d{4}\nDay of Week: [A-Z][a-z]+/g;
 
+/**
+ * Kiro stamps its OWN build into every request: `{"origin":"KIRO_CLI","version":"2.18.0"}`. Pinning
+ * that would expire each cassette on the harness's next release — the Dockerfile installs the CLI
+ * unpinned, so CI picks up new builds on its own. The version a cassette was recorded against is
+ * still reported: it is stamped in `recordedWith`, and a mismatch already warns before any miss.
+ */
+function normalizeKiroOrigin(object: Record<string, unknown>): void {
+  if (object.origin === "KIRO_CLI" && typeof object.version === "string") {
+    object.version = "NORMALIZED";
+  }
+}
+
 function normalizeKiroDates(value: string): string {
   return value.replace(KIRO_CURRENT_DATE, "Date: NORMALIZED\nDay of Week: NORMALIZED");
 }
@@ -510,6 +522,7 @@ export function normalizeKiroBody(raw: string): string {
   }
   const renamed = new Map<string, string>();
   walk(parsed, (object) => {
+    normalizeKiroOrigin(object);
     for (const [key, value] of Object.entries(object)) {
       // The recorder signs in with OAuth and carries a profile ARN; replay authenticates with an API
       // key and carries none. It also spells out an AWS account id, so it has no business in a
