@@ -1,6 +1,6 @@
 ---
 name: paireto-review
-description: Start an interactive Paireto code review of the current changes in VS Code and act on the returned feedback. Use when the user asks to review changes with Paireto or explicitly invokes $paireto-review.
+description: Start an interactive code review with a human reviewer and act on the returned feedback
 ---
 
 # Paireto Review

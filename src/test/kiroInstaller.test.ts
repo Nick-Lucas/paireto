@@ -131,7 +131,10 @@ suite("Kiro installer", () => {
       assert.strictEqual(result.ok, true);
       const installedPower = path.join(kiroHome, "powers", "installed", "paireto");
       assert.ok(fs.existsSync(path.join(installedPower, "plugin.json")));
+      // Both surfaces: the Power carries its skills for the `kiro_powers` tool, and the same skills
+      // are installed user-level, which is the only feed Kiro builds `/slash` commands from.
       for (const skill of ["paireto-review", "paireto-guided-review"]) {
+        assert.ok(fs.existsSync(path.join(installedPower, "skills", skill, "SKILL.md")));
         assert.ok(fs.existsSync(path.join(kiroHome, "skills", skill, "SKILL.md")));
       }
       assert.ok(!fs.existsSync(path.join(stableDir, "power")));

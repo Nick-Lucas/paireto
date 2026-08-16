@@ -1,5 +1,5 @@
 ---
-description: Study the changes and prepare a guided review plan for a human reviewer
+description: Prepare an interactive guided review plan for a human reviewer and act on the returned feedback
 ---
 
 Prepare a review plan so a human can review these changes, then hand it to Paireto.

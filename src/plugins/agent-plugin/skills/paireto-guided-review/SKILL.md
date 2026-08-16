@@ -1,6 +1,6 @@
 ---
 name: paireto-guided-review
-description: Study the current changes, group them into named changesets, and submit that review plan to Paireto for a human reviewer. Use when the user asks for a guided review or invokes $paireto-guided-review.
+description: Prepare an interactive guided review plan for a human reviewer and act on the returned feedback
 ---
 
 # Paireto Guided Review
