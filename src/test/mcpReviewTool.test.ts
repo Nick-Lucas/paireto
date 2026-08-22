@@ -70,7 +70,7 @@ suite("MCP paireto_review tool", () => {
   });
 
   test("with no window listening the tool reports an error rather than hanging", async () => {
-    const result = await runReview(undefined);
+    const result = await runReview(undefined, "kiro");
     assert.strictEqual(result.isError, true);
     assert.match(result.content[0].text, /No VS Code Paireto is listening/);
   });
@@ -79,7 +79,7 @@ suite("MCP paireto_review tool", () => {
     const result = await runReview({
       target: { socketPath: "/nonexistent/nope.sock", repoRoot: "/tmp" },
       cwd: "/tmp",
-    });
+    }, "kiro");
     assert.strictEqual(result.isError, true);
     assert.match(result.content[0].text, /No VS Code Paireto is listening/);
   });
@@ -92,7 +92,7 @@ suite("MCP paireto_review tool", () => {
       const result = await runReview({
         target: { socketPath: notASocket, repoRoot: dir },
         cwd: dir,
-      });
+      }, "kiro");
       assert.strictEqual(result.isError, true);
       assert.match(result.content[0].text, /Could not connect/);
     } finally {

@@ -13,6 +13,12 @@ import {
   runGuidedReview,
 } from "./guidedReviewTool.js";
 import type { ReviewTarget } from "./reviewTool.js";
+import {
+  PLAN_REVIEW_TOOL_DESCRIPTION,
+  PLAN_REVIEW_TOOL_NAME,
+  PlanReviewArgs,
+  runPlanReview,
+} from "./planReviewTool.js";
 import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTool.js";
 
 /** Everything a harness supplies to the shared core. */
@@ -37,7 +43,7 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
   );
 
   server.registerTool(REVIEW_TOOL_NAME, { description: REVIEW_TOOL_DESCRIPTION }, () =>
-    runReview(adapter.resolveReviewTarget(), adapter.noTargetMessage),
+    runReview(adapter.resolveReviewTarget(), adapter.harness, adapter.noTargetMessage),
   );
 
   server.registerTool(
@@ -51,6 +57,21 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
         adapter.resolveReviewTarget(),
         adapter.harness,
         args,
+        adapter.noTargetMessage,
+      ),
+  );
+
+  server.registerTool(
+    PLAN_REVIEW_TOOL_NAME,
+    {
+      description: PLAN_REVIEW_TOOL_DESCRIPTION,
+      inputSchema: PlanReviewArgs.shape,
+    },
+    (args) =>
+      runPlanReview(
+        adapter.resolveReviewTarget(),
+        adapter.harness,
+        args.plan,
         adapter.noTargetMessage,
       ),
   );

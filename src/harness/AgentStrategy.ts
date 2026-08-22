@@ -7,6 +7,7 @@
 import type { HarnessEventMeta, HarnessHookEvent } from "../protocol/types.js";
 import type { Harness } from "../protocol/types.js";
 import type { AppEvent } from "./appEvent.js";
+import type { HarnessInstruction } from "./instructions.js";
 
 export interface AgentStrategy {
   readonly harness: Harness;
@@ -16,7 +17,9 @@ export interface AgentStrategy {
   readonly planToolName: string;
   /** Extra rules added to plan feedback when this harness's agent needs telling how to bring the
    *  revised plan back. Empty for harnesses whose agent re-submits on its own. */
-  readonly extraPlanReviewResponseInstructions?: string[];
+  readonly extraPlanReviewResponseInstructions?: HarnessInstruction[];
+  /** Extra rules added to CODE review feedback, for instance to instruct the agent to call a tool later */
+  readonly extraReviewResponseInstructions?: HarnessInstruction[];
   /** Default plan-approve permission mode when the user hasn't configured one; undefined = the
    *  harness has no settable mode (leave it unchanged). */
   readonly defaultPlanApproveMode: string | undefined;

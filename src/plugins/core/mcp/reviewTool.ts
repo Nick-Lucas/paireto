@@ -4,6 +4,7 @@
 // call this from the description alone, and the e2e replay fixtures match on it — so treat both as
 // fixed text rather than something to reword freely.
 
+import type { Harness } from "../../../protocol/types.js";
 import { connect } from "../bridgeClient.js";
 import type { BridgeTarget } from "../target.js";
 
@@ -50,6 +51,7 @@ export const NO_WINDOW_MESSAGE =
  */
 export async function runReview(
   reviewTarget: ReviewTarget | undefined,
+  harness: Harness,
   noTargetMessage: string = NO_WINDOW_MESSAGE,
 ): Promise<ToolResult> {
   if (!reviewTarget) {
@@ -70,6 +72,7 @@ export async function runReview(
     cwd: reviewTarget.cwd,
     repoRoot: reviewTarget.target.repoRoot,
     sessionId: reviewTarget.sessionId,
+    harness,
   });
   result.connection.close();
 
@@ -79,5 +82,8 @@ export async function runReview(
   if (response.status === "submitted" && response.feedback) {
     return textResult(response.feedback);
   }
-  return textResult(REVIEW_APPROVED);
+
+  return textResult(
+    response.feedback ? `${REVIEW_APPROVED}\n\n${response.feedback}` : REVIEW_APPROVED,
+  );
 }

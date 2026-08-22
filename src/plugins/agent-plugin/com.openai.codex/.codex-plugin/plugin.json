@@ -1,6 +1,6 @@
 {
   "name": "paireto",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Pair-programming with Paireto in VS Code.",
   "author": {
     "name": "Paireto"

@@ -17,7 +17,15 @@ import type { BridgeHandlers } from "./types.js";
  *  explain behaviour. An unrecognized harness has no strategy to render its dialect, so we log the
  *  wire type alone. Non-event messages just show the type and agent. */
 export function createInboundEventLog(msg: AnyMessage, locator: AgentServiceLocator): string {
-  if (msg.t === "hook.event" || msg.t === "plan.review.request" || msg.t === "stop.gate.request") {
+  // A tool-submitted plan carries no hook event to describe — it is named by its type alone.
+  if (msg.t === "plan.review.tool.request") {
+    return `${msg.t} agent=${msg.sessionId?.slice(0, 8) ?? "unknown"}`;
+  }
+  if (
+    msg.t === "hook.event" ||
+    msg.t === "plan.review.request" ||
+    msg.t === "stop.gate.request"
+  ) {
     const strategy = locator.strategyForWire(msg.harness);
     if (!strategy) {
       return msg.t;
@@ -192,6 +200,25 @@ export class SocketServer {
         inflight.add(ac);
         try {
           const result = await this.handlers.onPlanReviewRequest(msg, ac.signal);
+          send({
+            t: "plan.review.response",
+            v: PLUGIN_VERSION,
+            id: msg.id,
+            ts: new Date().toISOString(),
+            decision: result.decision,
+            reason: result.reason,
+            nextMode: result.nextMode,
+          });
+        } finally {
+          inflight.delete(ac);
+        }
+        break;
+      }
+      case "plan.review.tool.request": {
+        const ac = new AbortController();
+        inflight.add(ac);
+        try {
+          const result = await this.handlers.onPlanReviewTool(msg, ac.signal);
           send({
             t: "plan.review.response",
             v: PLUGIN_VERSION,

@@ -8,7 +8,10 @@ import { kiroPlanGateOutcome } from "../planFlow.js";
 const CONNECT_TIMEOUT_MS = 3000;
 const PLAN_GATE_TIMEOUT_MS = 345600 * 1000;
 
-function allow(): never {
+function allow(message?: string): never {
+  if (message) {
+    process.stdout.write(`${message}\n`);
+  }
   process.exit(0);
 }
 
@@ -59,7 +62,7 @@ async function main(): Promise<void> {
   if (outcome.decision === "block") {
     block(outcome.reason || "Plan changes requested.");
   }
-  allow();
+  allow(outcome.reason);
 }
 
 main().catch(() => allow());

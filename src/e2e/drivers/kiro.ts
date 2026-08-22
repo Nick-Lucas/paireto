@@ -30,6 +30,7 @@ export class KiroDriver implements HarnessDriver {
     turnEndReview: "blocking",
     guidedReviewInvocation: "/paireto-guided-review",
     reviewInvocation: "/paireto-review",
+    reportsTurnEndAfterPlan: false,
   };
 
   private home?: HarnessHome;

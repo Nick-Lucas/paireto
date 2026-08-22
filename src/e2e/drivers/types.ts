@@ -12,6 +12,10 @@ export interface DriverCaps {
   /** How the user asks this harness for an interactive review by hand — the canonical path for a
    *  harness whose turn-end hooks cannot carry one. */
   reviewInvocation: string;
+  /** Whether the harness still reports a turn end once a plan-driven run finishes. Kiro does not:
+   *  its agent server runs Stop hooks once per graph run and the plan proposal spends that pass, so
+   *  the session stays mid-turn after the last gate resolves even though the work is done. */
+  reportsTurnEndAfterPlan: boolean;
 }
 
 /** Everything a driver needs to launch its agent against the sandbox repo. */

@@ -561,6 +561,43 @@ suite("renderReviewFeedback", () => {
     assert.ok(out.includes("/workspace/api/src/a.ts:1"));
     assert.ok(out.includes("/workspace/web/src/a.ts:1"));
   });
+
+  // Kiro's agent server runs Stop hooks once per graph run, and delivering this feedback spends
+  // that pass — without a closing rule the agent makes the changes and the review loop ends there.
+  test("a harness that cannot reopen the round gets a closing rule", () => {
+    const rule = "When you have made these changes, call the paireto_review tool again.";
+    const rendered = renderReviewFeedback([mk({ body: "fix" })], false, [
+      { when: "rejected", instruction: rule },
+    ]);
+
+    assert.ok(rendered.includes(`- ${rule}`), "the rule is bulleted");
+    assert.ok(
+      rendered.indexOf(rule) < rendered.indexOf("fix"),
+      "the rules sit with the instructions, above the comments",
+    );
+  });
+
+  test("a harness without one renders exactly the text it always did", () => {
+    const comments = [mk({ body: "fix" })];
+    assert.strictEqual(
+      renderReviewFeedback(comments, false, []),
+      renderReviewFeedback(comments, false),
+    );
+  });
+
+  test("an approved-only rule is left out of rejection feedback", () => {
+    const rendered = renderReviewFeedback([mk({ body: "fix" })], false, [
+      { when: "approved", instruction: "carry on with the next task" },
+    ]);
+    assert.ok(!rendered.includes("carry on with the next task"));
+  });
+
+  test("no comments stays empty even with a closing rule", () => {
+    assert.strictEqual(
+      renderReviewFeedback([], false, [{ when: "rejected", instruction: "call the tool again" }]),
+      "",
+    );
+  });
 });
 
 suite("ReviewGateRegistry", () => {

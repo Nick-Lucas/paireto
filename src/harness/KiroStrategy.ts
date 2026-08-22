@@ -2,6 +2,7 @@ import type { HarnessEventMeta } from "../protocol/types.js";
 import type { Harness } from "../protocol/types.js";
 import type { AppEvent, AppEventKind } from "./appEvent.js";
 import type { AgentStrategy } from "./AgentStrategy.js";
+import type { HarnessInstruction } from "./instructions.js";
 
 /** The canonical trigger names Kiro puts in a hook's `hook_event_name`. Kiro accepts several
  *  spellings in a hook FILE and normalizes them to these before it runs the command, so the payload
@@ -68,11 +69,31 @@ export class KiroStrategy implements AgentStrategy {
   readonly harness: Harness = "kiro";
   readonly displayName = "Kiro";
   readonly planToolName = "switch_to_execution";
-  /** Kiro's planner ends a revision by asking the user whether the plan is good and then waits, and
-   *  Kiro runs Stop hooks once per user turn — so without this the revised plan never reaches the
-   *  reviewer at all. */
-  readonly extraPlanReviewResponseInstructions = [
-    "Do not ask the user whether the revised plan is good — call switch_to_execution with it.",
+  /** Kiro only runs Stop hooks once per turn
+   * So the agent has to reopen the review itself for further feedback
+   */
+  readonly extraPlanReviewResponseInstructions: HarnessInstruction[] = [
+    {
+      when: "rejected",
+      instruction:
+        "Do not ask the user whether the revised plan is good — call switch_to_execution with it.",
+    },
+    {
+      when: "approved",
+      instruction:
+        "When you have finished implementing this plan, call the paireto_review tool to open the " +
+        "code review. Do not stop before calling it.",
+    },
+  ];
+  /** Kiro's agent server runs Stop hooks once per graph run (`onAgentStopHooksExecuted`), and
+   *  delivering this feedback already spent that one pass — no further turn-end hook will fire, so
+   *  the agent has to reopen the review itself or the loop ends here. */
+  readonly extraReviewResponseInstructions: HarnessInstruction[] = [
+    {
+      when: "rejected",
+      instruction:
+        "When you have finished addressing this feedback, call the paireto_review tool the reviewer can check your changes.",
+    },
   ];
   readonly defaultPlanApproveMode: string | undefined = undefined;
   readonly supportsLiveness = false;

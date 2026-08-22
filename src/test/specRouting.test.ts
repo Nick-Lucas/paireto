@@ -7,6 +7,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { E2E_DRIVERS } from "../e2e/mockserver/mode.js";
 import {
   casesIn,
   discoverSpecs,
@@ -100,12 +101,21 @@ suite("E2E spec routing", () => {
     assert.strictEqual(specPathFor(dir, "nosuchcase", "kiro"), undefined);
   });
 
-  // The shipped specs must agree with the rule, so a new file cannot land without routing.
+  // The shipped specs must agree with the rule, so a new file cannot land without routing. Every
+  // driver currently runs every case from the shared spec — an override is the exception, and the
+  // rule itself is covered above against a temp directory.
   test("the compiled specs route every pair they claim", () => {
     const dir = path.resolve(__dirname, "..", "e2e", "tests");
     const specs = discoverSpecs(dir);
-    assert.ok(casesIn(specs).includes("fullflow"));
-    assert.strictEqual(specFileFor(specs, "fullflow", "kiro"), "fullflow.kiro.e2e.js");
-    assert.strictEqual(specFileFor(specs, "fullflow", "codex"), "fullflow.e2e.js");
+    assert.deepStrictEqual(casesIn(specs), ["fullflow", "guidedreview", "manualskills"]);
+    for (const testCase of casesIn(specs)) {
+      for (const driver of E2E_DRIVERS) {
+        assert.strictEqual(
+          specFileFor(specs, testCase, driver),
+          `${testCase}.e2e.js`,
+          `${testCase} @${driver}`,
+        );
+      }
+    }
   });
 });

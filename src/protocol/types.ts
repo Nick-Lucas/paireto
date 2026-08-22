@@ -56,6 +56,7 @@ export type MessageType =
   | "hook.event"
   | "session.attach"
   | "plan.review.request"
+  | "plan.review.tool.request"
   | "plan.review.response"
   | "review.await.request"
   | "review.await.response"
@@ -132,6 +133,26 @@ export interface PlanReviewRequest extends Envelope {
   meta?: HarnessEventMeta;
 }
 
+/**
+ * A plan submitted for review through the `paireto_plan_review` MCP tool.
+ *
+ * Distinct from {@link PlanReviewRequest}, which is hook-shaped: a hook reports what the harness did
+ * and the strategy recovers the plan from it, whereas a tool call already holds the plan and needs no
+ * harness dialect to read it. Keeping them apart is what stops the tool path having to fake a hook
+ * event the harness never sent.
+ */
+export interface PlanReviewToolRequest extends Envelope {
+  t: "plan.review.tool.request";
+  id: string;
+  harness: Harness;
+  repoRoot: string;
+  cwd: string;
+  /** Owning agent session, best-effort — the tool may be the first thing this agent ever sent. */
+  sessionId?: string;
+  /** The plan markdown to put in front of the reviewer. */
+  plan: string;
+}
+
 export type PlanDecision = "allow" | "deny";
 
 /** Extension's response to a {@link PlanReviewRequest}; same `id`. */
@@ -162,6 +183,7 @@ export interface ReviewAwaitRequest extends Envelope {
    *  to an agent row in the Agents panel; the extension falls back to repo recency if absent. */
   sessionId?: string;
   agentId?: string;
+  harness: Harness;
 }
 
 export type ReviewStatus = "submitted" | "cancelled";
@@ -255,6 +277,7 @@ export type AnyMessage =
   | HookEventMessage
   | SessionAttachMessage
   | PlanReviewRequest
+  | PlanReviewToolRequest
   | PlanReviewResponse
   | ReviewAwaitRequest
   | ReviewAwaitResponse

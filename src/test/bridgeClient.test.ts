@@ -32,6 +32,7 @@ suite("plugin bridge client", () => {
     assert.deepStrictEqual(Object.keys(RESPONSE_TAG).sort(), [
       "guided.review.await.request",
       "plan.review.request",
+      "plan.review.tool.request",
       "review.await.request",
       "stop.gate.request",
     ]);
@@ -127,6 +128,7 @@ suite("plugin bridge client", () => {
       t: "review.await.request",
       cwd: "/repo",
       repoRoot: "/repo",
+      harness: "claudecode",
     });
 
     assert.ok(response);
@@ -232,6 +234,7 @@ suite("plugin bridge client", () => {
         t: "review.await.request",
         cwd: "/repo",
         repoRoot: "/repo",
+        harness: "claudecode",
       }),
       new Promise<symbol>((resolve) => setTimeout(() => resolve(hung), 500)),
     ]);
@@ -277,7 +280,7 @@ suite("plugin bridge client", () => {
     }
 
     const response = await result.connection.request(
-      { t: "review.await.request", cwd: "/repo", repoRoot: "/repo" },
+      { t: "review.await.request", cwd: "/repo", repoRoot: "/repo", harness: "claudecode" },
       { timeoutMs: 150 },
     );
 

@@ -9,6 +9,7 @@
 // performs that final TUI action as the simulated user.
 
 import * as fs from "node:fs";
+import { execFileSync } from "node:child_process";
 import * as path from "node:path";
 
 import { installCodex } from "../../bridge/CodexInstaller.js";
@@ -50,6 +51,8 @@ export interface CodexTimings {
    *  servers are still starting, and that startup draws nothing, so a settled screen does not mean
    *  the handshake is done — under load it routinely is not. */
   mcpStartupMs: number;
+  /** How long to wait for Paireto's MCP server to appear before giving up on the positive signal. */
+  mcpReadyTimeoutMs: number;
 }
 
 const DEFAULT_TIMINGS: CodexTimings = {
@@ -60,6 +63,7 @@ const DEFAULT_TIMINGS: CodexTimings = {
   acceptPollMs: 500,
   submitGapMs: 1_500,
   mcpStartupMs: 8_000,
+  mcpReadyTimeoutMs: 30_000,
 };
 
 export class CodexDriver implements HarnessDriver {
@@ -68,6 +72,7 @@ export class CodexDriver implements HarnessDriver {
     turnEndReview: "blocking",
     guidedReviewInvocation: "$paireto-guided-review",
     reviewInvocation: "$paireto-review",
+    reportsTurnEndAfterPlan: true,
   };
 
   private home?: HarnessHome;
@@ -163,15 +168,30 @@ export class CodexDriver implements HarnessDriver {
     await typeCodexPrompt(this.tmux, text, log);
   }
 
-  /** Settled composer AND the MCP grace window elapsed — both, because a key that lands during the
-   *  invisible MCP startup abandons it and leaves the session with none of Paireto's tools. */
+  /**
+   * Settled composer AND Paireto's MCP server actually running — both, because a key that lands
+   * during the invisible MCP startup abandons it and leaves the session with none of Paireto's
+   * tools, and Codex prints nothing while that startup is in flight.
+   *
+   * The server being up is a POSITIVE signal (Codex spawns it as a child process), so it replaces
+   * guessing at how long startup takes; the elapsed grace remains only as the floor for a run whose
+   * process list cannot be read.
+   */
   private async readyToType(): Promise<void> {
     await waitForCodexReady(this.tmux, (line) => this.log(line));
+    const deadline = Date.now() + DEFAULT_TIMINGS.mcpReadyTimeoutMs;
+    while (Date.now() < deadline) {
+      if (pairetoMcpRunning()) {
+        this.log("readyToType: Paireto's MCP server is up — ready to type");
+        return;
+      }
+      await delay(DEFAULT_TIMINGS.readyPollMs);
+    }
     const remaining = DEFAULT_TIMINGS.mcpStartupMs - (Date.now() - this.launchedAt);
     if (remaining > 0) {
-      this.log(`readyToType: holding ${remaining}ms more for MCP startup`);
       await delay(remaining);
     }
+    this.log("readyToType: never saw Paireto's MCP server start (typing anyway)");
   }
 
   async afterPlanApprove(): Promise<void> {
@@ -347,6 +367,19 @@ export async function completeNativePlanApproval(
 }
 
 /** The extension repo root (where the shipped plugins/ live). */
+/** Whether Codex has Paireto's MCP server running as a child. `pgrep` exits non-zero when nothing
+ *  matches, which is the "not yet" answer rather than an error. */
+function pairetoMcpRunning(): boolean {
+  try {
+    return (
+      execFileSync("pgrep", ["-f", "com.openai.codex/runtime/mcp.js"], { encoding: "utf8" }).trim()
+        .length > 0
+    );
+  } catch {
+    return false;
+  }
+}
+
 function repoRoot(): string {
   return process.env.PAIRETO_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
 }

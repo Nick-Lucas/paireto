@@ -29,6 +29,7 @@ import {
 import { planDocLabel } from "./planTitle.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
 import type { Harness } from "../protocol/types.js";
+import { instructionsFor } from "../harness/instructions.js";
 
 interface PlanReview {
   id: string;
@@ -248,7 +249,17 @@ export class PlanReviewController implements vscode.Disposable {
       `plan review approved for agent ${review.sessionId.slice(0, 8)}` +
         (nextMode ? ` (mode -> ${nextMode})` : ""),
     );
-    this.registry.fulfill(review.key, { decision: "allow", nextMode });
+
+    const approvalInstructions = instructionsFor(
+      this.locator.strategyFor(review.harness).extraPlanReviewResponseInstructions ?? [],
+      "approved",
+    ).join("\n");
+
+    this.registry.fulfill(review.key, {
+      decision: "allow",
+      nextMode,
+      ...(approvalInstructions ? { reason: approvalInstructions } : {}),
+    });
   }
 
   private async sendFeedback(review: PlanReview): Promise<void> {

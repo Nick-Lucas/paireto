@@ -34,6 +34,7 @@ suite("built Agent Plugin MCP stdio server", () => {
       await client.connect(transport);
       const tools = await client.request({ method: "tools/list" }, ListToolsResultSchema);
       assert.deepStrictEqual(tools.tools.map((tool) => tool.name).sort(), [
+        "paireto_plan_review",
         "paireto_review",
         "paireto_start_guided_review",
       ]);

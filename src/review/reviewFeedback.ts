@@ -4,9 +4,14 @@
 import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
+import { instructionsFor, type HarnessInstruction } from "../harness/instructions.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
-export function renderReviewFeedback(comments: ReviewComment[], multiRepository = false): string {
+export function renderReviewFeedback(
+  comments: ReviewComment[],
+  multiRepository = false,
+  extraInstructions: HarnessInstruction[] = [],
+): string {
   const actionable = [...comments].sort(
     (a, b) =>
       KIND_RANK[a.kind] - KIND_RANK[b.kind] ||
@@ -26,10 +31,13 @@ export function renderReviewFeedback(comments: ReviewComment[], multiRepository 
     })
     .join("\n\n");
 
+  const rules = instructionsFor(extraInstructions, "rejected")
+    .map((instruction) => `\n- ${instruction}`)
+    .join("");
   return dedent`
     Code review feedback received from the user:
 
-    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.${rules}
 
     ${items}
   `;

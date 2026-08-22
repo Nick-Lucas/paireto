@@ -173,12 +173,17 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
               cwd: bridge.repoRoot,
               repoRoot: bridge.repoRoot,
               sessionId: sessionID,
+              harness: "opencode",
             });
             if (!response) {
               return REVIEW_UNAVAILABLE;
             }
-            return response.status === "submitted" && response.feedback
-              ? response.feedback
+            if (response.status === "submitted" && response.feedback) {
+              return response.feedback;
+            }
+
+            return response.feedback
+              ? `${REVIEW_APPROVED}\n\n${response.feedback}`
               : REVIEW_APPROVED;
           } catch {
             return REVIEW_FAILED;

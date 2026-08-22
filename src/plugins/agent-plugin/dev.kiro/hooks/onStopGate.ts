@@ -18,6 +18,13 @@ function allow(): never {
   exitSilently();
 }
 
+function allowWith(reason: string | undefined): never {
+  if (reason) {
+    process.stdout.write(`${reason}\n`);
+  }
+  exitSilently();
+}
+
 function block(reason: string): void {
   writeAndExit({ decision: "block", reason });
 }
@@ -50,7 +57,7 @@ async function planGate(
   if (outcome.decision === "block") {
     block(outcome.reason || "Plan changes requested.");
   }
-  allow();
+  allowWith(outcome.reason);
 }
 
 async function reviewGate(event: KiroHookEvent, target: BridgeTarget): Promise<void> {

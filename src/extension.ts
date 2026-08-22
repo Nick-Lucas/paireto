@@ -233,6 +233,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       return planReview.presentPlan(event, msg.repoRoot, signal);
     },
+    // A plan the agent submitted through `paireto_plan_review`: same gate as the hook path, but the
+    // plan is in hand, so the AppEvent is built here rather than recovered by a harness strategy.
+    onPlanReviewTool: (msg, signal) => {
+      warnForeignRepo(msg.repoRoot);
+      const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot) ?? "unknown";
+      signal.addEventListener("abort", () => agents.markIdleOnDisconnect(sessionId), { once: true });
+      return planReview.presentPlan(
+        {
+          kind: "planProposal",
+          harness: msg.harness,
+          sessionId,
+          planText: msg.plan,
+          backgroundTaskCount: 0,
+          sessionCronCount: 0,
+        },
+        msg.repoRoot,
+        signal,
+      );
+    },
     onReviewAwait: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
       // Reviews carry no sessionId reliably; attribute to the most-recently-active session in the
@@ -246,7 +265,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           once: true,
         });
       }
-      return reviewController.startSession(msg.id, sessionId, msg.repoRoot, signal);
+      return reviewController.startSession(
+        msg.id,
+        sessionId,
+        msg.repoRoot,
+        signal,
+        locator.strategyFor(msg.harness).extraReviewResponseInstructions ?? [],
+      );
     },
     onGuidedReviewAwait: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
@@ -311,6 +336,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         strategy.displayName,
         msg.repoRoot,
         signal,
+        strategy.extraReviewResponseInstructions ?? [],
       );
     },
 

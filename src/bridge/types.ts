@@ -6,6 +6,7 @@ import type {
   GuidedReviewAwaitRequest,
   HookEventMessage,
   PlanReviewRequest,
+  PlanReviewToolRequest,
   ReviewAwaitRequest,
   ReviewStatus,
   StopGateRequest,
@@ -56,6 +57,9 @@ export interface BridgeHandlers {
    * so the controller can close the plan and reset its state.
    */
   onPlanReviewRequest(msg: PlanReviewRequest, signal: AbortSignal): Promise<PlanGateResult>;
+  /** A plan the AGENT submitted through the `paireto_plan_review` tool — same gate, but the plan
+   *  arrives directly rather than being recovered from a hook event. */
+  onPlanReviewTool(msg: PlanReviewToolRequest, signal: AbortSignal): Promise<PlanGateResult>;
   /** Manually launched review session via Skill — resolve when the user submits feedback or approves. `signal` aborts
    *  on disconnect so the controller can reset. */
   onReviewAwait(msg: ReviewAwaitRequest, signal: AbortSignal): Promise<ReviewGateResult>;

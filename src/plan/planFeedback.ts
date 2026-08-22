@@ -5,6 +5,7 @@
 
 import dedent from "dedent";
 import { KIND_RANK, type CommentKind } from "../comments/kinds.js";
+import { instructionsFor, type HarnessInstruction } from "../harness/instructions.js";
 
 export interface PlanCommentData {
   line: number; // 0-based
@@ -24,10 +25,10 @@ export interface PlanCommentData {
 export function renderPlanFeedback(
   comments: PlanCommentData[],
   toolName = "ExitPlanMode",
-  extraPlanReviewResponseInstructions: string[] = [],
+  extraPlanReviewResponseInstructions: HarnessInstruction[] = [],
 ): string {
   const sorted = sortComments(comments);
-  const extraRules = extraPlanReviewResponseInstructions
+  const extraRules = instructionsFor(extraPlanReviewResponseInstructions, "rejected")
     .map((instruction) => `\n    - ${instruction}`)
     .join("");
   return dedent`

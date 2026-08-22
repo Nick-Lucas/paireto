@@ -153,7 +153,9 @@ suite("provider-replay: recorded endpoints", () => {
       recordsRequest("kiro", request("KiroRuntimeService.GenerateAssistantResponse")),
       true,
     );
-    assert.strictEqual(recordsRequest("kiro", request("KiroRuntimeService.InvokeMCP")), false);
+    // Kiro proxies MCP JSON-RPC through this operation, and `tools/list` rides on it: a replay that
+    // cannot answer it never learns Paireto's tools exist and diverges from the recorded run.
+    assert.strictEqual(recordsRequest("kiro", request("KiroRuntimeService.InvokeMCP")), true);
     // Recorded because their answers end up inside the next request: the feature configuration
     // decides the advertised tool inventory, the model catalogue supplies the display name Kiro
     // writes into its own system prompt.
