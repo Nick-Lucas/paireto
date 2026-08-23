@@ -188,20 +188,9 @@ export class SocketServer {
     inflight: Set<AbortController>,
   ): Promise<void> {
     switch (msg.t) {
-      case "hook.event": {
-        const instruction = this.handlers.onHookEvent(msg);
-        // if an id is included the plugin is expecting a response, but otherwise it's fire and forget
-        if (msg.id) {
-          send({
-            t: "hook.event.ack",
-            v: PLUGIN_VERSION,
-            id: msg.id,
-            ts: new Date().toISOString(),
-            ...(instruction ? { instruction } : {}),
-          });
-        }
+      case "hook.event":
+        this.handlers.onHookEvent(msg);
         break;
-      }
       case "plan.review.request": {
         const ac = new AbortController();
         inflight.add(ac);

@@ -45,7 +45,6 @@ let planCounter = 0;
 
 export class PlanReviewController implements vscode.Disposable {
   private readonly comments: CommentSession;
-  private readonly awaitingHandoffReview = new Set<string>();
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   /** Fires when the gathered plan comments change (drives the Plan Review panel). */
@@ -256,23 +255,11 @@ export class PlanReviewController implements vscode.Disposable {
       "approved",
     ).join("\n");
 
-    this.awaitingHandoffReview.add(review.sessionId);
     this.registry.fulfill(review.key, {
       decision: "allow",
       nextMode,
       ...(approvalInstructions ? { reason: approvalInstructions } : {}),
     });
-  }
-
-  /** Whether this session's approved plan is still waiting for the review of the work it authorised.
-   *  A harness with no turn-end hook left after a plan gate has to be ASKED to open that review, and
-   *  the ask can only ride a later event, so the approval is remembered until a strategy takes it. */
-  isAwaitingHandoffReview(sessionId: string): boolean {
-    return this.awaitingHandoffReview.has(sessionId);
-  }
-
-  clearAwaitingHandoffReview(sessionId: string): void {
-    this.awaitingHandoffReview.delete(sessionId);
   }
 
   private async sendFeedback(review: PlanReview): Promise<void> {

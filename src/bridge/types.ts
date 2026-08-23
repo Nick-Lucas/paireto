@@ -49,9 +49,8 @@ export interface StopGateResult {
 
 /** Callbacks the socket server invokes for inbound messages. */
 export interface BridgeHandlers {
-  /** Passive telemetry — update session state, refresh worktrees, etc. Returns the rule the agent
-   *  has to hear on this event, if the harness has one for it (see {@link HookEventAck}). */
-  onHookEvent(msg: HookEventMessage): string | undefined;
+  /** Passive telemetry — update session state, refresh worktrees, etc. */
+  onHookEvent(msg: HookEventMessage): void;
   /**
    * Blocking plan gate — resolve when the user approves or requests changes. `signal` aborts if the
    * connection drops before a decision (the hook died / the user resolved ExitPlanMode another way),

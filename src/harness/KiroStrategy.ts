@@ -1,7 +1,7 @@
 import type { HarnessEventMeta } from "../protocol/types.js";
 import type { Harness } from "../protocol/types.js";
 import type { AppEvent, AppEventKind } from "./appEvent.js";
-import type { AgentStrategy, TurnInstructionContext } from "./AgentStrategy.js";
+import type { AgentStrategy } from "./AgentStrategy.js";
 import type { HarnessInstruction } from "./instructions.js";
 
 /** The canonical trigger names Kiro puts in a hook's `hook_event_name`. Kiro accepts several
@@ -120,21 +120,5 @@ export class KiroStrategy implements AgentStrategy {
     const agent = event.session_id ? ` agent=${event.session_id.slice(0, 8)}` : "";
     const tool = event.tool_name ? ` tool=${event.tool_name}` : "";
     return `${event.hook_event_name}${agent}${tool}`;
-  }
-
-  /** Approving a plan starts the turn that implements it, and that turn ends without a Stop hook —
-   *  the pass was spent raising the plan gate — so the review it should end in has to be asked for
-   *  while the turn is still running. Kiro puts a hook's stdout into the agent's context for
-   *  SessionStart and UserPromptSubmit only, and the implementation turn opens with a prompt of its
-   *  own, so that is the event this waits for. */
-  turnInstruction(event: KiroHookEvent, ctx: TurnInstructionContext): string | undefined {
-    if (ctx.planApprovedAwaitingReview && event.hook_event_name === "UserPromptSubmit") {
-      return (
-        "Paireto: when this implementation is finished, call the paireto_review tool so the reviewer " +
-        "can check your changes. Do not stop without calling it."
-      );
-    }
-
-    return undefined;
   }
 }

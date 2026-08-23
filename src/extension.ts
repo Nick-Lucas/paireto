@@ -212,20 +212,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       agents.ingest(event, msg.repoRoot);
-      // A harness whose turn-end hook cannot fire again has to be TOLD to open the review, and only
-      // some of its events can carry text back, so the strategy picks the event and the wording.
-      // Without an id the hook is not waiting for an answer, and taking the pending approval here
-      // would spend it on a reply nobody reads.
-      if (!msg.id) {
-        return undefined;
-      }
-      const instruction = strategy.turnInstruction?.(msg.event, {
-        planApprovedAwaitingReview: planReview.isAwaitingHandoffReview(event.sessionId),
-      });
-      if (instruction) {
-        planReview.clearAwaitingHandoffReview(event.sessionId);
-      }
-      return instruction;
     },
     onPlanReviewRequest: (msg, signal) => {
       const strategy = locator.strategyFor(msg.harness);
