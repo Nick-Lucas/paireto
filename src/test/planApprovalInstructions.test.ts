@@ -10,7 +10,6 @@ import * as assert from "node:assert";
 
 import { KiroStrategy } from "../harness/KiroStrategy.js";
 import type { Harness } from "../protocol/types.js";
-import { instructionsFor } from "../harness/instructions.js";
 import {
   activateForFixtureRepo,
   openWire,
@@ -49,14 +48,10 @@ suite("plan approval carries no next-step rules", () => {
 
   test("Kiro declares its rules on the rejection, not the approval", async function () {
     this.timeout(90_000);
-    const strategy = new KiroStrategy();
-    const rules = strategy.extraPlanReviewResponseInstructions ?? [];
-    assert.strictEqual(
-      instructionsFor(rules, "approved").length,
-      0,
-      "Kiro declares no approval rule",
+    assert.ok(
+      (new KiroStrategy().rejectedPlanReviewInstructions ?? []).length > 0,
+      "Kiro declares a rejection rule",
     );
-    assert.ok(instructionsFor(rules, "rejected").length > 0, "Kiro declares a rejection rule");
 
     await approve("plan-approve-kiro", "sess-kiro", "kiro");
     const response = await planResponse();

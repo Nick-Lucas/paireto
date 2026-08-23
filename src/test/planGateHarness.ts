@@ -114,7 +114,7 @@ export function sendPlanRequest(
   },
 ): void {
   wire.send({
-    t: "plan.review.request",
+    t: "plan.review.hook.request",
     v: PLUGIN_VERSION,
     id: opts.id,
     ts: new Date().toISOString(),

@@ -65,11 +65,9 @@ export async function runPlanReview(
   if (!response) {
     return textResult("Plan review session closed.");
   }
-  // `deny` is the reviewer asking for changes, so its reason is the feedback to act on. An `allow`
-  // carries a reason too when the harness has rules for what to do once the approved work is
-  // finished — dropping it here would strand a harness that has no turn-end hook left to hear them.
+  // `deny` is the reviewer asking for changes, so its reason is the feedback to act on.
   if (response.decision === "deny" && response.reason) {
     return textResult(response.reason);
   }
-  return textResult(response.reason ? `${PLAN_APPROVED}\n\n${response.reason}` : PLAN_APPROVED);
+  return textResult(PLAN_APPROVED);
 }

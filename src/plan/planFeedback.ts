@@ -1,11 +1,10 @@
 // Renders plan review comments into the deny message Claude receives when the user sends feedback
-// on a plan. Mirrors the in-house voice of renderRejectedReviewFeedback (a short directive line followed by
-// itemized [KIND] entries) so plan and code-review feedback read as one system. Problems first,
-// then questions, then plain comments — every kind is included.
+// on a plan. Mirrors the in-house voice of renderRejectedReviewFeedback (a short directive line
+// followed by itemized [KIND] entries) so plan and code-review feedback read as one system.
+// Problems first, then questions, then plain comments — every kind is included.
 
 import dedent from "dedent";
 import { KIND_RANK, type CommentKind } from "../comments/kinds.js";
-import { instructionsFor, type HarnessInstruction } from "../harness/instructions.js";
 
 export interface PlanCommentData {
   line: number; // 0-based
@@ -17,7 +16,7 @@ export interface PlanCommentData {
 /**
  * "Send Feedback": deny + a directive to revise the plan to address the feedback.
  *
- * `extraPlanReviewResponseInstructions` are rules a harness adds when its own agent needs telling how
+ * `rejectedPlanReviewInstructions` are rules a harness adds when its own agent needs telling how
  * to get the revised plan back — Kiro's planner otherwise asks the user whether the plan is good and
  * waits. They are per-harness rather than shared so the wording every other harness has already
  * recorded stays byte-identical.
@@ -25,10 +24,10 @@ export interface PlanCommentData {
 export function renderRejectedPlanFeedback(
   comments: PlanCommentData[],
   toolName = "ExitPlanMode",
-  extraPlanReviewResponseInstructions: HarnessInstruction[] = [],
+  rejectedPlanReviewInstructions: string[] = [],
 ): string {
   const sorted = sortComments(comments);
-  const extraRules = instructionsFor(extraPlanReviewResponseInstructions, "rejected")
+  const extraRules = rejectedPlanReviewInstructions
     .map((instruction) => `\n    - ${instruction}`)
     .join("");
   return dedent`

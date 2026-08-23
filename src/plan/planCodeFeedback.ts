@@ -2,7 +2,6 @@
 // the wording can be tested without the UI: the plan gate asks these functions what to do, then
 // shows the modal itself.
 
-import type { HarnessInstruction } from "../harness/instructions.js";
 import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { renderRejectedPlanFeedback, type PlanCommentData } from "./planFeedback.js";
@@ -51,13 +50,13 @@ export function composeRejectedPlanFeedback(args: {
   planComments: PlanCommentData[];
   codeComments: ReviewComment[];
   toolName: string;
-  extraPlanReviewResponseInstructions?: HarnessInstruction[];
+  rejectedPlanReviewInstructions?: string[];
   multiRepository: boolean;
 }): string {
   const plan = renderRejectedPlanFeedback(
     args.planComments,
     args.toolName,
-    args.extraPlanReviewResponseInstructions,
+    args.rejectedPlanReviewInstructions,
   );
   const code = renderRejectedReviewFeedback(args.codeComments, args.multiRepository);
   if (!code) {

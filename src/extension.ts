@@ -213,7 +213,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       agents.ingest(event, msg.repoRoot);
     },
-    onPlanReviewRequest: (msg, signal) => {
+    onPlanReviewHook: (msg, signal) => {
       const strategy = locator.strategyFor(msg.harness);
       const event = strategy.toAppEvent(msg.event, msg.meta);
       if (!event) {
@@ -271,7 +271,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         sessionId,
         msg.repoRoot,
         signal,
-        locator.strategyFor(msg.harness).extraReviewResponseInstructions ?? [],
+        locator.strategyFor(msg.harness).rejectedCodeReviewInstructions ?? [],
       );
     },
     onGuidedReviewAwait: (msg, signal) => {
@@ -337,7 +337,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         strategy.displayName,
         msg.repoRoot,
         signal,
-        strategy.extraReviewResponseInstructions ?? [],
+        strategy.rejectedCodeReviewInstructions ?? [],
       );
     },
 

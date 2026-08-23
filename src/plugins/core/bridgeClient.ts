@@ -10,7 +10,7 @@ import type {
   AnyMessage,
   GuidedReviewAwaitRequest,
   HookEventMessage,
-  PlanReviewRequest,
+  PlanReviewHookRequest,
   PlanReviewToolRequest,
   ReviewAwaitRequest,
   SessionAttachMessage,
@@ -33,7 +33,7 @@ export type NotificationBody =
 
 /** Blocking round-trips. The client also allocates the correlation id. */
 export type RequestBody =
-  | Omit<PlanReviewRequest, Stamped | "id">
+  | Omit<PlanReviewHookRequest, Stamped | "id">
   | Omit<PlanReviewToolRequest, Stamped | "id">
   | Omit<ReviewAwaitRequest, Stamped | "id">
   | Omit<GuidedReviewAwaitRequest, Stamped | "id">
@@ -43,16 +43,16 @@ export type RequestTag = RequestBody["t"];
 
 /** Request tag to response tag. The runtime table below is typed BY this, so the two cannot drift. */
 export interface ResponseTagOf {
-  "plan.review.request": "plan.review.response";
-  "plan.review.tool.request": "plan.review.response";
+  "plan.review.hook.request": "plan.review.hook.response";
+  "plan.review.tool.request": "plan.review.tool.response";
   "review.await.request": "review.await.response";
   "guided.review.await.request": "guided.review.await.response";
   "stop.gate.request": "stop.gate.response";
 }
 
 export const RESPONSE_TAG: ResponseTagOf = {
-  "plan.review.request": "plan.review.response",
-  "plan.review.tool.request": "plan.review.response",
+  "plan.review.hook.request": "plan.review.hook.response",
+  "plan.review.tool.request": "plan.review.tool.response",
   "review.await.request": "review.await.response",
   "guided.review.await.request": "guided.review.await.response",
   "stop.gate.request": "stop.gate.response",

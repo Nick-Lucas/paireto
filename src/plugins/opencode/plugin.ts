@@ -178,12 +178,8 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
             if (!response) {
               return REVIEW_UNAVAILABLE;
             }
-            if (response.status === "submitted" && response.feedback) {
-              return response.feedback;
-            }
-
-            return response.feedback
-              ? `${REVIEW_APPROVED}\n\n${response.feedback}`
+            return response.status === "submitted" && response.feedback
+              ? response.feedback
               : REVIEW_APPROVED;
           } catch {
             return REVIEW_FAILED;
@@ -202,7 +198,7 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
           const plan = args?.plan ?? "";
           try {
             const response = await bridge.gate({
-              t: "plan.review.request",
+              t: "plan.review.hook.request",
               harness: "opencode",
               repoRoot: bridge.repoRoot,
               // Self-contained synthetic gate event per the seam invariant: the adapter injects the

@@ -37,7 +37,7 @@ async function planGate(
   }
   const response = await result.connection.request(
     {
-      t: "plan.review.request",
+      t: "plan.review.hook.request",
       harness: "kiro",
       repoRoot: target.repoRoot,
       event,

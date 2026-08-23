@@ -21,7 +21,11 @@ export function createInboundEventLog(msg: AnyMessage, locator: AgentServiceLoca
   if (msg.t === "plan.review.tool.request") {
     return `${msg.t} agent=${msg.sessionId?.slice(0, 8) ?? "unknown"}`;
   }
-  if (msg.t === "hook.event" || msg.t === "plan.review.request" || msg.t === "stop.gate.request") {
+  if (
+    msg.t === "hook.event" ||
+    msg.t === "plan.review.hook.request" ||
+    msg.t === "stop.gate.request"
+  ) {
     const strategy = locator.strategyForWire(msg.harness);
     if (!strategy) {
       return msg.t;
@@ -191,13 +195,13 @@ export class SocketServer {
       case "hook.event":
         this.handlers.onHookEvent(msg);
         break;
-      case "plan.review.request": {
+      case "plan.review.hook.request": {
         const ac = new AbortController();
         inflight.add(ac);
         try {
-          const result = await this.handlers.onPlanReviewRequest(msg, ac.signal);
+          const result = await this.handlers.onPlanReviewHook(msg, ac.signal);
           send({
-            t: "plan.review.response",
+            t: "plan.review.hook.response",
             v: PLUGIN_VERSION,
             id: msg.id,
             ts: new Date().toISOString(),
@@ -216,7 +220,7 @@ export class SocketServer {
         try {
           const result = await this.handlers.onPlanReviewTool(msg, ac.signal);
           send({
-            t: "plan.review.response",
+            t: "plan.review.tool.response",
             v: PLUGIN_VERSION,
             id: msg.id,
             ts: new Date().toISOString(),

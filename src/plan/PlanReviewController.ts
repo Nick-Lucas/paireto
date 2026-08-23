@@ -29,7 +29,6 @@ import {
 import { planDocLabel } from "./planTitle.js";
 import { PlanGateRegistry } from "./PlanGateRegistry.js";
 import type { Harness } from "../protocol/types.js";
-import { instructionsFor } from "../harness/instructions.js";
 
 interface PlanReview {
   id: string;
@@ -249,17 +248,7 @@ export class PlanReviewController implements vscode.Disposable {
       `plan review approved for agent ${review.sessionId.slice(0, 8)}` +
         (nextMode ? ` (mode -> ${nextMode})` : ""),
     );
-
-    const approvalInstructions = instructionsFor(
-      this.locator.strategyFor(review.harness).extraPlanReviewResponseInstructions ?? [],
-      "approved",
-    ).join("\n");
-
-    this.registry.fulfill(review.key, {
-      decision: "allow",
-      nextMode,
-      ...(approvalInstructions ? { reason: approvalInstructions } : {}),
-    });
+    this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
 
   private async sendFeedback(review: PlanReview): Promise<void> {
@@ -306,14 +295,14 @@ export class PlanReviewController implements vscode.Disposable {
     log.info(
       `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
+    const strategy = this.locator.strategyFor(review.harness);
     this.registry.fulfill(review.key, {
       decision: "deny",
       reason: composeRejectedPlanFeedback({
         planComments: comments,
         codeComments: sentCode,
-        toolName: this.locator.strategyFor(review.harness).planToolName,
-        extraPlanReviewResponseInstructions: this.locator.strategyFor(review.harness)
-          .extraPlanReviewResponseInstructions,
+        toolName: strategy.planToolName,
+        rejectedPlanReviewInstructions: strategy.rejectedPlanReviewInstructions,
         multiRepository: this.codeFeedback.isMultiRepository(),
       }),
     });

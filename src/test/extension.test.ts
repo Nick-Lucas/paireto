@@ -566,9 +566,7 @@ suite("renderRejectedReviewFeedback", () => {
   // that pass — without a closing rule the agent makes the changes and the review loop ends there.
   test("a harness that cannot reopen the round gets a closing rule", () => {
     const rule = "When you have made these changes, call the paireto_review tool again.";
-    const rendered = renderRejectedReviewFeedback([mk({ body: "fix" })], false, [
-      { when: "rejected", instruction: rule },
-    ]);
+    const rendered = renderRejectedReviewFeedback([mk({ body: "fix" })], false, [rule]);
 
     assert.ok(rendered.includes(`- ${rule}`), "the rule is bulleted");
     assert.ok(
@@ -585,18 +583,8 @@ suite("renderRejectedReviewFeedback", () => {
     );
   });
 
-  test("an approved-only rule is left out of rejection feedback", () => {
-    const rendered = renderRejectedReviewFeedback([mk({ body: "fix" })], false, [
-      { when: "approved", instruction: "carry on with the next task" },
-    ]);
-    assert.ok(!rendered.includes("carry on with the next task"));
-  });
-
   test("no comments stays empty even with a closing rule", () => {
-    assert.strictEqual(
-      renderRejectedReviewFeedback([], false, [{ when: "rejected", instruction: "call the tool again" }]),
-      "",
-    );
+    assert.strictEqual(renderRejectedReviewFeedback([], false, ["call the tool again"]), "");
   });
 });
 

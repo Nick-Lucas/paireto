@@ -49,7 +49,7 @@ async function main(): Promise<void> {
   }
   const response = await result.connection.request(
     {
-      t: "plan.review.request",
+      t: "plan.review.hook.request",
       harness: "kiro",
       repoRoot: target.repoRoot,
       event,

@@ -68,8 +68,8 @@ suite("renderRejectedPlanFeedback extra instructions", () => {
     const first = "Do not ask the user whether the plan is good; call switch_to_execution.";
     const second = "Keep the changeset names stable.";
     const rendered = renderRejectedPlanFeedback(PLAN_COMMENTS, "switch_to_execution", [
-      { when: "rejected", instruction: first },
-      { when: "always", instruction: second },
+      first,
+      second,
     ]);
 
     assert.ok(rendered.includes(`- ${first}`));

@@ -82,8 +82,5 @@ export async function runReview(
   if (response.status === "submitted" && response.feedback) {
     return textResult(response.feedback);
   }
-
-  return textResult(
-    response.feedback ? `${REVIEW_APPROVED}\n\n${response.feedback}` : REVIEW_APPROVED,
-  );
+  return textResult(REVIEW_APPROVED);
 }

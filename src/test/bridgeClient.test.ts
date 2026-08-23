@@ -31,11 +31,21 @@ suite("plugin bridge client", () => {
   test("response tags cover every request tag", () => {
     assert.deepStrictEqual(Object.keys(RESPONSE_TAG).sort(), [
       "guided.review.await.request",
-      "plan.review.request",
+      "plan.review.hook.request",
       "plan.review.tool.request",
       "review.await.request",
       "stop.gate.request",
     ]);
+  });
+
+  // One request tag, one response tag, named the same but for the suffix. Two requests sharing a
+  // response leaves a reader unable to tell from a wire log which gate answered.
+  test("each request tag pairs with a response tag of its own name", () => {
+    for (const [request, response] of Object.entries(RESPONSE_TAG)) {
+      assert.strictEqual(response, `${request.replace(/\.request$/, "")}.response`);
+    }
+    const responses = Object.values(RESPONSE_TAG);
+    assert.strictEqual(new Set(responses).size, responses.length, "no response tag is shared");
   });
 
   test("a missing socket resolves no-socket rather than throwing", async () => {
@@ -199,7 +209,7 @@ suite("plugin bridge client", () => {
     }
 
     const response = await result.connection.request({
-      t: "plan.review.request",
+      t: "plan.review.hook.request",
       harness: "claudecode",
       repoRoot: "/repo",
       event: { hook_event_name: "PermissionRequest" } as never,
@@ -260,7 +270,7 @@ suite("plugin bridge client", () => {
     }
 
     const response = await result.connection.request({
-      t: "plan.review.request",
+      t: "plan.review.hook.request",
       harness: "claudecode",
       repoRoot: "/repo",
       event: { hook_event_name: "PermissionRequest" } as never,

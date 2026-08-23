@@ -88,7 +88,7 @@ async function main(): Promise<void> {
   const planMarkdown = resolvePlanMarkdown(event);
   const response = await result.connection.request(
     {
-      t: "plan.review.request",
+      t: "plan.review.hook.request",
       harness: "claudecode",
       repoRoot: target.repoRoot,
       event,

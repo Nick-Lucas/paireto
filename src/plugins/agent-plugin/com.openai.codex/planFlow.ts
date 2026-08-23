@@ -2,7 +2,7 @@
 // can continue with feedback (`decision:"block"`) or let the turn finish (no output); they cannot
 // change collaboration mode or select Codex's native approve-and-switch action.
 
-import type { PlanReviewResponse } from "../../../protocol/types.js";
+import type { PlanReviewOutcome } from "../../../protocol/types.js";
 
 export interface PlanGateOutcome {
   decision: "allow" | "block";
@@ -10,7 +10,7 @@ export interface PlanGateOutcome {
 }
 
 export function planGateOutcome(
-  message: Pick<PlanReviewResponse, "decision" | "reason"> | undefined,
+  message: Pick<PlanReviewOutcome, "decision" | "reason"> | undefined,
 ): PlanGateOutcome {
   if (message?.decision === "deny") {
     return {

@@ -4,13 +4,12 @@
 import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
-import { instructionsFor, type HarnessInstruction } from "../harness/instructions.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
 export function renderRejectedReviewFeedback(
   comments: ReviewComment[],
   multiRepository = false,
-  extraInstructions: HarnessInstruction[] = [],
+  rejectedInstructions: string[] = [],
 ): string {
   const actionable = [...comments].sort(
     (a, b) =>
@@ -31,9 +30,7 @@ export function renderRejectedReviewFeedback(
     })
     .join("\n\n");
 
-  const rules = instructionsFor(extraInstructions, "rejected")
-    .map((instruction) => `\n- ${instruction}`)
-    .join("");
+  const rules = rejectedInstructions.map((instruction) => `\n- ${instruction}`).join("");
   return dedent`
     Code review feedback received from the user:
 

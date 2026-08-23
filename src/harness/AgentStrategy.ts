@@ -7,7 +7,6 @@
 import type { HarnessEventMeta, HarnessHookEvent } from "../protocol/types.js";
 import type { Harness } from "../protocol/types.js";
 import type { AppEvent } from "./appEvent.js";
-import type { HarnessInstruction } from "./instructions.js";
 
 export interface AgentStrategy {
   readonly harness: Harness;
@@ -15,11 +14,14 @@ export interface AgentStrategy {
   readonly displayName: string;
   /** Wording for the plan tool in user-facing feedback prose (Claude: "ExitPlanMode"). */
   readonly planToolName: string;
-  /** Extra rules added to plan feedback when this harness's agent needs telling how to bring the
-   *  revised plan back. Empty for harnesses whose agent re-submits on its own. */
-  readonly extraPlanReviewResponseInstructions?: HarnessInstruction[];
-  /** Extra rules added to CODE review feedback, for instance to instruct the agent to call a tool later */
-  readonly extraReviewResponseInstructions?: HarnessInstruction[];
+  /** Extra rules added to REJECTED plan feedback when this harness's agent needs telling how to
+   *  bring the revised plan back. Empty for harnesses whose agent re-submits on its own. An
+   *  approval carries no rules: Kiro, the only harness that wants them, reads an allowed hook's
+   *  stdout as a JSON decision and discards any text on it. */
+  readonly rejectedPlanReviewInstructions?: string[];
+  /** Extra rules added to REJECTED code review feedback, for instance telling the agent to call a
+   *  tool once it has made the changes. */
+  readonly rejectedCodeReviewInstructions?: string[];
   /** Default plan-approve permission mode when the user hasn't configured one; undefined = the
    *  harness has no settable mode (leave it unchanged). */
   readonly defaultPlanApproveMode: string | undefined;
