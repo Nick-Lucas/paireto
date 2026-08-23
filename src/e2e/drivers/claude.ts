@@ -60,6 +60,7 @@ export class ClaudeDriver implements HarnessDriver {
     turnEndReview: "blocking",
     guidedReviewInvocation: "/paireto:guided-review",
     reviewInvocation: "/paireto:review",
+    opensTurnEndReview: true,
     reportsTurnEndAfterPlan: true,
   };
 

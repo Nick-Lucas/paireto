@@ -132,9 +132,9 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
     });
 
     test("the turn-end review delivers feedback the agent acts on", async () => {
-      // A harness that reports no turn end after a plan opens no review by itself, so the user asks
-      // for one — the same path the manual-skills case drives.
-      if (!driver.caps.reportsTurnEndAfterPlan) {
+      // A harness that opens no turn-end review of its own needs the user to ask for one — the same
+      // path the manual-skills case drives.
+      if (!driver.caps.opensTurnEndReview) {
         await driver.prompt(driver.caps.reviewInvocation);
       }
       // Blocking (claude/codex): the agent is parked, so require reviewActive. Post-hoc (opencode): the

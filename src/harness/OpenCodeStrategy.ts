@@ -124,6 +124,7 @@ export class OpenCodeStrategy implements AgentStrategy {
   // For OpenCode `nextMode` is not a permission mode but the TARGET AGENT to switch to on approval
   // (the plugin's paireto_submit_plan tool prompts it to proceed). Default to `build` so an approved
   // plan hands off to the implementer; `paireto.planApprove.mode.opencode` overrides it, "off" stays.
+  readonly supportsTurnEndReview = true;
   readonly defaultPlanApproveMode: string | undefined = "build";
   // The plugin holds a per-top-level-session liveness socket open; the OS dropping it on process
   // death clears the row directly — no silence sweep needed.

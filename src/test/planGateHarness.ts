@@ -96,7 +96,7 @@ export async function openWire(repoRoot: string): Promise<Wire> {
 /** Send a plan for review and wait for its tab. */
 export async function openPlan(
   wire: Wire,
-  opts: { repoRoot: string; id: string; sessionId: string; markdown?: string },
+  opts: { repoRoot: string; id: string; sessionId: string; markdown?: string; harness?: Harness },
 ): Promise<vscode.Tab> {
   sendPlanRequest(wire, opts);
   return waitFor("the plan tab to open", () => planTab());

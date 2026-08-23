@@ -266,13 +266,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
           once: true,
         });
       }
-      return reviewController.startSession(
-        msg.id,
-        sessionId,
-        msg.repoRoot,
-        signal,
-        locator.strategyFor(msg.harness).rejectedCodeReviewInstructions ?? [],
-      );
+      return reviewController.startSession(msg.id, sessionId, msg.repoRoot, signal);
     },
     onGuidedReviewAwait: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
@@ -337,7 +331,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         strategy.displayName,
         msg.repoRoot,
         signal,
-        strategy.rejectedCodeReviewInstructions ?? [],
+        strategy.supportsTurnEndReview,
       );
     },
 

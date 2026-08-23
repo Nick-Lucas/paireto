@@ -12,6 +12,9 @@ import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { relatedWorkspaceFolder } from "../git/WorkspaceRootCatalog.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
 import { ClaudeCodeStrategy } from "../harness/ClaudeCodeStrategy.js";
+import { CodexStrategy } from "../harness/CodexStrategy.js";
+import { KiroStrategy } from "../harness/KiroStrategy.js";
+import { OpenCodeStrategy } from "../harness/OpenCodeStrategy.js";
 import { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { AgentStrategy } from "../harness/AgentStrategy.js";
 import type { AppEvent, AppEventKind } from "../harness/appEvent.js";
@@ -560,31 +563,6 @@ suite("renderRejectedReviewFeedback", () => {
     );
     assert.ok(out.includes("/workspace/api/src/a.ts:1"));
     assert.ok(out.includes("/workspace/web/src/a.ts:1"));
-  });
-
-  // Kiro's agent server runs Stop hooks once per graph run, and delivering this feedback spends
-  // that pass — without a closing rule the agent makes the changes and the review loop ends there.
-  test("a harness that cannot reopen the round gets a closing rule", () => {
-    const rule = "When you have made these changes, call the paireto_review tool again.";
-    const rendered = renderRejectedReviewFeedback([mk({ body: "fix" })], false, [rule]);
-
-    assert.ok(rendered.includes(`- ${rule}`), "the rule is bulleted");
-    assert.ok(
-      rendered.indexOf(rule) < rendered.indexOf("fix"),
-      "the rules sit with the instructions, above the comments",
-    );
-  });
-
-  test("a harness without one renders exactly the text it always did", () => {
-    const comments = [mk({ body: "fix" })];
-    assert.strictEqual(
-      renderRejectedReviewFeedback(comments, false, []),
-      renderRejectedReviewFeedback(comments, false),
-    );
-  });
-
-  test("no comments stays empty even with a closing rule", () => {
-    assert.strictEqual(renderRejectedReviewFeedback([], false, ["call the tool again"]), "");
   });
 });
 
@@ -2155,6 +2133,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
     changedThisTurn: false,
     hasComments: false,
     automatic: true,
+    harnessSupported: true,
   };
   test("opens a review when the agent's turn edited files", () => {
     assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
@@ -2182,6 +2161,28 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
       shouldOpenTurnEndReview({ ...base, automatic: false, hasComments: true }),
       true,
     );
+  });
+  // Kiro runs Stop hooks once per graph run, which makes a turn-end review unreliable there. The
+  // harness veto is checked here as well as in its hook, so a Power left over from an older install
+  // still cannot open one.
+  test("a harness without turn-end review support never opens one", () => {
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, harnessSupported: false, changedThisTurn: true }),
+      false,
+    );
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, harnessSupported: false, hasComments: true }),
+      false,
+    );
+  });
+});
+
+suite("turn-end review support by harness", () => {
+  test("Kiro declares none; every other harness carries one", () => {
+    assert.strictEqual(new KiroStrategy().supportsTurnEndReview, false);
+    assert.strictEqual(new ClaudeCodeStrategy().supportsTurnEndReview, true);
+    assert.strictEqual(new CodexStrategy().supportsTurnEndReview, true);
+    assert.strictEqual(new OpenCodeStrategy().supportsTurnEndReview, true);
   });
 });
 

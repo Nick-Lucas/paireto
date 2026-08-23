@@ -165,8 +165,6 @@ export class ReviewController implements vscode.Disposable {
   private activeRequestId?: string;
   /** Owning agent session of the active review (best-effort; drives the Agents panel). */
   private activeSessionId?: string;
-  /** The active review's harness-specific rules, appended when the reviewer sends feedback. */
-  private activeRejectedInstructions: string[] = [];
   /** The agent's changeset plan for the active guided review. Held OUTSIDE `repositoryStates`, which
    *  `refresh()` rebuilds wholesale — so it stores paths and resolves them fresh on every read. */
   private guidedPlan?: GuidedPlan;
@@ -327,7 +325,6 @@ export class ReviewController implements vscode.Disposable {
     sessionId: string | undefined,
     repoRoot: string,
     signal: AbortSignal,
-    rejectedInstructions: string[] = [],
   ): Promise<ReviewGateResult> {
     if (this.roots.gitRoots.length === 0) {
       void vscode.window.showWarningMessage("Paireto code review requires a Git repository.");
@@ -339,15 +336,7 @@ export class ReviewController implements vscode.Disposable {
     log.info(
       `review opened for agent ${sessionId?.slice(0, 8) ?? "unknown"}: manual (/paireto-review)`,
     );
-    return this.runReview(
-      requestId,
-      sessionId,
-      repoRoot,
-      signal,
-      (result) => result,
-      "review",
-      rejectedInstructions,
-    );
+    return this.runReview(requestId, sessionId, repoRoot, signal, (result) => result);
   }
 
   /**
@@ -417,9 +406,7 @@ export class ReviewController implements vscode.Disposable {
       requestId,
       `${displayName} prepared a review plan — ${changesets.length} changeset${plural}.`,
     );
-
-    // A guided review doesn't return extra instructions because (right now) they're primarily used to patch plan/review gates for improved agent behaviour
-    return this.runReview(requestId, sessionId, repoRoot, signal, (result) => result, "guided", []);
+    return this.runReview(requestId, sessionId, repoRoot, signal, (result) => result, "guided");
   }
 
   /**
@@ -434,7 +421,7 @@ export class ReviewController implements vscode.Disposable {
     displayName: string,
     repoRoot: string,
     signal: AbortSignal,
-    rejectedInstructions: string[] = [],
+    harnessSupported: boolean,
   ): Promise<StopGateResult> {
     const who = sessionId?.slice(0, 8) ?? "unknown";
     const hasComments = this.hasComments();
@@ -450,6 +437,7 @@ export class ReviewController implements vscode.Disposable {
       changedThisTurn,
       hasComments,
       automatic,
+      harnessSupported,
     });
     if (!open) {
       log.debug(`review gate: agent ${who} stop allowed, nothing to review`);
@@ -468,14 +456,8 @@ export class ReviewController implements vscode.Disposable {
       requestId,
       `${displayName} finished its turn and is waiting for your review.`,
     );
-    return this.runReview(
-      requestId,
-      sessionId,
-      repoRoot,
-      signal,
-      (r) => (r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false }),
-      "review",
-      rejectedInstructions,
+    return this.runReview(requestId, sessionId, repoRoot, signal, (r) =>
+      r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false },
     );
   }
 
@@ -512,7 +494,6 @@ export class ReviewController implements vscode.Disposable {
     signal: AbortSignal,
     map: (result: ReviewGateResult) => T,
     kind: GateKind = "review",
-    rejectedInstructions: string[] = [],
   ): Promise<T> {
     // Take the pending slot BEFORE the UI goes up: registering foregrounds the gate, so Approve and
     // Send Feedback reach this review while that registration is still running, and fulfill() drops
@@ -524,7 +505,7 @@ export class ReviewController implements vscode.Disposable {
     };
     signal.addEventListener("abort", onAbort, { once: true });
     try {
-      await this.registerReviewGate(requestId, sessionId, repoRoot, kind, rejectedInstructions);
+      await this.registerReviewGate(requestId, sessionId, repoRoot, kind);
     } catch (err) {
       // The pending slot was taken before the UI went up, so a failure here has to give it back.
       // Nothing else can: the entry, the listener and the review slot are all held here, and the
@@ -552,11 +533,9 @@ export class ReviewController implements vscode.Disposable {
     sessionId: string | undefined,
     repoRoot: string,
     kind: GateKind,
-    rejectedInstructions: string[] = [],
   ): Promise<void> {
     this.activeRequestId = requestId;
     this.activeSessionId = sessionId;
-    this.activeRejectedInstructions = rejectedInstructions;
     await this.refresh();
     const entry: GateEntry = {
       id: requestId,
@@ -1852,11 +1831,7 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.getComments();
-    const feedback = renderRejectedReviewFeedback(
-      comments,
-      this.isMultiRepository(),
-      this.activeRejectedInstructions,
-    );
+    const feedback = renderRejectedReviewFeedback(comments, this.isMultiRepository());
     if (!feedback) {
       void vscode.window.showWarningMessage(
         "No comments to send. Add a comment, or Approve to proceed with no changes.",
@@ -2215,8 +2190,14 @@ export function shouldOpenTurnEndReview(opts: {
   hasComments: boolean;
   /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only comments do. */
   automatic: boolean;
+  /** The harness can carry a turn-end review at all — see AgentStrategy.supportsTurnEndReview. */
+  harnessSupported: boolean;
 }): boolean {
-  return !opts.reviewInProgress && ((opts.automatic && opts.changedThisTurn) || opts.hasComments);
+  return (
+    opts.harnessSupported &&
+    !opts.reviewInProgress &&
+    ((opts.automatic && opts.changedThisTurn) || opts.hasComments)
+  );
 }
 
 /**

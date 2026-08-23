@@ -12,9 +12,9 @@ import { KiroStrategy } from "../harness/KiroStrategy.js";
 import type { Harness } from "../protocol/types.js";
 import {
   activateForFixtureRepo,
+  openPlan,
   openWire,
   resetWorkbench,
-  sendPlanRequest,
   waitFor,
   waitForForegroundGate,
   type Wire,
@@ -36,12 +36,15 @@ suite("plan approval carries no next-step rules", () => {
 
   function planResponse(): Promise<Record<string, unknown>> {
     return waitFor("the plan gate response", () =>
-      wire.messages.find((m) => m.t === "plan.review.response"),
+      wire.messages.find((m) => m.t === "plan.review.hook.response"),
     );
   }
 
+  // Wait for the TAB, not just the foreground gate: registering the gate foregrounds it before its
+  // UI has finished going up, and approving into that window races the tab open against the close
+  // that resolving the plan performs.
   async function approve(id: string, sessionId: string, harness: Harness): Promise<void> {
-    sendPlanRequest(wire, { repoRoot, id, sessionId, harness });
+    await openPlan(wire, { repoRoot, id, sessionId, harness });
     await waitForForegroundGate("plan");
     await vscode.commands.executeCommand("paireto.gate.approve");
   }

@@ -12,9 +12,14 @@ export interface DriverCaps {
   /** How the user asks this harness for an interactive review by hand — the canonical path for a
    *  harness whose turn-end hooks cannot carry one. */
   reviewInvocation: string;
+  /** Whether the harness opens a review by ITSELF when a turn ends. Kiro does not: it registers no
+   *  turn-end review, because its agent server runs Stop hooks once per graph run and that single
+   *  pass is routinely spent before the work is done. A Kiro user asks for the review instead. */
+  opensTurnEndReview: boolean;
   /** Whether the harness still reports a turn end once a plan-driven run finishes. Kiro does not:
    *  its agent server runs Stop hooks once per graph run and the plan proposal spends that pass, so
-   *  the session stays mid-turn after the last gate resolves even though the work is done. */
+   *  the session stays mid-turn after the last gate resolves even though the work is done. That is
+   *  also why Kiro registers no turn-end review — the case asks for one by hand instead. */
   reportsTurnEndAfterPlan: boolean;
 }
 

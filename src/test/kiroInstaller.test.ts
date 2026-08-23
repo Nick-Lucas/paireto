@@ -23,10 +23,11 @@ suite("Kiro install plan", () => {
     });
   });
 
-  test("renders unified v1 hooks with both plan gates and the review gate", () => {
+  test("renders unified v1 hooks with both plan gates and no turn-end review", () => {
     const rendered = JSON.parse(renderKiroHooks("/stable path/power")) as {
       version: string;
       hooks: Array<{
+        name: string;
         trigger: string;
         matcher?: string;
         action: { command: string };
@@ -45,6 +46,15 @@ suite("Kiro install plan", () => {
       ),
     );
     assert.ok(stopHooks.every((hook) => hook.confirm === undefined));
+
+    // Kiro runs Stop hooks once per graph run, so a turn-end review there is unreliable. The Stop
+    // gate stays for the FIRST plan proposal, which Kiro only makes visible by ending its turn.
+    assert.strictEqual(
+      rendered.hooks.filter((hook) => /review/i.test(hook.name)).length,
+      1,
+      "only the native plan review remains",
+    );
+    assert.ok(rendered.hooks.every((hook) => !/turn review/i.test(hook.name)));
 
     // The planner presents its FIRST plan by ending the turn, and Kiro runs Stop hooks once per user
     // turn, so a REVISED plan can only come back through switch_to_execution. Both gates are needed.

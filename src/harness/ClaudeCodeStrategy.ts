@@ -146,6 +146,7 @@ export class ClaudeCodeStrategy implements AgentStrategy {
   readonly harness: Harness = "claudecode";
   readonly displayName = "Claude";
   readonly planToolName = "ExitPlanMode";
+  readonly supportsTurnEndReview = true;
   readonly defaultPlanApproveMode: string | undefined = "auto";
   // The MCP server holds a per-session liveness socket (see SessionAttachMessage), so process death
   // is detected directly — no silence-based sweep removal needed.

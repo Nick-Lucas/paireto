@@ -48,6 +48,9 @@ function commandFor(root: string, script: string): string {
  * visible at Stop. Kiro then runs Stop hooks once per user turn — a hook that asks it to continue
  * does not get a second run — so a revised plan comes back through `switch_to_execution`, which is
  * exactly what Paireto's plan feedback tells the agent to call.
+ *
+ * That same once-per-run limit is why no turn-end REVIEW is registered: the pass is routinely spent
+ * on the plan, so a review gated on it would open late or not at all. Kiro reviews on request only.
  */
 export function renderKiroHooks(stagedPower: string): string {
   const event = commandFor(stagedPower, "on-event.js");
@@ -91,7 +94,7 @@ export function renderKiroHooks(stagedPower: string): string {
           enabled: true,
         },
         {
-          name: "Paireto turn review",
+          name: "Paireto plan proposal at turn end",
           trigger: "Stop",
           action: { type: "command", command: stop },
           timeout: 345600,

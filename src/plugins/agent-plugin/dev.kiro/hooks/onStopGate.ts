@@ -1,3 +1,12 @@
+// Kiro's Stop hook, which carries the FIRST plan proposal only.
+//
+// Kiro's planner writes its plan and ends the turn instead of switching to execution, so that first
+// proposal is visible nowhere else. A turn end carries no review: Kiro's agent server runs Stop
+// hooks once per graph run (`onAgentStopHooksExecuted`), so the single pass is routinely spent
+// before the work is done, and a review that opens on a spent pass never reopens. A Kiro user asks
+// for a review instead — `/paireto-review` or `/paireto-guided-review`, both of which ride the MCP
+// tool and need no hook at all.
+
 import * as os from "node:os";
 import * as path from "node:path";
 
@@ -10,7 +19,6 @@ import { kiroPid, writeKiroHandoff } from "../handoff.js";
 import { kiroPlanGateOutcome } from "../planFlow.js";
 import { readKiroPlanTurn } from "../planTurn.js";
 
-const CONNECT_TIMEOUT_MS = 1500;
 const PLAN_CONNECT_TIMEOUT_MS = 3000;
 const PLAN_GATE_TIMEOUT_MS = 345600 * 1000;
 
@@ -54,24 +62,6 @@ async function planGate(
   }
 }
 
-async function reviewGate(event: KiroHookEvent, target: BridgeTarget): Promise<void> {
-  const result = await connect(target, { timeoutMs: CONNECT_TIMEOUT_MS });
-  if (!result.ok) {
-    allow();
-  }
-  const response = await result.connection.request({
-    t: "stop.gate.request",
-    harness: "kiro",
-    repoRoot: target.repoRoot,
-    event,
-  });
-  result.connection.close();
-  if (response?.decision === "block" && response.reason) {
-    block(response.reason);
-  }
-  allow();
-}
-
 async function main(): Promise<void> {
   const event = parseEvent<KiroHookEvent>(await readStdin());
   if (!event || event.hook_event_name !== "Stop") {
@@ -90,7 +80,7 @@ async function main(): Promise<void> {
   if (turn.kind === "plan") {
     await planGate(event, target, turn.planMarkdown);
   }
-  await reviewGate(event, target);
+  allow();
 }
 
 main().catch(() => allow());

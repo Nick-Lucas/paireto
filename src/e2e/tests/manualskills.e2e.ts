@@ -5,8 +5,8 @@
 //
 // This path matters because it depends on no hook at all. A turn-end review needs the harness to
 // emit a usable stop signal and to accept feedback into an idle session; the MCP tool needs neither,
-// so it is the one review flow every harness can complete — and for Kiro it is the ONLY one, which
-// is why `fullflow @kiro` routes to an override instead (see fullflow.kiro.e2e.ts).
+// so it is the one review flow every harness can complete — and for Kiro, which registers no
+// turn-end review, it is the ONLY one.
 //
 // Assertions are STRUCTURAL: that a review gate opens from the skill alone, that the feedback
 // reaches the agent (proved by a file it writes), and that the session settles with every gate

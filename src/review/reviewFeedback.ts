@@ -9,7 +9,6 @@ import type { ReviewComment } from "./reviewTypes.js";
 export function renderRejectedReviewFeedback(
   comments: ReviewComment[],
   multiRepository = false,
-  rejectedInstructions: string[] = [],
 ): string {
   const actionable = [...comments].sort(
     (a, b) =>
@@ -30,11 +29,10 @@ export function renderRejectedReviewFeedback(
     })
     .join("\n\n");
 
-  const rules = rejectedInstructions.map((instruction) => `\n- ${instruction}`).join("");
   return dedent`
     Code review feedback received from the user:
 
-    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.${rules}
+    Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
 
     ${items}
   `;

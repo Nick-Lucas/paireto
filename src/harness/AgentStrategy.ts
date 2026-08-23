@@ -19,9 +19,10 @@ export interface AgentStrategy {
    *  approval carries no rules: Kiro, the only harness that wants them, reads an allowed hook's
    *  stdout as a JSON decision and discards any text on it. */
   readonly rejectedPlanReviewInstructions?: string[];
-  /** Extra rules added to REJECTED code review feedback, for instance telling the agent to call a
-   *  tool once it has made the changes. */
-  readonly rejectedCodeReviewInstructions?: string[];
+  /** Whether a turn end can carry an automatic review. False for a harness whose turn-end signal is
+   *  too unreliable to gate on — Kiro runs Stop hooks once per graph run, so the pass is often spent
+   *  before the work is done. Those harnesses review on request only. */
+  readonly supportsTurnEndReview: boolean;
   /** Default plan-approve permission mode when the user hasn't configured one; undefined = the
    *  harness has no settable mode (leave it unchanged). */
   readonly defaultPlanApproveMode: string | undefined;

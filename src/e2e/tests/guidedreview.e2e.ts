@@ -234,16 +234,20 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
     });
 
     test("approving the follow-up clears the plan", async () => {
-      const followUp = await wait("the follow-up turn's gate to open", async () => {
-        const snap = await inspect();
-        return snap.gates.find((g) => g.id !== gate.id);
-      });
-      await driveUntil(
-        "paireto.gate.approve",
-        followUp.id,
-        async () => !(await inspect()).gates.some((g) => g.id === followUp.id),
-        "the follow-up gate to resolve on approve",
-      );
+      // A harness that opens no turn-end review raises no second gate to approve — acting on the
+      // feedback IS the end of the flow there, so the plan just has to clear.
+      if (driver.caps.opensTurnEndReview) {
+        const followUp = await wait("the follow-up turn's gate to open", async () => {
+          const snap = await inspect();
+          return snap.gates.find((g) => g.id !== gate.id);
+        });
+        await driveUntil(
+          "paireto.gate.approve",
+          followUp.id,
+          async () => !(await inspect()).gates.some((g) => g.id === followUp.id),
+          "the follow-up gate to resolve on approve",
+        );
+      }
       await wait("all gates to resolve and the guided plan to clear", async () => {
         const snap = await inspect();
         const settled = snap.sessions.some((s) => s.state === "stopped" || s.state === "idle");
