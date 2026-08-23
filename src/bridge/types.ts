@@ -47,6 +47,15 @@ export interface StopGateResult {
   reason?: string;
 }
 
+/** A plugin turned away at the handshake because its wire version is not this window's. */
+export interface HandshakeRejection {
+  /** The `v` the plugin sent. */
+  pluginVersion: string;
+  /** The `v` this window requires. */
+  extVersion: string;
+  repoRoot: string;
+}
+
 /** Callbacks the socket server invokes for inbound messages. */
 export interface BridgeHandlers {
   /** Passive telemetry — update session state, refresh worktrees, etc. */
@@ -77,4 +86,7 @@ export interface BridgeHandlers {
   onSessionAttached(sessionId: string): void;
   /** A held-open liveness connection dropped. When the last one closes the process has died. */
   onSessionDetached(sessionId: string): void;
+  /** A plugin was refused at the handshake. Every hook of that agent will be refused the same way
+   *  until one side restarts, so this is the only chance to say so. */
+  onHandshakeRejected(rejection: HandshakeRejection): void;
 }

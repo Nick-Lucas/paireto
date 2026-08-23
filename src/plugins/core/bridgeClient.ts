@@ -82,7 +82,12 @@ export interface BridgeConnection {
 
 export type ConnectResult =
   | { readonly ok: true; readonly connection: BridgeConnection }
-  | { readonly ok: false; readonly reason: ConnectFailure };
+  | {
+      readonly ok: false;
+      readonly reason: ConnectFailure;
+      /** The version the window requires, when it got far enough to tell us. */
+      readonly extVersion?: string;
+    };
 
 /**
  * Connect and complete the handshake.

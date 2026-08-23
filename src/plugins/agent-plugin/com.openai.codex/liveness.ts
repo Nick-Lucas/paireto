@@ -8,6 +8,8 @@ import * as path from "node:path";
 
 import type { BridgeConnection } from "../../core/bridgeClient.js";
 import { connect } from "../../core/bridgeClient.js";
+import type { HandshakeFailure } from "../../core/ndjson.js";
+import { isTerminalFailure, refusedMessage } from "../../core/ndjson.js";
 import type { CodexHandoff } from "./handoff.js";
 import { codexPid, handoffPath, readHandoff } from "./handoff.js";
 
@@ -36,14 +38,34 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   let latestHandoff: CodexHandoff | undefined;
   let watcher: fs.FSWatcher | undefined;
   let stopped = false;
+  /** The session whose attach the window turned away. Nothing about that changes until one side
+   *  restarts, so the poll must stop re-offering the same build twice a second. */
+  let refusedSessionId: string | undefined;
+  /** The failure already on the record. The poll can meet the same one twice a second, and repeating
+   *  it would bury everything else, so a reason is stated once and again when it changes. */
+  let loggedFailure: HandshakeFailure | undefined;
 
   const detach = () => {
     connection?.close();
     connection = undefined;
   };
 
+  /** Say why liveness is not attached. No failure is silent: without a line here the agent simply
+   *  never appears in the panel, with nothing anywhere to say what stopped it. */
+  const noteFailure = (reason: HandshakeFailure, extVersion?: string) => {
+    if (reason !== loggedFailure) {
+      loggedFailure = reason;
+      console.error(
+        isTerminalFailure(reason)
+          ? `paireto: ${refusedMessage(extVersion)}. Liveness and reviews stay unavailable until then.`
+          : `paireto: liveness could not attach (${reason}); the next poll retries.`,
+      );
+    }
+  };
+
   const attach = (handoff: CodexHandoff) => {
     if (!fs.existsSync(handoff.socketPath)) {
+      noteFailure("no-socket");
       return; // no listening window yet — a later poll tick retries
     }
     connectingSessionId = handoff.sessionId;
@@ -55,8 +77,13 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
         connectingSessionId = undefined;
       }
       if (!result.ok) {
-        return; // no window listening — liveness unavailable, poll retries
+        noteFailure(result.reason, result.extVersion);
+        if (isTerminalFailure(result.reason)) {
+          refusedSessionId = handoff.sessionId;
+        }
+        return; // a settled refusal stops here; anything else is retried by the next poll
       }
+      loggedFailure = undefined; // attached — a later failure is news again
       // The active session may have changed while we were connecting — drop a now-stale connection.
       if (stopped || handoff.sessionId !== currentSessionId) {
         result.connection.close();
@@ -78,12 +105,18 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   };
 
   /** Reconcile the held socket with the latest handoff: re-attach on a session change, and retry the
-   *  attach when we saw the session but no window was up yet. */
+   *  attach when we saw the session but no window was up yet. A session the window refused is not
+   *  retried — a new session clears that, since it is a fresh rendezvous and may name another window. */
   const sync = (handoff: CodexHandoff) => {
     if (handoff.sessionId !== currentSessionId) {
       detach();
       currentSessionId = handoff.sessionId;
+      refusedSessionId = undefined;
+      loggedFailure = undefined;
       attach(handoff);
+      return;
+    }
+    if (refusedSessionId === handoff.sessionId) {
       return;
     }
     if (!connection && connectingSessionId !== handoff.sessionId) {

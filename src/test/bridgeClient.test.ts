@@ -85,6 +85,16 @@ suite("plugin bridge client", () => {
     await server.dispose();
   });
 
+  // A refusal is a version disagreement, not a transport fault, and only the window knows which
+  // version it wanted. Carry it back so callers can say what is actually wrong.
+  test("a rejected handshake carries the window's version back", async () => {
+    const server = await startServer(ackWith(false, "9.9.9"));
+    const result = await connect(server.target);
+
+    assert.strictEqual(result.ok === false && result.extVersion, "9.9.9");
+    await server.dispose();
+  });
+
   test("a non-JSON ack resolves bad-ack", async () => {
     const server = await startServer((line, sock) => {
       if ((JSON.parse(line) as { t: string }).t === "hello") {

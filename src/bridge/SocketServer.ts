@@ -158,10 +158,23 @@ export class SocketServer {
               accept,
               ...(accept ? {} : { reason: "protocol-version-mismatch" }),
             });
+
             if (!accept) {
+              // Logged at error so it lands at the default verbosity: the agent gets no usable
+              // signal, so without this line a refused session is indistinguishable from an idle one.
+              log.error(
+                `bridge refused a plugin built for wire version ${msg.v} (this window speaks ` +
+                  `${PLUGIN_VERSION}) for ${this.repoRoot} — the agent must reload its plugins`,
+              );
+              this.handlers.onHandshakeRejected({
+                pluginVersion: msg.v,
+                extVersion: PLUGIN_VERSION,
+                repoRoot: this.repoRoot,
+              });
               socket.destroy();
               return;
             }
+
             handshaken = true;
           } else {
             socket.destroy();

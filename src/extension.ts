@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import { AgentSessionService } from "./agents/AgentSessionService.js";
 import { ActivityPublisher } from "./bridge/ActivityPublisher.js";
 import { BridgeManager } from "./bridge/BridgeManager.js";
-import type { BridgeHandlers } from "./bridge/types.js";
+import type { BridgeHandlers, HandshakeRejection } from "./bridge/types.js";
 import { AgentServiceLocator } from "./harness/AgentServiceLocator.js";
 import { registerCommentEditingCommands } from "./comments/CommentSession.js";
 import { resolveCommentAuthor } from "./comments/author.js";
@@ -187,6 +187,31 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
+  // A refused agent reconnects on every hook, so the prompt is raised once per plugin version and
+  // then stays quiet — the Output channel carries the per-connection detail.
+  const announcedPluginVersions = new Set<string>();
+  const announceRefusedPlugin = (rejection: HandshakeRejection): void => {
+    if (announcedPluginVersions.has(rejection.pluginVersion)) {
+      return;
+    }
+    announcedPluginVersions.add(rejection.pluginVersion);
+    void vscode.window
+      .showWarningMessage(
+        `An agent is running the Paireto plugin ${rejection.pluginVersion}, but this window ` +
+          `speaks ${rejection.extVersion}. Its hooks, reviews and plan gates are being refused. ` +
+          `Update the plugin, then reload plugins in the agent.`,
+        "Set Up Agents",
+        "Show Log",
+      )
+      .then((choice) => {
+        if (choice === "Set Up Agents") {
+          void vscode.commands.executeCommand(Commands.openWelcome);
+        } else if (choice === "Show Log") {
+          log.show();
+        }
+      });
+  };
+
   // Tripwire: a review/stop request should only ever arrive for the repo this window serves. A
   // foreign repoRoot means the bridge targeted the wrong socket — log it (behavior unchanged).
   const warnForeignRepo = (repoRoot: string): void => {
@@ -339,6 +364,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => agents.detachSession(sessionId),
+    onHandshakeRejected: (rejection) => announceRefusedPlugin(rejection),
   };
 
   const bridge = new BridgeManager(handlers, locator);
