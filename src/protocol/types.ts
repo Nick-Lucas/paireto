@@ -54,6 +54,7 @@ export type MessageType =
   | "hello"
   | "hello.ack"
   | "hook.event"
+  | "hook.event.ack"
   | "session.attach"
   | "plan.review.request"
   | "plan.review.tool.request"
@@ -93,9 +94,10 @@ export interface HelloAckMessage extends Envelope {
   reason?: string;
 }
 
-/** Fire-and-forget telemetry carrying a passive hook event. No `id` — the hook never waits. `event`
- *  is the raw harness payload passed through as-is (see {@link HarnessHookEvent}, whichever dialect
- *  `harness` names); `harness` and `repoRoot` are the bridge's own envelope metadata. */
+/** A passive hook event. `event` is the raw harness payload passed through as-is (see
+ *  {@link HarnessHookEvent}, whichever dialect `harness` names); `harness` and `repoRoot` are the
+ *  bridge's own envelope metadata. Carries an `id` and is answered by a {@link HookEventAck}, because
+ *  the extension may have a rule for the agent to hear on this event. */
 export interface HookEventMessage extends Envelope {
   t: "hook.event";
   harness: Harness;
@@ -103,6 +105,17 @@ export interface HookEventMessage extends Envelope {
   event: HarnessHookEvent;
   /** Adapter-injected enrichment kept OUT of `event` (see {@link HarnessEventMeta}). */
   meta?: HarnessEventMeta;
+}
+
+/**
+ * The answer to a `hook.event`. It exists for `instruction`: a rule the agent has to hear on THIS
+ * event, decided by the harness's strategy. A harness whose turn-end hook cannot fire again has no
+ * later chance to say it, and only some of its events can carry text back — so which event and what
+ * text are both the extension's call, and the plugin only relays whatever comes back.
+ */
+export interface HookEventAck extends Envelope {
+  t: "hook.event.ack";
+  instruction?: string;
 }
 
 /**
@@ -275,6 +288,7 @@ export type AnyMessage =
   | HelloMessage
   | HelloAckMessage
   | HookEventMessage
+  | HookEventAck
   | SessionAttachMessage
   | PlanReviewRequest
   | PlanReviewToolRequest

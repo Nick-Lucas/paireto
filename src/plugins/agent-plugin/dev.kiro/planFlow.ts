@@ -14,5 +14,5 @@ export function kiroPlanGateOutcome(
       reason: message.reason || "Plan changes requested.",
     };
   }
-  return { decision: "allow", reason: message?.reason };
+  return { decision: "allow" };
 }

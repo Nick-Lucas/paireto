@@ -7,7 +7,7 @@ import { KIND_RANK } from "../comments/kinds.js";
 import { instructionsFor, type HarnessInstruction } from "../harness/instructions.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
-export function renderReviewFeedback(
+export function renderRejectedReviewFeedback(
   comments: ReviewComment[],
   multiRepository = false,
   extraInstructions: HarnessInstruction[] = [],

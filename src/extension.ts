@@ -212,6 +212,20 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       agents.ingest(event, msg.repoRoot);
+      // A harness whose turn-end hook cannot fire again has to be TOLD to open the review, and only
+      // some of its events can carry text back, so the strategy picks the event and the wording.
+      // Without an id the hook is not waiting for an answer, and taking the pending approval here
+      // would spend it on a reply nobody reads.
+      if (!msg.id) {
+        return undefined;
+      }
+      const instruction = strategy.turnInstruction?.(msg.event, {
+        planApprovedAwaitingReview: planReview.isAwaitingHandoffReview(event.sessionId),
+      });
+      if (instruction) {
+        planReview.clearAwaitingHandoffReview(event.sessionId);
+      }
+      return instruction;
     },
     onPlanReviewRequest: (msg, signal) => {
       const strategy = locator.strategyFor(msg.harness);
@@ -233,12 +247,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       return planReview.presentPlan(event, msg.repoRoot, signal);
     },
-    // A plan the agent submitted through `paireto_plan_review`: same gate as the hook path, but the
-    // plan is in hand, so the AppEvent is built here rather than recovered by a harness strategy.
+    // A plan the agent submitted through `paireto_plan_review` but triggered manually or by the agent
     onPlanReviewTool: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
       const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot) ?? "unknown";
-      signal.addEventListener("abort", () => agents.markIdleOnDisconnect(sessionId), { once: true });
+      signal.addEventListener("abort", () => agents.markIdleOnDisconnect(sessionId), {
+        once: true,
+      });
       return planReview.presentPlan(
         {
           kind: "planProposal",

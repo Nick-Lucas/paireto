@@ -3,9 +3,9 @@
 // shows the modal itself.
 
 import type { HarnessInstruction } from "../harness/instructions.js";
-import { renderReviewFeedback } from "../review/reviewFeedback.js";
+import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
-import { renderPlanFeedback, type PlanCommentData } from "./planFeedback.js";
+import { renderRejectedPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 
 /** What the plan gate needs from the code-review side. ReviewController satisfies this shape. */
 export interface CodeFeedbackSource {
@@ -47,19 +47,19 @@ export function codeFeedbackPromptText(count: number): { message: string; detail
 }
 
 /** The plan block, then the file comments when the user includes them. */
-export function composePlanFeedback(args: {
+export function composeRejectedPlanFeedback(args: {
   planComments: PlanCommentData[];
   codeComments: ReviewComment[];
   toolName: string;
   extraPlanReviewResponseInstructions?: HarnessInstruction[];
   multiRepository: boolean;
 }): string {
-  const plan = renderPlanFeedback(
+  const plan = renderRejectedPlanFeedback(
     args.planComments,
     args.toolName,
     args.extraPlanReviewResponseInstructions,
   );
-  const code = renderReviewFeedback(args.codeComments, args.multiRepository);
+  const code = renderRejectedReviewFeedback(args.codeComments, args.multiRepository);
   if (!code) {
     return plan;
   }

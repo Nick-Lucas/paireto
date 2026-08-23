@@ -1,5 +1,5 @@
 // Renders plan review comments into the deny message Claude receives when the user sends feedback
-// on a plan. Mirrors the in-house voice of renderReviewFeedback (a short directive line followed by
+// on a plan. Mirrors the in-house voice of renderRejectedReviewFeedback (a short directive line followed by
 // itemized [KIND] entries) so plan and code-review feedback read as one system. Problems first,
 // then questions, then plain comments — every kind is included.
 
@@ -22,7 +22,7 @@ export interface PlanCommentData {
  * waits. They are per-harness rather than shared so the wording every other harness has already
  * recorded stays byte-identical.
  */
-export function renderPlanFeedback(
+export function renderRejectedPlanFeedback(
   comments: PlanCommentData[],
   toolName = "ExitPlanMode",
   extraPlanReviewResponseInstructions: HarnessInstruction[] = [],

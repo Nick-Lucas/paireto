@@ -28,6 +28,12 @@ export function exitSilently(): never {
   process.exit(0);
 }
 
+/** Write one line of plain text and exit 0 once the bytes are flushed. Exiting straight after the
+ *  write can drop it, and a dropped line is a rule the agent never hears. */
+export function writeTextAndExit(text: string): void {
+  process.stdout.write(`${text}\n`, () => process.exit(0));
+}
+
 /** Write one JSON line and exit 0 once the bytes are flushed. */
 export function writeAndExit(payload: unknown): void {
   process.stdout.write(JSON.stringify(payload) + "\n", () => process.exit(0));

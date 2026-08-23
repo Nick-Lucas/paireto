@@ -34,4 +34,14 @@ export interface AgentStrategy {
   toAppEvent(event: HarnessHookEvent, meta?: HarnessEventMeta): AppEvent | undefined;
   /** One-line rendering of a raw inbound event for the bridge debug log (event name + context). */
   describeEvent(event: HarnessHookEvent): string;
+  /** The rule to hand back on THIS event, or undefined for none. Asked on every hook event, so a
+   *  harness that must be told something its turn-end hook can no longer tell it can pick the moment
+   *  itself — only some events carry text back to an agent, and which ones is harness knowledge. */
+  turnInstruction?(event: HarnessHookEvent, ctx: TurnInstructionContext): string | undefined;
+}
+
+/** What the strategy needs to know about the gates to answer {@link AgentStrategy.turnInstruction}. */
+export interface TurnInstructionContext {
+  /** A plan was approved for this session and the work it authorised has not been reviewed yet. */
+  readonly planApprovedAwaitingReview: boolean;
 }

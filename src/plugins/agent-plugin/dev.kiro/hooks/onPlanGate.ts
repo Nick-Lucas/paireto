@@ -8,10 +8,9 @@ import { kiroPlanGateOutcome } from "../planFlow.js";
 const CONNECT_TIMEOUT_MS = 3000;
 const PLAN_GATE_TIMEOUT_MS = 345600 * 1000;
 
-function allow(message?: string): never {
-  if (message) {
-    process.stdout.write(`${message}\n`);
-  }
+// Kiro reads an allowed PreToolUse hook's stdout as a JSON decision only, so an allow carries no
+// text back to the agent — anything it has to hear has to ride a block instead.
+function allow(): never {
   process.exit(0);
 }
 
@@ -62,7 +61,8 @@ async function main(): Promise<void> {
   if (outcome.decision === "block") {
     block(outcome.reason || "Plan changes requested.");
   }
-  allow(outcome.reason);
+
+  allow();
 }
 
 main().catch(() => allow());

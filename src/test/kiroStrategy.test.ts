@@ -1,3 +1,5 @@
+import * as assert from "node:assert";
+
 import { KiroStrategy } from "../harness/KiroStrategy.js";
 import type { KiroHookEvent } from "../harness/KiroStrategy.js";
 import { runMapperFixtures } from "./harnessFixtures.js";
@@ -110,4 +112,34 @@ suite("KiroStrategy mapper fixtures", () => {
       expect: null,
     },
   ]);
+});
+
+// Approving a plan starts the turn that implements it, and that turn ends without a Stop hook, so
+// the review it should end in has to be asked for while the turn is still running. Kiro only feeds a
+// hook's stdout to the agent on SessionStart and UserPromptSubmit, which is why the ask waits for a
+// prompt rather than going out on the first event after the approval.
+suite("KiroStrategy turn instruction", () => {
+  const kiro = new KiroStrategy();
+  const askOn = (
+    hook_event_name: KiroHookEvent["hook_event_name"],
+    planApprovedAwaitingReview: boolean,
+  ): string | undefined =>
+    kiro.turnInstruction({ ...base, hook_event_name } as KiroHookEvent, {
+      planApprovedAwaitingReview,
+    });
+
+  test("an approved plan's implementation turn is told to open the review", () => {
+    const instruction = askOn("UserPromptSubmit", true);
+    assert.ok(instruction?.includes("paireto_review"), "names the tool to call");
+  });
+
+  test("no instruction without an approved plan waiting for its review", () => {
+    assert.strictEqual(askOn("UserPromptSubmit", false), undefined);
+  });
+
+  test("events that cannot carry text back get none", () => {
+    for (const event of ["PreToolUse", "PostToolUse", "Stop", "PostFileSave"] as const) {
+      assert.strictEqual(askOn(event, true), undefined, `${event} carries no instruction`);
+    }
+  });
 });

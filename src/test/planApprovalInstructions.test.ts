@@ -1,13 +1,15 @@
-// Approving a plan has to carry the harness's own "what next" rules back to the agent.
+// Approving a plan sends the agent no trailing rules.
 //
-// Kiro is the case that needs it: its agent server runs Stop hooks once per graph run, and raising
-// the first plan gate spends that pass, so finishing the approved work emits no turn-end signal at
-// all. The approval response is the last moment Paireto can tell the agent to open the review —
-// which is why the rule has to be ON the allow, not only on a rejection.
+// Kiro is the harness that would want them: it runs Stop hooks once per graph run, and the plan gate
+// spends that pass, so finishing the approved work emits no turn-end signal. The approval still
+// cannot carry the rule that would open the review, because Kiro reads an allowed hook's stdout as a
+// JSON decision and discards anything else. Rules the agent must hear therefore ride a rejection,
+// which is a channel it does read.
 
 import * as assert from "node:assert";
 
 import { KiroStrategy } from "../harness/KiroStrategy.js";
+import type { Harness } from "../protocol/types.js";
 import { instructionsFor } from "../harness/instructions.js";
 import {
   activateForFixtureRepo,
@@ -20,7 +22,7 @@ import {
 } from "./planGateHarness.js";
 import * as vscode from "vscode";
 
-suite("plan approval carries the harness's next-step rules", () => {
+suite("plan approval carries no next-step rules", () => {
   let repoRoot: string;
   let wire: Wire;
 
@@ -39,44 +41,32 @@ suite("plan approval carries the harness's next-step rules", () => {
     );
   }
 
-  test("a Kiro approval returns the rule that reopens the loop", async function () {
-    this.timeout(90_000);
-    sendPlanRequest(wire, {
-      repoRoot,
-      id: "plan-approve-kiro",
-      sessionId: "sess-kiro",
-      harness: "kiro",
-    });
+  async function approve(id: string, sessionId: string, harness: Harness): Promise<void> {
+    sendPlanRequest(wire, { repoRoot, id, sessionId, harness });
     await waitForForegroundGate("plan");
     await vscode.commands.executeCommand("paireto.gate.approve");
+  }
 
+  test("Kiro declares its rules on the rejection, not the approval", async function () {
+    this.timeout(90_000);
+    const strategy = new KiroStrategy();
+    const rules = strategy.extraPlanReviewResponseInstructions ?? [];
+    assert.strictEqual(
+      instructionsFor(rules, "approved").length,
+      0,
+      "Kiro declares no approval rule",
+    );
+    assert.ok(instructionsFor(rules, "rejected").length > 0, "Kiro declares a rejection rule");
+
+    await approve("plan-approve-kiro", "sess-kiro", "kiro");
     const response = await planResponse();
     assert.strictEqual(response.decision, "allow");
-    const expected = instructionsFor(
-      new KiroStrategy().extraPlanReviewResponseInstructions ?? [],
-      "approved",
-    );
-    assert.ok(expected.length > 0, "Kiro declares an approval rule");
-    for (const rule of expected) {
-      assert.ok(
-        String(response.reason ?? "").includes(rule),
-        `the approval response carries "${rule}"`,
-      );
-    }
+    assert.strictEqual(response.reason, undefined);
   });
 
-  // Every other harness reports its own turn end, so an approval that grew a trailing rule would be
-  // a change to text their cassettes already pin.
-  test("a harness with no approval rule returns none", async function () {
+  test("a harness that reports its own turn end also returns none", async function () {
     this.timeout(90_000);
-    sendPlanRequest(wire, {
-      repoRoot,
-      id: "plan-approve-claude",
-      sessionId: "sess-claude",
-      harness: "claudecode",
-    });
-    await waitForForegroundGate("plan");
-    await vscode.commands.executeCommand("paireto.gate.approve");
+    await approve("plan-approve-claude", "sess-claude", "claudecode");
 
     const response = await planResponse();
     assert.strictEqual(response.decision, "allow");

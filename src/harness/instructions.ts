@@ -7,10 +7,10 @@
  * A rule a harness needs appended to a review response, and the outcome it applies to.
  *
  * The two outcomes need different things: a REJECTED review tells the agent how to come back with
- * the changes, an APPROVED one how to carry on. `true` applies to both.
+ * the changes, an APPROVED one how to carry on. `"always"` applies to both.
  */
 export interface HarnessInstruction {
-  readonly when: "approved" | "rejected" | true;
+  readonly when: "approved" | "rejected" | "always";
   readonly instruction: string;
 }
 
@@ -20,6 +20,6 @@ export function instructionsFor(
   outcome: "approved" | "rejected",
 ): string[] {
   return instructions
-    .filter((entry) => entry.when === true || entry.when === outcome)
+    .filter((entry) => entry.when === "always" || entry.when === outcome)
     .map((entry) => entry.instruction);
 }

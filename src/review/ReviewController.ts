@@ -65,7 +65,7 @@ import {
   type GuidedPlan,
   type GuidedReviewState,
 } from "./guidedPlan.js";
-import { renderReviewFeedback } from "./reviewFeedback.js";
+import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
@@ -1857,7 +1857,7 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.getComments();
-    const feedback = renderReviewFeedback(
+    const feedback = renderRejectedReviewFeedback(
       comments,
       this.isMultiRepository(),
       this.activeExtraInstructions,
@@ -1876,7 +1876,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** True when there's ≥1 comment to send (drives which gate button shows). */
   hasFeedback(): boolean {
-    return renderReviewFeedback(this.getComments(), this.isMultiRepository()).length > 0;
+    return renderRejectedReviewFeedback(this.getComments(), this.isMultiRepository()).length > 0;
   }
 
   /** True when comment file paths need their repo root prefixed to stay unambiguous. */

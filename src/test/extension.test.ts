@@ -21,8 +21,8 @@ import { branchFromRevParse, gitToplevel } from "../git/gitCli.js";
 import { buildSwitcherSections } from "../status/switcherRows.js";
 import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
-import { renderPlanFeedback } from "../plan/planFeedback.js";
-import { renderReviewFeedback } from "../review/reviewFeedback.js";
+import { renderRejectedPlanFeedback } from "../plan/planFeedback.js";
+import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
 import { PlanGateRegistry } from "../plan/PlanGateRegistry.js";
@@ -506,9 +506,9 @@ suite("buildFileTree", () => {
   });
 });
 
-suite("renderPlanFeedback", () => {
+suite("renderRejectedPlanFeedback", () => {
   test("orders problem before question/comment and includes all kinds", () => {
-    const out = renderPlanFeedback([
+    const out = renderRejectedPlanFeedback([
       { line: 5, quote: "do X", body: "make it Y", kind: "comment" },
       { line: 1, quote: "do Z", body: "must not Z", kind: "problem" },
       { line: 9, quote: "fyi", body: "consider this", kind: "question" },
@@ -521,7 +521,7 @@ suite("renderPlanFeedback", () => {
   });
 });
 
-suite("renderReviewFeedback", () => {
+suite("renderRejectedReviewFeedback", () => {
   const mk = (over: Partial<ReviewComment>): ReviewComment => ({
     id: "x",
     repoRoot: "/repo",
@@ -536,7 +536,7 @@ suite("renderReviewFeedback", () => {
   });
 
   test("includes all kinds, problems first", () => {
-    const out = renderReviewFeedback([
+    const out = renderRejectedReviewFeedback([
       mk({ kind: "question", body: "a-question" }),
       mk({ kind: "problem", body: "real-issue", line: 41 }),
     ]);
@@ -547,11 +547,11 @@ suite("renderReviewFeedback", () => {
   });
 
   test("returns empty when there are no comments", () => {
-    assert.strictEqual(renderReviewFeedback([]), "");
+    assert.strictEqual(renderRejectedReviewFeedback([]), "");
   });
 
   test("qualifies paths by absolute repo root in a multi-repository review", () => {
-    const out = renderReviewFeedback(
+    const out = renderRejectedReviewFeedback(
       [
         mk({ repoRoot: "/workspace/api", filePath: "src/a.ts", body: "api feedback" }),
         mk({ repoRoot: "/workspace/web", filePath: "src/a.ts", body: "web feedback" }),
@@ -566,7 +566,7 @@ suite("renderReviewFeedback", () => {
   // that pass — without a closing rule the agent makes the changes and the review loop ends there.
   test("a harness that cannot reopen the round gets a closing rule", () => {
     const rule = "When you have made these changes, call the paireto_review tool again.";
-    const rendered = renderReviewFeedback([mk({ body: "fix" })], false, [
+    const rendered = renderRejectedReviewFeedback([mk({ body: "fix" })], false, [
       { when: "rejected", instruction: rule },
     ]);
 
@@ -580,13 +580,13 @@ suite("renderReviewFeedback", () => {
   test("a harness without one renders exactly the text it always did", () => {
     const comments = [mk({ body: "fix" })];
     assert.strictEqual(
-      renderReviewFeedback(comments, false, []),
-      renderReviewFeedback(comments, false),
+      renderRejectedReviewFeedback(comments, false, []),
+      renderRejectedReviewFeedback(comments, false),
     );
   });
 
   test("an approved-only rule is left out of rejection feedback", () => {
-    const rendered = renderReviewFeedback([mk({ body: "fix" })], false, [
+    const rendered = renderRejectedReviewFeedback([mk({ body: "fix" })], false, [
       { when: "approved", instruction: "carry on with the next task" },
     ]);
     assert.ok(!rendered.includes("carry on with the next task"));
@@ -594,7 +594,7 @@ suite("renderReviewFeedback", () => {
 
   test("no comments stays empty even with a closing rule", () => {
     assert.strictEqual(
-      renderReviewFeedback([], false, [{ when: "rejected", instruction: "call the tool again" }]),
+      renderRejectedReviewFeedback([], false, [{ when: "rejected", instruction: "call the tool again" }]),
       "",
     );
   });

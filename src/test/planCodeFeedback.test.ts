@@ -5,10 +5,10 @@ import * as assert from "node:assert";
 
 import {
   codeFeedbackPromptText,
-  composePlanFeedback,
+  composeRejectedPlanFeedback,
   planSendDecision,
 } from "../plan/planCodeFeedback.js";
-import { renderPlanFeedback, type PlanCommentData } from "../plan/planFeedback.js";
+import { renderRejectedPlanFeedback, type PlanCommentData } from "../plan/planFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 
 const PLAN_COMMENTS: PlanCommentData[] = [
@@ -60,16 +60,16 @@ suite("planSendDecision", () => {
   });
 });
 
-suite("renderPlanFeedback extra instructions", () => {
+suite("renderRejectedPlanFeedback extra instructions", () => {
   // Kiro's planner revises a plan and then asks the user whether it is good, so without being told
   // otherwise it never calls its plan tool and the revised plan never reaches the reviewer. These are
   // per-harness so the wording every other harness already recorded stays byte-identical.
   test("a harness that needs them gets one rule each", () => {
     const first = "Do not ask the user whether the plan is good; call switch_to_execution.";
     const second = "Keep the changeset names stable.";
-    const rendered = renderPlanFeedback(PLAN_COMMENTS, "switch_to_execution", [
+    const rendered = renderRejectedPlanFeedback(PLAN_COMMENTS, "switch_to_execution", [
       { when: "rejected", instruction: first },
-      { when: true, instruction: second },
+      { when: "always", instruction: second },
     ]);
 
     assert.ok(rendered.includes(`- ${first}`));
@@ -82,25 +82,25 @@ suite("renderPlanFeedback extra instructions", () => {
 
   test("a harness without any gets exactly the text it always got", () => {
     assert.strictEqual(
-      renderPlanFeedback(PLAN_COMMENTS, "ExitPlanMode", []),
-      renderPlanFeedback(PLAN_COMMENTS, "ExitPlanMode"),
+      renderRejectedPlanFeedback(PLAN_COMMENTS, "ExitPlanMode", []),
+      renderRejectedPlanFeedback(PLAN_COMMENTS, "ExitPlanMode"),
     );
   });
 });
 
-suite("composePlanFeedback", () => {
+suite("composeRejectedPlanFeedback", () => {
   test("with no code comments returns the plan feedback unchanged", () => {
-    const composed = composePlanFeedback({
+    const composed = composeRejectedPlanFeedback({
       planComments: PLAN_COMMENTS,
       codeComments: [],
       toolName: "ExitPlanMode",
       multiRepository: false,
     });
-    assert.strictEqual(composed, renderPlanFeedback(PLAN_COMMENTS, "ExitPlanMode"));
+    assert.strictEqual(composed, renderRejectedPlanFeedback(PLAN_COMMENTS, "ExitPlanMode"));
   });
 
   test("with both kinds keeps the plan block first and bridges to the code block", () => {
-    const composed = composePlanFeedback({
+    const composed = composeRejectedPlanFeedback({
       planComments: PLAN_COMMENTS,
       codeComments: [reviewComment()],
       toolName: "ExitPlanMode",
@@ -115,7 +115,7 @@ suite("composePlanFeedback", () => {
   });
 
   test("passes multiRepository through to the code block", () => {
-    const composed = composePlanFeedback({
+    const composed = composeRejectedPlanFeedback({
       planComments: PLAN_COMMENTS,
       codeComments: [reviewComment({ line: 0 })],
       toolName: "ExitPlanMode",
@@ -125,7 +125,7 @@ suite("composePlanFeedback", () => {
   });
 
   test("uses the harness plan tool name", () => {
-    const composed = composePlanFeedback({
+    const composed = composeRejectedPlanFeedback({
       planComments: PLAN_COMMENTS,
       codeComments: [reviewComment()],
       toolName: "update_plan",

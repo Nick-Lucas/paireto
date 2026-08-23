@@ -21,11 +21,7 @@ export function createInboundEventLog(msg: AnyMessage, locator: AgentServiceLoca
   if (msg.t === "plan.review.tool.request") {
     return `${msg.t} agent=${msg.sessionId?.slice(0, 8) ?? "unknown"}`;
   }
-  if (
-    msg.t === "hook.event" ||
-    msg.t === "plan.review.request" ||
-    msg.t === "stop.gate.request"
-  ) {
+  if (msg.t === "hook.event" || msg.t === "plan.review.request" || msg.t === "stop.gate.request") {
     const strategy = locator.strategyForWire(msg.harness);
     if (!strategy) {
       return msg.t;
@@ -192,9 +188,20 @@ export class SocketServer {
     inflight: Set<AbortController>,
   ): Promise<void> {
     switch (msg.t) {
-      case "hook.event":
-        this.handlers.onHookEvent(msg);
+      case "hook.event": {
+        const instruction = this.handlers.onHookEvent(msg);
+        // if an id is included the plugin is expecting a response, but otherwise it's fire and forget
+        if (msg.id) {
+          send({
+            t: "hook.event.ack",
+            v: PLUGIN_VERSION,
+            id: msg.id,
+            ts: new Date().toISOString(),
+            ...(instruction ? { instruction } : {}),
+          });
+        }
         break;
+      }
       case "plan.review.request": {
         const ac = new AbortController();
         inflight.add(ac);

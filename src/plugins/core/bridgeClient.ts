@@ -26,13 +26,15 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 3000;
 /** Envelope fields the client fills in, so no call site writes a wire version or timestamp itself. */
 type Stamped = "v" | "ts";
 
-/** Fire-and-forget messages: no correlation id, no reply. */
+/** Fire-and-forget messages: no correlation id, no reply. A hook event can be sent either way — most
+ *  harnesses only report it, and one that may be answered with a rule for the agent requests it. */
 export type NotificationBody =
   | Omit<HookEventMessage, Stamped>
   | Omit<SessionAttachMessage, Stamped>;
 
 /** Blocking round-trips. The client also allocates the correlation id. */
 export type RequestBody =
+  | Omit<HookEventMessage, Stamped | "id">
   | Omit<PlanReviewRequest, Stamped | "id">
   | Omit<PlanReviewToolRequest, Stamped | "id">
   | Omit<ReviewAwaitRequest, Stamped | "id">
@@ -43,6 +45,7 @@ export type RequestTag = RequestBody["t"];
 
 /** Request tag to response tag. The runtime table below is typed BY this, so the two cannot drift. */
 export interface ResponseTagOf {
+  "hook.event": "hook.event.ack";
   "plan.review.request": "plan.review.response";
   "plan.review.tool.request": "plan.review.response";
   "review.await.request": "review.await.response";
@@ -51,6 +54,7 @@ export interface ResponseTagOf {
 }
 
 export const RESPONSE_TAG: ResponseTagOf = {
+  "hook.event": "hook.event.ack",
   "plan.review.request": "plan.review.response",
   "plan.review.tool.request": "plan.review.response",
   "review.await.request": "review.await.response",
