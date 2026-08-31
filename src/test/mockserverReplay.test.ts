@@ -210,6 +210,21 @@ suite("provider-replay: fixture normalization", () => {
     assert.ok(first.includes("Keep this prompt"));
   });
 
+  // kiro-cli 2.20 added rootConversationId, a per-run `sess_<uuid>`. Left alone it is the one field
+  // that differs between the run that recorded a cassette and every run that replays it.
+  test("normalizes the Kiro root conversation id", () => {
+    const withRoot = (id: string) =>
+      normalizeKiroBody(
+        JSON.stringify({ conversationId: "conversation-a", rootConversationId: id }),
+      );
+
+    assert.strictEqual(
+      withRoot("sess_11111111-1111-4111-8111-111111111111"),
+      withRoot("sess_22222222-2222-4222-8222-222222222222"),
+    );
+    assert.ok(!withRoot("sess_11111111-1111-4111-8111-111111111111").includes("sess_"));
+  });
+
   // normalizeKiroBody walks every object, so an array named `tools` that is NOT an inventory (a tool
   // result quoting one, say) must be left exactly as it is — sorting it would reorder content.
   test("leaves an array named tools alone when it is not an inventory", () => {
@@ -589,6 +604,23 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(normalized.input[1].output[1].text, "stable output");
   });
 
+  // Claude 2.1.251 reports the id of the message it is answering. It is the provider's own handle
+  // for the previous response, so it differs on every run and nothing in these tests reads it.
+  test("blanks Claude's request diagnostics", () => {
+    const body = (previous: string | null): string =>
+      JSON.stringify({
+        model: "claude-haiku-4-5",
+        diagnostics: { previous_message_id: previous },
+        messages: [{ role: "user", content: "keep me" }],
+      });
+
+    assert.strictEqual(
+      normalizeClaudeBody(body("msg_011CeaudBVrnmr8t4KVe949Y")),
+      normalizeClaudeBody(body(null)),
+    );
+    assert.ok(normalizeClaudeBody(body(null)).includes("keep me"));
+  });
+
   test("normalizes timestamps in Codex directory listings", () => {
     const body = (time: string, name = "src"): string =>
       JSON.stringify({
@@ -612,6 +644,65 @@ suite("provider-replay: fixture normalization", () => {
       normalizeOpenCodeBody(body("09:38")),
       normalizeOpenCodeBody(body("09:38", "docs")),
     );
+  });
+
+  // Codex 0.151 runs shell commands through its `exec` custom tool, whose command sits in the
+  // JavaScript it evaluates and whose output comes back as parts. Left unread, the wall-clock
+  // timestamps of an `ls -l` go into the cassette and it stops matching a minute later.
+  test("normalizes timestamps in a Codex exec directory listing", () => {
+    const body = (time: string, name = "hello.txt"): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "custom_tool_call",
+            call_id: "call_1",
+            name: "exec",
+            input:
+              'const r = await tools.exec_command({cmd:"ls -l hello.txt",\n"workdir":"/tmp"});',
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_1",
+            output: [
+              { type: "input_text", text: "NORMALIZED" },
+              { type: "input_text", text: `-rw-r--r-- 1 root root 3 Aug 31 ${time} ${name}\n` },
+            ],
+          },
+        ],
+      });
+
+    assert.strictEqual(normalizeCodexBody(body("13:43")), normalizeCodexBody(body("13:52")));
+    assert.notStrictEqual(
+      normalizeCodexBody(body("13:43")),
+      normalizeCodexBody(body("13:43", "bye.txt")),
+    );
+  });
+
+  // A listing reached through `&&` is still a listing. The agent checks a file's contents and then
+  // lists it in one command, and only the listing half prints — carrying the run's wall clock.
+  test("normalizes a listing timestamp when the command reaches ls part way through", () => {
+    const body = (time: string): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "custom_tool_call",
+            call_id: "call_1",
+            name: "exec",
+            input:
+              'await tools.exec_command({cmd:"test \\"$(cat note.txt)\\" = note && ls -l note.txt"});',
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_1",
+            output: [
+              { type: "input_text", text: "NORMALIZED" },
+              { type: "input_text", text: `-rw-r--r-- 1 root root 5 Aug 31 ${time} note.txt\n` },
+            ],
+          },
+        ],
+      });
+
+    assert.strictEqual(normalizeCodexBody(body("13:43")), normalizeCodexBody(body("14:00")));
   });
 
   test("orders parallel tool results by id, so a race between two commands cannot change the key", () => {

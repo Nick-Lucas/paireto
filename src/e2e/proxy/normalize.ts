@@ -137,6 +137,11 @@ export function normalizeClaudeBody(raw: string): string {
   if ("metadata" in body) {
     body.metadata = null;
   }
+  // Claude reports what it is answering here (the previous response's own message id), which is a
+  // new value on every run. Blanked whole, so a later field added beside it cannot break replay.
+  if ("diagnostics" in body) {
+    body.diagnostics = null;
+  }
   if ("system" in body) {
     body.system = null;
   }
@@ -283,12 +288,20 @@ const DIRECTORY_LISTING = /^\s*(find|ls)\s/;
 const LONG_LISTING_TIMESTAMP =
   /^([bcdlps-][rwxStTs-]{9}\s+\d+\s+\S+\s+\S+\s+\d+\s+)[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})(\s+.*)$/;
 
-function normalizeDirectoryListing(content: string): string {
-  return content
+/**
+ * What a shell tool result contributes to the match key.
+ *
+ * A long listing states the wall clock it was taken at, so those stamps go wherever they appear —
+ * a command that only reaches `ls` after a `&&` still dates its output, and a cassette that kept
+ * that would stop matching minutes after it was recorded. Re-ordering is the narrower rule: it
+ * applies only where the command reports a whole directory, since sorting anything else would
+ * shuffle lines the model reasons about.
+ */
+function normalizeShellOutput(command: string, content: string): string {
+  const lines = content
     .split("\n")
-    .map((line) => line.replace(LONG_LISTING_TIMESTAMP, "$1TIMESTAMP$2"))
-    .sort()
-    .join("\n");
+    .map((line) => line.replace(LONG_LISTING_TIMESTAMP, "$1TIMESTAMP$2"));
+  return (DIRECTORY_LISTING.test(command) ? lines.sort() : lines).join("\n");
 }
 
 function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void {
@@ -324,8 +337,8 @@ function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void
     }
     // Paths and file metadata stay in the key. Host-dependent order and timestamps do not.
     const command = shellCommands.get(object.tool_use_id);
-    if (command && DIRECTORY_LISTING.test(command) && typeof object.content === "string") {
-      object.content = normalizeDirectoryListing(object.content);
+    if (command !== undefined && typeof object.content === "string") {
+      object.content = normalizeShellOutput(command, object.content);
     }
   });
 }
@@ -374,6 +387,34 @@ export function normalizeCodexBody(raw: string): string {
   return JSON.stringify(body);
 }
 
+/** The shell command a Codex `exec` call runs, quoted inside the JavaScript it evaluates. */
+const EXEC_COMMAND = /\bcmd\s*:\s*("(?:[^"\\]|\\.)*")/;
+
+/**
+ * The shell command a Codex tool call runs, whichever tool it reached for: `bash` takes it as a JSON
+ * argument, while `exec` takes JavaScript that calls `exec_command` with it. Both end in the same
+ * place — output this normalizer has to read — so both are read here.
+ */
+function codexShellCommand(call: Record<string, unknown>): string | undefined {
+  if (call.type === "function_call" && call.name === "bash" && typeof call.arguments === "string") {
+    try {
+      const args = JSON.parse(call.arguments) as { command?: unknown };
+      return typeof args.command === "string" ? args.command : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  if (call.type === "custom_tool_call" && call.name === "exec" && typeof call.input === "string") {
+    const match = EXEC_COMMAND.exec(call.input);
+    try {
+      return match ? (JSON.parse(match[1]) as string) : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function normalizeCodexWorkflowToolResults(body: Record<string, unknown>): void {
   if (!Array.isArray(body.input)) {
     return;
@@ -384,21 +425,9 @@ function normalizeCodexWorkflowToolResults(body: Record<string, unknown>): void 
       continue;
     }
     const call = item as Record<string, unknown>;
-    if (
-      call.type !== "function_call" ||
-      call.name !== "bash" ||
-      typeof call.call_id !== "string" ||
-      typeof call.arguments !== "string"
-    ) {
-      continue;
-    }
-    try {
-      const args = JSON.parse(call.arguments) as { command?: unknown };
-      if (typeof args.command === "string") {
-        shellCommands.set(call.call_id, args.command);
-      }
-    } catch {
-      continue;
+    const command = typeof call.call_id === "string" ? codexShellCommand(call) : undefined;
+    if (command !== undefined) {
+      shellCommands.set(call.call_id as string, command);
     }
   }
   for (const item of body.input) {
@@ -406,16 +435,27 @@ function normalizeCodexWorkflowToolResults(body: Record<string, unknown>): void 
       continue;
     }
     const output = item as Record<string, unknown>;
-    if (
-      output.type !== "function_call_output" ||
-      typeof output.call_id !== "string" ||
-      typeof output.output !== "string"
-    ) {
+    if (typeof output.call_id !== "string") {
       continue;
     }
     const command = shellCommands.get(output.call_id);
-    if (command && DIRECTORY_LISTING.test(command)) {
-      output.output = normalizeDirectoryListing(output.output);
+    if (command === undefined) {
+      continue;
+    }
+    if (output.type === "function_call_output" && typeof output.output === "string") {
+      output.output = normalizeShellOutput(command, output.output);
+      continue;
+    }
+    // `exec` answers in parts rather than one string, so each part is normalized in place.
+    if (output.type === "custom_tool_call_output" && Array.isArray(output.output)) {
+      for (const part of output.output) {
+        if (part && typeof part === "object") {
+          const text = (part as Record<string, unknown>).text;
+          if (typeof text === "string") {
+            (part as Record<string, unknown>).text = normalizeShellOutput(command, text);
+          }
+        }
+      }
     }
   }
 }
@@ -483,7 +523,12 @@ export function normalizeOpenCodeBody(raw: string): string {
 
 /** The per-run ids Kiro puts in a request. Each is replaced by a stable name in first-seen order, so
  *  a replay that generates different ids still matches. */
-const KIRO_SCOPED_ID_KEYS = new Set(["agentContinuationId", "conversationId", "toolUseId"]);
+const KIRO_SCOPED_ID_KEYS = new Set([
+  "agentContinuationId",
+  "conversationId",
+  "rootConversationId",
+  "toolUseId",
+]);
 
 /**
  * Kiro states the wall-clock date in its own system prompt:

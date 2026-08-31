@@ -23,16 +23,22 @@ const mockHomeDir = (): string => mockPath("pai-e2e-claude-home");
 const MOCK_SESSION_ID = "00000000-0000-4000-8000-0000000000c1";
 // A fresh CLAUDE_CONFIG_DIR shows first-run interstitials that swallow a typed prompt AND leave the
 // session out of plan mode if the prompt lands too early. Each needs a DIFFERENT keystroke: the
-// "trust this folder" safety check (Enter = "Yes, I trust" — Esc picks "No, exit" and QUITS), and the
-// "fullscreen renderer" opt-in (Down+Enter = "Not now", so it never swaps to an alternate screen
-// buffer). A mode footer proves the TUI is interactive; in plan mode it also proves ExitPlanMode
-// (hence the plan gate) is available.
+// "trust this folder" safety check (answered by stepping onto its yes option — see trustAnswerKeys),
+// and the "fullscreen renderer" opt-in (Down+Enter = "Not now", so it never swaps to an alternate
+// screen buffer). A mode footer proves the TUI is interactive; in plan mode it also proves
+// ExitPlanMode (hence the plan gate) is available.
 const TRUST_DIALOG = /trust this folder|is this a project .*you trust/i;
+/** The option that trusts the folder. Its sibling exits Claude, so the two must never be confused. */
+const TRUST_OPTION = /^yes\b/i;
+/** The marker a Claude select prompt draws against the option under the cursor. */
+const HIGHLIGHT = "❯";
 const FULLSCREEN_DIALOG = /fullscreen renderer|yes, try it/i;
 const PLAN_MODE_READY = /plan mode on/i;
 const MANUAL_MODE_READY = /manual mode on/i;
 const PLAN_FILE_PERMISSION = /allow all edits[^\n]*plans\//i;
-const PLAN_FILE_EDIT_PERMISSION = /do you want to make this edit to plan-[^?\n]+\.md\?/i;
+/** Claude words this by what it is about to do: "create" for a plan file that is not there
+ *  yet, "make this edit to" for one that is. */
+const PLAN_FILE_EDIT_PERMISSION = /do you want to (?:make this edit to|create) plan-[^?\n]+\.md\?/i;
 /** Each poll spawns a `tmux capture-pane` subprocess and this runs for the whole test, so keep the
  *  cadence human-scale. The prompt it watches for stays on screen until answered. */
 const PERMISSION_POLL_MS = 500;
@@ -179,8 +185,11 @@ export class ClaudeDriver implements HarnessDriver {
         return;
       }
       if (TRUST_DIALOG.test(screen)) {
-        this.log('waitForReady: trust dialog — Enter (option 1 "Yes, I trust")');
-        this.tmux.sendKeys("Enter");
+        const keys = trustAnswerKeys(screen);
+        if (keys.length > 0) {
+          this.log(`waitForReady: trust dialog — ${keys.join("+")} ("Yes, I trust this folder")`);
+          this.tmux.sendKeys(...keys);
+        }
       } else if (FULLSCREEN_DIALOG.test(screen)) {
         this.log('waitForReady: fullscreen dialog — Down+Enter (option 2 "Not now")');
         this.tmux.sendKeys("Down");
@@ -235,7 +244,7 @@ export class ClaudeDriver implements HarnessDriver {
     let answeredAt = 0;
     this.planFilePermissionWatcher = setInterval(() => {
       const screen = this.tmux.capture();
-      const visible = PLAN_FILE_PERMISSION.test(screen) || PLAN_FILE_EDIT_PERMISSION.test(screen);
+      const visible = showsPlanFilePermission(screen);
       if (!visible) {
         if (visibleSince !== undefined) {
           this.log("plan-file permission prompt accepted");
@@ -261,6 +270,61 @@ export class ClaudeDriver implements HarnessDriver {
       this.tmux.sendKeys("1");
     }, PERMISSION_POLL_MS);
   }
+}
+
+/** Is Claude asking the user to approve the write of its plan file? */
+export function showsPlanFilePermission(screen: string): boolean {
+  return PLAN_FILE_PERMISSION.test(screen) || PLAN_FILE_EDIT_PERMISSION.test(screen);
+}
+
+interface SelectOption {
+  readonly text: string;
+  readonly highlighted: boolean;
+}
+
+/**
+ * The keys that answer the folder-trust safety check with "yes", or none while it is still drawing.
+ *
+ * The order of the options is not fixed: 2.1.251 put "No, exit" first and under the cursor, so a
+ * bare Enter quits Claude before the run starts. Reading the cursor off the pane and stepping to the
+ * yes option answers it the way a user would whichever order is drawn. Keying nothing until both
+ * options are on screen costs one more poll and never risks confirming the wrong one.
+ */
+export function trustAnswerKeys(screen: string): string[] {
+  const options = selectOptions(screen);
+  const cursor = options.findIndex((option) => option.highlighted);
+  const trust = options.findIndex((option) => TRUST_OPTION.test(option.text));
+  if (cursor < 0 || trust < 0) {
+    return [];
+  }
+  const step = trust > cursor ? "Down" : "Up";
+  return [...Array.from({ length: Math.abs(trust - cursor) }, () => step), "Enter"];
+}
+
+/**
+ * The options of the select prompt on screen, in the order drawn.
+ *
+ * Only the highlighted row is marked, so its siblings are the unbroken run of rows indented to the
+ * same text column — which is what separates them from the prose the prompt sits in.
+ */
+function selectOptions(screen: string): SelectOption[] {
+  const lines = screen.split("\n");
+  const cursor = lines.findIndex((line) => line.includes(HIGHLIGHT));
+  if (cursor < 0) {
+    return [];
+  }
+  const column = lines[cursor].indexOf(HIGHLIGHT) + 2;
+  const indent = " ".repeat(column);
+  const isOption = (line: string) => line.startsWith(indent) && line.slice(column).trim() !== "";
+  const options: SelectOption[] = [];
+  for (let i = cursor - 1; i >= 0 && isOption(lines[i]); i -= 1) {
+    options.unshift({ text: lines[i].slice(column).trim(), highlighted: false });
+  }
+  options.push({ text: lines[cursor].slice(column).trim(), highlighted: true });
+  for (let i = cursor + 1; i < lines.length && isOption(lines[i]); i += 1) {
+    options.push({ text: lines[i].slice(column).trim(), highlighted: false });
+  }
+  return options;
 }
 
 /** The extension repo root (where the shipped plugins/ live) — NOT the sandbox repo. */
