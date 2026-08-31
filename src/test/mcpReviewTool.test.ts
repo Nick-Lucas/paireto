@@ -10,6 +10,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import { GUIDED_REVIEW_TOOL_NAME } from "../plugins/core/mcp/guidedReviewTool.js";
+import { PLAN_REVIEW_TOOL_NAME } from "../plugins/core/mcp/planReviewTool.js";
 import {
   REVIEW_TOOL_DESCRIPTION,
   REVIEW_TOOL_NAME,
@@ -17,6 +19,7 @@ import {
   textResult,
 } from "../plugins/core/mcp/reviewTool.js";
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
+import type { Harness } from "../protocol/types.js";
 
 suite("MCP paireto_review tool", () => {
   test("the tool name is the one the skills and commands invoke", () => {
@@ -70,16 +73,19 @@ suite("MCP paireto_review tool", () => {
   });
 
   test("with no window listening the tool reports an error rather than hanging", async () => {
-    const result = await runReview(undefined);
+    const result = await runReview(undefined, "kiro");
     assert.strictEqual(result.isError, true);
     assert.match(result.content[0].text, /No VS Code Paireto is listening/);
   });
 
   test("a socket that is not there reports no window rather than a connection failure", async () => {
-    const result = await runReview({
-      target: { socketPath: "/nonexistent/nope.sock", repoRoot: "/tmp" },
-      cwd: "/tmp",
-    });
+    const result = await runReview(
+      {
+        target: { socketPath: "/nonexistent/nope.sock", repoRoot: "/tmp" },
+        cwd: "/tmp",
+      },
+      "kiro",
+    );
     assert.strictEqual(result.isError, true);
     assert.match(result.content[0].text, /No VS Code Paireto is listening/);
   });
@@ -89,14 +95,56 @@ suite("MCP paireto_review tool", () => {
     const notASocket = path.join(dir, "not.sock");
     fs.writeFileSync(notASocket, "");
     try {
-      const result = await runReview({
-        target: { socketPath: notASocket, repoRoot: dir },
-        cwd: dir,
-      });
+      const result = await runReview(
+        {
+          target: { socketPath: notASocket, repoRoot: dir },
+          cwd: dir,
+        },
+        "kiro",
+      );
       assert.strictEqual(result.isError, true);
       assert.match(result.content[0].text, /Could not connect/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+});
+
+// `paireto_plan_review` exists for the one harness that cannot raise a second plan gate from a hook.
+// Advertising it anywhere else gives the model a way to "approve" a plan without the harness-native
+// mode transition an approval has to carry, so the inventory is checked per harness.
+suite("MCP paireto_plan_review tool exposure", () => {
+  const toolNames = async (harness: Harness): Promise<string[]> => {
+    const server = createMcpServer({
+      serverName: "paireto-test",
+      harness,
+      resolveReviewTarget: () => undefined,
+      startLiveness: () => () => {},
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "0.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const tools = await client.request({ method: "tools/list" }, ListToolsResultSchema);
+      return tools.tools.map((tool) => tool.name).sort();
+    } finally {
+      await client.close();
+    }
+  };
+
+  test("Kiro gets the plan-review tool", async () => {
+    assert.deepStrictEqual(
+      await toolNames("kiro"),
+      [PLAN_REVIEW_TOOL_NAME, REVIEW_TOOL_NAME, GUIDED_REVIEW_TOOL_NAME].sort(),
+    );
+  });
+
+  for (const harness of ["claudecode", "codex", "opencode"] as const) {
+    test(`${harness} does not get the plan-review tool`, async () => {
+      assert.deepStrictEqual(
+        await toolNames(harness),
+        [REVIEW_TOOL_NAME, GUIDED_REVIEW_TOOL_NAME].sort(),
+      );
+    });
+  }
 });

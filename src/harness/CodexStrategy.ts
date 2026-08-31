@@ -103,6 +103,7 @@ export class CodexStrategy implements AgentStrategy {
   readonly planToolName = "update_plan";
   // Codex has no settable post-approval permission mode (approving a plan leaves it in plan mode;
   // the user exits manually), so there is no default to send on approve.
+  readonly supportsTurnEndReview = true;
   readonly defaultPlanApproveMode: string | undefined = undefined;
   // The stdio-MCP liveness server attaches via the generic session.attach path (instant socket-close
   // removal on death), but this stays FALSE so AgentSessionService's silence sweep still cleans up a

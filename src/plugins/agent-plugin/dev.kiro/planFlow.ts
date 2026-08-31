@@ -1,4 +1,4 @@
-import type { PlanReviewResponse } from "../../../protocol/types.js";
+import type { PlanReviewOutcome } from "../../../protocol/types.js";
 
 export interface KiroPlanGateOutcome {
   decision: "allow" | "block";
@@ -6,7 +6,7 @@ export interface KiroPlanGateOutcome {
 }
 
 export function kiroPlanGateOutcome(
-  message: Pick<PlanReviewResponse, "decision" | "reason"> | undefined,
+  message: Pick<PlanReviewOutcome, "decision" | "reason"> | undefined,
 ): KiroPlanGateOutcome {
   if (message?.decision === "deny") {
     return {

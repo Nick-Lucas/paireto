@@ -68,12 +68,16 @@ export class KiroStrategy implements AgentStrategy {
   readonly harness: Harness = "kiro";
   readonly displayName = "Kiro";
   readonly planToolName = "switch_to_execution";
-  /** Kiro's planner ends a revision by asking the user whether the plan is good and then waits, and
-   *  Kiro runs Stop hooks once per user turn — so without this the revised plan never reaches the
-   *  reviewer at all. */
-  readonly extraPlanReviewResponseInstructions = [
-    "Do not ask the user whether the revised plan is good — call switch_to_execution with it.",
+  /** Kiro only runs Stop hooks once per turn, so the agent has to reopen the review itself for
+   *  another round of feedback. */
+  readonly rejectedPlanReviewInstructions = [
+    "Do not ask the user whether the revised plan is good — send the revised plan straight to " +
+      "switch_to_execution for another round of review.",
   ];
+  /** Kiro's agent server runs Stop hooks once per graph run (`onAgentStopHooksExecuted`), so the one
+   *  pass is routinely spent on the plan and the implementing turn ends with no signal at all. A
+   *  review opens on request instead — `/paireto-review` or `/paireto-guided-review`. */
+  readonly supportsTurnEndReview = false;
   readonly defaultPlanApproveMode: string | undefined = undefined;
   readonly supportsLiveness = false;
 

@@ -6,7 +6,10 @@ import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
 import type { ReviewComment } from "./reviewTypes.js";
 
-export function renderReviewFeedback(comments: ReviewComment[], multiRepository = false): string {
+export function renderRejectedReviewFeedback(
+  comments: ReviewComment[],
+  multiRepository = false,
+): string {
   const actionable = [...comments].sort(
     (a, b) =>
       KIND_RANK[a.kind] - KIND_RANK[b.kind] ||

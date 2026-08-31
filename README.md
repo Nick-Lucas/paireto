@@ -90,6 +90,11 @@ comments from the VS Code editor, then click **Approve** or **Send Feedback** to
 
 When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill.
 
+**Kiro is the exception: it has no automatic review.** Kiro runs its Stop hooks once per agent run,
+so the one pass is usually spent before the work is finished and a review gated on it opens late or
+not at all. With Kiro, ask for the review yourself — `/paireto-review`, or `/paireto-guided-review`
+for a guided one. Plan Mode is unaffected and still opens on its own.
+
 Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish. 
 
 ## Guided Review

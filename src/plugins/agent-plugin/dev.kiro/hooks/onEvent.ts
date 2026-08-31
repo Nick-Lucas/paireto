@@ -5,6 +5,7 @@ import type { KiroHookEvent } from "../../../../harness/KiroStrategy.js";
 import type { HarnessEventMeta } from "../../../../protocol/types.js";
 import { connect } from "../../../core/bridgeClient.js";
 import { parseEvent, readStdin } from "../../../core/stdio.js";
+import type { BridgeTarget } from "../../../core/target.js";
 import { resolveTarget } from "../../../core/target.js";
 import { kiroPid, writeKiroHandoff } from "../handoff.js";
 import { readKiroPlanTurn } from "../planTurn.js";
@@ -15,16 +16,7 @@ function kiroHome(): string {
   return process.env.KIRO_HOME || path.join(os.homedir(), ".kiro");
 }
 
-async function main(): Promise<void> {
-  const event = parseEvent<KiroHookEvent>(await readStdin());
-  if (!event) {
-    return;
-  }
-  const cwd = event.cwd || process.cwd();
-  const target = resolveTarget(cwd);
-  if (!target) {
-    return;
-  }
+async function deliver(event: KiroHookEvent, target: BridgeTarget, cwd: string): Promise<void> {
   writeKiroHandoff(kiroPid(), event.session_id, cwd, target);
   const result = await connect(target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
@@ -50,6 +42,19 @@ async function main(): Promise<void> {
     ...(meta ? { meta } : {}),
   });
   result.connection.close();
+}
+
+async function main(): Promise<void> {
+  const event = parseEvent<KiroHookEvent>(await readStdin());
+  if (!event) {
+    return;
+  }
+  const cwd = event.cwd || process.cwd();
+  const target = resolveTarget(cwd);
+  if (!target) {
+    return;
+  }
+  await deliver(event, target, cwd);
 }
 
 main()

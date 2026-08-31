@@ -14,9 +14,15 @@ export interface AgentStrategy {
   readonly displayName: string;
   /** Wording for the plan tool in user-facing feedback prose (Claude: "ExitPlanMode"). */
   readonly planToolName: string;
-  /** Extra rules added to plan feedback when this harness's agent needs telling how to bring the
-   *  revised plan back. Empty for harnesses whose agent re-submits on its own. */
-  readonly extraPlanReviewResponseInstructions?: string[];
+  /** Extra rules added to REJECTED plan feedback when this harness's agent needs telling how to
+   *  bring the revised plan back. Empty for harnesses whose agent re-submits on its own. An
+   *  approval carries no rules: Kiro, the only harness that wants them, reads an allowed hook's
+   *  stdout as a JSON decision and discards any text on it. */
+  readonly rejectedPlanReviewInstructions?: string[];
+  /** Whether a turn end can carry an automatic review. False for a harness whose turn-end signal is
+   *  too unreliable to gate on — Kiro runs Stop hooks once per graph run, so the pass is often spent
+   *  before the work is done. Those harnesses review on request only. */
+  readonly supportsTurnEndReview: boolean;
   /** Default plan-approve permission mode when the user hasn't configured one; undefined = the
    *  harness has no settable mode (leave it unchanged). */
   readonly defaultPlanApproveMode: string | undefined;

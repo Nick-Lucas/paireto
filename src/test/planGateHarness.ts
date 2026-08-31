@@ -13,6 +13,7 @@ import * as vscode from "vscode";
 import { Schemes } from "../config.js";
 import type { AddCommentArgs, InspectSnapshot } from "../e2e/inspectTypes.js";
 import { canonicalize, repoKey, socketPath } from "../protocol/paths.js";
+import type { Harness } from "../protocol/types.js";
 import { PLUGIN_VERSION } from "../protocol/types.js";
 
 export const PLAN_MARKDOWN = "# Plan\n\n- Step one\n- Step two\n";
@@ -95,7 +96,7 @@ export async function openWire(repoRoot: string): Promise<Wire> {
 /** Send a plan for review and wait for its tab. */
 export async function openPlan(
   wire: Wire,
-  opts: { repoRoot: string; id: string; sessionId: string; markdown?: string },
+  opts: { repoRoot: string; id: string; sessionId: string; markdown?: string; harness?: Harness },
 ): Promise<vscode.Tab> {
   sendPlanRequest(wire, opts);
   return waitFor("the plan tab to open", () => planTab());
@@ -104,14 +105,20 @@ export async function openPlan(
 /** The request alone, so a test can act while the gate is still opening its UI. */
 export function sendPlanRequest(
   wire: Wire,
-  opts: { repoRoot: string; id: string; sessionId: string; markdown?: string },
+  opts: {
+    repoRoot: string;
+    id: string;
+    sessionId: string;
+    markdown?: string;
+    harness?: Harness;
+  },
 ): void {
   wire.send({
-    t: "plan.review.request",
+    t: "plan.review.hook.request",
     v: PLUGIN_VERSION,
     id: opts.id,
     ts: new Date().toISOString(),
-    harness: "claudecode",
+    harness: opts.harness ?? "claudecode",
     repoRoot: opts.repoRoot,
     event: {
       session_id: opts.sessionId,
@@ -145,6 +152,7 @@ export function sendReviewRequest(
     ts: new Date().toISOString(),
     cwd: opts.repoRoot,
     repoRoot: opts.repoRoot,
+    harness: "claudecode",
     ...(opts.sessionId ? { sessionId: opts.sessionId } : {}),
   });
 }

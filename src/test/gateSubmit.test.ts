@@ -76,7 +76,7 @@ suite("submitting a gate from the palette", () => {
     );
 
     const response = await waitFor("the plan gate response", () =>
-      wire.messages.find((m) => m.t === "plan.review.response"),
+      wire.messages.find((m) => m.t === "plan.review.hook.response"),
     );
     assert.strictEqual(response.decision, "deny");
     assert.ok(
@@ -93,7 +93,7 @@ suite("submitting a gate from the palette", () => {
     await vscode.commands.executeCommand(Commands.gateSubmit);
 
     const response = await waitFor("the plan gate response", () =>
-      wire.messages.find((m) => m.t === "plan.review.response"),
+      wire.messages.find((m) => m.t === "plan.review.hook.response"),
     );
     assert.strictEqual(response.decision, "allow");
   });

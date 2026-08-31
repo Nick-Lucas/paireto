@@ -12,6 +12,9 @@ import { pickCurrentRepo, type RepoInfo } from "../git/RepoService.js";
 import { relatedWorkspaceFolder } from "../git/WorkspaceRootCatalog.js";
 import { repoSnapshots } from "../bridge/ActivitySnapshot.js";
 import { ClaudeCodeStrategy } from "../harness/ClaudeCodeStrategy.js";
+import { CodexStrategy } from "../harness/CodexStrategy.js";
+import { KiroStrategy } from "../harness/KiroStrategy.js";
+import { OpenCodeStrategy } from "../harness/OpenCodeStrategy.js";
 import { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { AgentStrategy } from "../harness/AgentStrategy.js";
 import type { AppEvent, AppEventKind } from "../harness/appEvent.js";
@@ -21,8 +24,8 @@ import { branchFromRevParse, gitToplevel } from "../git/gitCli.js";
 import { buildSwitcherSections } from "../status/switcherRows.js";
 import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
-import { renderPlanFeedback } from "../plan/planFeedback.js";
-import { renderReviewFeedback } from "../review/reviewFeedback.js";
+import { renderRejectedPlanFeedback } from "../plan/planFeedback.js";
+import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
 import { PlanGateRegistry } from "../plan/PlanGateRegistry.js";
@@ -506,9 +509,9 @@ suite("buildFileTree", () => {
   });
 });
 
-suite("renderPlanFeedback", () => {
+suite("renderRejectedPlanFeedback", () => {
   test("orders problem before question/comment and includes all kinds", () => {
-    const out = renderPlanFeedback([
+    const out = renderRejectedPlanFeedback([
       { line: 5, quote: "do X", body: "make it Y", kind: "comment" },
       { line: 1, quote: "do Z", body: "must not Z", kind: "problem" },
       { line: 9, quote: "fyi", body: "consider this", kind: "question" },
@@ -521,7 +524,7 @@ suite("renderPlanFeedback", () => {
   });
 });
 
-suite("renderReviewFeedback", () => {
+suite("renderRejectedReviewFeedback", () => {
   const mk = (over: Partial<ReviewComment>): ReviewComment => ({
     id: "x",
     repoRoot: "/repo",
@@ -536,7 +539,7 @@ suite("renderReviewFeedback", () => {
   });
 
   test("includes all kinds, problems first", () => {
-    const out = renderReviewFeedback([
+    const out = renderRejectedReviewFeedback([
       mk({ kind: "question", body: "a-question" }),
       mk({ kind: "problem", body: "real-issue", line: 41 }),
     ]);
@@ -547,11 +550,11 @@ suite("renderReviewFeedback", () => {
   });
 
   test("returns empty when there are no comments", () => {
-    assert.strictEqual(renderReviewFeedback([]), "");
+    assert.strictEqual(renderRejectedReviewFeedback([]), "");
   });
 
   test("qualifies paths by absolute repo root in a multi-repository review", () => {
-    const out = renderReviewFeedback(
+    const out = renderRejectedReviewFeedback(
       [
         mk({ repoRoot: "/workspace/api", filePath: "src/a.ts", body: "api feedback" }),
         mk({ repoRoot: "/workspace/web", filePath: "src/a.ts", body: "web feedback" }),
@@ -2130,6 +2133,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
     changedThisTurn: false,
     hasComments: false,
     automatic: true,
+    harnessSupported: true,
   };
   test("opens a review when the agent's turn edited files", () => {
     assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
@@ -2157,6 +2161,28 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
       shouldOpenTurnEndReview({ ...base, automatic: false, hasComments: true }),
       true,
     );
+  });
+  // Kiro runs Stop hooks once per graph run, which makes a turn-end review unreliable there. The
+  // harness veto is checked here as well as in its hook, so a Power left over from an older install
+  // still cannot open one.
+  test("a harness without turn-end review support never opens one", () => {
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, harnessSupported: false, changedThisTurn: true }),
+      false,
+    );
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, harnessSupported: false, hasComments: true }),
+      false,
+    );
+  });
+});
+
+suite("turn-end review support by harness", () => {
+  test("Kiro declares none; every other harness carries one", () => {
+    assert.strictEqual(new KiroStrategy().supportsTurnEndReview, false);
+    assert.strictEqual(new ClaudeCodeStrategy().supportsTurnEndReview, true);
+    assert.strictEqual(new CodexStrategy().supportsTurnEndReview, true);
+    assert.strictEqual(new OpenCodeStrategy().supportsTurnEndReview, true);
   });
 });
 

@@ -82,7 +82,7 @@ suite("a gate that cannot open", () => {
     sendPlanRequest(wire, { repoRoot, id: "plan-open-fail-1", sessionId: "open-failure" });
 
     const response = await waitFor("the plan gate response", () =>
-      wire.messages.find((m) => m.t === "plan.review.response"),
+      wire.messages.find((m) => m.t === "plan.review.hook.response"),
     );
     assert.strictEqual(response.decision, "deny");
     assert.ok(

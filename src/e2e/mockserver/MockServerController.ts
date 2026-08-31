@@ -124,17 +124,20 @@ const PROFILES: Record<string, HarnessProfile> = {
     fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
   },
   // Kiro multiplexes every operation onto `/`, so the operation header is what selects the
-  // conversation traffic. Two lookups are recorded alongside it because their answers end up INSIDE
-  // the next request: `GetFeatureConfiguration` decides which built-in tools Kiro advertises, and
+  // conversation traffic. Three lookups are recorded alongside it because their answers end up
+  // INSIDE the next request: `GetFeatureConfiguration` decides which built-in tools Kiro advertises,
   // `ListAvailableModels` supplies the model's display name, which Kiro writes into its system
-  // prompt ("The current model is Claude Haiku 4.5" against the raw id when unanswered). Left out,
-  // a replay misses on its own preamble rather than on anything the model said. The account-state
-  // operations (GetProfile, GetUsageLimits) are deliberately NOT recorded.
+  // prompt ("The current model is Claude Haiku 4.5" against the raw id when unanswered), and
+  // `InvokeMCP` is how Kiro proxies MCP JSON-RPC — `tools/list` rides on it, so a replay that cannot
+  // answer it never learns Paireto's tools exist and diverges from the run that was recorded.
+  // Left out, a replay misses on its own preamble rather than on anything the model said. The
+  // account-state operations (GetProfile, GetUsageLimits) are deliberately NOT recorded.
   kiro: {
     fixturePaths: [/^\/$/],
     fixtureTargets: [
       /^KiroRuntimeService\.GenerateAssistantResponse$/,
       /^KiroRuntimeService\.GetFeatureConfiguration$/,
+      /^KiroRuntimeService\.InvokeMCP$/,
       /^KiroControlPlaneBearerService\.ListAvailableModels$/,
     ],
   },

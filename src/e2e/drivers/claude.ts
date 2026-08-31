@@ -51,6 +51,8 @@ const PRE_APPROVED_TOOLS = [
 /** A provider-backed run's prompt takes a beat to clear. A fraction of the step budget covers that while
  *  staying inside the step this serves. */
 const PROMPT_ACCEPT_TIMEOUT_MS = STEP_TIMEOUT_MS / 4;
+/** Gap between repeat answers, so a prompt still being drawn is not keyed twice. */
+const PROMPT_ANSWER_GAP_MS = 2_000;
 
 export class ClaudeDriver implements HarnessDriver {
   readonly harness = "claudecode";
@@ -58,6 +60,7 @@ export class ClaudeDriver implements HarnessDriver {
     turnEndReview: "blocking",
     guidedReviewInvocation: "/paireto:guided-review",
     reviewInvocation: "/paireto:review",
+    opensTurnEndReview: true,
   };
 
   private home?: HarnessHome;
@@ -216,49 +219,47 @@ export class ClaudeDriver implements HarnessDriver {
     this.ctx?.log.push(`${new Date().toISOString()} [claude] ${line}`);
   }
 
-  /** Claude writes its plan markdown before calling ExitPlanMode and can ask permission for that
-   *  plans/ write. Answer it as a user in plan mode would, allowing this one edit, which leaves the
-   *  session in plan mode. */
+  /**
+   * Claude writes its plan markdown before calling ExitPlanMode and asks permission for that plans/
+   * write. Answer it as a user in plan mode would, allowing this one edit, which leaves the session
+   * in plan mode.
+   *
+   * Claude asks once per EDIT, so a turn that revises the plan twice raises the prompt twice with no
+   * gap this poll is guaranteed to observe. The answer therefore REPEATS while a prompt is up rather
+   * than firing once per visible episode — answering only the first leaves the agent blocked on the
+   * second for good. A prompt that survives the whole window means its options have moved on from
+   * what the driver keys, which no amount of re-answering fixes.
+   */
   private watchForPlanFilePermission(): void {
-    let handledVisiblePrompt = false;
+    let visibleSince: number | undefined;
+    let answeredAt = 0;
     this.planFilePermissionWatcher = setInterval(() => {
       const screen = this.tmux.capture();
       const visible = PLAN_FILE_PERMISSION.test(screen) || PLAN_FILE_EDIT_PERMISSION.test(screen);
       if (!visible) {
-        handledVisiblePrompt = false;
+        if (visibleSince !== undefined) {
+          this.log("plan-file permission prompt accepted");
+        }
+        visibleSince = undefined;
         return;
       }
-      if (handledVisiblePrompt) {
+      const now = Date.now();
+      visibleSince ??= now;
+      if (now - visibleSince > PROMPT_ACCEPT_TIMEOUT_MS) {
+        this.fatal ??=
+          `the plan-file permission prompt was still on screen ${PROMPT_ACCEPT_TIMEOUT_MS}ms after ` +
+          'answering it with "1" — its options have changed, so the driver is no longer answering ' +
+          "it the way a user would and the agent is blocked";
+        this.log(`FATAL: ${this.fatal}`);
         return;
       }
-      handledVisiblePrompt = true;
+      if (now - answeredAt < PROMPT_ANSWER_GAP_MS) {
+        return;
+      }
+      answeredAt = now;
       this.log('plan-file permission prompt shown — keying "1" (allow this edit)');
       this.tmux.sendKeys("1");
-      void this.assertPromptAccepted();
     }, PERMISSION_POLL_MS);
-  }
-
-  /**
-   * Confirm the answer landed. Claude blocks while a permission prompt is pending, so a prompt still
-   * on screen means its options have moved on from what the driver answers and every later step is
-   * waiting on an agent that will never move. This holds in every phase of the run, whereas the
-   * permission mode legitimately changes when Paireto approves a plan.
-   */
-  private async assertPromptAccepted(): Promise<void> {
-    const deadline = Date.now() + PROMPT_ACCEPT_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      await delay(PERMISSION_POLL_MS);
-      const screen = this.tmux.capture();
-      if (!PLAN_FILE_PERMISSION.test(screen) && !PLAN_FILE_EDIT_PERMISSION.test(screen)) {
-        this.log("plan-file permission prompt accepted");
-        return;
-      }
-    }
-    this.fatal =
-      `the plan-file permission prompt was still on screen ${PROMPT_ACCEPT_TIMEOUT_MS}ms after ` +
-      'answering it with "1" — its options have changed, so the driver is no longer answering it ' +
-      "the way a user would and the agent is blocked";
-    this.log(`FATAL: ${this.fatal}`);
   }
 }
 

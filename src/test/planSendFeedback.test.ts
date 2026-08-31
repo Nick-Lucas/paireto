@@ -47,7 +47,7 @@ suite("plan send feedback with queued file comments", () => {
 
   function planResponse(): Promise<Record<string, unknown>> {
     return waitFor("the plan gate response", () =>
-      wire.messages.find((m) => m.t === "plan.review.response"),
+      wire.messages.find((m) => m.t === "plan.review.hook.response"),
     );
   }
 
@@ -151,7 +151,7 @@ suite("plan send feedback with queued file comments", () => {
     );
 
     assert.strictEqual(
-      wire.messages.some((m) => m.t === "plan.review.response"),
+      wire.messages.some((m) => m.t === "plan.review.hook.response"),
       false,
       "a cancelled prompt must leave the plan gate pending",
     );

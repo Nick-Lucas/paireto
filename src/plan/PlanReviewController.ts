@@ -20,7 +20,7 @@ import type { PlanContentProvider } from "./PlanContentProvider.js";
 import { type PlanCommentData } from "./planFeedback.js";
 import {
   codeFeedbackPromptText,
-  composePlanFeedback,
+  composeRejectedPlanFeedback,
   planSendDecision,
   INCLUDE_FILE_COMMENTS,
   PLAN_FEEDBACK_ONLY,
@@ -295,14 +295,14 @@ export class PlanReviewController implements vscode.Disposable {
     log.info(
       `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
+    const strategy = this.locator.strategyFor(review.harness);
     this.registry.fulfill(review.key, {
       decision: "deny",
-      reason: composePlanFeedback({
+      reason: composeRejectedPlanFeedback({
         planComments: comments,
         codeComments: sentCode,
-        toolName: this.locator.strategyFor(review.harness).planToolName,
-        extraPlanReviewResponseInstructions: this.locator.strategyFor(review.harness)
-          .extraPlanReviewResponseInstructions,
+        toolName: strategy.planToolName,
+        rejectedPlanReviewInstructions: strategy.rejectedPlanReviewInstructions,
         multiRepository: this.codeFeedback.isMultiRepository(),
       }),
     });

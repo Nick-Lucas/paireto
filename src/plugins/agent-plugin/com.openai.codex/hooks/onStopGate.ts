@@ -79,7 +79,7 @@ async function planGate(
 
   const response = await result.connection.request(
     {
-      t: "plan.review.request",
+      t: "plan.review.hook.request",
       harness: "codex",
       repoRoot: target.repoRoot,
       event,

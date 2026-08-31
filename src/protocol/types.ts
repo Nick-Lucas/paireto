@@ -55,8 +55,10 @@ export type MessageType =
   | "hello.ack"
   | "hook.event"
   | "session.attach"
-  | "plan.review.request"
-  | "plan.review.response"
+  | "plan.review.hook.request"
+  | "plan.review.hook.response"
+  | "plan.review.tool.request"
+  | "plan.review.tool.response"
   | "review.await.request"
   | "review.await.response"
   | "guided.review.await.request"
@@ -122,8 +124,8 @@ export interface SessionAttachMessage extends Envelope {
  *  event (the plugin's own dialect). A plan the adapter had to RECOVER rides in `meta.planMarkdown`,
  *  alongside the raw `event`: Codex reads its rollout transcript, and Claude reads its own plan FILE
  *  for the common case where ExitPlanMode omits the optional `plan` argument. */
-export interface PlanReviewRequest extends Envelope {
-  t: "plan.review.request";
+export interface PlanReviewHookRequest extends Envelope {
+  t: "plan.review.hook.request";
   id: string;
   harness: Harness;
   repoRoot: string;
@@ -132,12 +134,33 @@ export interface PlanReviewRequest extends Envelope {
   meta?: HarnessEventMeta;
 }
 
+/**
+ * A plan submitted for review through the `paireto_plan_review` MCP tool.
+ *
+ * Distinct from {@link PlanReviewHookRequest}, which is hook-shaped: a hook reports what the harness
+ * did and the strategy recovers the plan from it, whereas a tool call already holds the plan and
+ * needs no harness dialect to read it. Keeping them apart is what stops the tool path having to fake
+ * a hook event the harness never sent.
+ */
+export interface PlanReviewToolRequest extends Envelope {
+  t: "plan.review.tool.request";
+  id: string;
+  harness: Harness;
+  repoRoot: string;
+  cwd: string;
+  /** Owning agent session, best-effort — the tool may be the first thing this agent ever sent. */
+  sessionId?: string;
+  /** The plan markdown to put in front of the reviewer. */
+  plan: string;
+}
+
 export type PlanDecision = "allow" | "deny";
 
-/** Extension's response to a {@link PlanReviewRequest}; same `id`. */
-export interface PlanReviewResponse extends Envelope {
-  t: "plan.review.response";
-  id: string;
+/**
+ * What the reviewer decided at a plan gate. Both plan-review responses carry exactly this: the gate
+ * is one gate, and only the request that opened it differs.
+ */
+export interface PlanReviewOutcome {
   decision: PlanDecision;
   /** Feedback surfaced back to the agent on deny. */
   reason?: string;
@@ -147,6 +170,18 @@ export interface PlanReviewResponse extends Envelope {
    *  "build"), which the plugin's paireto_submit_plan tool prompts into action. Omitted = leave
    *  things unchanged ("off"). */
   nextMode?: string;
+}
+
+/** Extension's response to a {@link PlanReviewHookRequest}; same `id`. */
+export interface PlanReviewHookResponse extends Envelope, PlanReviewOutcome {
+  t: "plan.review.hook.response";
+  id: string;
+}
+
+/** Extension's response to a {@link PlanReviewToolRequest}; same `id`. */
+export interface PlanReviewToolResponse extends Envelope, PlanReviewOutcome {
+  t: "plan.review.tool.response";
+  id: string;
 }
 
 /**
@@ -162,6 +197,7 @@ export interface ReviewAwaitRequest extends Envelope {
    *  to an agent row in the Agents panel; the extension falls back to repo recency if absent. */
   sessionId?: string;
   agentId?: string;
+  harness: Harness;
 }
 
 export type ReviewStatus = "submitted" | "cancelled";
@@ -254,8 +290,10 @@ export type AnyMessage =
   | HelloAckMessage
   | HookEventMessage
   | SessionAttachMessage
-  | PlanReviewRequest
-  | PlanReviewResponse
+  | PlanReviewHookRequest
+  | PlanReviewHookResponse
+  | PlanReviewToolRequest
+  | PlanReviewToolResponse
   | ReviewAwaitRequest
   | ReviewAwaitResponse
   | GuidedReviewAwaitRequest

@@ -64,7 +64,7 @@ import {
   type GuidedPlan,
   type GuidedReviewState,
 } from "./guidedPlan.js";
-import { renderReviewFeedback } from "./reviewFeedback.js";
+import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import type { ReviewComment } from "./reviewTypes.js";
@@ -421,6 +421,7 @@ export class ReviewController implements vscode.Disposable {
     displayName: string,
     repoRoot: string,
     signal: AbortSignal,
+    harnessSupported: boolean,
   ): Promise<StopGateResult> {
     const who = sessionId?.slice(0, 8) ?? "unknown";
     const hasComments = this.hasComments();
@@ -436,6 +437,7 @@ export class ReviewController implements vscode.Disposable {
       changedThisTurn,
       hasComments,
       automatic,
+      harnessSupported,
     });
     if (!open) {
       log.debug(`review gate: agent ${who} stop allowed, nothing to review`);
@@ -1829,7 +1831,7 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.getComments();
-    const feedback = renderReviewFeedback(comments, this.isMultiRepository());
+    const feedback = renderRejectedReviewFeedback(comments, this.isMultiRepository());
     if (!feedback) {
       void vscode.window.showWarningMessage(
         "No comments to send. Add a comment, or Approve to proceed with no changes.",
@@ -1844,7 +1846,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** True when there's ≥1 comment to send (drives which gate button shows). */
   hasFeedback(): boolean {
-    return renderReviewFeedback(this.getComments(), this.isMultiRepository()).length > 0;
+    return renderRejectedReviewFeedback(this.getComments(), this.isMultiRepository()).length > 0;
   }
 
   /** True when comment file paths need their repo root prefixed to stay unambiguous. */
@@ -2188,8 +2190,14 @@ export function shouldOpenTurnEndReview(opts: {
   hasComments: boolean;
   /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only comments do. */
   automatic: boolean;
+  /** The harness can carry a turn-end review at all — see AgentStrategy.supportsTurnEndReview. */
+  harnessSupported: boolean;
 }): boolean {
-  return !opts.reviewInProgress && ((opts.automatic && opts.changedThisTurn) || opts.hasComments);
+  return (
+    opts.harnessSupported &&
+    !opts.reviewInProgress &&
+    ((opts.automatic && opts.changedThisTurn) || opts.hasComments)
+  );
 }
 
 /**

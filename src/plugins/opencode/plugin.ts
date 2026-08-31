@@ -173,6 +173,7 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
               cwd: bridge.repoRoot,
               repoRoot: bridge.repoRoot,
               sessionId: sessionID,
+              harness: "opencode",
             });
             if (!response) {
               return REVIEW_UNAVAILABLE;
@@ -197,7 +198,7 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
           const plan = args?.plan ?? "";
           try {
             const response = await bridge.gate({
-              t: "plan.review.request",
+              t: "plan.review.hook.request",
               harness: "opencode",
               repoRoot: bridge.repoRoot,
               // Self-contained synthetic gate event per the seam invariant: the adapter injects the

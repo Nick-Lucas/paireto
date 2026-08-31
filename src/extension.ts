@@ -213,7 +213,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       agents.ingest(event, msg.repoRoot);
     },
-    onPlanReviewRequest: (msg, signal) => {
+    onPlanReviewHook: (msg, signal) => {
       const strategy = locator.strategyFor(msg.harness);
       const event = strategy.toAppEvent(msg.event, msg.meta);
       if (!event) {
@@ -232,6 +232,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         once: true,
       });
       return planReview.presentPlan(event, msg.repoRoot, signal);
+    },
+    // A plan the agent submitted through `paireto_plan_review` but triggered manually or by the agent
+    onPlanReviewTool: (msg, signal) => {
+      warnForeignRepo(msg.repoRoot);
+      const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot) ?? "unknown";
+      signal.addEventListener("abort", () => agents.markIdleOnDisconnect(sessionId), {
+        once: true,
+      });
+      return planReview.presentPlan(
+        {
+          kind: "planProposal",
+          harness: msg.harness,
+          sessionId,
+          planText: msg.plan,
+          backgroundTaskCount: 0,
+          sessionCronCount: 0,
+        },
+        msg.repoRoot,
+        signal,
+      );
     },
     onReviewAwait: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
@@ -311,6 +331,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         strategy.displayName,
         msg.repoRoot,
         signal,
+        strategy.supportsTurnEndReview,
       );
     },
 

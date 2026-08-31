@@ -74,7 +74,7 @@ suite("plan early close with queued file comments", () => {
     const reopened = await waitFor("the plan document to come back", () => planTab());
     assert.ok(reopened, "cancelling the prompt must reopen the plan");
     assert.strictEqual(
-      wire.messages.some((m) => m.t === "plan.review.response"),
+      wire.messages.some((m) => m.t === "plan.review.hook.response"),
       false,
       "a cancelled prompt must leave the plan gate pending",
     );
@@ -82,7 +82,7 @@ suite("plan early close with queued file comments", () => {
     // The gate is still usable: sending again, this time including the file comments, resolves it.
     await vscode.commands.executeCommand(Commands.gateSendFeedback);
     const response = await waitFor("the plan gate response", () =>
-      wire.messages.find((m) => m.t === "plan.review.response"),
+      wire.messages.find((m) => m.t === "plan.review.hook.response"),
     );
     assert.strictEqual(response.decision, "deny");
     const reason = String(response.reason);
@@ -118,7 +118,7 @@ suite("plan early close with queued file comments", () => {
     const reopened = await waitFor("the plan document to come back", () => planTab());
     assert.ok(reopened, "a refusal answers nothing, so the plan must come back");
     assert.strictEqual(
-      wire.messages.some((m) => m.t === "plan.review.response"),
+      wire.messages.some((m) => m.t === "plan.review.hook.response"),
       false,
       "a refusal must leave the plan gate pending",
     );
