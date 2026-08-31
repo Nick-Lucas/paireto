@@ -8,6 +8,8 @@ import * as path from "node:path";
 
 import type { BridgeConnection } from "../../core/bridgeClient.js";
 import { connect } from "../../core/bridgeClient.js";
+import type { HandshakeFailure } from "../../core/ndjson.js";
+import { isTerminalFailure, refusedMessage } from "../../core/ndjson.js";
 import type { CodexHandoff } from "./handoff.js";
 import { codexPid, handoffPath, readHandoff } from "./handoff.js";
 
@@ -19,6 +21,23 @@ export interface CodexLiveness {
    *  disk per call, falling back to the last usable one seen. */
   latest(): CodexHandoff | undefined;
   stop(): void;
+}
+
+/**
+ * Identity of a window's socket, as `dev:ino:mtime`.
+ *
+ * A window that goes away unlinks its socket and its replacement binds a fresh one, so this
+ * distinguishes "the same window as before" from "a new window at the same path". Undefined when
+ * there is no socket to read, which never matches a recorded refusal — the fallback is to try again
+ * rather than to stay silent.
+ */
+function socketIdentity(socketPath: string): string | undefined {
+  try {
+    const stat = fs.statSync(socketPath);
+    return `${stat.dev}:${stat.ino}:${stat.mtimeMs}`;
+  } catch {
+    return undefined;
+  }
 }
 
 function isUsable(handoff: CodexHandoff | undefined): handoff is CodexHandoff {
@@ -36,27 +55,56 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   let latestHandoff: CodexHandoff | undefined;
   let watcher: fs.FSWatcher | undefined;
   let stopped = false;
+  /** The failure already on the record. The poll can meet the same one twice a second, and repeating
+   *  it would bury everything else, so a reason is stated once and again when it changes. */
+  let loggedFailure: HandshakeFailure | undefined;
+  /** The window that turned this build away. A refusal is settled — both versions are compiled in —
+   *  so the poll must stop offering the same build to the same window, or it reconnects twice a
+   *  second for the life of the session. Keyed on the window rather than the Codex session, so a
+   *  REPLACEMENT window (a reload, an extension update, a change of socket owner) is tried again. */
+  let refusedWindow: string | undefined;
 
   const detach = () => {
     connection?.close();
     connection = undefined;
   };
 
+  /** Say why liveness is not attached. No failure is silent: without a line here the agent simply
+   *  never appears in the panel, with nothing anywhere to say what stopped it. */
+  const noteFailure = (reason: HandshakeFailure, extVersion?: string) => {
+    if (reason !== loggedFailure) {
+      loggedFailure = reason;
+      console.error(
+        isTerminalFailure(reason)
+          ? `paireto: ${refusedMessage(extVersion)}. Liveness and reviews stay unavailable until then.`
+          : `paireto: liveness could not attach (${reason}); the next poll retries.`,
+      );
+    }
+  };
+
   const attach = (handoff: CodexHandoff) => {
-    if (!fs.existsSync(handoff.socketPath)) {
+    const target = { socketPath: handoff.socketPath, repoRoot: handoff.repoRoot };
+    const window = socketIdentity(handoff.socketPath);
+    if (window === undefined) {
+      noteFailure("no-socket");
       return; // no listening window yet — a later poll tick retries
     }
+    if (window === refusedWindow) {
+      return; // this window already refused this build; only a restart on one side changes that
+    }
     connectingSessionId = handoff.sessionId;
-    void connect(
-      { socketPath: handoff.socketPath, repoRoot: handoff.repoRoot },
-      { timeoutMs: CONNECT_TIMEOUT_MS },
-    ).then((result) => {
+    void connect(target, { timeoutMs: CONNECT_TIMEOUT_MS }).then((result) => {
       if (connectingSessionId === handoff.sessionId) {
         connectingSessionId = undefined;
       }
       if (!result.ok) {
-        return; // no window listening — liveness unavailable, poll retries
+        noteFailure(result.reason, result.extVersion);
+        if (isTerminalFailure(result.reason)) {
+          refusedWindow = window;
+        }
+        return; // a settled refusal stops the poll here; anything else is retried next tick
       }
+      loggedFailure = undefined; // attached — a later failure is news again
       // The active session may have changed while we were connecting — drop a now-stale connection.
       if (stopped || handoff.sessionId !== currentSessionId) {
         result.connection.close();
@@ -83,6 +131,7 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
     if (handoff.sessionId !== currentSessionId) {
       detach();
       currentSessionId = handoff.sessionId;
+      loggedFailure = undefined;
       attach(handoff);
       return;
     }

@@ -9,7 +9,7 @@
 //   block: {"decision":"block","reason":"..."} -> Claude keeps going and addresses the feedback.
 
 import type { ClaudeCodeHookEvent } from "../../../harness/ClaudeCodeStrategy.js";
-import { connect } from "../../core/bridgeClient.js";
+import { connect, warnIfRefused } from "../../core/bridgeClient.js";
 import { exitSilently, parseEvent, readStdin, writeAndExit } from "../../core/stdio.js";
 import { resolveTarget } from "../../core/target.js";
 
@@ -38,6 +38,7 @@ async function main(): Promise<void> {
 
   const result = await connect(target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
+    warnIfRefused(result);
     allow(); // unreachable — fail open
   }
 

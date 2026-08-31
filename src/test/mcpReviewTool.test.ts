@@ -19,7 +19,8 @@ import {
   textResult,
 } from "../plugins/core/mcp/reviewTool.js";
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
-import type { Harness } from "../protocol/types.js";
+import { type Harness, PLUGIN_VERSION } from "../protocol/types.js";
+import { ackWith, startServer } from "./fakeBridgeServer.js";
 
 suite("MCP paireto_review tool", () => {
   test("the tool name is the one the skills and commands invoke", () => {
@@ -88,6 +89,27 @@ suite("MCP paireto_review tool", () => {
     );
     assert.strictEqual(result.isError, true);
     assert.match(result.content[0].text, /No VS Code Paireto is listening/);
+  });
+
+  // The window is right there and answering — it just refuses this build. Reporting that as a
+  // connection failure sends the reader looking at sockets instead of at the plugin version.
+  test("a refused handshake names both versions and how to recover", async () => {
+    const server = await startServer(ackWith(false, "9.9.9"));
+    try {
+      const result = await runReview(
+        { target: server.target, cwd: server.target.repoRoot },
+        "kiro",
+      );
+
+      assert.strictEqual(result.isError, true);
+      const text = result.content[0].text;
+      assert.match(text, /9\.9\.9/, `expected the window's version in: ${text}`);
+      assert.ok(text.includes(PLUGIN_VERSION), `expected the plugin's version in: ${text}`);
+      assert.match(text, /Update the Paireto plugin/, `expected the way out in: ${text}`);
+      assert.doesNotMatch(text, /Could not connect/, "a refusal is not a transport failure");
+    } finally {
+      await server.dispose();
+    }
   });
 
   test("a path that exists but is not a listening socket reports a connection failure", async () => {

@@ -19,8 +19,13 @@ import {
   kiroInstalledProbe,
   readAgentPluginVersion,
 } from "../bridge/KiroInstaller.js";
-import { type InstallResult, installPlugin, readPluginVersion } from "../bridge/PluginInstaller.js";
-import type { InstallState } from "./protocol.js";
+import {
+  claudeInstalledVersion,
+  installClaude,
+  readClaudePluginVersion,
+} from "../bridge/ClaudeInstaller.js";
+import type { InstallResult } from "../bridge/types.js";
+import { type InstallProbe, installProbeFor } from "./installProbe.js";
 
 /** A terminal profile to add to User settings so the agent can be launched via "new terminal with profile". */
 export interface AgentTerminalProfile {
@@ -51,9 +56,13 @@ export interface OnboardingAgent {
   /** Probe behind the card's action (Set up / Update / ✓ Installed): "installed" iff this agent's
    *  plugin is present at the SHIPPED version, "update-available" iff it's present but at a stale
    *  version (installers are idempotent upgraders, so Update just re-runs install), else
-   *  "not-installed". Absent → treated as not-installed. May answer asynchronously: a probe that
-   *  asks a CLI must not hold the extension host thread. */
-  installedProbe?: (ctx: InstallContext) => InstallState | Promise<InstallState>;
+   *  "not-installed". It also reports the two versions it compared, which the card shows — every
+   *  probe asks the AGENT what it carries, never a marker this extension wrote, because those two
+   *  disagree exactly when the bridge is broken. Required even for a planned agent, so that adding
+   *  one and forgetting to say how it is detected is a compile error rather than a card that reads
+   *  "Set up" forever. May answer asynchronously: a probe that asks a CLI must not hold the
+   *  extension host thread. */
+  installedProbe: (ctx: InstallContext) => InstallProbe | Promise<InstallProbe>;
   /** Terminal profile written to User settings on setup (powers the quick-launch profile picker). */
   profile?: AgentTerminalProfile;
   /** Static setup note rendered under the agent's card — e.g. an opt-in feature the user must enable
@@ -61,32 +70,13 @@ export interface OnboardingAgent {
   note?: string;
 }
 
-/** File under a per-agent stableDir recording the plugin version last installed successfully — the
- *  single source of "installed?" truth, replacing the old single globalState marker. */
+/** File under a per-agent stableDir recording the plugin version last installed successfully. Read
+ *  by the Kiro probe (which owns its own reader, since this module imports the installers). */
 const INSTALLED_STAMP = "installed-version";
-
-/** The version recorded by the last successful install in this stableDir, or undefined if none. */
-export function readInstalledStamp(stableDir: string): string | undefined {
-  try {
-    return fs.readFileSync(path.join(stableDir, INSTALLED_STAMP), "utf8").trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
 
 /** Record the installed version (best-effort — the caller mkdirp's stableDir first). */
 export function writeInstalledStamp(stableDir: string, version: string): void {
   fs.writeFileSync(path.join(stableDir, INSTALLED_STAMP), version, "utf8");
-}
-
-/** Tri-state install status from a version-string comparison: no installed marker → not-installed;
- *  equal → installed; present but different (stale) → update-available. Shared by the version-stamp
- *  probes (claude/opencode); Codex asks its native plugin registry instead. */
-export function installStateFor(installed: string | undefined, shipped: string): InstallState {
-  if (installed === undefined) {
-    return "not-installed";
-  }
-  return installed === shipped ? "installed" : "update-available";
 }
 
 export const ONBOARDING_AGENTS: OnboardingAgent[] = [
@@ -94,17 +84,11 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     id: "claude-code",
     name: "Claude Code",
     available: true,
-    // Registers the bundled plugin via the claude CLI, then stamps the installed version so the
-    // probe reports ✓ Installed until the shipped version changes (matching the prior UX).
-    install: async (ctx) => {
-      const result = await installPlugin(ctx.pluginsRoot);
-      if (result.ok) {
-        writeInstalledStamp(ctx.stableDir, readPluginVersion(ctx.pluginsRoot));
-      }
-      return result;
-    },
-    installedProbe: (ctx) =>
-      installStateFor(readInstalledStamp(ctx.stableDir), readPluginVersion(ctx.pluginsRoot)),
+    // Registers the bundled plugin via the claude CLI; `claude plugin list` is then the record of
+    // what took, so there is nothing to stamp.
+    install: (ctx) => installClaude(ctx.pluginsRoot),
+    installedProbe: async (ctx) =>
+      installProbeFor(await claudeInstalledVersion(), readClaudePluginVersion(ctx.pluginsRoot)),
     profile: { name: "claudecode", command: "claude" },
   },
   {
@@ -164,7 +148,14 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     },
     note: "Setup registers the global Power and installs global hooks.",
   },
-  { id: "pi", name: "Pi TUI", available: false, profile: { name: "pi", command: "pi" } },
+  {
+    id: "pi",
+    name: "Pi TUI",
+    available: false,
+    // Planned: there is nothing to install, so there is never anything installed.
+    installedProbe: () => ({ state: "not-installed" }),
+    profile: { name: "pi", command: "pi" },
+  },
 ];
 
 export function findAgent(id: string): OnboardingAgent | undefined {

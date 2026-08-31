@@ -2,8 +2,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
+import type { InstallProbe } from "../welcome/installProbe.js";
 import type { InstallState } from "../welcome/protocol.js";
-import type { InstallResult } from "./PluginInstaller.js";
+import type { InstallResult } from "./types.js";
 
 export const KIRO_MODEL = "qwen3-coder-next";
 
@@ -285,16 +286,28 @@ function readStamp(stableDir: string): string | undefined {
 export function kiroInstalledProbe(
   ctx: { pluginsRoot: string; stableDir: string },
   options: KiroInstallOptions = {},
-): InstallState {
+): InstallProbe {
   const kiroHome = options.kiroHome || defaultKiroHome();
   const installedPower = findInstalledKiroPower(kiroHome);
+  const shippedVersion = readAgentPluginVersion(ctx.pluginsRoot);
 
-  return kiroFilesInstallState(
+  const state = kiroFilesInstallState(
     installedPower !== undefined,
     readStamp(ctx.stableDir),
     installedPower?.version,
-    readAgentPluginVersion(ctx.pluginsRoot),
+    shippedVersion,
   );
+  if (state === "not-installed") {
+    return { state };
+  }
+
+  const explained = state === "installed" || installedPower?.version !== shippedVersion;
+
+  return {
+    state,
+    installedVersion: explained ? installedPower?.version : undefined,
+    shippedVersion,
+  };
 }
 
 export async function installKiro(

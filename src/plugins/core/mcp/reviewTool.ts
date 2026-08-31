@@ -5,7 +5,9 @@
 // fixed text rather than something to reword freely.
 
 import type { Harness } from "../../../protocol/types.js";
+import type { ConnectFailure } from "../bridgeClient.js";
 import { connect } from "../bridgeClient.js";
+import { refusedMessage } from "../ndjson.js";
 import type { BridgeTarget } from "../target.js";
 
 export const REVIEW_TOOL_NAME = "paireto_review";
@@ -43,6 +45,23 @@ export const NO_WINDOW_MESSAGE =
   "(with the Paireto extension active) and try again.";
 
 /**
+ * Turn a failed connect into something the reader can act on.
+ *
+ * A refusal is the one failure that is not about the socket at all: the window is right there and
+ * answering, it just speaks a different wire version to this bundle. Reporting that as a connection
+ * failure sends the reader looking at sockets instead of at the plugin they need to reload.
+ */
+export function connectFailureMessage(reason: ConnectFailure, extVersion?: string): string {
+  if (reason === "no-socket") {
+    return NO_WINDOW_MESSAGE;
+  }
+  if (reason === "handshake-rejected") {
+    return refusedMessage(extVersion);
+  }
+  return `Could not connect to the VS Code Paireto bridge (${reason}).`;
+}
+
+/**
  * Run one blocking review round-trip. Resolves only once the user submits or cancels, the window
  * goes away, or the connection drops — the MCP client's own tool timeout is the outer bound.
  *
@@ -60,11 +79,7 @@ export async function runReview(
 
   const result = await connect(reviewTarget.target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
-    // A socket that is not there at all means no window; anything else is a live socket we failed
-    // to talk to, which is worth reporting differently.
-    return result.reason === "no-socket"
-      ? textResult(NO_WINDOW_MESSAGE, true)
-      : textResult(`Could not connect to the VS Code Paireto bridge (${result.reason}).`, true);
+    return textResult(connectFailureMessage(result.reason, result.extVersion), true);
   }
 
   const response = await result.connection.request({

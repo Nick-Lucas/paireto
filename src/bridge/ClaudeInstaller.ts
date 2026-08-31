@@ -1,6 +1,7 @@
-// Installs + registers the bundled Claude Code plugin by driving the `claude` CLI — the supported,
-// schema-correct path. We deliberately do NOT hand-edit known_marketplaces.json / installed_plugins.json
-// (that risks corrupting the user's config).
+// Installs the bundled Claude Code integration by driving Claude's public plugin CLI — the supported,
+// schema-correct path. We deliberately do NOT hand-edit known_marketplaces.json /
+// installed_plugins.json (that risks corrupting the user's config), and the same CLI is what we ask
+// which plugin Claude actually carries.
 
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
@@ -8,9 +9,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { log } from "../log.js";
+import type { InstallResult } from "./types.js";
 
 const MARKETPLACE_NAME = "paireto";
 const PLUGIN_NAME = "paireto";
+const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
+/** A probe runs behind the Welcome screen, so it waits far less than an install does. */
+const PROBE_TIMEOUT_MS = 5000;
 
 /**
  * The installed-version marker compares against this, read straight from the shipped plugin
@@ -20,7 +25,7 @@ const PLUGIN_NAME = "paireto";
  * assert its shape explicitly rather than blindly trust-casting `JSON.parse`'s `any` so the error
  * points straight at the manifest instead of surfacing later as a confusing downstream failure.
  */
-export function readPluginVersion(pluginsRoot: string): string {
+export function readClaudePluginVersion(pluginsRoot: string): string {
   const manifest = path.join(pluginsRoot, "claude-code", ".claude-plugin", "plugin.json");
   const raw = fs.readFileSync(manifest, "utf8");
   const parsed: unknown = JSON.parse(raw);
@@ -34,9 +39,35 @@ export function readPluginVersion(pluginsRoot: string): string {
   return (parsed as { version: string }).version;
 }
 
-export interface InstallResult {
-  ok: boolean;
-  detail: string;
+/** One row of `claude plugin list --json`. Only the fields this file reads are declared. */
+interface ClaudePluginListEntry {
+  id?: string;
+  version?: string;
+  enabled?: boolean;
+}
+
+/**
+ * The version Claude Code itself reports for the bridge plugin, or undefined when it carries none.
+ *
+ * Asking Claude rather than trusting a marker the extension wrote: the two are not the same claim.
+ * An extension update moves the plugin directory the marketplace points at, so the agent can go on
+ * serving an older bundle long after the extension believes it installed a newer one — and a plugin
+ * whose version is not this window's is refused at the handshake, silently.
+ */
+export function claudeInstalledPluginVersion(source: string): string | undefined {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(source);
+  } catch {
+    return undefined;
+  }
+  if (!Array.isArray(parsed)) {
+    return undefined;
+  }
+  const entry = (parsed as ClaudePluginListEntry[]).find(
+    (row) => row?.id === PLUGIN_ID && row.enabled !== false,
+  );
+  return typeof entry?.version === "string" ? entry.version : undefined;
 }
 
 /** Locate the `claude` binary: explicit env, PATH, then common install locations. */
@@ -75,9 +106,9 @@ interface RunResult {
   stderr: string;
 }
 
-function run(bin: string, args: string[]): Promise<RunResult> {
+function run(bin: string, args: string[], timeoutMs = 60000): Promise<RunResult> {
   return new Promise((resolve) => {
-    execFile(bin, args, { timeout: 60000, encoding: "utf8" }, (err, stdout, stderr) => {
+    execFile(bin, args, { timeout: timeoutMs, encoding: "utf8" }, (err, stdout, stderr) => {
       const code = err ? (((err as NodeJS.ErrnoException).code as unknown as number) ?? 1) : 0;
       resolve({ code: typeof code === "number" ? code : err ? 1 : 0, stdout, stderr });
     });
@@ -139,7 +170,7 @@ async function removeStaleMarketplaces(bin: string, pluginsRoot: string): Promis
 /**
  * @param pluginsRoot absolute path to the shipped `dist/plugins/` dir (contains .claude-plugin/marketplace.json)
  */
-export async function installPlugin(pluginsRoot: string): Promise<InstallResult> {
+export async function installClaude(pluginsRoot: string): Promise<InstallResult> {
   const marketplaceManifest = path.join(pluginsRoot, ".claude-plugin", "marketplace.json");
   if (!fs.existsSync(marketplaceManifest)) {
     return { ok: false, detail: `marketplace manifest not found at ${marketplaceManifest}` };
@@ -181,4 +212,17 @@ export async function installPlugin(pluginsRoot: string): Promise<InstallResult>
     ok: true,
     detail: "registered + installed via claude CLI (restart Claude Code to load hooks)",
   };
+}
+
+/**
+ * Ask Claude Code which bridge plugin it carries. Undefined when it carries none, when the CLI is
+ * not on PATH (nothing could have installed the plugin), or when it cannot answer.
+ */
+export async function claudeInstalledVersion(): Promise<string | undefined> {
+  const bin = resolveClaudeBin();
+  if (!bin) {
+    return undefined;
+  }
+  const listed = await run(bin, ["plugin", "list", "--json"], PROBE_TIMEOUT_MS);
+  return listed.code === 0 ? claudeInstalledPluginVersion(listed.stdout) : undefined;
 }

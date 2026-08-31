@@ -8,7 +8,7 @@ import type { GuidedReviewArgs } from "../../../protocol/guidedReview.js";
 import type { Harness } from "../../../protocol/types.js";
 import { connect } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
-import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
+import { connectFailureMessage, NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
 
 export const GUIDED_REVIEW_TOOL_NAME = "paireto_start_guided_review";
 
@@ -34,9 +34,7 @@ export async function runGuidedReview(
 
   const result = await connect(reviewTarget.target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
-    return result.reason === "no-socket"
-      ? textResult(NO_WINDOW_MESSAGE, true)
-      : textResult(`Could not connect to the VS Code Paireto bridge (${result.reason}).`, true);
+    return textResult(connectFailureMessage(result.reason, result.extVersion), true);
   }
 
   const response = await result.connection.request({

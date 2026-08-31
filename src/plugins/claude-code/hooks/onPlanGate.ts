@@ -23,7 +23,7 @@
 // affected (no such field).
 
 import type { ClaudeCodeHookEvent } from "../../../harness/ClaudeCodeStrategy.js";
-import { connect } from "../../core/bridgeClient.js";
+import { connect, warnIfRefused } from "../../core/bridgeClient.js";
 import { exitSilently, parseEvent, readStdin, writeAndExit } from "../../core/stdio.js";
 import { resolveTarget } from "../../core/target.js";
 import { resolvePlanMarkdown } from "../planFile.js";
@@ -77,6 +77,7 @@ async function main(): Promise<void> {
 
   const result = await connect(target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
+    warnIfRefused(result);
     emitAllow(event.tool_input); // couldn't reach the window -> fail open
     return;
   }

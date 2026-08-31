@@ -1,7 +1,7 @@
 // Shared "Paireto" output-channel logger, gated on the `paireto.logLevel` setting (default `info`).
 // One channel for the whole extension, created lazily on the first written line so a quiet, healthy
-// session never spawns an empty channel. NB: we never call `OutputChannel.show()` — `logLevel` only
-// controls whether lines are *written*, never whether the Output panel is revealed.
+// session never spawns an empty channel. `logLevel` only controls whether lines are *written*, never
+// whether the Output panel is revealed — the panel opens only when the user asks for it (see show()).
 
 import * as vscode from "vscode";
 
@@ -31,11 +31,13 @@ class Logger {
     return SEVERITY[configured] ?? SEVERITY.info;
   }
 
+  private ensureChannel(): vscode.OutputChannel {
+    this.channel ??= vscode.window.createOutputChannel("Paireto");
+    return this.channel;
+  }
+
   private write(msg: string): void {
-    if (!this.channel) {
-      this.channel = vscode.window.createOutputChannel("Paireto");
-    }
-    this.channel.appendLine(`${timestamp()} ${msg}`);
+    this.ensureChannel().appendLine(`${timestamp()} ${msg}`);
   }
 
   error(msg: string): void {
@@ -54,6 +56,11 @@ class Logger {
     if (this.verbosity() >= SEVERITY.debug) {
       this.write(msg);
     }
+  }
+
+  /** Reveal the channel. Only ever from an explicit user action, never from a written line. */
+  show(): void {
+    this.ensureChannel().show();
   }
 
   dispose(): void {

@@ -158,10 +158,17 @@ export class SocketServer {
               accept,
               ...(accept ? {} : { reason: "protocol-version-mismatch" }),
             });
+
             if (!accept) {
+              this.handlers.onHandshakeRejected({
+                pluginVersion: msg.v,
+                extVersion: PLUGIN_VERSION,
+                repoRoot: this.repoRoot,
+              });
               socket.destroy();
               return;
             }
+
             handshaken = true;
           } else {
             socket.destroy();

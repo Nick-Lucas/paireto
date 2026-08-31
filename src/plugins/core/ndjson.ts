@@ -24,7 +24,35 @@ export type HandshakeFailure =
 
 export type HandshakeResult =
   | { readonly ok: true; readonly connection: RawConnection }
-  | { readonly ok: false; readonly reason: HandshakeFailure };
+  | {
+      readonly ok: false;
+      readonly reason: HandshakeFailure;
+      /** The version the window requires, when it got far enough to tell us. */
+      readonly extVersion?: string;
+    };
+
+/**
+ * Whether a failure is settled rather than transient.
+ *
+ * A refused or unreadable ack means the window answered and will answer the same way until one side
+ * restarts, so a poller that keeps retrying only reconnects forever. Every other failure — no socket
+ * yet, a window still starting — is worth another go.
+ */
+export function isTerminalFailure(reason: HandshakeFailure): boolean {
+  return reason === "handshake-rejected" || reason === "bad-ack";
+}
+
+/**
+ * What to tell the reader about a refusal, in one place: it reaches them as an MCP tool result, as
+ * hook stderr, and as liveness stderr, and the three must not drift into three different stories.
+ */
+export function refusedMessage(extVersion?: string): string {
+  const wanted = extVersion ? `wire version ${extVersion}` : "a different wire version";
+  return (
+    `The VS Code Paireto window refused this plugin: it requires ${wanted}, this plugin is ` +
+    `${PLUGIN_VERSION}. Update the Paireto plugin from the extension's Welcome view, then restart your agent`
+  );
+}
 
 /** Sentinel handed to a {@link readMessages} listener when a line is not valid JSON. */
 export interface ParseError {
@@ -93,14 +121,14 @@ export function handshake(
     let settled = false;
     let buffer = "";
 
-    const fail = (reason: HandshakeFailure) => {
+    const fail = (reason: HandshakeFailure, extVersion?: string) => {
       if (settled) {
         return;
       }
       settled = true;
       clearTimeout(timer);
       sock.destroy();
-      resolve({ ok: false, reason });
+      resolve({ ok: false, reason, extVersion });
     };
 
     const timer = setTimeout(() => fail("handshake-timeout"), timeoutMs);
@@ -132,15 +160,15 @@ export function handshake(
       const line = buffer.slice(0, idx);
       const residual = buffer.slice(idx + 1);
 
-      let ack: { t?: string; accept?: boolean };
+      let ack: { t?: string; accept?: boolean; extVersion?: string };
       try {
-        ack = JSON.parse(line) as { t?: string; accept?: boolean };
+        ack = JSON.parse(line) as { t?: string; accept?: boolean; extVersion?: string };
       } catch {
         fail("bad-ack");
         return;
       }
       if (ack.t !== "hello.ack" || !ack.accept) {
-        fail("handshake-rejected");
+        fail("handshake-rejected", ack.extVersion);
         return;
       }
 
