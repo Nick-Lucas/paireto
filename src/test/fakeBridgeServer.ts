@@ -17,11 +17,15 @@ export interface FakeServer {
   dispose(): Promise<void>;
 }
 
+/** `at` binds a chosen path instead of a fresh temp one — for a test that replaces the window
+ *  behind a path, which is what an extension reload looks like to a plugin. The caller owns that
+ *  directory in that case, so dispose() leaves it alone. */
 export async function startServer(
   onLine: (line: string, sock: net.Socket) => void,
+  at?: string,
 ): Promise<FakeServer> {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-bridge-"));
-  const sockPath = path.join(dir, "test.sock");
+  const dir = at ? path.dirname(at) : fs.mkdtempSync(path.join(os.tmpdir(), "paireto-bridge-"));
+  const sockPath = at ?? path.join(dir, "test.sock");
   const received: string[] = [];
 
   // Held so dispose() can end a run deterministically: net.Server.close() waits for every open
@@ -59,7 +63,11 @@ export async function startServer(
           sock.destroy();
         }
         server.close(() => {
-          fs.rmSync(dir, { recursive: true, force: true });
+          if (at) {
+            fs.rmSync(at, { force: true });
+          } else {
+            fs.rmSync(dir, { recursive: true, force: true });
+          }
           resolve();
         });
       }),

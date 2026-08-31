@@ -187,14 +187,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
-  // A refused agent reconnects on every hook, so the prompt is raised once per plugin version and
-  // then stays quiet — the Output channel carries the per-connection detail.
-  const announcedPluginVersions = new Set<string>();
+  const announced = new Set<string>();
   const announceRefusedPlugin = (rejection: HandshakeRejection): void => {
-    if (announcedPluginVersions.has(rejection.pluginVersion)) {
+    const key = `${rejection.pluginVersion}@${canonicalize(rejection.repoRoot)}`;
+    if (announced.has(key)) {
       return;
     }
-    announcedPluginVersions.add(rejection.pluginVersion);
+    announced.add(key);
+
+    log.error(
+      `bridge refused a plugin built for wire version ${rejection.pluginVersion} (this window ` +
+        `speaks ${rejection.extVersion}) for ${rejection.repoRoot} — the agent plugin needs to be updated`,
+    );
+
     void vscode.window
       .showWarningMessage(
         `An agent is running the Paireto plugin ${rejection.pluginVersion}, but this window ` +

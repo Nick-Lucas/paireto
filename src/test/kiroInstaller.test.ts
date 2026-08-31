@@ -272,3 +272,40 @@ suite("Kiro installer", () => {
     }
   });
 });
+
+// An Update button beside two identical version numbers reads as "already current". When only the
+// stamp is stale there is no single version that explains the state, so the card must name none.
+suite("Kiro probe versions explain the state they sit beside", () => {
+  test("a stale stamp with a current Power reports no installed version", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-stamp-"));
+    try {
+      const pluginsRoot = path.join(root, "plugins");
+      const source = path.join(pluginsRoot, "agent-plugin");
+      const stableDir = path.join(root, "stable");
+      const kiroHome = path.join(root, ".kiro");
+      fs.mkdirSync(source, { recursive: true });
+      fs.writeFileSync(
+        path.join(source, "plugin.json"),
+        JSON.stringify({ name: "paireto", version: "0.8.0" }),
+      );
+      for (const skill of ["paireto-review", "paireto-guided-review"]) {
+        const skillRoot = path.join(source, "skills", skill);
+        fs.mkdirSync(skillRoot, { recursive: true });
+        fs.writeFileSync(path.join(skillRoot, "SKILL.md"), "# skill");
+      }
+      assert.strictEqual((await installKiro({ pluginsRoot, stableDir }, { kiroHome })).ok, true);
+
+      // Setup copied the Power, then failed before stamping — the Power is current, the stamp is not.
+      fs.writeFileSync(path.join(stableDir, "installed-version"), "0.7.0");
+
+      const probe = kiroInstalledProbe({ pluginsRoot, stableDir }, { kiroHome });
+      assert.deepStrictEqual(probe, {
+        state: "update-available",
+        installedVersion: undefined,
+        shippedVersion: "0.8.0",
+      });
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});

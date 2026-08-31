@@ -23,6 +23,23 @@ export interface CodexLiveness {
   stop(): void;
 }
 
+/**
+ * Identity of a window's socket, as `dev:ino:mtime`.
+ *
+ * A window that goes away unlinks its socket and its replacement binds a fresh one, so this
+ * distinguishes "the same window as before" from "a new window at the same path". Undefined when
+ * there is no socket to read, which never matches a recorded refusal — the fallback is to try again
+ * rather than to stay silent.
+ */
+function socketIdentity(socketPath: string): string | undefined {
+  try {
+    const stat = fs.statSync(socketPath);
+    return `${stat.dev}:${stat.ino}:${stat.mtimeMs}`;
+  } catch {
+    return undefined;
+  }
+}
+
 function isUsable(handoff: CodexHandoff | undefined): handoff is CodexHandoff {
   return (
     typeof handoff?.sessionId === "string" &&
@@ -38,12 +55,14 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   let latestHandoff: CodexHandoff | undefined;
   let watcher: fs.FSWatcher | undefined;
   let stopped = false;
-  /** The session whose attach the window turned away. Nothing about that changes until one side
-   *  restarts, so the poll must stop re-offering the same build twice a second. */
-  let refusedSessionId: string | undefined;
   /** The failure already on the record. The poll can meet the same one twice a second, and repeating
    *  it would bury everything else, so a reason is stated once and again when it changes. */
   let loggedFailure: HandshakeFailure | undefined;
+  /** The window that turned this build away. A refusal is settled — both versions are compiled in —
+   *  so the poll must stop offering the same build to the same window, or it reconnects twice a
+   *  second for the life of the session. Keyed on the window rather than the Codex session, so a
+   *  REPLACEMENT window (a reload, an extension update, a change of socket owner) is tried again. */
+  let refusedWindow: string | undefined;
 
   const detach = () => {
     connection?.close();
@@ -64,24 +83,26 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   };
 
   const attach = (handoff: CodexHandoff) => {
-    if (!fs.existsSync(handoff.socketPath)) {
+    const target = { socketPath: handoff.socketPath, repoRoot: handoff.repoRoot };
+    const window = socketIdentity(handoff.socketPath);
+    if (window === undefined) {
       noteFailure("no-socket");
       return; // no listening window yet — a later poll tick retries
     }
+    if (window === refusedWindow) {
+      return; // this window already refused this build; only a restart on one side changes that
+    }
     connectingSessionId = handoff.sessionId;
-    void connect(
-      { socketPath: handoff.socketPath, repoRoot: handoff.repoRoot },
-      { timeoutMs: CONNECT_TIMEOUT_MS },
-    ).then((result) => {
+    void connect(target, { timeoutMs: CONNECT_TIMEOUT_MS }).then((result) => {
       if (connectingSessionId === handoff.sessionId) {
         connectingSessionId = undefined;
       }
       if (!result.ok) {
         noteFailure(result.reason, result.extVersion);
         if (isTerminalFailure(result.reason)) {
-          refusedSessionId = handoff.sessionId;
+          refusedWindow = window;
         }
-        return; // a settled refusal stops here; anything else is retried by the next poll
+        return; // a settled refusal stops the poll here; anything else is retried next tick
       }
       loggedFailure = undefined; // attached — a later failure is news again
       // The active session may have changed while we were connecting — drop a now-stale connection.
@@ -105,18 +126,13 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
   };
 
   /** Reconcile the held socket with the latest handoff: re-attach on a session change, and retry the
-   *  attach when we saw the session but no window was up yet. A session the window refused is not
-   *  retried — a new session clears that, since it is a fresh rendezvous and may name another window. */
+   *  attach when we saw the session but no window was up yet. */
   const sync = (handoff: CodexHandoff) => {
     if (handoff.sessionId !== currentSessionId) {
       detach();
       currentSessionId = handoff.sessionId;
-      refusedSessionId = undefined;
       loggedFailure = undefined;
       attach(handoff);
-      return;
-    }
-    if (refusedSessionId === handoff.sessionId) {
       return;
     }
     if (!connection && connectingSessionId !== handoff.sessionId) {

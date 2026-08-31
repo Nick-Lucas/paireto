@@ -4,6 +4,8 @@
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 
 import type { CodexHandoff } from "../plugins/agent-plugin/com.openai.codex/handoff.js";
 import {
@@ -80,6 +82,41 @@ suite("Codex liveness refusal", () => {
       liveness.stop();
       await refusing.dispose();
       await accepting.dispose();
+    }
+  });
+
+  // The refusal belongs to the WINDOW, not to the Codex session. Keying it on the session would
+  // leave liveness dead for the rest of that session even once a compatible window is running.
+  test("a replacement window at the same path is tried again", async function () {
+    this.timeout(15_000);
+    const socketPath = path.join(
+      fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-window-")),
+      "win.sock",
+    );
+    const refusing = await startServer(ackWith(false), socketPath);
+
+    writeHandoff(PID, handoff("session-a", socketPath, path.dirname(socketPath)));
+    const liveness = startCodexLiveness();
+    try {
+      await settle(1200);
+      assert.strictEqual(refusing.received.length, 1, "the refusal stops the poll");
+
+      // What an extension reload does: drop the socket, bind a fresh one at the same path.
+      await refusing.dispose();
+      const accepting = await startServer(ackWith(true), socketPath);
+      try {
+        await settle(1500);
+        const attached = accepting.received
+          .map((line) => JSON.parse(line) as { t: string; sessionId?: string })
+          .filter((msg) => msg.t === "session.attach")
+          .map((msg) => msg.sessionId);
+        assert.deepStrictEqual(attached, ["session-a"], "a new window is a new answer");
+      } finally {
+        await accepting.dispose();
+      }
+    } finally {
+      liveness.stop();
+      fs.rmSync(path.dirname(socketPath), { recursive: true, force: true });
     }
   });
 });

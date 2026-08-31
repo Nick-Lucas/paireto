@@ -18,7 +18,14 @@ import type {
 } from "../../protocol/types.js";
 import { PLUGIN_VERSION } from "../../protocol/types.js";
 import type { HandshakeFailure } from "./ndjson.js";
-import { handshake, isParseError, nowIso, readMessages, sendLine } from "./ndjson.js";
+import {
+  handshake,
+  isParseError,
+  nowIso,
+  readMessages,
+  refusedMessage,
+  sendLine,
+} from "./ndjson.js";
 import type { BridgeTarget } from "./target.js";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 3000;
@@ -206,4 +213,18 @@ function createConnection(sock: net.Socket, residual: string): BridgeConnection 
       sock.destroy();
     },
   };
+}
+
+/**
+ * Note a refused handshake on stderr, which the harness surfaces as its own output.
+ *
+ * This is the AGENT's copy of the news — the window keeps its own record for the user. Every other
+ * connect failure is an ordinary quiet day (no window open, nothing to say); a refusal means the
+ * window is running and turning this bundle away, so nothing this agent sends will land until its
+ * plugin is reloaded.
+ */
+export function warnIfRefused(result: ConnectResult): void {
+  if (!result.ok && result.reason === "handshake-rejected") {
+    console.error(`paireto: ${refusedMessage(result.extVersion)}`);
+  }
 }

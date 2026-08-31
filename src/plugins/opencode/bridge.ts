@@ -4,7 +4,7 @@
 import { canonicalize, socketPath } from "../../protocol/paths.js";
 import type { HarnessEventMeta } from "../../protocol/types.js";
 import type { BridgeConnection, RequestBody, ResponseFor } from "../core/bridgeClient.js";
-import { connect } from "../core/bridgeClient.js";
+import { connect, warnIfRefused } from "../core/bridgeClient.js";
 import type { BridgeTarget } from "../core/target.js";
 import { curatedProperties, owningSessionId } from "./eventShape.js";
 import type { OpenCodeEvent, ToolExecuteInput } from "./types.js";
@@ -50,6 +50,7 @@ export function createBridge(worktree: string): OpenCodeBridge {
     }
     const result = await connect(target);
     if (!result.ok) {
+      warnIfRefused(result);
       return undefined; // no window listening — caller drops the event
     }
     eventConnection = result.connection;
@@ -120,6 +121,7 @@ export function createBridge(worktree: string): OpenCodeBridge {
       livenessConnections.set(sessionID, null);
       void connect(target).then((result) => {
         if (!result.ok) {
+          warnIfRefused(result);
           livenessConnections.delete(sessionID);
           return;
         }
@@ -160,6 +162,7 @@ export function createBridge(worktree: string): OpenCodeBridge {
     async gate(body) {
       const result = await connect(target);
       if (!result.ok) {
+        warnIfRefused(result);
         return undefined;
       }
       const response = await result.connection.request(body, { timeoutMs: GATE_TIMEOUT_MS });

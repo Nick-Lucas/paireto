@@ -9,14 +9,8 @@
 //   block: {"decision":"block","reason":"..."} -> Claude keeps going and addresses the feedback.
 
 import type { ClaudeCodeHookEvent } from "../../../harness/ClaudeCodeStrategy.js";
-import { connect } from "../../core/bridgeClient.js";
-import {
-  exitSilently,
-  parseEvent,
-  readStdin,
-  warnIfRefused,
-  writeAndExit,
-} from "../../core/stdio.js";
+import { connect, warnIfRefused } from "../../core/bridgeClient.js";
+import { exitSilently, parseEvent, readStdin, writeAndExit } from "../../core/stdio.js";
 import { resolveTarget } from "../../core/target.js";
 
 const CONNECT_TIMEOUT_MS = 1500;

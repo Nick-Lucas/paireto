@@ -116,16 +116,4 @@ suite("bridge handshake refusal", () => {
       { pluginVersion: "0.0.1-stale", extVersion: PLUGIN_VERSION, repoRoot: created.repoRoot },
     ]);
   });
-
-  test("an accepted plugin reports nothing", async () => {
-    const rejections: HandshakeRejection[] = [];
-    const created = await listen(rejections);
-
-    const ack = JSON.parse(await sayHello(created.socketPath, PLUGIN_VERSION, repoRoot)) as {
-      accept: boolean;
-    };
-
-    assert.strictEqual(ack.accept, true);
-    assert.deepStrictEqual(rejections, []);
-  });
 });

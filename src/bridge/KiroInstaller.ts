@@ -297,9 +297,17 @@ export function kiroInstalledProbe(
     installedPower?.version,
     shippedVersion,
   );
-  return state === "not-installed"
-    ? { state }
-    : { state, installedVersion: installedPower?.version, shippedVersion };
+  if (state === "not-installed") {
+    return { state };
+  }
+
+  const explained = state === "installed" || installedPower?.version !== shippedVersion;
+
+  return {
+    state,
+    installedVersion: explained ? installedPower?.version : undefined,
+    shippedVersion,
+  };
 }
 
 export async function installKiro(

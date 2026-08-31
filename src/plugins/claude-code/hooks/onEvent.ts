@@ -2,8 +2,8 @@
 // socket, exit 0. Never blocks the agent and never emits a decision — any failure is swallowed.
 
 import type { ClaudeCodeHookEvent } from "../../../harness/ClaudeCodeStrategy.js";
-import { connect } from "../../core/bridgeClient.js";
-import { parseEvent, readStdin, warnIfRefused } from "../../core/stdio.js";
+import { connect, warnIfRefused } from "../../core/bridgeClient.js";
+import { parseEvent, readStdin } from "../../core/stdio.js";
 import { resolveTarget } from "../../core/target.js";
 
 const CONNECT_TIMEOUT_MS = 1500;
