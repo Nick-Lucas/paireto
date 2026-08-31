@@ -31,7 +31,7 @@ export type KiroSecrets = Record<string, string>;
 const KIRO_AUTH_ENV = "PAIRETO_KIRO_AUTH";
 
 /** The `auth_kv`-bearing database Kiro keeps under a home's data directory. */
-function kiroDatabaseFile(home: string): string {
+export function kiroDatabaseFile(home: string): string {
   if (process.platform === "darwin") {
     return path.join(home, "Library", "Application Support", "kiro-cli", "data.sqlite3");
   }
@@ -82,19 +82,28 @@ function readDatabaseSecrets(file: string): KiroSecrets {
   }
 }
 
-/** This machine's signed-in Kiro secrets, read from whichever store the platform uses. */
-function readLocalKiroSecrets(home = os.homedir()): KiroSecrets {
-  if (process.platform !== "darwin") {
-    return readDatabaseSecrets(localKiroDatabaseFile(home));
+/**
+ * This machine's signed-in Kiro secrets. macOS can hold a token in BOTH stores, and only `auth_kv`
+ * is rewritten when the CLI refreshes one — a keychain entry left over from an earlier sign-in reads
+ * as valid and then fails to authenticate. So the database wins wherever the two disagree.
+ */
+export function readLocalKiroSecrets(
+  home = os.homedir(),
+  readKeychain: (key: string) => string | undefined = readKeychainSecret,
+  onDarwin = process.platform === "darwin",
+): KiroSecrets {
+  const database = readDatabaseSecrets(localKiroDatabaseFile(home));
+  if (!onDarwin) {
+    return database;
   }
   const secrets: KiroSecrets = {};
   for (const key of KIRO_SECRET_KEYS) {
-    const value = readKeychainSecret(key);
+    const value = readKeychain(key);
     if (value) {
       secrets[key] = value;
     }
   }
-  return secrets;
+  return { ...secrets, ...database };
 }
 
 /** The staged copy a container run was given, or undefined when none was mounted. */

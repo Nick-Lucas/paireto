@@ -61,20 +61,26 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
       ),
   );
 
-  server.registerTool(
-    PLAN_REVIEW_TOOL_NAME,
-    {
-      description: PLAN_REVIEW_TOOL_DESCRIPTION,
-      inputSchema: PlanReviewArgs.shape,
-    },
-    (args) =>
-      runPlanReview(
-        adapter.resolveReviewTarget(),
-        adapter.harness,
-        args.plan,
-        adapter.noTargetMessage,
-      ),
-  );
+  // Kiro only. Every other harness carries an approved plan out of plan mode through its own native
+  // transition (a `setMode` hook decision, an agent switch), and an MCP result cannot express that —
+  // approving through this tool would leave the agent still in plan mode, re-opening the same gate.
+  // Kiro has no such transition to lose, and no way to raise a second plan gate from a hook.
+  if (adapter.harness === "kiro") {
+    server.registerTool(
+      PLAN_REVIEW_TOOL_NAME,
+      {
+        description: PLAN_REVIEW_TOOL_DESCRIPTION,
+        inputSchema: PlanReviewArgs.shape,
+      },
+      (args) =>
+        runPlanReview(
+          adapter.resolveReviewTarget(),
+          adapter.harness,
+          args.plan,
+          adapter.noTargetMessage,
+        ),
+    );
+  }
 
   return server;
 }

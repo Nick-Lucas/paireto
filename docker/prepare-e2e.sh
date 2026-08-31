@@ -85,9 +85,17 @@ function fromKeychain() {
   return secrets;
 }
 
-function fromDatabase() {
+// macOS keeps the CLI's data directory under Library, everywhere else under the XDG data home.
+function databaseFile() {
+  if (process.platform === "darwin") {
+    return path.join(os.homedir(), "Library", "Application Support", "kiro-cli", "data.sqlite3");
+  }
   const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share");
-  const file = path.join(dataHome, "kiro-cli", "data.sqlite3");
+  return path.join(dataHome, "kiro-cli", "data.sqlite3");
+}
+
+function fromDatabase() {
+  const file = databaseFile();
   if (!fs.existsSync(file)) {
     return {};
   }
@@ -107,7 +115,13 @@ function fromDatabase() {
   }
 }
 
-const secrets = process.platform === "darwin" ? fromKeychain() : fromDatabase();
+// On macOS both stores can hold a token, and only `auth_kv` is rewritten when the CLI refreshes one
+// — a keychain entry left over from an earlier sign-in reads as valid here and then fails to
+// authenticate in the container. So the database wins wherever the two disagree.
+const secrets =
+  process.platform === "darwin"
+    ? { ...fromKeychain(), ...fromDatabase() }
+    : fromDatabase();
 const target = process.env.KIRO_AUTH_OUT;
 fs.writeFileSync(target, JSON.stringify(secrets), { mode: 0o600 });
 fs.chmodSync(target, 0o600);

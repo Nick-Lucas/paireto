@@ -102,18 +102,21 @@ suite("E2E spec routing", () => {
   });
 
   // The shipped specs must agree with the rule, so a new file cannot land without routing. Every
-  // driver currently runs every case from the shared spec — an override is the exception, and the
-  // rule itself is covered above against a temp directory.
+  // pair resolves to the shared spec except the overrides named here; the rule itself is covered
+  // above against a temp directory.
+  const SHIPPED_OVERRIDES: Record<string, string> = { "fullflow @kiro": "fullflow.kiro.e2e.js" };
+
   test("the compiled specs route every pair they claim", () => {
     const dir = path.resolve(__dirname, "..", "e2e", "tests");
     const specs = discoverSpecs(dir);
     assert.deepStrictEqual(casesIn(specs), ["fullflow", "guidedreview", "manualskills"]);
     for (const testCase of casesIn(specs)) {
       for (const driver of E2E_DRIVERS) {
+        const pair = `${testCase} @${driver}`;
         assert.strictEqual(
           specFileFor(specs, testCase, driver),
-          `${testCase}.e2e.js`,
-          `${testCase} @${driver}`,
+          SHIPPED_OVERRIDES[pair] ?? `${testCase}.e2e.js`,
+          pair,
         );
       }
     }

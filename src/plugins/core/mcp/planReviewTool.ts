@@ -1,4 +1,4 @@
-// The `paireto_plan_review` tool: one definition, shared by every harness's MCP server.
+// The `paireto_plan_review` tool, registered for Kiro only (see runtime.ts).
 //
 // A harness whose turn-end hooks cannot raise a second plan gate has no way to put a REVISED plan
 // back in front of the reviewer — the first proposal arrives by hook, and after that the loop is

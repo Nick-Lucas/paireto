@@ -61,7 +61,6 @@ export class ClaudeDriver implements HarnessDriver {
     guidedReviewInvocation: "/paireto:guided-review",
     reviewInvocation: "/paireto:review",
     opensTurnEndReview: true,
-    reportsTurnEndAfterPlan: true,
   };
 
   private home?: HarnessHome;

@@ -33,13 +33,6 @@ const PLAN_PROMPT =
 const PLAN_FEEDBACK = "Also add bye.txt containing 'bye', then resubmit.";
 const REVIEW_FEEDBACK = "Also create note.txt containing 'note'.";
 
-const TRAILING_TURN_MS = 15_000;
-
-// Harnesses like Kiro may not report a turn end after a prior rejection
-// So we have to wait for it to settle
-const settleTrailingTurn = (): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, TRAILING_TURN_MS));
-
 const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
 
 driversForSharedSpec(__dirname, CASE).forEach((harness) => {
@@ -132,11 +125,6 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
     });
 
     test("the turn-end review delivers feedback the agent acts on", async () => {
-      // A harness that opens no turn-end review of its own needs the user to ask for one — the same
-      // path the manual-skills case drives.
-      if (!driver.caps.opensTurnEndReview) {
-        await driver.prompt(driver.caps.reviewInvocation);
-      }
       // Blocking (claude/codex): the agent is parked, so require reviewActive. Post-hoc (opencode): the
       // agent is already idle, so the review gate exists without reviewActive necessarily set first.
       firstReview = await wait("a review gate to open", async () => {
@@ -179,16 +167,9 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       );
       await wait("all gates to resolve and the session to settle", async () => {
         const snap = await inspect();
-
-        const settled =
-          !driver.caps.reportsTurnEndAfterPlan ||
-          snap.sessions.some((s) => s.state === "stopped" || s.state === "idle");
+        const settled = snap.sessions.some((s) => s.state === "stopped" || s.state === "idle");
         return snap.gates.length === 0 && !snap.reviewActive && settled;
       });
-
-      if (!driver.caps.reportsTurnEndAfterPlan) {
-        await settleTrailingTurn();
-      }
       if (!(fileIs("hello.txt", "hi") && fileIs("bye.txt", "bye") && fileIs("note.txt", "note"))) {
         throw new Error(`final file contents wrong\n${await dump()}`);
       }
