@@ -7,7 +7,7 @@ import * as vscode from "vscode";
 
 import { Commands } from "../config.js";
 import type { InstallContext, OnboardingAgent } from "../welcome/agents.js";
-import { type AgentInstallRow, agentInstallState, setupPrompt } from "../welcome/installStatus.js";
+import { type AgentInstallRow, agentInstallProbe, setupPrompt } from "../welcome/installStatus.js";
 import { setupNoticeItem } from "../views/MainTreeProvider.js";
 
 function row(
@@ -71,31 +71,68 @@ suite("one agent's probe", () => {
   });
 
   test("a probe that rejects reads as not-installed", async () => {
-    const state = await agentInstallState(
+    const probe = await agentInstallProbe(
       agent(() => Promise.reject(new Error("no plugin manifest"))),
       ctx,
     );
-    assert.strictEqual(state, "not-installed");
+    assert.strictEqual(probe.state, "not-installed");
   });
 
   test("a probe that answers at once still works", async () => {
-    assert.strictEqual(
-      await agentInstallState(
-        agent(() => "installed"),
-        ctx,
-      ),
-      "installed",
+    const probe = await agentInstallProbe(
+      agent(() => ({
+        state: "installed" as const,
+        installedVersion: "1.2.3",
+        shippedVersion: "1.2.3",
+      })),
+      ctx,
     );
+    assert.strictEqual(probe.state, "installed");
   });
 
   test("a probe that throws reads as not-installed", async () => {
-    const state = await agentInstallState(
+    const probe = await agentInstallProbe(
       agent(() => {
         throw new Error("no plugin manifest");
       }),
       ctx,
     );
-    assert.strictEqual(state, "not-installed");
+    assert.strictEqual(probe.state, "not-installed");
+  });
+
+  // The card reads the two numbers against each other, so a probe that reports one must report both.
+  test("the versions a probe compared reach the row", async () => {
+    const probe = await agentInstallProbe(
+      agent(() => ({
+        state: "update-available" as const,
+        installedVersion: "0.6.0",
+        shippedVersion: "0.7.0",
+      })),
+      ctx,
+    );
+    assert.deepStrictEqual(probe, {
+      state: "update-available",
+      installedVersion: "0.6.0",
+      shippedVersion: "0.7.0",
+    });
+  });
+
+  test("a planned agent is never asked", async () => {
+    let asked = false;
+    const probe = await agentInstallProbe(
+      {
+        id: "pi",
+        name: "Pi TUI",
+        available: false,
+        installedProbe: () => {
+          asked = true;
+          return { state: "not-installed" };
+        },
+      },
+      ctx,
+    );
+    assert.deepStrictEqual(probe, { state: "not-installed" });
+    assert.strictEqual(asked, false, "there is nothing to install, so nothing to ask");
   });
 });
 

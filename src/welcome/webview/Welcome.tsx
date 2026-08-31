@@ -8,6 +8,7 @@ import type {
   InboundMessage,
   OutboundMessage,
   ShortcutState,
+  VersionState,
   WelcomeState,
 } from "../protocol.js";
 
@@ -56,10 +57,14 @@ export function Welcome() {
       </header>
 
       <section className="card">
-        <h2>Set up your agent</h2>
+        <div className="card-head">
+          <h2>Set up your agent</h2>
+          {!!state?.versions && <Versions versions={state.versions} />}
+        </div>
         <p className="muted">
           Install the bridge plugin so your agent can talk to Paireto, and configure a terminal
-          profile so you create sessions instantly.
+          profile so you create sessions instantly. An agent only reaches Paireto while its plugin
+          version matches this window&apos;s bridge version exactly.
         </p>
         <div className="rows">
           {(state?.agents ?? []).map((a) => (
@@ -191,6 +196,37 @@ function PluginStepAction({
   );
 }
 
+function Versions({ versions }: { versions: VersionState }) {
+  return (
+    <span
+      className="versions"
+      title="This window's extension version and the bridge version its plugins must match"
+    >
+      Paireto <code>{versions.extension}</code> · bridge <code>{versions.plugin}</code>
+    </span>
+  );
+}
+
+/** The plugin version this agent carries, against the one it should. Silent when it has none —
+ *  "Set up" already says that, and an empty version reads as a broken value rather than an absence. */
+function PluginVersion({ agent }: { agent: AgentState }) {
+  if (!agent.installedVersion) {
+    return null;
+  }
+  const stale = !!agent.shippedVersion && agent.installedVersion !== agent.shippedVersion;
+  return (
+    <span className={stale ? "step-version stale" : "step-version"}>
+      <code>{agent.installedVersion}</code>
+      {stale && (
+        <>
+          {" → "}
+          <code>{agent.shippedVersion}</code>
+        </>
+      )}
+    </span>
+  );
+}
+
 // One agent card: a header (name + status tag) and a list of setup steps, each with its own status
 // and action (bridge plugin, then terminal profile).
 function AgentRow({
@@ -213,7 +249,10 @@ function AgentRow({
       <div className="steps">
         {agent.available && (
           <div className="step">
-            <span className="step-label">Bridge plugin</span>
+            <span className="step-label">
+              Bridge plugin
+              <PluginVersion agent={agent} />
+            </span>
             <PluginStepAction agent={agent} busy={busy} onSetup={onSetupPlugin} />
           </div>
         )}

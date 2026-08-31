@@ -9,6 +9,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { log } from "../log.js";
+import { PLUGIN_VERSION } from "../protocol/types.js";
 import type { AgentInstallStatus } from "./AgentInstallStatus.js";
 import {
   type AgentTerminalProfile,
@@ -27,7 +28,7 @@ import {
   parseKeybindings,
   recommendedKey,
 } from "./keybindings.js";
-import type { AgentState, ShortcutState, WelcomeState } from "./protocol.js";
+import type { AgentState, ShortcutState, VersionState, WelcomeState } from "./protocol.js";
 
 export class WelcomePanel {
   private static current: WelcomePanel | undefined;
@@ -184,7 +185,21 @@ export class WelcomePanel {
       };
     });
 
-    return { logoUri: this.mediaUri("PairetoHeader2x.png").toString(), agents, shortcuts };
+    return {
+      logoUri: this.mediaUri("PairetoHeader2x.png").toString(),
+      versions: this.versions(),
+      agents,
+      shortcuts,
+    };
+  }
+
+  /** This window's two numbers: its release version, and the wire version its bridge speaks. */
+  private versions(): VersionState {
+    const packaged = this.context.extension.packageJSON as { version?: unknown };
+    return {
+      extension: typeof packaged.version === "string" ? packaged.version : "unknown",
+      plugin: PLUGIN_VERSION,
+    };
   }
 
   private post(): void {

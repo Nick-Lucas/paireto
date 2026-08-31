@@ -3,6 +3,7 @@
 
 import { log } from "../log.js";
 import { type InstallContext, type OnboardingAgent, ONBOARDING_AGENTS } from "./agents.js";
+import type { InstallProbe } from "./installProbe.js";
 import type { InstallState } from "./protocol.js";
 
 /** One agent's probe result, in registry order. */
@@ -11,19 +12,23 @@ export interface AgentInstallRow {
   name: string;
   available: boolean;
   installState: InstallState;
+  /** The plugin version the agent itself reports, when it has one. */
+  installedVersion?: string;
+  /** The plugin version this extension ships for it. Absent for a planned agent. */
+  shippedVersion?: string;
 }
 
 /** What the sidebar should nudge the user towards, if anything. */
 export type SetupPrompt = { kind: "install" } | { kind: "update"; agentNames: string[] };
 
-/** Run one agent's probe. A planned agent, a missing probe, or a throwing probe (e.g. an absent
- *  plugin tree) all read as not-installed. */
-export async function agentInstallState(
+/** Run one agent's probe. A planned agent is never asked; a probe that throws or rejects (e.g. an
+ *  absent plugin tree) reads as not-installed, with no versions to show. */
+export async function agentInstallProbe(
   agent: OnboardingAgent,
   ctx: InstallContext,
-): Promise<InstallState> {
-  if (!agent.available || !agent.installedProbe) {
-    return "not-installed";
+): Promise<InstallProbe> {
+  if (!agent.available) {
+    return { state: "not-installed" };
   }
   try {
     // Awaited inside the try, so a probe that rejects degrades the same way as one that throws.
@@ -32,7 +37,7 @@ export async function agentInstallState(
     log.info(
       `[welcome] installedProbe failed for ${agent.id}: ${err instanceof Error ? err.message : err}`,
     );
-    return "not-installed";
+    return { state: "not-installed" };
   }
 }
 
@@ -42,12 +47,20 @@ export function probeAgentInstallStates(
   installContextFor: (agentId: string) => InstallContext,
 ): Promise<AgentInstallRow[]> {
   return Promise.all(
-    ONBOARDING_AGENTS.map(async (agent) => ({
-      id: agent.id,
-      name: agent.name,
-      available: agent.available,
-      installState: await agentInstallState(agent, installContextFor(agent.id)),
-    })),
+    ONBOARDING_AGENTS.map(async (agent) => {
+      const probe = await agentInstallProbe(agent, installContextFor(agent.id));
+      const versions =
+        probe.state === "not-installed"
+          ? {}
+          : { installedVersion: probe.installedVersion, shippedVersion: probe.shippedVersion };
+      return {
+        id: agent.id,
+        name: agent.name,
+        available: agent.available,
+        installState: probe.state,
+        ...versions,
+      };
+    }),
   );
 }
 

@@ -8,6 +8,7 @@ import {
   kiroInstalledProbe,
   kiroFilesInstallState,
   kiroInstallPlan,
+  readAgentPluginVersion,
   readInstalledKiroPowerVersion,
   renderKiroHooks,
 } from "../bridge/KiroInstaller.js";
@@ -180,13 +181,17 @@ suite("Kiro installer", () => {
         "foreign",
       );
       assert.strictEqual((await installKiro({ pluginsRoot, stableDir }, { kiroHome })).ok, true);
-      assert.strictEqual(kiroInstalledProbe({ pluginsRoot, stableDir }, { kiroHome }), "installed");
+      assert.deepStrictEqual(kiroInstalledProbe({ pluginsRoot, stableDir }, { kiroHome }), {
+        state: "installed",
+        installedVersion: readAgentPluginVersion(pluginsRoot),
+        shippedVersion: readAgentPluginVersion(pluginsRoot),
+      });
       fs.writeFileSync(
         path.join(kiroHome, "powers", "installed.json"),
         JSON.stringify({ installedPowers: [{ name: "foreign" }] }),
       );
       assert.strictEqual(
-        kiroInstalledProbe({ pluginsRoot, stableDir }, { kiroHome }),
+        kiroInstalledProbe({ pluginsRoot, stableDir }, { kiroHome }).state,
         "not-installed",
       );
     } finally {

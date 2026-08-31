@@ -12,6 +12,12 @@ import type {
   StopGateRequest,
 } from "../protocol/types.js";
 
+/** What an agent installer reports back to the Welcome card. */
+export interface InstallResult {
+  ok: boolean;
+  detail: string;
+}
+
 /** One row in $STATE/index.json — lets hooks discover live sockets and GC dead ones. */
 export interface IndexEntry {
   repoRoot: string;

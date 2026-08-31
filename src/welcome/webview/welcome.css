@@ -232,3 +232,24 @@ body {
   border-radius: 10px;
   padding: 1px 8px;
 }
+
+/* This window's own two numbers, sat beside the agent rows they must match. */
+.versions {
+  color: var(--vscode-descriptionForeground);
+  font-size: 0.85em;
+  white-space: nowrap;
+  align-self: center;
+}
+.versions code,
+.step-version code {
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 0.95em;
+}
+
+/* The plugin version an agent carries. Stale draws the eye — it is the whole reason to look. */
+.step-version {
+  margin-left: 6px;
+}
+.step-version.stale {
+  color: var(--vscode-list-warningForeground, var(--vscode-charts-yellow));
+}

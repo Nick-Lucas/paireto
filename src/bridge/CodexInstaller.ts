@@ -8,8 +8,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { log } from "../log.js";
+import { type InstallProbe, installProbeFor } from "../welcome/installProbe.js";
 import type { InstallState } from "../welcome/protocol.js";
-import type { InstallResult } from "./PluginInstaller.js";
+import type { InstallResult } from "./types.js";
 
 const MARKETPLACE_NAME = "paireto";
 /** The Agent Plugins client namespace holding the Codex-only files. */
@@ -151,21 +152,27 @@ export function renderCodexMarketplace(): string {
   )}\n`;
 }
 
-/** Tri-state derived from `codex plugin list --json`. */
-export function codexPluginInstallState(source: string, shippedVersion: string): InstallState {
+/** The version Codex reports for the bridge plugin in `codex plugin list --json`, if it has it. */
+export function codexInstalledPluginVersion(source: string): string | undefined {
   let parsed: CodexPluginList;
   try {
     parsed = JSON.parse(source) as CodexPluginList;
   } catch {
-    return "not-installed";
+    return undefined;
   }
   const plugin = parsed.installed?.find(
     (entry) => entry.pluginId === PLUGIN_ID && entry.installed !== false,
   );
-  if (!plugin) {
+  return plugin?.version;
+}
+
+/** Tri-state derived from `codex plugin list --json`. */
+export function codexPluginInstallState(source: string, shippedVersion: string): InstallState {
+  const installed = codexInstalledPluginVersion(source);
+  if (installed === undefined) {
     return "not-installed";
   }
-  return plugin.version === shippedVersion ? "installed" : "update-available";
+  return installed === shippedVersion ? "installed" : "update-available";
 }
 
 function resolveCodexBin(env: NodeJS.ProcessEnv, override?: string): string | undefined {
@@ -333,14 +340,17 @@ export async function installCodex(
 /** Probe the public plugin registry. Asynchronous because the answer comes from the Codex CLI, and
  *  the extension host runs on one thread: a synchronous call here stops the whole window, including
  *  every other extension, until the CLI answers. */
-export async function codexInstalledProbe(ctx: { pluginsRoot: string }): Promise<InstallState> {
-  const version = readCodexPluginVersion(ctx.pluginsRoot);
+export async function codexInstalledProbe(ctx: { pluginsRoot: string }): Promise<InstallProbe> {
+  const shippedVersion = readCodexPluginVersion(ctx.pluginsRoot);
   const env = { ...process.env };
   const bin = resolveCodexBin(env);
   if (!bin) {
-    return "not-installed";
+    return { state: "not-installed" };
   }
   const listed = await run(bin, ["plugin", "list", "--json"], env, PROBE_TIMEOUT_MS);
   // An unavailable plugin registry reads as not installed.
-  return listed.code === 0 ? codexPluginInstallState(listed.stdout, version) : "not-installed";
+  if (listed.code !== 0) {
+    return { state: "not-installed" };
+  }
+  return installProbeFor(codexInstalledPluginVersion(listed.stdout), shippedVersion);
 }

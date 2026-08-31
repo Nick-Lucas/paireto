@@ -17,8 +17,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { log } from "../log.js";
+import { type InstallProbe, installProbeFor } from "../welcome/installProbe.js";
 import type { InstallState } from "../welcome/protocol.js";
-import type { InstallResult } from "./PluginInstaller.js";
+import type { InstallResult } from "./types.js";
 
 /** One file to copy during install. */
 export interface OpenCodeCopy {
@@ -146,7 +147,10 @@ export function openCodeInstallState(installedJson: string, shipped: string): In
 export function openCodeInstalledProbe(ctx: {
   pluginsRoot: string;
   stableDir: string;
-}): InstallState {
-  const shipped = readOpenCodeAdapterVersion(ctx.pluginsRoot);
-  return openCodeInstallState(readFileOrEmpty(installedAdapterPath()), shipped);
+}): InstallProbe {
+  const installedJson = readFileOrEmpty(installedAdapterPath());
+  return installProbeFor(
+    parseAdapterVersion(installedJson),
+    readOpenCodeAdapterVersion(ctx.pluginsRoot),
+  );
 }

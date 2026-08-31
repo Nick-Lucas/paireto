@@ -20,13 +20,9 @@ import type { AppEvent } from "../harness/appEvent.js";
 import { NotificationService } from "../notify/NotificationService.js";
 import type { ClaudeCodeHookEvent } from "../harness/ClaudeCodeStrategy.js";
 import type { Harness } from "../protocol/types.js";
-import {
-  findAgent,
-  installStateFor,
-  readInstalledStamp,
-  writeInstalledStamp,
-} from "../welcome/agents.js";
-import { readPluginVersion } from "../bridge/PluginInstaller.js";
+import { findAgent, writeInstalledStamp } from "../welcome/agents.js";
+import { installProbeFor, installStateFor } from "../welcome/installProbe.js";
+import { readClaudePluginVersion } from "../bridge/ClaudeInstaller.js";
 import { runMapperFixtures } from "./harnessFixtures.js";
 
 const noopHost: AgentSessionHost = {
@@ -193,10 +189,9 @@ suite("onboarding install stamp + installedProbe", () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  test("read/writeInstalledStamp round-trips; absent reads undefined", () => {
-    assert.strictEqual(readInstalledStamp(dir), undefined);
+  test("writeInstalledStamp records the version for the probe that reads it", () => {
     writeInstalledStamp(dir, "1.2.3");
-    assert.strictEqual(readInstalledStamp(dir), "1.2.3");
+    assert.strictEqual(fs.readFileSync(path.join(dir, "installed-version"), "utf8"), "1.2.3");
   });
 
   test("installStateFor is the tri-state version comparison", () => {
@@ -205,25 +200,40 @@ suite("onboarding install stamp + installedProbe", () => {
     assert.strictEqual(installStateFor("1.2.2", "1.2.3"), "update-available");
   });
 
-  test("claude installedProbe is tri-state: absent → not-installed, stale → update-available", () => {
-    const claude = findAgent("claude-code");
-    assert.ok(claude?.installedProbe);
-    const ctx = { pluginsRoot, stableDir: dir };
-    const shipped = readPluginVersion(pluginsRoot);
-
-    assert.strictEqual(claude.installedProbe(ctx), "not-installed", "no stamp yet");
-    writeInstalledStamp(dir, "0.0.0-stale");
-    assert.strictEqual(claude.installedProbe(ctx), "update-available", "stale stamp");
-    writeInstalledStamp(dir, shipped);
-    assert.strictEqual(claude.installedProbe(ctx), "installed", "current stamp");
+  // The card prints these two numbers next to the badge, so the badge has to be derived from them.
+  // A probe answering from a marker this extension wrote would read "installed" while the agent
+  // served an older bundle — precisely when the bridge refuses it.
+  test("installProbeFor derives the badge from the two versions it reports", () => {
+    assert.deepStrictEqual(installProbeFor("1.2.3", "1.2.3"), {
+      state: "installed",
+      installedVersion: "1.2.3",
+      shippedVersion: "1.2.3",
+    });
+    assert.deepStrictEqual(installProbeFor("1.2.2", "1.2.3"), {
+      state: "update-available",
+      installedVersion: "1.2.2",
+      shippedVersion: "1.2.3",
+    });
   });
 
-  test("codex, kiro, and opencode are available with an installer and a probe", () => {
-    for (const id of ["codex", "kiro", "opencode"]) {
+  test("an agent carrying nothing reports nothing to show", () => {
+    assert.deepStrictEqual(installProbeFor(undefined, "1.2.3"), { state: "not-installed" });
+  });
+
+  test("claude measures against the version this extension ships", async () => {
+    const claude = findAgent("claude-code");
+    assert.ok(claude);
+    const probe = await claude.installedProbe({ pluginsRoot, stableDir: dir });
+    if (probe.state !== "not-installed") {
+      assert.strictEqual(probe.shippedVersion, readClaudePluginVersion(pluginsRoot));
+    }
+  });
+
+  test("every available agent has an installer", () => {
+    for (const id of ["claude-code", "codex", "kiro", "opencode"]) {
       const agent = findAgent(id);
       assert.strictEqual(agent?.available, true, `${id} available`);
       assert.ok(agent?.install, `${id} has an installer`);
-      assert.ok(agent?.installedProbe, `${id} has a probe`);
     }
   });
 });
