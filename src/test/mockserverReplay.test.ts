@@ -35,7 +35,6 @@ import {
   normalizeClaudeBody,
   normalizeCodexBody,
   normalizeKiroBody,
-  normalizeOpenCodeBody,
 } from "../e2e/proxy/normalize.js";
 import { isEventStreamContentType } from "../e2e/proxy/normalizingProxy.js";
 
@@ -639,10 +638,10 @@ suite("provider-replay: fixture normalization", () => {
         ],
       });
 
-    assert.strictEqual(normalizeOpenCodeBody(body("09:38")), normalizeOpenCodeBody(body("10:19")));
+    assert.strictEqual(normalizeCodexBody(body("09:38")), normalizeCodexBody(body("10:19")));
     assert.notStrictEqual(
-      normalizeOpenCodeBody(body("09:38")),
-      normalizeOpenCodeBody(body("09:38", "docs")),
+      normalizeCodexBody(body("09:38")),
+      normalizeCodexBody(body("09:38", "docs")),
     );
   });
 
@@ -830,7 +829,7 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(parsed.input[2].output, "stable", "content is untouched");
   });
 
-  test("keeps Paireto's OpenCode tool schema but drops built-in tool schema churn", () => {
+  test("keeps Paireto's Responses tool schema but drops built-in tool schema churn", () => {
     const pairetoSchema = { type: "object", properties: { plan: { type: "string" } } };
     const raw = JSON.stringify({
       tools: [
@@ -849,20 +848,64 @@ suite("provider-replay: fixture normalization", () => {
       ],
       input: [{ role: "user", content: [{ type: "input_text", text: "plan" }] }],
     });
-    const tools = toolsByName(normalizeOpenCodeBody(raw));
+    const tools = toolsByName(normalizeCodexBody(raw));
     // A broken paireto_submit_plan schema must still fail replay.
     assert.deepStrictEqual(tools.get("paireto_submit_plan")?.parameters, pairetoSchema);
     assert.ok(tools.has("bash"));
     assert.strictEqual(tools.get("bash")?.parameters, undefined);
+  });
+
+  // Codex advertises its built-ins in an `additional_tools` developer item, not the top-level
+  // `tools` field, and rewrites their prose on its own release schedule — 0.152.0 reworded `exec`
+  // and expired every Codex cassette. The CLI is installed unpinned, so that prose cannot be part
+  // of the match key.
+  test("drops Codex additional_tools prose but keeps the advertised names", () => {
+    const body = (execProse: string): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "additional_tools",
+            role: "developer",
+            tools: [
+              {
+                type: "namespace",
+                name: "functions",
+                description: "namespace prose",
+                tools: [
+                  { type: "custom", name: "exec", description: execProse },
+                  { type: "function", name: "wait", description: "Wait", parameters: {} },
+                ],
+              },
+            ],
+          },
+        ],
+      });
+
+    assert.strictEqual(
+      normalizeCodexBody(body("Run JavaScript code — 0.151.0 wording")),
+      normalizeCodexBody(body("Run JavaScript code — 0.152.0 wording")),
+    );
+
+    const namespaces = (
+      JSON.parse(normalizeCodexBody(body("either"))) as {
+        input: Array<{ tools: Array<{ name: string; tools: Array<{ name: string }> }> }>;
+      }
+    ).input[0].tools;
     assert.deepStrictEqual(
-      toolsByName(normalizeCodexBody(raw)).get("paireto_submit_plan")?.parameters,
-      pairetoSchema,
+      namespaces[0].tools.map((tool) => tool.name),
+      ["exec", "wait"],
+      "a built-in that stops being offered must still break replay",
+    );
+    assert.strictEqual(
+      JSON.stringify(namespaces).includes("Run JavaScript code"),
+      false,
+      "built-in prose is dropped",
     );
   });
 
   // The advertised order varies between runs, so a match key that preserved it would 599
-  // intermittently. The Claude path has always sorted; OpenCode must too.
-  test("sorts the OpenCode tool inventory, so a reordered advertisement still matches", () => {
+  // intermittently. The Claude path has always sorted; the Responses path must too.
+  test("sorts the Responses tool inventory, so a reordered advertisement still matches", () => {
     const tool = (name: string): unknown => ({
       type: "function",
       name,
@@ -872,13 +915,13 @@ suite("provider-replay: fixture normalization", () => {
     const body = (names: string[]): string => JSON.stringify({ tools: names.map(tool) });
 
     assert.strictEqual(
-      normalizeOpenCodeBody(body(["bash", "paireto_submit_plan", "write"])),
-      normalizeOpenCodeBody(body(["write", "bash", "paireto_submit_plan"])),
+      normalizeCodexBody(body(["bash", "paireto_submit_plan", "write"])),
+      normalizeCodexBody(body(["write", "bash", "paireto_submit_plan"])),
     );
     // A tool that stops being offered must still break replay.
     assert.notStrictEqual(
-      normalizeOpenCodeBody(body(["bash", "write"])),
-      normalizeOpenCodeBody(body(["bash", "paireto_submit_plan", "write"])),
+      normalizeCodexBody(body(["bash", "write"])),
+      normalizeCodexBody(body(["bash", "paireto_submit_plan", "write"])),
     );
   });
 
@@ -893,9 +936,9 @@ suite("provider-replay: fixture normalization", () => {
         ],
       });
 
-    assert.strictEqual(normalizeOpenCodeBody(body("linux")), normalizeOpenCodeBody(body("darwin")));
+    assert.strictEqual(normalizeCodexBody(body("linux")), normalizeCodexBody(body("darwin")));
 
-    const tools = toolsByName(normalizeOpenCodeBody(body("linux")));
+    const tools = toolsByName(normalizeCodexBody(body("linux")));
     assert.strictEqual(tools.get("bash")?.description, undefined, "built-in description dropped");
     assert.strictEqual(
       tools.get("paireto_submit_plan")?.description,

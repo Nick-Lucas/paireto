@@ -391,11 +391,52 @@ export function normalizeCodexBody(raw: string): string {
   if (Array.isArray(body.input)) {
     body.input = body.input.filter((item) => !isStandaloneCollaborationMode(item));
   }
+  if ("tools" in body) {
+    body.tools = normalizeToolInventory(body.tools);
+  }
+  normalizeCodexAdditionalTools(body);
   stripInternalMetadata(body);
   normalizeCodexWorkflowToolResults(body);
   canonicalizeItemIds(body);
   stripPluginVersion(body);
   return JSON.stringify(body);
+}
+
+/**
+ * Codex advertises its built-in tools in a `developer` input item rather than the top-level `tools`
+ * field: an `additional_tools` item holds namespaces, and each namespace holds the tools. Their
+ * prose is harness-owned and rewritten on the CLI's own release schedule — `exec` alone carries
+ * several kB — while the Dockerfile installs that CLI unpinned. Left in the match key, one Codex
+ * release expires every Codex cassette. Names and namespaces survive, so a built-in that stops
+ * being offered still breaks replay, and {@link normalizeToolInventory} keeps any Paireto tool
+ * whole should Codex ever advertise one here.
+ */
+function normalizeCodexAdditionalTools(body: Record<string, unknown>): void {
+  if (!Array.isArray(body.input)) {
+    return;
+  }
+  for (const item of body.input) {
+    if (!item || typeof item !== "object") {
+      continue;
+    }
+    const entry = item as Record<string, unknown>;
+    if (entry.type !== "additional_tools" || !Array.isArray(entry.tools)) {
+      continue;
+    }
+    entry.tools = entry.tools
+      .map((candidate) => {
+        if (!candidate || typeof candidate !== "object") {
+          return candidate;
+        }
+        const namespace = candidate as Record<string, unknown>;
+        return {
+          name: namespace.name,
+          type: namespace.type,
+          tools: normalizeToolInventory(namespace.tools),
+        };
+      })
+      .sort((left, right) => keyOf(left).localeCompare(keyOf(right)));
+  }
 }
 
 /** The shell command a Codex `exec` call runs, quoted inside the JavaScript it evaluates. */
@@ -510,26 +551,6 @@ function canonicalizeItemIds(body: Record<string, unknown>): void {
       object[key] = mapped;
     }
   });
-}
-
-/** OpenCode advertises its tools on the Responses body, so the same inventory reduction the Claude
- *  path applies is what keeps a reordered or churned advertisement matching. */
-export function normalizeOpenCodeBody(raw: string): string {
-  const normalized = normalizeCodexBody(raw);
-  let obj: unknown;
-  try {
-    obj = JSON.parse(normalized);
-  } catch {
-    return normalized;
-  }
-  if (!obj || typeof obj !== "object") {
-    return normalized;
-  }
-  const body = obj as Record<string, unknown>;
-  if ("tools" in body) {
-    body.tools = normalizeToolInventory(body.tools);
-  }
-  return JSON.stringify(body);
 }
 
 /** The per-run ids Kiro puts in a request. Each is replaced by a stable name in first-seen order, so
@@ -668,7 +689,8 @@ export function normalizeRequestBody(driver: string, raw: string): string {
   if (driver === "kiro") {
     return normalizeKiroBody(scrubbed);
   }
-  return driver === "opencode" ? normalizeOpenCodeBody(scrubbed) : normalizeCodexBody(scrubbed);
+  // OpenCode and Codex both speak the Responses shape, so one transform serves both.
+  return normalizeCodexBody(scrubbed);
 }
 
 function stripInternalMetadata(value: unknown): void {
