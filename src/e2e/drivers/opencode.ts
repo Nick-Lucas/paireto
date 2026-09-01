@@ -22,6 +22,7 @@ import { resolveMode, type E2EMode } from "../mockserver/mode.js";
 import { resolveMockProxy } from "../mockserver/proxyEnv.js";
 import { buildOpenCodeHome, mockPath, probeOpenCode, type HarnessHome } from "../sandbox.js";
 import { baseHarnessEnv } from "./harnessEnv.js";
+import { copyTreeSync } from "./copyTree.js";
 import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
 import { watchChildOutput } from "./watch.js";
 
@@ -185,7 +186,7 @@ export class OpenCodeDriver implements HarnessDriver {
       );
       return;
     }
-    fs.cpSync(source, path.join(configDir, "node_modules"), { recursive: true });
+    copyTreeSync(source, path.join(configDir, "node_modules"));
     this.log(`staged OpenCode plugin SDK from ${source}`);
   }
 
