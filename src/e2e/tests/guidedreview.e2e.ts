@@ -259,10 +259,13 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       await wait("all gates to resolve and the guided plan to clear", async () => {
         const snap = await inspect();
         const settled = snap.sessions.some((s) => s.state === "stopped" || s.state === "idle");
+        // Approving the follow-up is what retires the feedback, so only a harness that raises one
+        // ends with an empty set. Where acting on the feedback IS the end of the flow, the item
+        // stays behind resolved — the previous test is what asserts the agent got that far.
         return (
           snap.gates.length === 0 &&
           snap.guided === undefined &&
-          snap.feedback.length === 0 &&
+          (!driver.caps.opensTurnEndReview || snap.feedback.length === 0) &&
           settled
         );
       });
