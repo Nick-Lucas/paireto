@@ -39,15 +39,18 @@ export class FeedbackStore {
   /** Replace one bucket. An empty bucket is deleted, so a branch with no feedback leaves no file. */
   async save(repoRoot: string, ref: FeedbackRef, threads: ReviewThread[]): Promise<void> {
     const file = this.bucketPath(repoRoot, ref);
-    if (threads.length === 0) {
-      await removeBucket(file);
-      return;
-    }
-    await bucketStore(file).setState({ repoRoot: canonicalize(repoRoot), ref, threads });
+    await withBucketLock(file, async () => {
+      if (threads.length === 0) {
+        await removeBucket(file);
+        return;
+      }
+      await bucketStore(file).setState({ repoRoot: canonicalize(repoRoot), ref, threads });
+    });
   }
 
   async clear(repoRoot: string, ref: FeedbackRef): Promise<void> {
-    await removeBucket(this.bucketPath(repoRoot, ref));
+    const file = this.bucketPath(repoRoot, ref);
+    await withBucketLock(file, () => removeBucket(file));
   }
 
   /**
@@ -71,17 +74,25 @@ export class FeedbackStore {
       if (!name.endsWith(".json")) {
         continue;
       }
-      const store = await hydratedBucket(path.join(dir, name));
-      const { ref, threads } = store.getState();
-      const index = threads.findIndex((item) => item.id === id);
-      if (!ref || index === -1) {
-        continue;
+      const file = path.join(dir, name);
+      // Read and write under one lock: the item this reads is the item it writes back, so a reply
+      // and a resolution arriving together cannot each overwrite the other's activity.
+      const updated = await withBucketLock(file, async () => {
+        const store = await hydratedBucket(file);
+        const { ref, threads } = store.getState();
+        const index = threads.findIndex((item) => item.id === id);
+        if (!ref || index === -1) {
+          return undefined;
+        }
+        const item = update(threads[index]);
+        const next = [...threads];
+        next[index] = item;
+        await store.setState({ threads: next });
+        return { ref, item };
+      });
+      if (updated) {
+        return updated;
       }
-      const item = update(threads[index]);
-      const next = [...threads];
-      next[index] = item;
-      await store.setState({ threads: next });
-      return { ref, item };
     }
     return undefined;
   }
@@ -96,6 +107,37 @@ export class FeedbackStore {
   /** The file one bucket lives in. Public so a test can look at the bytes rather than trust a write. */
   bucketPath(repoRoot: string, ref: FeedbackRef): string {
     return path.join(this.repoDir(repoRoot), `${ref.kind}-${refHash(ref.value)}.json`);
+  }
+}
+
+/**
+ * One bucket file, one write at a time.
+ *
+ * An agent answers and resolves an item in a single turn, so two writes to the same bucket are in
+ * flight together. Unserialized they share one temporary file: the first rename consumes it and the
+ * second fails, which the caller reports to the agent as feedback it could not save. Queueing also
+ * makes a read-modify-write whole, so neither update is lost.
+ *
+ * This orders writes from THIS window only. Two windows on one branch still overwrite each other,
+ * last writer winning, as the note at the top of this file describes.
+ */
+const bucketWrites = new Map<string, Promise<unknown>>();
+
+async function withBucketLock<T>(file: string, write: () => Promise<T>): Promise<T> {
+  const previous = bucketWrites.get(file) ?? Promise.resolve();
+  const result = previous.then(write, write);
+  // A failed write must not fail the next one, nor leave a rejection nobody handles.
+  const settled = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  bucketWrites.set(file, settled);
+  try {
+    return await result;
+  } finally {
+    if (bucketWrites.get(file) === settled) {
+      bucketWrites.delete(file);
+    }
   }
 }
 
