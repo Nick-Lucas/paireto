@@ -192,7 +192,7 @@ export async function addPlanComment(
 ): Promise<void> {
   const args: AddCommentArgs = {
     surface: "plan",
-    kind: opts.kind ?? "problem",
+    kind: opts.kind ?? "comment",
     line: opts.line ?? 2,
     text,
   };

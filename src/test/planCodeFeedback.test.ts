@@ -12,7 +12,7 @@ import { renderRejectedPlanFeedback, type PlanCommentData } from "../plan/planFe
 import type { ReviewComment } from "../review/reviewTypes.js";
 
 const PLAN_COMMENTS: PlanCommentData[] = [
-  { line: 3, quote: "- Step two", body: "Split this step in two.", kind: "problem" },
+  { line: 3, quote: "- Step two", body: "Split this step in two.", kind: "comment" },
 ];
 
 function reviewComment(overrides: Partial<ReviewComment> = {}): ReviewComment {
@@ -75,7 +75,7 @@ suite("renderRejectedPlanFeedback extra instructions", () => {
     assert.ok(rendered.includes(`- ${first}`));
     assert.ok(rendered.includes(`- ${second}`));
     assert.ok(
-      rendered.indexOf(first) < rendered.indexOf("[PROBLEM]"),
+      rendered.indexOf(first) < rendered.indexOf("[COMMENT]"),
       "the rules belong above the comments",
     );
   });

@@ -76,9 +76,6 @@ export class PlanReviewController implements vscode.Disposable {
       vscode.commands.registerCommand(Commands.planAddComment, (r: vscode.CommentReply) =>
         this.addComment(r, "comment"),
       ),
-      vscode.commands.registerCommand(Commands.planAddProblem, (r: vscode.CommentReply) =>
-        this.addComment(r, "problem"),
-      ),
       vscode.window.tabGroups.onDidChangeTabs((e) => void this.onTabsChanged(e)),
     );
   }
@@ -221,17 +218,6 @@ export class PlanReviewController implements vscode.Disposable {
   private async approve(review: PlanReview): Promise<void> {
     if (!this.plans.has(review.id)) {
       return;
-    }
-    const hasProblem = this.collect(review).some((c) => c.kind === "problem");
-    if (hasProblem) {
-      const choice = await vscode.window.showWarningMessage(
-        "This plan has unresolved problems. Approve anyway?",
-        { modal: true },
-        "Approve Anyway",
-      );
-      if (choice !== "Approve Anyway" || !this.plans.has(review.id)) {
-        return;
-      }
     }
     // Approving a plan otherwise restores the pre-plan permission mode; default to the harness's own
     // plan-approve mode (Claude: auto) so the agent proceeds without re-prompting. The setting is a
@@ -483,7 +469,7 @@ export function resolvePlanApproveMode(
   return mode && mode !== "off" ? mode : undefined;
 }
 
-/** The highest-priority kind among a thread's comments (problem > question > comment). */
+/** The highest-priority kind among a thread's comments (question > comment). */
 function highestKind(comments: GateComment[]): CommentKind {
   return comments.map((c) => c.kind).sort((a, b) => KIND_RANK[a] - KIND_RANK[b])[0] ?? "comment";
 }

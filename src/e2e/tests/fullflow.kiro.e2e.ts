@@ -91,7 +91,7 @@ suite(pairLabel(CASE, HARNESS), () => {
     // Match on gate IDENTITY (a re-proposed plan gets a new id) AND foreground, so the approve step
     // never resolves the still-resolving original gate.
     await ensureComment(
-      { surface: "plan", kind: "problem", text: PLAN_FEEDBACK },
+      { surface: "plan", kind: "comment", text: PLAN_FEEDBACK },
       (snap) => snap.gateHasFeedback,
       "the plan feedback comment to register",
     );
@@ -134,7 +134,7 @@ suite(pairLabel(CASE, HARNESS), () => {
     await ensureComment(
       {
         surface: "review",
-        kind: "problem",
+        kind: "comment",
         path: "hello.txt",
         text: REVIEW_FEEDBACK,
       },

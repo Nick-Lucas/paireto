@@ -34,12 +34,10 @@ const ADD_COMMENT_COMMAND: Record<
   plan: {
     question: Commands.planAddQuestion,
     comment: Commands.planAddComment,
-    problem: Commands.planAddProblem,
   },
   review: {
     question: Commands.reviewAddQuestion,
     comment: Commands.reviewAddComment,
-    problem: Commands.reviewAddProblem,
   },
 };
 
