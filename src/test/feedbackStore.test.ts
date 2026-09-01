@@ -200,6 +200,37 @@ suite("persistent feedback store", () => {
     assert.strictEqual(fs.existsSync(store.bucketPath("/repo", ref)), false);
   });
 
+  // An agent answers and resolves one item in a single turn, so two writes to one bucket are in
+  // flight together. Both have to land: a rejected save is reported to the agent as lost feedback.
+  test("two writes to one bucket in flight together both land", async () => {
+    const ref = branch("feature/a");
+
+    await Promise.all([
+      store.save("/repo", ref, [comment("one")]),
+      store.save("/repo", ref, [comment("one"), comment("two")]),
+    ]);
+
+    const ids = (await store.load("/repo", ref)).map((item) => item.id);
+    assert.ok(ids.length > 0, "the bucket must not be left empty");
+  });
+
+  // Read-modify-write: without one lock over both halves the second update overwrites the first
+  // with a copy it read before that change existed.
+  test("concurrent updates to one bucket keep both changes", async () => {
+    const ref = branch("feature/a");
+    await store.save("/repo", ref, [comment("one"), comment("two")]);
+
+    await Promise.all([
+      store.updateById("/repo", "one", (item) => ({ ...item, delivery: "sent" })),
+      store.updateById("/repo", "two", (item) => ({ ...item, delivery: "sent" })),
+    ]);
+
+    assert.deepStrictEqual(
+      (await store.load("/repo", ref)).map((item) => item.delivery),
+      ["sent", "sent"],
+    );
+  });
+
   test("a corrupt bucket file reads as empty instead of throwing", async () => {
     await store.save("/repo", branch("feature/a"), [comment("one")]);
     const [name] = fs.readdirSync(path.join(feedbackRoot, repoKey("/repo")));
