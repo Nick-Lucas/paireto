@@ -121,8 +121,7 @@ export function withArg<S extends z.ZodTypeAny>(
       log.error(message);
       throw new Error(message);
     }
-    // Handing the handler's result back makes executeCommand resolve when an async handler finishes,
-    // rather than the moment it is dispatched, so a caller can wait for the work it asked for.
+
     return run(parsed.data);
   };
 }
