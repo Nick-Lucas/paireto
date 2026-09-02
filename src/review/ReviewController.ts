@@ -1452,7 +1452,6 @@ export class ReviewController implements vscode.Disposable {
         this.changeEmitter.fire();
       },
     });
-    // The comment may have started a thread of its own, so label the one it is actually on.
     if (comment.thread) {
       comment.thread.label = this.commentLocationLabel(repoRoot, relPath, line);
     }
@@ -1718,8 +1717,6 @@ export class ReviewController implements vscode.Disposable {
     return undefined;
   }
 
-  /** Delete a comment from the Feedback tree row (its in-diff thread also drops it). */
-  /** Delete a comment from its Feedback tree row. Runs the same removal as the in-diff delete. */
   private deleteComment(id: string): void {
     const entry = this.comments.get(id);
     if (entry) {

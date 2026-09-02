@@ -306,7 +306,6 @@ export class PlanReviewController implements vscode.Disposable {
       onSaved: () => this.changeEmitter.fire(),
       onDeleted: () => this.changeEmitter.fire(),
     });
-    // The comment may have started a thread of its own, so label the one it is actually on.
     if (comment.thread) {
       comment.thread.label = kindLabel(kind);
     }

@@ -108,15 +108,7 @@ export class KiroDriver implements HarnessDriver {
   }
 }
 
-/**
- * How long a cold start may take before the run gives up.
- *
- * Kiro V3 draws a banner, migrates agent configuration and reaches for its cloud config before the
- * composer appears, and a loaded CI runner stretches all three. The pane animates a spinner
- * throughout, so no frame matches its predecessor until the launch finishes — a budget that expires
- * mid-spinner reports "did not become ready" for a Kiro that was merely still starting.
- */
-const READY_BUDGET_MS = 150_000;
+const READY_BUDGET_MS = 60_000;
 
 export async function waitForStablePane(
   tmux: DriverTmux,
