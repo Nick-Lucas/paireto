@@ -108,8 +108,23 @@ export class KiroDriver implements HarnessDriver {
   }
 }
 
-async function waitForStablePane(tmux: DriverTmux): Promise<void> {
-  const deadline = Date.now() + 40_000;
+/**
+ * How long a cold start may take before the run gives up.
+ *
+ * Kiro V3 draws a banner, migrates agent configuration and reaches for its cloud config before the
+ * composer appears, and a loaded CI runner stretches all three. The pane animates a spinner
+ * throughout, so no frame matches its predecessor until the launch finishes — a budget that expires
+ * mid-spinner reports "did not become ready" for a Kiro that was merely still starting.
+ */
+const READY_BUDGET_MS = 150_000;
+
+export async function waitForStablePane(
+  tmux: DriverTmux,
+  budgetMs = READY_BUDGET_MS,
+  sleep = delay,
+): Promise<void> {
+  const started = Date.now();
+  const deadline = started + budgetMs;
   let previous = "";
   let stableFrames = 0;
   let trustAccepted = false;
@@ -126,7 +141,7 @@ async function waitForStablePane(tmux: DriverTmux): Promise<void> {
       }
       previous = screen;
       stableFrames = 0;
-      await delay(1_000);
+      await sleep(1_000);
       continue;
     }
     stableFrames = screen === previous ? stableFrames + 1 : 0;
@@ -134,9 +149,11 @@ async function waitForStablePane(tmux: DriverTmux): Promise<void> {
     if (screen.trim() !== "" && stableFrames >= 3) {
       return;
     }
-    await delay(1_000);
+    await sleep(1_000);
   }
-  throw new Error(`Kiro did not become ready\n${tmux.capture()}`);
+  throw new Error(
+    `Kiro did not become ready after ${Math.round((Date.now() - started) / 1000)}s\n${tmux.capture()}`,
+  );
 }
 
 export function kiroStartupAction(screen: string): "accept-trust" | "wait" {
