@@ -22,7 +22,7 @@ import * as vscode from "vscode";
 import type { InspectGate, InspectSnapshot } from "../inspectTypes.js";
 import { pairLabel } from "../mockserver/mode.js";
 import { driversForSharedSpec } from "../specRouting.js";
-import { TEST_FEEDBACK_ID } from "../../review/reviewTypes.js";
+import { RECORDED_FEEDBACK_ID } from "../../review/feedbackId.js";
 import { makeDriver, makeSteps, requireDriver, requireEnv } from "./steps.js";
 
 /** This file's case name — the `<case>` half of every suite title it registers. */
@@ -142,7 +142,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         (snap) => snap.commentBucketCount > 0,
         "the review feedback comment to register",
       );
-      if (!(await inspect()).feedback.some((item) => item.id === TEST_FEEDBACK_ID)) {
+      if (!(await inspect()).feedback.some((item) => item.id === RECORDED_FEEDBACK_ID)) {
         throw new Error(`the E2E feedback ID was not retained\n${await dump()}`);
       }
       await driveUntil(
