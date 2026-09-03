@@ -58,10 +58,10 @@ suite("agent replies to feedback", () => {
 
   test("a reply lands on the item, in the window and on disk", async function () {
     this.timeout(90_000);
-    await queueFileComment("Rename this helper.", { feedbackId: "reply-1" });
+    const id = await queueFileComment("Rename this helper.");
 
     send("feedback.reply.request", "req-reply-1", {
-      feedbackId: "reply-1",
+      feedbackId: id,
       message: "Renamed it to loadSession.",
     });
 
@@ -70,27 +70,27 @@ suite("agent replies to feedback", () => {
     );
     assert.strictEqual(response.ok, true, String(response.message));
 
-    const item = (await inspect()).feedback.find((entry) => entry.id === "reply-1");
+    const item = (await inspect()).feedback.find((entry) => entry.id === id);
     assert.deepStrictEqual(item?.activityKinds, ["reply"]);
     assert.strictEqual(item?.resolved, false, "a reply is not a resolution");
-    assert.deepStrictEqual(await storedActivity("reply-1"), ["feedback", "reply"]);
+    assert.deepStrictEqual(await storedActivity(id), ["feedback", "reply"]);
   });
 
   test("resolving marks the item resolved and is idempotent", async function () {
     this.timeout(90_000);
-    await queueFileComment("Please simplify.", { feedbackId: "resolve-1" });
+    const id = await queueFileComment("Please simplify.");
 
-    send("feedback.resolve.request", "req-resolve-1", { feedbackId: "resolve-1" });
+    send("feedback.resolve.request", "req-resolve-1", { feedbackId: id });
     await waitFor("the resolve response", () =>
       wire.messages.find((m) => m.t === "feedback.resolve.response" && m.id === "req-resolve-1"),
     );
-    send("feedback.resolve.request", "req-resolve-2", { feedbackId: "resolve-1" });
+    send("feedback.resolve.request", "req-resolve-2", { feedbackId: id });
     const second = await waitFor("the second resolve response", () =>
       wire.messages.find((m) => m.t === "feedback.resolve.response" && m.id === "req-resolve-2"),
     );
 
     assert.strictEqual(second.ok, true, "resolving twice is not an error");
-    const item = (await inspect()).feedback.find((entry) => entry.id === "resolve-1");
+    const item = (await inspect()).feedback.find((entry) => entry.id === id);
     assert.strictEqual(item?.resolved, true);
     assert.deepStrictEqual(item?.activityKinds, ["resolved"], "the second resolve adds nothing");
   });
@@ -101,7 +101,7 @@ suite("agent replies to feedback", () => {
     this.timeout(90_000);
     const warnings = stubWarnings(() => undefined);
     try {
-      await queueFileComment("Simplify this.", { feedbackId: "approve-resolved" });
+      const id = await queueFileComment("Simplify this.");
 
       await startReview(wire, { repoRoot, id: "gate-resolve-send" });
       await vscode.commands.executeCommand(Commands.gateSendFeedback);
@@ -109,20 +109,20 @@ suite("agent replies to feedback", () => {
         wire.messages.find((m) => m.t === "review.await.response"),
       );
 
-      send("feedback.resolve.request", "req-approve-resolved", { feedbackId: "approve-resolved" });
+      send("feedback.resolve.request", "req-approve-resolved", { feedbackId: id });
       await waitFor("the resolve response", () =>
         wire.messages.find(
           (m) => m.t === "feedback.resolve.response" && m.id === "req-approve-resolved",
         ),
       );
-      const resolved = (await inspect()).feedback.find((f) => f.id === "approve-resolved");
+      const resolved = (await inspect()).feedback.find((f) => f.id === id);
       assert.strictEqual(resolved?.resolved, true, "the item is resolved before the approve");
 
       await startReview(wire, { repoRoot, id: "gate-resolve-approve" });
       await vscode.commands.executeCommand(Commands.gateApprove);
 
       await waitFor("the resolved item to leave the bucket", async () =>
-        (await inspect()).feedback.some((f) => f.id === "approve-resolved") ? undefined : true,
+        (await inspect()).feedback.some((f) => f.id === id) ? undefined : true,
       );
     } finally {
       warnings.restore();
