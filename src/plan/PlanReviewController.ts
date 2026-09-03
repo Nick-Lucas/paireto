@@ -302,13 +302,11 @@ export class PlanReviewController implements vscode.Disposable {
     if (!review) {
       return;
     }
-    const comment = this.comments.add(reply, kind, {
+    this.comments.add(reply, kind, {
+      label: kindLabel(kind),
       onSaved: () => this.changeEmitter.fire(),
       onDeleted: () => this.changeEmitter.fire(),
     });
-    if (comment.thread) {
-      comment.thread.label = kindLabel(kind);
-    }
     this.changeEmitter.fire();
   }
 
@@ -341,10 +339,12 @@ export class PlanReviewController implements vscode.Disposable {
         continue;
       }
       const line = thread.range?.start.line ?? 0;
-      const [comment] = thread.comments as GateComment[];
-      const body = comment ? commentText(comment.body).trim() : "";
-      if (body) {
-        result.push({ line, quote: lines[line] ?? "", body, kind: comment.kind });
+
+      for (const comment of thread.comments as GateComment[]) {
+        const body = commentText(comment.body).trim();
+        if (body) {
+          result.push({ line, quote: lines[line] ?? "", body, kind: comment.kind });
+        }
       }
     }
     return result;

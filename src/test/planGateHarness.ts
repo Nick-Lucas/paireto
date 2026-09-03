@@ -188,12 +188,13 @@ export async function queueFileComment(
 /** Comment on the open plan document. */
 export async function addPlanComment(
   text: string,
-  opts: { line?: number; kind?: AddCommentArgs["kind"] } = {},
+  opts: { line?: number; kind?: AddCommentArgs["kind"]; reply?: boolean } = {},
 ): Promise<void> {
   const args: AddCommentArgs = {
     surface: "plan",
     kind: opts.kind ?? "comment",
     line: opts.line ?? 2,
+    reply: opts.reply,
     text,
   };
   const commented = await vscode.commands.executeCommand<boolean>("paireto.test.addComment", args);

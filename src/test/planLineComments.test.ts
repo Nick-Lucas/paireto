@@ -1,7 +1,3 @@
-// Two comments on ONE line of a plan. Each is its own thread and its own feedback item, so the agent
-// receives both as written instead of one run-together sentence. Drives the real plan gate over the
-// bridge socket and reads the reason the agent would actually get.
-
 import * as assert from "node:assert";
 
 import * as vscode from "vscode";
@@ -63,6 +59,31 @@ suite("two comments on one plan line", () => {
     assert.ok(
       !reason.includes("Split step two. Why two steps?"),
       "the two comments are not run together into one item",
+    );
+  });
+
+  test("a reply on an existing thread reaches the agent too", async function () {
+    this.timeout(90_000);
+    warnings = stubWarnings((message) =>
+      message.includes("file comment") ? PLAN_FEEDBACK_ONLY : undefined,
+    );
+
+    await openPlan(wire, { repoRoot, id: "plan-line-2", sessionId: "reply-on-one-thread" });
+    await addPlanComment("Split step two.", { line: 2, kind: "comment" });
+    // The user types into the first comment's reply box rather than opening a second widget.
+    await addPlanComment("Why two steps?", { line: 2, kind: "question", reply: true });
+
+    await vscode.commands.executeCommand(Commands.gateSendFeedback);
+    const response = await waitFor("the plan gate response", () =>
+      wire.messages.find((m) => m.t === "plan.review.hook.response"),
+    );
+
+    const reason = String(response.reason);
+    assert.ok(reason.includes("Split step two."), "the comment replied to reaches the agent");
+    assert.ok(reason.includes("Why two steps?"), "so does the reply");
+    assert.ok(
+      reason.includes("[QUESTION]") && reason.includes("[COMMENT]"),
+      `each keeps its own kind: ${reason}`,
     );
   });
 });

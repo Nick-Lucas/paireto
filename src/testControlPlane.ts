@@ -81,6 +81,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       planTexts,
       reviewActive: deps.reviewController.isSessionActive(),
       commentBucketCount: deps.reviewController.getComments().length,
+      commentIds: deps.reviewController.getComments().map((c) => c.id),
       gateHasFeedback: deps.coordinator.current?.hasFeedback() ?? false,
       refreshCounts: deps.reviewController.getRefreshCounts(),
       compareTo: review.compareTo,
@@ -112,14 +113,20 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
     };
   };
 
+  // Threads this control plane has minted, so a reply can be typed into the one already on a line.
+  const openedThreads = new Map<string, vscode.CommentThread>();
+
   const addComment = async (args: AddCommentArgs): Promise<boolean> => {
     const uri = resolveTargetUri(args, deps.repoService);
     if (!uri) {
       return false;
     }
     const line = args.line ?? 0;
+    const key = `${uri.toString()}:${line}`;
+    const existing = args.reply ? openedThreads.get(key) : undefined;
     const range = new vscode.Range(line, 0, line, 0);
-    const thread = controller.createCommentThread(uri, range, []);
+    const thread = existing ?? controller.createCommentThread(uri, range, []);
+    openedThreads.set(key, thread);
     // Route through the real add-comment command with a CommentReply-shaped payload ({ thread, text }).
     await vscode.commands.executeCommand(ADD_COMMENT_COMMAND[args.surface][args.kind], {
       thread,

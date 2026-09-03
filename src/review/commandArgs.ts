@@ -86,9 +86,12 @@ export const BulkTargetArg = z.union([
 ]);
 export type BulkTargetArg = z.infer<typeof BulkTargetArg>;
 
-/** A review comment, by id. Only the id travels: the live comment is looked up from it, so a stale
- *  copy carried on a tree node can never be acted on. */
-export const CommentIdArg = z.object({ id: z.string() }).transform((comment) => comment.id);
+export const CommentIdArg = z.union([
+  z
+    .object({ kind: z.literal("reviewComment"), comment: z.object({ id: z.string() }) })
+    .transform((node) => node.comment.id),
+  z.object({ id: z.string() }).transform((comment) => comment.id),
+]);
 export type CommentIdArg = z.infer<typeof CommentIdArg>;
 
 /** VS Code's own reply object, from the comment thread's Add buttons. Checked for the two fields we
