@@ -9,9 +9,9 @@ import { basename, join } from "node:path";
 import * as vscode from "vscode";
 
 import type { ReviewGateResult, StopGateResult } from "../bridge/types.js";
-import { CommentSession, type GateComment } from "../comments/CommentSession.js";
+import { CommentSession, deleteComment, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
-import { type CommentKind } from "../comments/kinds.js";
+import { kindLabel, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry, type GateKind } from "../gate/GateCoordinator.js";
 import { canonicalize, repoRelativePath } from "../protocol/paths.js";
@@ -289,7 +289,7 @@ export class ReviewController implements vscode.Disposable {
       ),
       reg(
         Commands.reviewDeleteComment,
-        withArg(CommentIdArg, (id) => this.deleteComment(id)),
+        withArg(CommentIdArg, (id) => this.confirmDeleteComment(id)),
       ),
       // Editing an editable staged/committed diff routes the change to the working tree. Track that
       // location immediately, but keep the tab's comparison point pinned.
@@ -1441,23 +1441,18 @@ export class ReviewController implements vscode.Disposable {
           }
         : undefined,
     };
-    let comment: GateComment;
-    comment = this.commentSession.add(reply, kind, {
+    const comment = this.commentSession.add(reply, kind, {
       id: model.id,
+      label: this.commentLocationLabel(repoRoot, relPath, line),
       onSaved: (newBody) => {
         model.body = newBody;
         this.changeEmitter.fire();
       },
       onDeleted: () => {
         this.comments.delete(model.id);
-        const thread = comment.thread;
-        if (thread?.comments.length === 0) {
-          this.commentSession.forget(thread);
-        }
         this.changeEmitter.fire();
       },
     });
-    reply.thread.label = this.commentLocationLabel(repoRoot, relPath, line);
     this.comments.set(model.id, { comment, model });
     // Comments accumulate in this bucket whether or not a review is in progress; a review (started by
     // /paireto-review or the turn-end gate) consumes whatever is in it. The Feedback section reveals
@@ -1500,23 +1495,18 @@ export class ReviewController implements vscode.Disposable {
         lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
       },
     };
-    let comment: GateComment;
-    comment = this.commentSession.add(reply, kind, {
+    const comment = this.commentSession.add(reply, kind, {
       id: model.id,
+      label: `Changeset: ${changeset.title}`,
       onSaved: (newBody) => {
         model.body = newBody;
         this.changeEmitter.fire();
       },
       onDeleted: () => {
         this.comments.delete(model.id);
-        const thread = comment.thread;
-        if (thread?.comments.length === 0) {
-          this.commentSession.forget(thread);
-        }
         this.changeEmitter.fire();
       },
     });
-    reply.thread.label = `Changeset: ${changeset.title}`;
     this.comments.set(model.id, { comment, model });
     this.changeEmitter.fire();
   }
@@ -1723,22 +1713,36 @@ export class ReviewController implements vscode.Disposable {
     return undefined;
   }
 
-  /** Delete a comment from the Feedback tree row (its in-diff thread also drops it). */
-  private deleteComment(id: string): void {
+  private async confirmDeleteComment(id: string): Promise<void> {
     const entry = this.comments.get(id);
     if (!entry) {
       return;
     }
-    const thread = entry.comment.thread;
-    if (thread) {
-      thread.comments = thread.comments.filter((x) => x !== entry.comment);
-      if (thread.comments.length === 0) {
-        thread.dispose();
-        this.commentSession.forget(thread);
-      }
+    const DELETE = "Delete";
+    const replies = this.commentSession.wouldRemove(entry.comment).length - 1;
+    const choice = await vscode.window.showWarningMessage(
+      `Delete this ${kindLabel(entry.model.kind).toLowerCase()}?`,
+      {
+        modal: true,
+        detail:
+          `"${entry.model.body}"` +
+          (replies > 0
+            ? `\n\nThe ${replies === 1 ? "reply" : `${replies} replies`} on this thread ${replies === 1 ? "is" : "are"} deleted with it.`
+            : ""),
+      },
+      DELETE,
+    );
+    if (choice !== DELETE || !this.comments.has(id)) {
+      return; // dismissed, or already gone while the dialog was open
     }
-    this.comments.delete(id);
-    this.changeEmitter.fire();
+    this.deleteComment(id);
+  }
+
+  private deleteComment(id: string): void {
+    const entry = this.comments.get(id);
+    if (entry) {
+      deleteComment(entry.comment);
+    }
   }
 
   // ── Guided review ───────────────────────────────────────────────────────────

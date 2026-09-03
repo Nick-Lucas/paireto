@@ -108,8 +108,15 @@ export class KiroDriver implements HarnessDriver {
   }
 }
 
-async function waitForStablePane(tmux: DriverTmux): Promise<void> {
-  const deadline = Date.now() + 40_000;
+const READY_BUDGET_MS = 60_000;
+
+export async function waitForStablePane(
+  tmux: DriverTmux,
+  budgetMs = READY_BUDGET_MS,
+  sleep = delay,
+): Promise<void> {
+  const started = Date.now();
+  const deadline = started + budgetMs;
   let previous = "";
   let stableFrames = 0;
   let trustAccepted = false;
@@ -126,7 +133,7 @@ async function waitForStablePane(tmux: DriverTmux): Promise<void> {
       }
       previous = screen;
       stableFrames = 0;
-      await delay(1_000);
+      await sleep(1_000);
       continue;
     }
     stableFrames = screen === previous ? stableFrames + 1 : 0;
@@ -134,9 +141,11 @@ async function waitForStablePane(tmux: DriverTmux): Promise<void> {
     if (screen.trim() !== "" && stableFrames >= 3) {
       return;
     }
-    await delay(1_000);
+    await sleep(1_000);
   }
-  throw new Error(`Kiro did not become ready\n${tmux.capture()}`);
+  throw new Error(
+    `Kiro did not become ready after ${Math.round((Date.now() - started) / 1000)}s\n${tmux.capture()}`,
+  );
 }
 
 export function kiroStartupAction(screen: string): "accept-trust" | "wait" {
