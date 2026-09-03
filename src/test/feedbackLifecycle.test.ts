@@ -30,10 +30,10 @@ suite("feedback lifecycle", () => {
   test("a queued comment is one pending, unresolved item with no agent activity", async function () {
     this.timeout(90_000);
 
-    await queueFileComment("Rename this helper.", { feedbackId: "lifecycle-1" });
+    const id = await queueFileComment("Rename this helper.");
 
     // Each test reads back only the items it queued, so it does not depend on what else is held.
-    const item = (await inspect()).feedback.find((entry) => entry.id === "lifecycle-1");
+    const item = (await inspect()).feedback.find((entry) => entry.id === id);
     assert.ok(item, "the queued comment is in the bucket");
     assert.strictEqual(item.delivery, "pending");
     assert.strictEqual(item.resolved, false);
@@ -44,13 +44,11 @@ suite("feedback lifecycle", () => {
   test("two comments on one line are two items, each with its own id", async function () {
     this.timeout(90_000);
 
-    await queueFileComment("First point.", { line: 0, feedbackId: "pair-a" });
-    await queueFileComment("Second point.", { line: 0, feedbackId: "pair-b" });
+    const first = await queueFileComment("First point.", { line: 0 });
+    const second = await queueFileComment("Second point.", { line: 0 });
 
-    const ids = (await inspect()).feedback
-      .map((entry) => entry.id)
-      .filter((id) => id.startsWith("pair-"))
-      .sort();
-    assert.deepStrictEqual(ids, ["pair-a", "pair-b"]);
+    assert.notStrictEqual(first, second, "each comment is keyed by an id of its own");
+    const held = (await inspect()).feedback.map((entry) => entry.id);
+    assert.ok(held.includes(first) && held.includes(second), "both are in the bucket");
   });
 });

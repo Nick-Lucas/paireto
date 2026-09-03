@@ -4,15 +4,6 @@ import type { CommentKind } from "../comments/kinds.js";
 import type { Harness } from "../protocol/types.js";
 import type { FileGroup } from "../types.js";
 
-/** The feedback id the E2E control plane pins instead of a nanoid, so a recorded cassette can match
- *  on it. A test holding more than one item names each of them itself. */
-export const TEST_FEEDBACK_ID = "PAIRETO_E2E_FEEDBACK_ID";
-
-/**
- * What has happened to one piece of feedback, oldest first. The first entry is always the reviewer's
- * own words; anything after it was added by an agent. Keeping them as a list rather than fields means
- * a reply and a resolution read in the order they happened.
- */
 export type FeedbackActivity =
   | {
       kind: "feedback";
@@ -42,7 +33,6 @@ export interface ReviewAnchor {
   lineHash: string;
 }
 
-/** One reviewer comment and everything that has happened to it since. */
 export interface ReviewThread {
   id: string;
   /** Canonical repository root; filePath is relative to this root. */
@@ -55,7 +45,6 @@ export interface ReviewThread {
   side: "base" | "modified";
   line: number; // 0-based on the side's document
   anchor: ReviewAnchor;
-  /** Pending items are included the next time the user sends feedback. */
   delivery: "pending" | "sent";
   createdAt: string;
   updatedAt: string;
