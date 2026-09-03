@@ -240,7 +240,6 @@ export class FeedbackSession {
             activity: activityComments(model),
           })),
           resolved: opener.resolvedAt !== undefined,
-          // Any comment of the group names the one thread they share.
           previous: group
             .map((model) => this.live.get(model.id)?.thread)
             .find((thread) => thread !== undefined),
