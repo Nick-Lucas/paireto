@@ -16,13 +16,16 @@ import {
   openWire,
   queueFileComment,
   resetWorkbench,
+  stubWarnings,
   waitFor,
+  type WarningStub,
   type Wire,
 } from "./planGateHarness.js";
 
 suite("feedback durability", () => {
   let repoRoot: string;
   let wire: Wire;
+  let warnings: WarningStub | undefined;
 
   const git = (args: string[]): string =>
     execFileSync("git", args, { cwd: repoRoot }).toString().trim();
@@ -33,6 +36,8 @@ suite("feedback durability", () => {
   });
 
   teardown(async () => {
+    warnings?.restore();
+    warnings = undefined;
     await resetWorkbench(wire);
   });
 
@@ -56,6 +61,8 @@ suite("feedback durability", () => {
 
   test("deleting a comment takes it off disk too", async function () {
     this.timeout(90_000);
+    // Deleting from the sidebar asks first, so answer the dialog the command raises.
+    warnings = stubWarnings(() => "Delete");
 
     await queueFileComment("Temporary.", { feedbackId: "durable-gone" });
     await waitFor("the comment to reach the bucket file", async () =>
