@@ -38,7 +38,7 @@ suite("review gate feedback rules", () => {
   test("approve refuses while feedback is still waiting to be sent", async function () {
     this.timeout(90_000);
     warnings = stubWarnings(() => undefined);
-    await queueFileComment("Please rename this.", { feedbackId: "gate-pending" });
+    const id = await queueFileComment("Please rename this.");
 
     await startReview(wire, { repoRoot, id: "gate-approve-refused" });
     await vscode.commands.executeCommand(Commands.gateApprove);
@@ -52,14 +52,14 @@ suite("review gate feedback rules", () => {
       false,
       "a refused approve leaves the gate open",
     );
-    const item = (await inspect()).feedback.find((f) => f.id === "gate-pending");
+    const item = (await inspect()).feedback.find((f) => f.id === id);
     assert.strictEqual(item?.delivery, "pending", "the feedback is untouched");
   });
 
   test("approve clears the buckets the review opened with once nothing is pending", async function () {
     this.timeout(90_000);
     warnings = stubWarnings(() => undefined);
-    await queueFileComment("Deliver me.", { feedbackId: "gate-delivered" });
+    const id = await queueFileComment("Deliver me.");
 
     await startReview(wire, { repoRoot, id: "gate-send" });
     await vscode.commands.executeCommand(Commands.gateSendFeedback);
@@ -72,7 +72,7 @@ suite("review gate feedback rules", () => {
     await vscode.commands.executeCommand(Commands.gateApprove);
 
     await waitFor("the bucket to empty on approve", async () =>
-      (await inspect()).feedback.some((f) => f.id === "gate-delivered") ? undefined : true,
+      (await inspect()).feedback.some((f) => f.id === id) ? undefined : true,
     );
   });
 });
