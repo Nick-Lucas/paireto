@@ -204,26 +204,21 @@ export class CommentSession implements vscode.Disposable {
     }
 
     // Create first: if VS Code rejects the new attachment, the original thread remains intact.
-    const replacement = this.controller.createCommentThread(
-      uri,
-      range,
-      old ? [...old.comments] : [comment],
-    );
+    const moved = (old ? [...old.comments] : [comment]) as GateComment[];
+    const replacement = this.controller.createCommentThread(uri, range, moved);
     replacement.label = label;
     replacement.state = old?.state;
     replacement.collapsibleState =
       old?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded;
     this.threadSet.add(replacement);
-    comment.thread = replacement;
+    // An agent's replies belong with the comment they answer, so the whole thread makes the move.
+    for (const item of moved) {
+      item.thread = replacement;
+    }
 
     if (old) {
-      const rest = old.comments.filter((item) => item !== comment);
-      if (rest.length > 0) {
-        old.comments = rest;
-      } else {
-        this.threadSet.delete(old);
-        old.dispose();
-      }
+      this.threadSet.delete(old);
+      old.dispose();
     }
     return replacement;
   }

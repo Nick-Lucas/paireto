@@ -355,7 +355,7 @@ suite("commenting integration", () => {
     }
   });
 
-  test("reattach leaves a thread standing while it still carries other comments", async () => {
+  test("reattach takes the whole thread, so replies travel with what they answer", async () => {
     const session = new CommentSession("paireto-test-reattach-reply", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
@@ -363,17 +363,15 @@ suite("commenting integration", () => {
     try {
       const oldDoc = await openDoc(3);
       const newDoc = await openDoc(6);
-      const stay = session.add(replyOn(session, oldDoc, 1, "stay"), "comment");
-      const moved = session.add({ thread: stay.thread!, text: "moved" }, "question");
-      const original = stay.thread!;
+      const opener = session.add(replyOn(session, oldDoc, 1, "opener"), "comment");
+      const reply = session.add({ thread: opener.thread!, text: "reply" }, "question");
 
-      const replacement = session.reattach(moved, newDoc.uri, new vscode.Range(4, 0, 4, 6), "f:5");
+      const replacement = session.reattach(opener, newDoc.uri, new vscode.Range(4, 0, 4, 6), "f:5");
 
-      assert.deepStrictEqual(bodies(original), ["stay"], "the thread keeps what did not move");
-      assert.deepStrictEqual(bodies(replacement), ["moved"]);
-      assert.strictEqual(session.threads().length, 2);
-      assert.strictEqual(session.threads()[0], original);
-      assert.strictEqual(session.threads()[1], replacement);
+      assert.deepStrictEqual(bodies(replacement), ["opener", "reply"], "both make the move");
+      assert.strictEqual(reply.thread, replacement, "the reply is repointed too");
+      assert.strictEqual(session.threads().length, 1, "the vacated thread is not kept");
+      assert.strictEqual(session.threads()[0], replacement);
     } finally {
       session.dispose();
     }
