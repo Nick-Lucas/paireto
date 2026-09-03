@@ -50,7 +50,7 @@ import {
   sharedCompareToHolds,
 } from "../review/ReviewController.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
-import { ChangesetIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
+import { ChangesetIdArg, CommentIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
 import type { CompareTo, FileGroup } from "../types.js";
 
 const REPO = "/repo";
@@ -676,6 +676,15 @@ suite("guided review — command arguments", () => {
     );
     assert.strictEqual(readArg(ChangesetIdArg, { changesetId: "cs1" }), "cs1");
     assert.strictEqual(readArg(ChangesetIdArg, { kind: "file" }), undefined);
+  });
+
+  test("a feedback row resolves to its comment id, from the node or the model itself", () => {
+    // The Feedback rows carry the model on a `comment` field. The row's own click command passes that
+    // model, but the inline Delete button is a view/item/context menu — VS Code hands those the NODE.
+    const model = { id: "c0", body: "why?" };
+    assert.strictEqual(readArg(CommentIdArg, { kind: "reviewComment", comment: model }), "c0");
+    assert.strictEqual(readArg(CommentIdArg, model), "c0");
+    assert.strictEqual(readArg(CommentIdArg, { kind: "file" }), undefined);
   });
 
   test("withArg hands the handler a parsed value, and refuses an argument it cannot read", () => {

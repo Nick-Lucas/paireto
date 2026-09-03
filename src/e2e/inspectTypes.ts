@@ -68,6 +68,7 @@ export interface InspectSnapshot {
   planTexts: Record<string, string>;
   reviewActive: boolean;
   commentBucketCount: number;
+  commentIds: string[];
   gateHasFeedback: boolean;
   /** Per-reason ReviewController.refresh() tally (e.g. proves openDiff never ran the full refresh). */
   refreshCounts: Record<string, number>;
@@ -91,6 +92,7 @@ export interface AddCommentArgs {
   repoRoot?: string;
   /** 0-based line to anchor on (default 0). */
   line?: number;
+  reply?: boolean;
   kind: "question" | "comment";
   text: string;
 }
