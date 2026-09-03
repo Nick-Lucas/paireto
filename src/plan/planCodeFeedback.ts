@@ -9,9 +9,10 @@ import { renderRejectedPlanFeedback, type PlanCommentData } from "./planFeedback
 /** What the plan gate needs from the code-review side. ReviewController satisfies this shape. */
 export interface CodeFeedbackSource {
   getComments(): ReviewThread[];
+  getPendingComments(): ReviewThread[];
   isMultiRepository(): boolean;
   isSessionActive(): boolean;
-  clearComments(): void;
+  markCommentsSent(items: ReviewThread[]): Promise<boolean>;
 }
 
 export type PlanSendAction =

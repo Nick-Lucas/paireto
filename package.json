@@ -200,6 +200,11 @@
         "icon": "$(trash)"
       },
       {
+        "command": "paireto.review.clearFeedback",
+        "title": "Clear All Feedback",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "paireto.focusAgent",
         "title": "Paireto: Focus Agent",
         "icon": "$(terminal)"
@@ -320,6 +325,10 @@
         },
         {
           "command": "paireto.review.deleteComment",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.clearFeedback",
           "when": "false"
         },
         {
@@ -454,6 +463,11 @@
         {
           "command": "paireto.review.deleteComment",
           "when": "view == paireto.main && viewItem == reviewComment",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.clearFeedback",
+          "when": "view == paireto.main && viewItem == section:feedback",
           "group": "inline@1"
         },
         {

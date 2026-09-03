@@ -22,6 +22,7 @@ import {
   startReview,
   stubWarnings,
   waitFor,
+  waitForFeedbackDelivered,
   type WarningStub,
   type Wire,
 } from "./planGateHarness.js";
@@ -77,7 +78,7 @@ suite("plan send feedback with queued file comments", () => {
     );
   });
 
-  test("including the file comments sends both and empties the queue", async function () {
+  test("including the file comments sends both and marks them delivered", async function () {
     this.timeout(90_000);
     warnings = stubWarnings((message) =>
       message.includes("file comment") ? INCLUDE_FILE_COMMENTS : undefined,
@@ -97,9 +98,7 @@ suite("plan send feedback with queued file comments", () => {
       reason.indexOf("The user also left comments on files.") > reason.indexOf(PLAN_COMMENT),
       "the plan block comes first, then the bridge into the file comments",
     );
-    await waitFor("the file comments to clear", async () =>
-      (await inspect()).commentBucketCount === 0 ? true : undefined,
-    );
+    await waitForFeedbackDelivered();
   });
 
   test("plan comments only keeps the file comments for the next code review", async function () {
@@ -118,7 +117,11 @@ suite("plan send feedback with queued file comments", () => {
     const reason = String(response.reason);
     assert.ok(reason.includes(PLAN_COMMENT), "the plan feedback rides in the response");
     assert.ok(!reason.includes(FIXTURE_FILE), "the file comment is held back");
-    assert.strictEqual((await inspect()).commentBucketCount, 1, "the file comment stays queued");
+    assert.deepStrictEqual(
+      (await inspect()).feedback.map((item) => item.delivery),
+      ["pending"],
+      "the file comment stays queued",
+    );
 
     // What the prompt promises: the next code review still carries the comment.
     await startReview(wire, { repoRoot, id: "review-after-plan-only" });
@@ -131,9 +134,7 @@ suite("plan send feedback with queued file comments", () => {
       String(review.feedback).includes(`${FIXTURE_FILE}:1`),
       "the held-back comment reaches the code review",
     );
-    await waitFor("the file comments to clear", async () =>
-      (await inspect()).commentBucketCount === 0 ? true : undefined,
-    );
+    await waitForFeedbackDelivered();
   });
 
   test("cancelling the prompt sends nothing and keeps the plan open", async function () {
@@ -155,7 +156,11 @@ suite("plan send feedback with queued file comments", () => {
       false,
       "a cancelled prompt must leave the plan gate pending",
     );
-    assert.strictEqual((await inspect()).commentBucketCount, 1, "the file comment stays queued");
+    assert.deepStrictEqual(
+      (await inspect()).feedback.map((item) => item.delivery),
+      ["pending"],
+      "the file comment stays queued",
+    );
     assert.ok(planTab(), "the plan stays open for another attempt");
 
     // Nothing was lost: the same command with an answer sends both sets.
@@ -165,8 +170,6 @@ suite("plan send feedback with queued file comments", () => {
     const reason = String(response.reason);
     assert.ok(reason.includes(PLAN_COMMENT), "the plan comment survived the cancel");
     assert.ok(reason.includes(`${FIXTURE_FILE}:1`), "the file comment survived the cancel");
-    await waitFor("the file comments to clear", async () =>
-      (await inspect()).commentBucketCount === 0 ? true : undefined,
-    );
+    await waitForFeedbackDelivered();
   });
 });
