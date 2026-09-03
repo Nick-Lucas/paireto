@@ -15,7 +15,7 @@
 
 /** `<system-reminder>…</system-reminder>` — the delimiters are not JSON-escaped, so a raw-string strip
  *  safely reaches reminders at any nesting depth (top message, tool_result content, …). */
-import { TEST_FEEDBACK_ID } from "../../review/reviewTypes.js";
+import { RECORDED_FEEDBACK_ID } from "../../review/feedbackId.js";
 
 const SYSTEM_REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 /** The per-run random plan-file path; only the slug varies (the home dir is pinned). */
@@ -32,7 +32,7 @@ const FEEDBACK_ID = "[A-Za-z0-9_-]{21}(?![A-Za-z0-9_-])";
 const FEEDBACK_ID_LINE = new RegExp(`(Feedback ID:\\s*)${FEEDBACK_ID}`, "g");
 const FEEDBACK_REFERENCE = new RegExp(`(\\bfeedback\\s+)${FEEDBACK_ID}`, "gi");
 const FEEDBACK_ID_FIELD = new RegExp(`("feedbackId"\\s*:\\s*")${FEEDBACK_ID}(")`, "g");
-const FEEDBACK_ID_PLACEHOLDER = TEST_FEEDBACK_ID;
+const FEEDBACK_ID_PLACEHOLDER = RECORDED_FEEDBACK_ID;
 
 /** Codex injects these local/account-dependent developer blocks into Responses input items. */
 const CODEX_CONTEXT_BLOCK =
