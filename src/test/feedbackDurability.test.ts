@@ -52,10 +52,10 @@ suite("feedback durability", () => {
   test("a queued comment is on disk before the window is asked again", async function () {
     this.timeout(90_000);
 
-    await queueFileComment("Rename this helper.", { feedbackId: "durable-1" });
+    const id = await queueFileComment("Rename this helper.");
 
     await waitFor("the comment to reach the bucket file", async () =>
-      (await storedFeedback()).includes("durable-1") ? true : undefined,
+      (await storedFeedback()).includes(id) ? true : undefined,
     );
   });
 
@@ -64,17 +64,17 @@ suite("feedback durability", () => {
     // Deleting from the sidebar asks first, so answer the dialog the command raises.
     warnings = stubWarnings(() => "Delete");
 
-    await queueFileComment("Temporary.", { feedbackId: "durable-gone" });
+    const id = await queueFileComment("Temporary.");
     await waitFor("the comment to reach the bucket file", async () =>
-      (await storedFeedback()).includes("durable-gone") ? true : undefined,
+      (await storedFeedback()).includes(id) ? true : undefined,
     );
 
-    const target = (await inspect()).feedback.find((item) => item.id === "durable-gone");
+    const target = (await inspect()).feedback.find((item) => item.id === id);
     assert.ok(target, "the comment is live in the window");
-    await vscode.commands.executeCommand("paireto.review.deleteComment", { id: "durable-gone" });
+    await vscode.commands.executeCommand("paireto.review.deleteComment", { id });
 
     await waitFor("the comment to leave the bucket file", async () =>
-      (await storedFeedback()).includes("durable-gone") ? undefined : true,
+      (await storedFeedback()).includes(id) ? undefined : true,
     );
   });
 
@@ -82,15 +82,15 @@ suite("feedback durability", () => {
     this.timeout(90_000);
     const before = await currentFeedbackRef(repoRoot);
 
-    await queueFileComment("Still relevant after the commit.", { feedbackId: "durable-commit" });
+    const id = await queueFileComment("Still relevant after the commit.");
     await waitFor("the comment to reach the bucket file", async () =>
-      (await storedFeedback()).includes("durable-commit") ? true : undefined,
+      (await storedFeedback()).includes(id) ? true : undefined,
     );
 
     git(["commit", "-q", "--allow-empty", "-m", "later work"]);
 
     const after = await currentFeedbackRef(repoRoot);
     assert.deepStrictEqual(after, before, "a commit does not move the ref a bucket is keyed by");
-    assert.ok((await storedFeedback()).includes("durable-commit"));
+    assert.ok((await storedFeedback()).includes(id));
   });
 });
