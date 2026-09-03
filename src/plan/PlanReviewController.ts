@@ -289,8 +289,7 @@ export class PlanReviewController implements vscode.Disposable {
       rejectedPlanReviewInstructions: strategy.rejectedPlanReviewInstructions,
       multiRepository: this.codeFeedback.isMultiRepository(),
     });
-    // Record delivery BEFORE answering the agent: the reason is already composed, and feedback the
-    // agent has been given must never look pending again.
+
     if (include && !(await this.codeFeedback.markCommentsSent(sentCode))) {
       void vscode.window.showErrorMessage(
         "Paireto could not record the file feedback as sent. Plan feedback was not sent.",

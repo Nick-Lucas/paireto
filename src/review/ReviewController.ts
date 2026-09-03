@@ -1870,15 +1870,10 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  /** Only what has not been delivered — what the next send carries. */
   getPendingComments(): ReviewThread[] {
     return pendingFeedback(this.getComments());
   }
 
-  /**
-   * Record that these items went to an agent. They stay in the bucket as history: the reviewer can
-   * see what was asked for, and an agent can reply to it long after the review closed.
-   */
   markCommentsSent(items: ReviewThread[]): Promise<boolean> {
     const now = new Date().toISOString();
     for (const sent of markFeedbackSent(items, now)) {
@@ -1891,7 +1886,6 @@ export class ReviewController implements vscode.Disposable {
     return Promise.resolve(true);
   }
 
-  /** Drop every item in the bucket, on the user's explicit say-so. */
   private async clearAllFeedback(): Promise<void> {
     const CLEAR = "Clear All";
     const choice = await vscode.window.showWarningMessage(
@@ -2229,9 +2223,6 @@ export function isFileEditable(file: ChangedFile, changes: ChangesModel): boolea
 export function shouldOpenTurnEndReview(opts: {
   reviewInProgress: boolean;
   changedThisTurn: boolean;
-  /** Feedback still waiting to be delivered. Sent and resolved items stay in the bucket as history
-   *  and must NOT park the agent again, or every later turn opens a gate over comments it has
-   *  already answered — including after a reload, which restores that history. */
   hasPendingFeedback: boolean;
   /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only feedback does. */
   automatic: boolean;
