@@ -69,6 +69,7 @@ import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { userFeedback, type ReviewThread } from "./reviewTypes.js";
 import { editFeedback } from "./feedbackState.js";
+import { newFeedbackId } from "./feedbackId.js";
 
 /** A review comment: the VS Code comment instance paired with its serializable model. */
 interface ReviewEntry {
@@ -1420,7 +1421,7 @@ export class ReviewController implements vscode.Disposable {
 
     const now = new Date().toISOString();
     const model: ReviewThread = {
-      id: await this.newFeedbackId(reply),
+      id: await newFeedbackId(),
       repoRoot,
       filePath: relPath,
       side,
@@ -1483,7 +1484,7 @@ export class ReviewController implements vscode.Disposable {
     const quote = line < doc.lineCount ? doc.lineAt(line).text : "";
     const now = new Date().toISOString();
     const model: ReviewThread = {
-      id: await this.newFeedbackId(reply),
+      id: await newFeedbackId(),
       repoRoot: guided.repoRoot,
       filePath: "",
       changeset: { id: changeset.id, title: changeset.title },
@@ -1514,16 +1515,6 @@ export class ReviewController implements vscode.Disposable {
     });
     this.comments.set(model.id, { comment, model });
     this.changeEmitter.fire();
-  }
-
-  /** A stable id for one piece of feedback. Under E2E the control plane pins it on the thread, so a
-   *  recorded cassette can name the same id on replay. */
-  private async newFeedbackId(reply: vscode.CommentReply): Promise<string> {
-    const pinned = reply.thread.contextValue;
-    if (process.env.PAIRETO_TEST === "1" && typeof pinned === "string" && pinned.length > 0) {
-      return pinned;
-    }
-    return (await import("nanoid")).nanoid();
   }
 
   /**

@@ -16,7 +16,6 @@ import type { GateCoordinator } from "./gate/GateCoordinator.js";
 import type { RepoService } from "./git/RepoService.js";
 import type { PlanReviewController } from "./plan/PlanReviewController.js";
 import type { ReviewController } from "./review/ReviewController.js";
-import { TEST_FEEDBACK_ID } from "./review/reviewTypes.js";
 import type { AddCommentArgs, InspectGuided, InspectSnapshot } from "./e2e/inspectTypes.js";
 
 export interface TestControlPlaneDeps {
@@ -137,10 +136,6 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
     const range = new vscode.Range(line, 0, line, 0);
     const thread = existing ?? controller.createCommentThread(uri, range, []);
     openedThreads.set(key, thread);
-    // A replay must call the extension with the id its cassette recorded, so the id is pinned here
-    // rather than minted. The caller names it, because feedback is keyed by id and one shared value
-    // would make a second comment overwrite the first.
-    thread.contextValue = args.feedbackId ?? TEST_FEEDBACK_ID;
     // Route through the real add-comment command with a CommentReply-shaped payload ({ thread, text }).
     await vscode.commands.executeCommand(ADD_COMMENT_COMMAND[args.surface][args.kind], {
       thread,

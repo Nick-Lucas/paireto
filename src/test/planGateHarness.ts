@@ -166,28 +166,24 @@ export async function waitForForegroundGate(kind: "plan" | "review" | "guided"):
 }
 
 /** Comment on a repository file. Outside a review session this is what queues the bucket. */
-/** Feedback is keyed by id, and the control plane pins the id rather than minting one, so a host test
- *  that queues more than one comment has to name each. */
-let queuedComments = 0;
-
+/** Comment on a repository file and report the id the extension minted for it. The bucket is shared
+ *  with whatever other suites left in it, so a caller identifies its own item by that id. */
 export async function queueFileComment(
   text: string,
-  opts: { path?: string; line?: number; kind?: AddCommentArgs["kind"]; feedbackId?: string } = {},
-): Promise<void> {
-  const before = (await inspect()).commentBucketCount;
-  queuedComments += 1;
+  opts: { path?: string; line?: number; kind?: AddCommentArgs["kind"] } = {},
+): Promise<string> {
+  const before = new Set((await inspect()).feedback.map((item) => item.id));
   const args: AddCommentArgs = {
     surface: "review",
     kind: opts.kind ?? "comment",
     path: opts.path ?? FIXTURE_FILE,
     line: opts.line ?? 0,
     text,
-    feedbackId: opts.feedbackId ?? `host-feedback-${queuedComments}`,
   };
   const queued = await vscode.commands.executeCommand<boolean>("paireto.test.addComment", args);
   assert.strictEqual(queued, true, "the file comment must attach to the fixture repo");
-  await waitFor("the file comment to register", async () =>
-    (await inspect()).commentBucketCount > before ? true : undefined,
+  return waitFor("the file comment to register", async () =>
+    (await inspect()).feedback.map((item) => item.id).find((id) => !before.has(id)),
   );
 }
 

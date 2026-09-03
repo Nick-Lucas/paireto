@@ -59,7 +59,6 @@ export interface InspectRepositoryChanges {
   committedPaths: string[];
 }
 
-/** One feedback item as a test sees it: identity and lifecycle only, never the reviewer's prose. */
 export interface InspectFeedback {
   id: string;
   repoRoot: string;
@@ -102,7 +101,4 @@ export interface AddCommentArgs {
   reply?: boolean;
   kind: "question" | "comment";
   text: string;
-  /** Fixed feedback id, so a recorded cassette can match on it. Defaults to the shared test id; a
-   *  test holding more than one item must name each, since feedback is keyed by id. */
-  feedbackId?: string;
 }
