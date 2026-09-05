@@ -196,6 +196,72 @@ suite("repository feedback stores", () => {
     }
   });
 
+  test("rehydration keeps an edit made while the disk read is pending", async () => {
+    await store.setState((draft) => {
+      draft.threads = [comment("saved")];
+    });
+    const file = feedbackFilePath("/repo", main, root);
+    const old = fs.readFileSync(file, "utf8");
+    let finish!: (value: string) => void;
+    const original = fs.promises.readFile;
+    const read = mock.method(fs.promises, "readFile", (...args: Parameters<typeof original>) =>
+      args[0] === file
+        ? new Promise<string>((resolve) => {
+            finish = resolve;
+          })
+        : original(...args),
+    );
+    try {
+      const hydration = store.persist.rehydrate();
+      const saved = store.setState((draft) => {
+        draft.threads[0].activities[0].body = "latest edit";
+      });
+      finish(old);
+      await Promise.all([hydration, saved]);
+      assert.strictEqual(store.getState().threads[0].activities[0].body, "latest edit");
+      assert.strictEqual(
+        JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].activities[0].body,
+        "latest edit",
+      );
+    } finally {
+      read.mock.restore();
+    }
+  });
+
+  test("rehydration keeps an edit made after the file read completes", async () => {
+    await store.setState((draft) => {
+      draft.threads = [comment("saved")];
+    });
+    const file = feedbackFilePath("/repo", main, root);
+    const old = fs.readFileSync(file, "utf8");
+    let finish!: (value: string) => void;
+    const original = fs.promises.readFile;
+    const read = mock.method(fs.promises, "readFile", (...args: Parameters<typeof original>) =>
+      args[0] === file
+        ? new Promise<string>((resolve) => {
+            finish = resolve;
+          })
+        : original(...args),
+    );
+    try {
+      const hydration = store.persist.rehydrate();
+      finish(old);
+      // The adapter returns before Zustand's JSON parsing and merge callbacks run.
+      await Promise.resolve();
+      const saved = store.setState((draft) => {
+        draft.threads[0].activities[0].body = "late edit";
+      });
+      await Promise.all([hydration, saved]);
+      assert.strictEqual(store.getState().threads[0].activities[0].body, "late edit");
+      assert.strictEqual(
+        JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].activities[0].body,
+        "late edit",
+      );
+    } finally {
+      read.mock.restore();
+    }
+  });
+
   test("Immer updates preserve previous snapshots and notify only the selected value", async () => {
     await store.setState((draft) => {
       draft.threads = [comment("one")];

@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { mock } from "node:test";
 import * as vscode from "vscode";
 
-import { CommentSession, GateComment, type CommentCallbacks } from "../comments/CommentSession.js";
+import {
+  CommentSession,
+  GateComment,
+  deleteComment,
+  type CommentCallbacks,
+} from "../comments/CommentSession.js";
 import type { FeedbackRef } from "../git/gitCli.js";
 import { ReviewController } from "../review/ReviewController.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
@@ -38,9 +43,12 @@ const item = (id: string): ReviewThread => ({
 type TestStore = RepoFeedbackStore;
 
 function testStore(threads: ReviewThread[] = [], ref: FeedbackRef | null = branch("a")): TestStore {
-  return createStore<FeedbackState>()(
+  const store = createStore<FeedbackState>()(
     subscribeWithSelector(immer(() => ({ repoRoot: "/repo", ref: ref ?? undefined, threads }))),
   );
+  return Object.assign(store, {
+    persist: { rehydrate: async () => {} } as RepoFeedbackStore["persist"],
+  });
 }
 
 function activeStore(c: Harness, root: string): RepoFeedbackStore {
@@ -63,12 +71,8 @@ interface Harness {
   observeWorkspaceFeedbackStore(store: RepoFeedbackStore): void;
   loadWorkspaceFeedback(root: string): Promise<RepoFeedbackStore>;
   getComments(): ReviewThread[];
-  addFeedback(
-    model: ReviewThread,
-    reply: vscode.CommentReply,
-    kind: "comment",
-    label: string,
-  ): Promise<void>;
+  addFeedback(model: ReviewThread): Promise<void>;
+  rehydrateFeedbackStores(): Promise<void>;
   latestFeedbackSyncByRepo: Map<string, symbol>;
   comments: Map<string, { repoRoot: string; comment: GateComment }>;
   activeRequestId?: string;
@@ -115,7 +119,18 @@ function harness(): Harness {
       remove(comment: GateComment) {
         comment.thread = undefined;
       },
-      restore(uri: vscode.Uri, range: vscode.Range, comment: GateComment, label: string) {
+      restore(
+        uri: vscode.Uri,
+        range: vscode.Range,
+        comment: GateComment,
+        label: string,
+        existing?: vscode.CommentThread,
+      ) {
+        if (existing) {
+          existing.comments = [...existing.comments, comment];
+          comment.thread = existing;
+          return;
+        }
         comment.thread = {
           uri,
           range,
@@ -143,6 +158,11 @@ function harness(): Harness {
     releaseReviewSlot() {},
   }) as Harness;
   c.observeWorkspaceFeedbackStore(testStore([], null));
+  mock.method(
+    feedbackStorage,
+    "getWorkspaceFeedbackStore",
+    async () => c.workspaceFeedback?.store ?? testStore([], null),
+  );
   return c;
 }
 
@@ -157,6 +177,120 @@ suite("feedback controller persistence", () => {
   teardown(() => {
     mock.restoreAll();
   });
+  test("adding feedback creates its VS Code comment through the store subscription", async () => {
+    const c = harness();
+    const session = (c as unknown as { commentSession: CommentSession }).commentSession;
+    const add = mock.method(session, "add", () => {
+      throw new Error("direct UI creation");
+    });
+    try {
+      await c.addFeedback(item("subscription"));
+      assert.strictEqual(c.comments.get("subscription")!.comment.body, "subscription");
+    } finally {
+      add.mock.restore();
+    }
+  });
+
+  test("deletion updates Zustand before removing the VS Code comment", () => {
+    const c = harness();
+    seed(c, item("delete"), branch("a"));
+    const session = (c as unknown as { commentSession: CommentSession }).commentSession;
+    const remove = mock.method(session, "remove", (comment: GateComment) => {
+      assert.deepStrictEqual(c.getComments(), []);
+      comment.thread = undefined;
+      return [comment];
+    });
+    try {
+      deleteComment(c.comments.get("delete")!.comment);
+      assert.strictEqual(remove.mock.callCount(), 1);
+      assert.strictEqual(c.comments.size, 0);
+    } finally {
+      remove.mock.restore();
+    }
+  });
+
+  test("stored thread groups restore together and delete together", async () => {
+    const c = harness();
+    const session = new CommentSession("feedback-group-state", "Test", "file", {});
+    Object.assign(c, { commentSession: session });
+    try {
+      const store = activeStore(c, "/repo");
+      store.setState((draft) => {
+        draft.threads = [
+          { ...item("parent"), threadId: "parent" },
+          { ...item("reply"), threadId: "parent" },
+          { ...item("separate"), threadId: "separate" },
+        ];
+      });
+      const parent = c.comments.get("parent")!.comment;
+      const reply = c.comments.get("reply")!.comment;
+      assert.strictEqual(parent.thread, reply.thread);
+      assert.notStrictEqual(parent.thread, c.comments.get("separate")!.comment.thread);
+      deleteComment(parent);
+      assert.deepStrictEqual(
+        store.getState().threads.map((model) => model.id),
+        ["separate"],
+      );
+      assert.deepStrictEqual([...c.comments.keys()], ["separate"]);
+    } finally {
+      c.dispose();
+      session.dispose();
+    }
+  });
+
+  test("a VS Code rendering failure does not prevent the store write", async () => {
+    const root = await mkdtemp(join(tmpdir(), "paireto-render-failure-"));
+    const c = harness();
+    try {
+      const store = await realGetFeedbackStore("/repo", branch("a"), root);
+      c.observeFeedbackStore("/repo", store);
+      Object.assign(c, {
+        restoreFeedback() {
+          throw new Error("editor unavailable");
+        },
+      });
+      await store.setState((draft) => {
+        draft.threads.push(item("kept"));
+      });
+      const saved = JSON.parse(
+        await readFile(feedbackStorage.feedbackFilePath("/repo", branch("a"), root), "utf8"),
+      );
+      assert.strictEqual(saved.state.threads[0].id, "kept");
+    } finally {
+      c.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("rehydrating an active store updates VS Code through its subscription", async () => {
+    const root = await mkdtemp(join(tmpdir(), "paireto-rehydrate-ui-"));
+    const c = harness();
+    try {
+      const store = await realGetFeedbackStore("/repo", branch("a"), root);
+      await store.setState((draft) => {
+        draft.threads = [item("before")];
+      });
+      c.observeFeedbackStore("/repo", store);
+      const { writeFile } = await import("node:fs/promises");
+      await writeFile(
+        feedbackStorage.feedbackFilePath("/repo", branch("a"), root),
+        JSON.stringify({
+          version: 1,
+          state: { ...store.getState(), threads: [item("from-disk")] },
+        }),
+      );
+      await c.rehydrateFeedbackStores();
+      assert.deepStrictEqual([...c.comments.keys()], ["from-disk"]);
+      assert.deepStrictEqual(
+        c.getComments().map((model) => model.id),
+        ["from-disk"],
+      );
+    } finally {
+      c.dispose();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("adding feedback without a branch writes to the workspace file", async () => {
     const root = await mkdtemp(join(tmpdir(), "paireto-workspace-controller-"));
     const c = harness();
@@ -168,12 +302,7 @@ suite("feedback controller persistence", () => {
       return realGetWorkspaceFeedbackStore(paths, root);
     });
     try {
-      const thread = {
-        uri: vscode.Uri.file("/repo/a.ts"),
-        range: new vscode.Range(0, 0, 0, 1),
-        comments: [],
-      } as unknown as vscode.CommentThread;
-      await c.addFeedback(item("fallback"), { thread, text: "fallback" }, "comment", "a.ts:1");
+      await c.addFeedback(item("fallback"));
       const file = vscode.workspace.workspaceFile;
       assert.deepStrictEqual(
         identity,
@@ -271,6 +400,18 @@ suite("feedback controller persistence", () => {
     finish(testStore([item("b")]));
     await pending;
     assert.deepStrictEqual([...c.comments.keys()], ["a"]);
+  });
+
+  test("selecting a workspace store removes the previous workspace's comments", () => {
+    const c = harness();
+    seed(c, item("old-workspace"));
+    const next = testStore([item("new-workspace")], null);
+    c.observeWorkspaceFeedbackStore(next);
+    assert.deepStrictEqual(
+      c.getComments().map((model) => model.id),
+      ["new-workspace"],
+    );
+    assert.deepStrictEqual([...c.comments.keys()], ["new-workspace"]);
   });
 
   test("workspace feedback remains visible when a branch store opens", async () => {

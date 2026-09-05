@@ -36,6 +36,7 @@ import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import {
   getWorkspaceFeedbackStore,
+  workspaceFeedbackFilePath,
   getFeedbackStore,
   type RepoFeedbackStore,
 } from "../storage/FeedbackStore.js";
@@ -180,6 +181,7 @@ export class ReviewController implements vscode.Disposable {
   >();
   private workspaceFeedback?: { store: RepoFeedbackStore; unsubscribe: () => void };
   private workspaceFeedbackLoading?: Promise<RepoFeedbackStore>;
+  private workspaceFeedbackKey?: string;
   private readonly latestFeedbackSyncByRepo = new Map<string, symbol>();
   private readonly gate = new ReviewGateRegistry();
   /** Turn-start Git snapshots, one per agent session — the turn-end gate's "did anything change?". */
@@ -330,7 +332,10 @@ export class ReviewController implements vscode.Disposable {
         this.syncActiveDiffContext();
       }),
       // Switching between already-open diff tabs re-selects that file's row in the tree.
-      vscode.window.onDidChangeActiveTextEditor(() => this.syncSelectionToActiveTab()),
+      vscode.window.onDidChangeActiveTextEditor(() => {
+        this.syncSelectionToActiveTab();
+        void this.rehydrateFeedbackStores();
+      }),
     );
     this.syncActiveDiffContext();
   }
@@ -829,6 +834,9 @@ export class ReviewController implements vscode.Disposable {
       }
     }
 
+    if (reason === "roots") {
+      await this.rehydrateFeedbackStores();
+    }
     this.reviewContent.refreshAllOpen();
     if (changed) {
       this.changeEmitter.fire();
@@ -1471,8 +1479,11 @@ export class ReviewController implements vscode.Disposable {
     };
 
     const now = new Date().toISOString();
+    const id = await newFeedbackId();
     const model: ReviewThread = {
-      id: await newFeedbackId(),
+      id,
+      threadId: (reply.thread.comments[0] as GateComment | undefined)?.id ?? id,
+      sourceUri: reply.thread.uri.toString(),
       repoRoot,
       filePath: relPath,
       side,
@@ -1496,7 +1507,10 @@ export class ReviewController implements vscode.Disposable {
           }
         : undefined,
     };
-    await this.addFeedback(model, reply, kind, this.commentLocationLabel(repoRoot, relPath, line));
+    await this.addFeedback(model);
+    if (reply.thread.comments.length === 0) {
+      reply.thread.dispose();
+    }
   }
 
   /**
@@ -1518,8 +1532,11 @@ export class ReviewController implements vscode.Disposable {
     const doc = await vscode.workspace.openTextDocument(reply.thread.uri);
     const quote = line < doc.lineCount ? doc.lineAt(line).text : "";
     const now = new Date().toISOString();
+    const id = await newFeedbackId();
     const model: ReviewThread = {
-      id: await newFeedbackId(),
+      id,
+      threadId: (reply.thread.comments[0] as GateComment | undefined)?.id ?? id,
+      sourceUri: reply.thread.uri.toString(),
       repoRoot: guided.repoRoot,
       filePath: "",
       changeset: { id: changeset.id, title: changeset.title },
@@ -1537,7 +1554,10 @@ export class ReviewController implements vscode.Disposable {
         lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
       },
     };
-    await this.addFeedback(model, reply, kind, `Changeset: ${changeset.title}`);
+    await this.addFeedback(model);
+    if (reply.thread.comments.length === 0) {
+      reply.thread.dispose();
+    }
   }
 
   /**
@@ -1667,22 +1687,14 @@ export class ReviewController implements vscode.Disposable {
     }
     const lines = Array.from({ length: doc.lineCount }, (_, i) => doc.lineAt(i).text);
     const line = relocateReviewAnchor(lines, c.line, c.anchor);
-    const lineText = line < doc.lineCount ? doc.lineAt(line).text : "";
-    const range = new vscode.Range(line, 0, line, lineText.length);
-    const attachedPath = migratedAttachment?.file.path ?? c.filePath;
-    const label = c.changeset
-      ? `Changeset: ${c.changeset.title}`
-      : this.commentLocationLabel(c.repoRoot, attachedPath, line);
-    const thread = this.commentSession.reattach(entry.comment, targetUri, range, label);
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     await store.setState((draft) => {
       const model = draft.threads.find((item) => item.id === id);
       if (!model) {
         return;
       }
       model.line = line;
+      model.sourceUri = targetUri.toString();
       if (migratedAttachment) {
-        // Keep the saved location unchanged until the replacement thread exists.
         model.filePath = migratedAttachment.file.path;
         model.attachment = {
           group: migratedAttachment.file.group,
@@ -1944,30 +1956,46 @@ export class ReviewController implements vscode.Disposable {
     }
 
     this.observeFeedbackStore(repoRoot, store);
+    await store.persist.rehydrate();
+  }
+
+  private async rehydrateFeedbackStores(): Promise<void> {
+    const stores = [
+      ...Array.from(this.feedbackStores.values()),
+      ...(this.workspaceFeedback ? [this.workspaceFeedback] : []),
+    ];
+    await Promise.all(stores.map(({ store }) => store.persist.rehydrate()));
   }
 
   private async loadWorkspaceFeedback(fallbackRoot: string): Promise<RepoFeedbackStore> {
-    if (this.workspaceFeedback) {
-      return this.workspaceFeedback.store;
-    }
     const file = vscode.workspace.workspaceFile;
     const paths =
       file && file.scheme !== "untitled"
         ? [file.fsPath]
         : (vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [fallbackRoot]);
-    this.workspaceFeedbackLoading ??= getWorkspaceFeedbackStore(
-      paths.length > 0 ? paths : [fallbackRoot],
-    );
-    const store = await this.workspaceFeedbackLoading;
-    if (!this.workspaceFeedback) {
+    const identity = paths.length > 0 ? paths : [fallbackRoot];
+    const key = workspaceFeedbackFilePath(identity);
+    if (this.workspaceFeedbackKey !== key || !this.workspaceFeedbackLoading) {
+      this.workspaceFeedbackKey = key;
+      this.workspaceFeedbackLoading = getWorkspaceFeedbackStore(identity);
+    }
+    const loading = this.workspaceFeedbackLoading;
+    const store = await loading;
+    if (loading !== this.workspaceFeedbackLoading) {
+      return this.loadWorkspaceFeedback(fallbackRoot);
+    }
+    if (this.workspaceFeedback?.store !== store) {
       this.observeWorkspaceFeedbackStore(store);
     }
     return store;
   }
 
   private observeWorkspaceFeedbackStore(store: RepoFeedbackStore): void {
+    let previousThreads = this.workspaceFeedback?.store.getState().threads ?? [];
     this.workspaceFeedback?.unsubscribe();
-    const update = (threads: ReviewThread[], previous: ReviewThread[]) => {
+    const update = (threads: ReviewThread[]) => {
+      const previous = previousThreads;
+      previousThreads = threads;
       const roots = new Set([...threads, ...previous].map((model) => model.repoRoot));
       for (const root of roots) {
         const branch = this.feedbackStores.get(root)?.store.getState().threads ?? [];
@@ -1979,9 +2007,10 @@ export class ReviewController implements vscode.Disposable {
       }
       this.changeEmitter.fire();
     };
-    const unsubscribe = store.subscribe((state) => state.threads, update);
-    this.workspaceFeedback = { store, unsubscribe };
-    update(store.getState().threads, []);
+    this.workspaceFeedback = { store, unsubscribe: () => {} };
+    this.workspaceFeedback.unsubscribe = store.subscribe((state) => state.threads, update, {
+      fireImmediately: true,
+    });
   }
 
   private storeForFeedback(repoRoot: string, id: string): RepoFeedbackStore | undefined {
@@ -1998,24 +2027,23 @@ export class ReviewController implements vscode.Disposable {
       this.workspaceFeedback?.store
         .getState()
         .threads.filter((model) => model.repoRoot === repoRoot) ?? [];
-    const unsubscribe = store.subscribe(
+    let previousThreads = previous?.store.getState().threads ?? [];
+    const active = { store, unsubscribe: () => {} };
+    this.feedbackStores.set(repoRoot, active);
+    active.unsubscribe = store.subscribe(
       (state) => state.threads,
-      (threads, previous) => {
+      (threads) => {
+        const before = previousThreads;
+        previousThreads = threads;
         this.syncFeedbackComments(
           repoRoot,
           [...threads, ...workspaceThreads()],
-          [...previous, ...workspaceThreads()],
+          [...before, ...workspaceThreads()],
         );
         this.changeEmitter.fire();
       },
+      { fireImmediately: true },
     );
-    this.feedbackStores.set(repoRoot, { store, unsubscribe });
-    this.syncFeedbackComments(
-      repoRoot,
-      [...store.getState().threads, ...workspaceThreads()],
-      [...(previous?.store.getState().threads ?? []), ...workspaceThreads()],
-    );
-    this.changeEmitter.fire();
   }
 
   private syncFeedbackComments(
@@ -2023,49 +2051,57 @@ export class ReviewController implements vscode.Disposable {
     models: ReviewThread[],
     previous: ReviewThread[],
   ): void {
-    const ids = new Set(models.map((model) => model.id));
-    for (const [id, entry] of this.comments) {
-      if (entry.repoRoot === repoRoot && !ids.has(id)) {
-        this.commentSession.remove(entry.comment);
-        this.comments.delete(id);
+    try {
+      const ids = new Set(models.map((model) => model.id));
+      for (const [id, entry] of this.comments) {
+        if (entry.repoRoot === repoRoot && !ids.has(id)) {
+          this.commentSession.remove(entry.comment);
+          this.comments.delete(id);
+        }
       }
-    }
-    for (const model of models) {
-      const entry = this.comments.get(model.id);
-      if (!entry?.comment.thread) {
-        this.restoreFeedback(model);
-        continue;
-      }
-      const feedback = userFeedback(model);
-      const comment = entry.comment;
-      Object.assign(
-        comment,
-        this.feedbackCallbacks(this.storeForFeedback(repoRoot, model.id)!, model.id),
-      );
-      if (comment.mode !== vscode.CommentMode.Editing) {
-        comment.body = feedback.body;
-      }
-      comment.kind = feedback.feedbackKind;
-      comment.label = kindLabel(feedback.feedbackKind);
-      const before = previous.find((item) => item.id === model.id);
-      if (
-        before &&
-        (before.line !== model.line ||
-          before.filePath !== model.filePath ||
-          before.attachment !== model.attachment)
-      ) {
-        this.commentSession.reattach(
+      for (const model of models) {
+        const entry = this.comments.get(model.id);
+        if (!entry?.comment.thread) {
+          this.restoreFeedback(model);
+          continue;
+        }
+        const feedback = userFeedback(model);
+        const comment = entry.comment;
+        Object.assign(
           comment,
-          before.filePath !== model.filePath || before.attachment !== model.attachment
-            ? this.restoreFeedbackUri(model)
-            : comment.thread!.uri,
-          new vscode.Range(model.line, 0, model.line, feedback.quote.length),
-          model.changeset
-            ? `Changeset: ${model.changeset.title}`
-            : this.commentLocationLabel(repoRoot, model.filePath, model.line),
+          this.feedbackCallbacks(this.storeForFeedback(repoRoot, model.id)!, model.id),
         );
+        if (comment.mode !== vscode.CommentMode.Editing) {
+          comment.body = feedback.body;
+        }
+        comment.kind = feedback.feedbackKind;
+        comment.label = kindLabel(feedback.feedbackKind);
+        const before = previous.find((item) => item.id === model.id);
+        if (
+          before &&
+          (before.line !== model.line ||
+            before.filePath !== model.filePath ||
+            before.attachment !== model.attachment ||
+            before.sourceUri !== model.sourceUri)
+        ) {
+          this.commentSession.reattach(
+            comment,
+            before.filePath !== model.filePath ||
+              before.attachment !== model.attachment ||
+              before.sourceUri !== model.sourceUri
+              ? this.restoreFeedbackUri(model)
+              : comment.thread!.uri,
+            new vscode.Range(model.line, 0, model.line, feedback.quote.length),
+            model.changeset
+              ? `Changeset: ${model.changeset.title}`
+              : this.commentLocationLabel(repoRoot, model.filePath, model.line),
+          );
+        }
+        comment.thread!.comments = [...comment.thread!.comments];
       }
-      comment.thread!.comments = [...comment.thread!.comments];
+    } catch (error) {
+      // A rendering failure must not interrupt Zustand's persistence callback.
+      log.error(`feedback rendering failed for ${repoRoot}: ${String(error)}`);
     }
   }
 
@@ -2080,28 +2116,18 @@ export class ReviewController implements vscode.Disposable {
           }
         });
       },
-      onDeleted: () => {
+      onDeleteRequested: () => {
         void store.setState((draft) => {
-          draft.threads = draft.threads.filter((model) => model.id !== id);
+          draft.threads = draft.threads.filter((model) => model.id !== id && model.threadId !== id);
         });
       },
     };
   }
 
-  private async addFeedback(
-    model: ReviewThread,
-    reply: vscode.CommentReply,
-    kind: CommentKind,
-    label: string,
-  ): Promise<void> {
+  private async addFeedback(model: ReviewThread): Promise<void> {
     const store =
       this.feedbackStores.get(model.repoRoot)?.store ??
       (await this.loadWorkspaceFeedback(model.repoRoot));
-    const comment = this.commentSession.add(reply, kind, {
-      ...this.feedbackCallbacks(store, model.id),
-      label,
-    });
-    this.comments.set(model.id, { comment, repoRoot: model.repoRoot });
     await store.setState((draft) => {
       draft.threads.push(model);
     });
@@ -2109,11 +2135,21 @@ export class ReviewController implements vscode.Disposable {
 
   private restoreFeedbackUri(model: ReviewThread): vscode.Uri {
     if (model.sourceDocument) {
+      const source = model.sourceDocument;
+      if (
+        this.activeRequestId &&
+        vscode.workspace.textDocuments.some(
+          (doc) => doc.uri.toString() === source.uri && doc.getText() === source.markdown,
+        )
+      ) {
+        return vscode.Uri.parse(source.uri);
+      }
       // Each saved description must remain separate from later reviews of the same changeset.
       return vscode.Uri.parse(model.sourceDocument.uri).with({ authority: model.id });
     }
-    if (model.attachment?.sourceUri) {
-      const uri = vscode.Uri.parse(model.attachment.sourceUri);
+    const sourceUri = model.sourceUri ?? model.attachment?.sourceUri;
+    if (sourceUri) {
+      const uri = vscode.Uri.parse(sourceUri);
       if (uri.scheme === Schemes.review) {
         return ReviewPath.create({ ...ReviewPath.fromUri(uri), reviewId: this.reviewId }).toUri();
       }
@@ -2144,7 +2180,16 @@ export class ReviewController implements vscode.Disposable {
     const label = model.changeset
       ? `Changeset: ${model.changeset.title}`
       : this.commentLocationLabel(model.repoRoot, model.filePath, line);
-    this.commentSession.restore(uri, range, comment, label);
+    const sibling = model.threadId
+      ? this.getComments().find(
+          (item) =>
+            item.id !== model.id &&
+            item.threadId === model.threadId &&
+            this.comments.get(item.id)?.comment.thread,
+        )
+      : undefined;
+    const thread = sibling ? this.comments.get(sibling.id)?.comment.thread : undefined;
+    this.commentSession.restore(uri, range, comment, label, thread);
     this.comments.set(model.id, { comment, repoRoot: model.repoRoot });
   }
 

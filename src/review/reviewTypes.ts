@@ -35,6 +35,8 @@ export interface ReviewAnchor {
 
 export interface ReviewThread {
   id: string;
+  threadId?: string;
+  sourceUri?: string;
   /** Canonical repository root; filePath is relative to this root. */
   repoRoot: string;
   /** Repo-relative file the comment sits on. Empty for a comment left on a changeset description,

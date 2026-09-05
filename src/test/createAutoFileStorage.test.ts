@@ -65,6 +65,16 @@ suite("automatic file storage", () => {
     }
   });
 
+  test("rehydration reads the latest value while a write is debounced", async () => {
+    const value = bucketValue("pending");
+    const saved = storage.setItem("feedback", value);
+    try {
+      assert.strictEqual(await storage.getItem("feedback"), value);
+    } finally {
+      await saved;
+    }
+  });
+
   test("removing an item also cancels its pending write", async () => {
     await storage.setItem("feedback", bucketValue("one"));
     await Promise.all([

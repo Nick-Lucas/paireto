@@ -19,7 +19,7 @@ export interface FeedbackState {
 
 export type RepoFeedbackStore = Pick<
   Awaited<ReturnType<typeof createFeedbackStore>>,
-  "getState" | "setState" | "subscribe"
+  "getState" | "setState" | "subscribe" | "persist"
 >;
 
 const stores = new Map<string, Promise<RepoFeedbackStore>>();
@@ -72,6 +72,7 @@ async function createFeedbackStore(
   ref: FeedbackRef | undefined,
   file: string,
 ) {
+  let threadsAtHydrationStart: ReviewThread[] | undefined;
   const store = createStore<FeedbackState>()(
     subscribeWithSelector(
       persist(
@@ -81,10 +82,18 @@ async function createFeedbackStore(
           version: 1,
           storage: createJSONStorage<FeedbackState>(() => createAutoFileStorage(file)),
           skipHydration: true,
-          onRehydrateStorage: () => (_state, error) => {
-            if (error) {
-              log.error(`feedback hydration failed for ${file}: ${String(error)}`);
-            }
+          // Zustand merges after the adapter returns, so edits in that gap must keep their state.
+          merge: (saved, current) =>
+            current.threads !== threadsAtHydrationStart
+              ? current
+              : { ...current, ...(saved as Partial<FeedbackState>) },
+          onRehydrateStorage: (state) => {
+            threadsAtHydrationStart = state.threads;
+            return (_state, error) => {
+              if (error) {
+                log.error(`feedback hydration failed for ${file}: ${String(error)}`);
+              }
+            };
           },
         },
       ),

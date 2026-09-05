@@ -2,7 +2,7 @@
 
 import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 
 import * as vscode from "vscode";
 
@@ -64,6 +64,27 @@ suite("feedback durability", () => {
 
     await waitFor("the comment to reach the bucket file", async () =>
       (await storedFeedback()).includes(id) ? true : undefined,
+    );
+  });
+
+  test("opening an editor rehydrates feedback from disk", async function () {
+    this.timeout(90_000);
+    const id = await queueFileComment("Reload this feedback.");
+    const ref = await currentFeedbackRef(repoRoot);
+    assert.ok(ref);
+    const file = feedbackFilePath(repoRoot, ref);
+    const saved = JSON.parse(await readFile(file, "utf8")) as {
+      version: number;
+      state: FeedbackState;
+    };
+    saved.state.threads.find((model) => model.id === id)!.delivery = "sent";
+    await writeFile(file, JSON.stringify(saved));
+    const doc = await vscode.workspace.openTextDocument({ content: "Feedback hydration test" });
+    await vscode.window.showTextDocument(doc);
+    await waitFor("the editor event to reload feedback", async () =>
+      (await inspect()).feedback.find((model) => model.id === id)?.delivery === "sent"
+        ? true
+        : undefined,
     );
   });
 

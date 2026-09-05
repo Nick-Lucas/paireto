@@ -20,6 +20,7 @@ export class GateComment implements vscode.Comment {
   onSaved?: (newBody: string) => void;
   /** Called after the comment and its thread are gone — clean up your model here. */
   onDeleted?: () => void;
+  onDeleteRequested?: () => void;
 
   constructor(
     public body: string | vscode.MarkdownString,
@@ -58,6 +59,10 @@ export function saveComment(comment: GateComment): void {
 
 /** Delete a comment, and every comment that goes down with it, then sync each via onDeleted. */
 export function deleteComment(comment: GateComment): void {
+  if (comment.onDeleteRequested) {
+    comment.onDeleteRequested();
+    return;
+  }
   const removed = comment.session?.remove(comment) ?? [comment];
   for (const item of removed) {
     item.onDeleted?.();
@@ -79,6 +84,7 @@ export function registerCommentEditingCommands(): vscode.Disposable {
 export interface CommentCallbacks {
   onSaved?: (newBody: string) => void;
   onDeleted?: () => void;
+  onDeleteRequested?: () => void;
   id?: string;
   label?: string;
 }
@@ -108,6 +114,7 @@ export class CommentSession implements vscode.Disposable {
     const comment = new GateComment(reply.text, kind);
     comment.onSaved = cb?.onSaved;
     comment.onDeleted = cb?.onDeleted;
+    comment.onDeleteRequested = cb?.onDeleteRequested;
     comment.id = cb?.id;
     comment.session = this;
     const thread = reply.thread;
@@ -121,15 +128,19 @@ export class CommentSession implements vscode.Disposable {
     return comment;
   }
 
-  /** Put a stored comment back on a document, with its own thread, as `add` would have left it. */
+  /** Replies must share their stored thread after a reload. */
   restore(
     uri: vscode.Uri,
     range: vscode.Range,
     comment: GateComment,
     label: string,
+    existing?: vscode.CommentThread,
   ): vscode.CommentThread {
-    const thread = this.controller.createCommentThread(uri, range, [comment]);
-    thread.label = label;
+    const thread = existing ?? this.controller.createCommentThread(uri, range, []);
+    if (thread.comments.length === 0) {
+      thread.label = label;
+    }
+    thread.comments = [...thread.comments, comment];
     thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     comment.thread = thread;
     comment.session = this;
