@@ -27,6 +27,7 @@ import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
 import { RecentRepoStore } from "./storage/RecentRepoStore.js";
 import { ReviewStore } from "./storage/ReviewStore.js";
+import { FeedbackStore } from "./storage/FeedbackStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
@@ -73,10 +74,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const diffService = new DiffService();
   const reviewContent = new ReviewContentProvider();
   const reviewStore = new ReviewStore(context.workspaceState);
+  const feedbackStore = new FeedbackStore();
   const reviewController = new ReviewController(
     roots,
     diffService,
     reviewStore,
+    feedbackStore,
     reviewContent,
     coordinator,
   );
