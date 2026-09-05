@@ -3,9 +3,10 @@ import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { mock } from "node:test";
 
-import { currentFeedbackRef } from "../git/gitCli.js";
-import { repoKey, type FeedbackRef } from "../protocol/paths.js";
+import { currentFeedbackRef, type FeedbackRef } from "../git/gitCli.js";
+import { repoKey } from "../protocol/paths.js";
 import { FeedbackStore } from "../storage/FeedbackStore.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 
@@ -49,6 +50,123 @@ suite("persistent feedback store", () => {
 
   teardown(() => {
     fs.rmSync(stateRoot, { recursive: true, force: true });
+  });
+
+  test("debounces writes from multiple consumers into one disk write", async () => {
+    const ref = branch("main");
+    const other = new FeedbackStore(feedbackRoot);
+    const rename = mock.method(fs.promises, "rename");
+    try {
+      await Promise.all([
+        store.save("/repo", ref, [comment("one")]),
+        other.save("/repo", ref, [comment("two")]),
+        store.save("/repo", ref, [comment("three")]),
+      ]);
+
+      const file = store.bucketPath("/repo", ref);
+      assert.strictEqual(
+        rename.mock.calls.filter(({ arguments: args }) => args[1] === file).length,
+        1,
+      );
+      assert.deepStrictEqual(
+        JSON.parse(fs.readFileSync(file, "utf8")).state.threads.map(
+          (item: ReviewThread) => item.id,
+        ),
+        ["three"],
+      );
+    } finally {
+      rename.mock.restore();
+    }
+  });
+
+  test("updates feedback before its first debounced write reaches disk", async () => {
+    const ref = branch("main");
+    const save = store.save("/repo", ref, [comment("one")]);
+    const update = store.updateById("/repo", "one", (item) => ({ ...item, delivery: "sent" }));
+    const [, updated] = await Promise.all([save, update]);
+
+    assert.strictEqual(updated?.item.delivery, "sent");
+    const persisted = JSON.parse(fs.readFileSync(store.bucketPath("/repo", ref), "utf8"));
+    assert.strictEqual(persisted.state.threads[0].delivery, "sent");
+  });
+
+  test("clearing pending feedback does not leave a delayed write behind", async () => {
+    const ref = branch("main");
+    const other = new FeedbackStore(feedbackRoot);
+    await Promise.all([store.save("/repo", ref, [comment("one")]), other.clear("/repo", ref)]);
+
+    assert.deepStrictEqual(await store.load("/repo", ref), []);
+    assert.strictEqual(fs.existsSync(store.bucketPath("/repo", ref)), false);
+  });
+
+  test("a failed batch rejects every save and permits a later write", async () => {
+    const ref = branch("main");
+    const file = store.bucketPath("/repo", ref);
+    const failure = new Error("disk write failed");
+    const original = fs.promises.rename;
+    const rename = mock.method(
+      fs.promises,
+      "rename",
+      async (from: fs.PathLike, to: fs.PathLike) => {
+        if (to === file) {
+          throw failure;
+        }
+        return original(from, to);
+      },
+    );
+    try {
+      const results = await Promise.allSettled([
+        store.save("/repo", ref, [comment("one")]),
+        store.save("/repo", ref, [comment("two")]),
+      ]);
+      assert.deepStrictEqual(results, [
+        { status: "rejected", reason: failure },
+        { status: "rejected", reason: failure },
+      ]);
+    } finally {
+      rename.mock.restore();
+    }
+
+    await store.save("/repo", ref, [comment("three")]);
+    assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].id, "three");
+  });
+
+  test("consumers share one hydrated bucket in memory", async () => {
+    const ref = branch("main");
+    const file = store.bucketPath("/repo", ref);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        state: { repoRoot: "/repo", ref, threads: [comment("one")] },
+      }),
+    );
+    const other = new FeedbackStore(path.relative(process.cwd(), feedbackRoot));
+
+    const [first, second] = await Promise.all([store.load("/repo", ref), other.load("/repo", ref)]);
+
+    assert.strictEqual(first, second);
+    fs.writeFileSync(file, "{ truncated");
+    assert.strictEqual(await other.load("/repo", ref), first);
+
+    await Promise.all([
+      store.updateById("/repo", "one", (item) => ({ ...item, delivery: "sent" })),
+      other.updateById("/repo", "one", (item) => ({ ...item, line: 10 })),
+    ]);
+    const [updated] = await store.load("/repo", ref);
+    assert.strictEqual(updated.delivery, "sent");
+    assert.strictEqual(updated.line, 10);
+    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads, [updated]);
+
+    await other.clear("/repo", ref);
+    assert.deepStrictEqual(await store.load("/repo", ref), []);
+    assert.strictEqual(fs.existsSync(file), false);
+    await store.save("/repo", ref, [comment("two")]);
+    assert.deepStrictEqual(
+      (await other.load("/repo", ref)).map((item) => item.id),
+      ["two"],
+    );
   });
 
   test("restores a bucket and isolates repository, branch, and detached commit", async () => {
@@ -232,9 +350,9 @@ suite("persistent feedback store", () => {
   });
 
   test("a corrupt bucket file reads as empty instead of throwing", async () => {
-    await store.save("/repo", branch("feature/a"), [comment("one")]);
-    const [name] = fs.readdirSync(path.join(feedbackRoot, repoKey("/repo")));
-    fs.writeFileSync(path.join(feedbackRoot, repoKey("/repo"), name), "{ truncated");
+    const file = store.bucketPath("/repo", branch("feature/a"));
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, "{ truncated");
 
     assert.deepStrictEqual(await store.load("/repo", branch("feature/a")), []);
     assert.strictEqual(await store.updateById("/repo", "one", (item) => item), undefined);

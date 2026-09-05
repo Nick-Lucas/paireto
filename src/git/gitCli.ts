@@ -4,8 +4,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
-import type { FeedbackRef } from "../protocol/paths.js";
-
 const execFileAsync = promisify(execFile);
 
 const MAX_BUFFER = 64 * 1024 * 1024;
@@ -14,6 +12,8 @@ export interface GitResult {
   stdout: string;
   stderr: string;
 }
+
+export type FeedbackRef = { kind: "branch"; value: string } | { kind: "commit"; value: string };
 
 /** Run `git -C <repoRoot> <args...>`. Rejects on non-zero exit. */
 export async function git(repoRoot: string, args: string[]): Promise<GitResult> {
@@ -64,8 +64,9 @@ export async function currentBranch(repoRoot: string): Promise<string | undefine
   return branchFromRevParse(await gitSafe(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]));
 }
 
-/** Durable feedback identity: the checked-out branch by name — which a commit on it does not change
- *  — or the exact commit when HEAD is detached and there is no branch to name. */
+/**
+ * Identifier used to key stored feedback against a git position
+ */
 export async function currentFeedbackRef(repoRoot: string): Promise<FeedbackRef | undefined> {
   const branch = (await gitSafe(repoRoot, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim();
   if (branch) {

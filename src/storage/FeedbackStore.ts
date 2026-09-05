@@ -5,18 +5,18 @@ import * as path from "node:path";
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware";
 import { createStore } from "zustand/vanilla";
 
-import { canonicalize, feedbackDir, repoKey, type FeedbackRef } from "../protocol/paths.js";
+import { canonicalize, feedbackDir, repoKey } from "../protocol/paths.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
-
-// ONE WINDOW OWNS A BRANCH'S FEEDBACK. A save writes the window's whole live set for a bucket, with
-// no lock and no watcher, so two windows open on the same repository AND the same branch will
-// overwrite each other, last writer winning. Different repositories and different branches are
-// different files and never collide, which is the case worktrees actually produce.
+import type { FeedbackRef } from "../git/gitCli.js";
 
 const SCHEMA_VERSION = 1;
+const WRITE_DEBOUNCE_MS = 50;
 
-/** Every thread left on one Git ref of one repository. `ref` is absent until the bucket has been
- *  saved, so a missing, unreadable or superseded file reads as an empty bucket. */
+type File = string & { readonly __file: unique symbol };
+function asFile(filePath: string): File {
+  return path.resolve(filePath) as File;
+}
+
 interface FeedbackBucket {
   repoRoot: string;
   ref?: FeedbackRef;
@@ -32,25 +32,18 @@ export class FeedbackStore {
   constructor(private readonly root = feedbackDir()) {}
 
   async load(repoRoot: string, ref: FeedbackRef): Promise<ReviewThread[]> {
-    const store = await hydratedBucket(this.bucketPath(repoRoot, ref));
+    const store = await bucketStore(this.bucketPath(repoRoot, ref));
     return store.getState().threads;
   }
 
   /** Replace one bucket. An empty bucket is deleted, so a branch with no feedback leaves no file. */
   async save(repoRoot: string, ref: FeedbackRef, threads: ReviewThread[]): Promise<void> {
-    const file = this.bucketPath(repoRoot, ref);
-    await withBucketLock(file, async () => {
-      if (threads.length === 0) {
-        await removeBucket(file);
-        return;
-      }
-      await bucketStore(file).setState({ repoRoot: canonicalize(repoRoot), ref, threads });
-    });
+    const store = await bucketStore(this.bucketPath(repoRoot, ref));
+    await store.setState({ repoRoot: canonicalize(repoRoot), ref, threads });
   }
 
   async clear(repoRoot: string, ref: FeedbackRef): Promise<void> {
-    const file = this.bucketPath(repoRoot, ref);
-    await withBucketLock(file, () => removeBucket(file));
+    await this.save(repoRoot, ref, []);
   }
 
   /**
@@ -68,99 +61,112 @@ export class FeedbackStore {
     try {
       names = await fs.readdir(dir);
     } catch {
-      return undefined; // no bucket has ever been written for this repository
+      names = [];
     }
-    for (const name of names.sort()) {
-      if (!name.endsWith(".json")) {
+    const files = new Set(
+      names.filter((name) => name.endsWith(".json")).map((name) => asFile(path.join(dir, name))),
+    );
+    // New feedback can receive an update before its first disk write.
+    for (const file of buckets.keys()) {
+      if (path.dirname(file) === dir) {
+        files.add(file);
+      }
+    }
+    for (const file of files) {
+      const store = await bucketStore(file);
+      const { ref, threads } = store.getState();
+      const index = threads.findIndex((item) => item.id === id);
+      if (!ref || index === -1) {
         continue;
       }
-      const file = path.join(dir, name);
-      // Read and write under one lock: the item this reads is the item it writes back, so a reply
-      // and a resolution arriving together cannot each overwrite the other's activity.
-      const updated = await withBucketLock(file, async () => {
-        const store = await hydratedBucket(file);
-        const { ref, threads } = store.getState();
-        const index = threads.findIndex((item) => item.id === id);
-        if (!ref || index === -1) {
-          return undefined;
-        }
-        const item = update(threads[index]);
-        const next = [...threads];
-        next[index] = item;
-        await store.setState({ threads: next });
-        return { ref, item };
-      });
-      if (updated) {
-        return updated;
-      }
+      const item = update(threads[index]);
+      const next = [...threads];
+      next[index] = item;
+      await store.setState({ threads: next });
+      return { ref, item };
     }
     return undefined;
   }
 
   private repoDir(repoRoot: string): string {
-    return path.join(this.root, repoKey(repoRoot));
+    return path.resolve(this.root, repoKey(repoRoot));
   }
 
   /** A branch bucket is keyed by the branch name, not by what it points at, so committing on that
    *  branch leaves the feedback where it is. The name is hashed because it carries `/` and its case
    *  is not preserved by every filesystem; the readable ref is kept inside the file. */
   /** The file one bucket lives in. Public so a test can look at the bytes rather than trust a write. */
-  bucketPath(repoRoot: string, ref: FeedbackRef): string {
-    return path.join(this.repoDir(repoRoot), `${ref.kind}-${refHash(ref.value)}.json`);
+  bucketPath(repoRoot: string, ref: FeedbackRef): File {
+    return asFile(path.join(this.repoDir(repoRoot), `${ref.kind}-${refHash(ref.value)}.json`));
   }
 }
 
-/**
- * One bucket file, one write at a time.
- *
- * An agent answers and resolves an item in a single turn, so two writes to the same bucket are in
- * flight together. Unserialized they share one temporary file: the first rename consumes it and the
- * second fails, which the caller reports to the agent as feedback it could not save. Queueing also
- * makes a read-modify-write whole, so neither update is lost.
- *
- * This orders writes from THIS window only. Two windows on one branch still overwrite each other,
- * last writer winning, as the note at the top of this file describes.
- */
-const bucketWrites = new Map<string, Promise<unknown>>();
+const buckets = new Map<File, ReturnType<typeof createBucketStore>>();
 
-async function withBucketLock<T>(file: string, write: () => Promise<T>): Promise<T> {
-  const previous = bucketWrites.get(file) ?? Promise.resolve();
-  const result = previous.then(write, write);
-  // A failed write must not fail the next one, nor leave a rejection nobody handles.
-  const settled = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  bucketWrites.set(file, settled);
-  try {
-    return await result;
-  } finally {
-    if (bucketWrites.get(file) === settled) {
-      bucketWrites.delete(file);
-    }
+function bucketStore(file: File): ReturnType<typeof createBucketStore> {
+  let store = buckets.get(file);
+  if (!store) {
+    store = createBucketStore(file);
+    buckets.set(file, store);
   }
-}
-
-function bucketStore(file: string) {
-  return createStore<FeedbackBucket>()(
-    persist((): FeedbackBucket => ({ repoRoot: "", threads: [] }), {
-      name: "feedback",
-      version: SCHEMA_VERSION,
-      storage: createJSONStorage(() => fileStorage(file)),
-      skipHydration: true,
-    }),
-  );
-}
-
-/** A store holding what its file holds. Hydration replaces the whole state, and the store is new, so
- *  a read is the file as it stands now rather than a snapshot from earlier in the session. */
-async function hydratedBucket(file: string): Promise<ReturnType<typeof bucketStore>> {
-  const store = bucketStore(file);
-  await Promise.resolve(store.persist.rehydrate());
   return store;
 }
 
-function fileStorage(file: string): StateStorage<Promise<void>> {
+async function createBucketStore(file: File) {
+  const store = createStore<FeedbackBucket>()(
+    persist((): FeedbackBucket => ({ repoRoot: "", threads: [] }), {
+      name: "feedback",
+      version: SCHEMA_VERSION,
+      storage: createJSONStorage(() => createAutoFileStorage(file)),
+      skipHydration: true,
+    }),
+  );
+  await store.persist.rehydrate();
+  return store;
+}
+
+function createAutoFileStorage(file: File): StateStorage<Promise<void>> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pending:
+    | {
+        value: string | null;
+        waiters: { resolve: () => void; reject: (error: unknown) => void }[];
+      }
+    | undefined;
+  let writes = Promise.resolve();
+
+  async function write(value: string | null): Promise<void> {
+    if (value === null || JSON.parse(value).state.threads.length === 0) {
+      await fs.rm(file, { force: true });
+      return;
+    }
+    // A rename prevents readers from seeing a partially written file.
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    const tmp = `${file}.tmp.${process.pid}`;
+    await fs.writeFile(tmp, value, { mode: 0o600 });
+    await fs.rename(tmp, file);
+  }
+
+  function schedule(value: string | null): Promise<void> {
+    pending ??= { value, waiters: [] };
+    pending.value = value;
+    const batch = pending;
+    const saved = new Promise<void>((resolve, reject) => batch.waiters.push({ resolve, reject }));
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      pending = undefined;
+      timer = undefined;
+      // Writes must stay in order even if disk access takes longer than the debounce delay.
+      writes = writes
+        .then(() => write(batch.value))
+        .then(
+          () => batch.waiters.forEach(({ resolve }) => resolve()),
+          (error: unknown) => batch.waiters.forEach(({ reject }) => reject(error)),
+        );
+    }, WRITE_DEBOUNCE_MS);
+    return saved;
+  }
+
   return {
     async getItem() {
       let raw: string;
@@ -178,21 +184,9 @@ function fileStorage(file: string): StateStorage<Promise<void>> {
       }
       return raw;
     },
-    async setItem(_name, value) {
-      // tmp + rename, so another window never reads a half-written bucket.
-      await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-      const tmp = `${file}.tmp.${process.pid}`;
-      await fs.writeFile(tmp, value, { mode: 0o600 });
-      await fs.rename(tmp, file);
-    },
-    removeItem: () => removeBucket(file),
+    setItem: (_name, value) => schedule(value),
+    removeItem: () => schedule(null),
   };
-}
-
-/** Deleting the file is also how a bucket is cleared: `persist.clearStorage()` cannot be awaited, and
- *  a caller that reports whether the feedback is gone has to know the removal landed. */
-async function removeBucket(file: string): Promise<void> {
-  await fs.rm(file, { force: true });
 }
 
 function refHash(value: string): string {
