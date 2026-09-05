@@ -20,6 +20,11 @@ import {
 } from "../plugins/core/mcp/reviewTool.js";
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
 import { type Harness, PLUGIN_VERSION } from "../protocol/types.js";
+import {
+  FEEDBACK_REPLY_TOOL_NAME,
+  FEEDBACK_RESOLVE_TOOL_NAME,
+  runFeedbackReply,
+} from "../plugins/core/mcp/feedbackTools.js";
 import { ackWith, startServer } from "./fakeBridgeServer.js";
 
 suite("MCP paireto_review tool", () => {
@@ -27,13 +32,57 @@ suite("MCP paireto_review tool", () => {
     assert.strictEqual(REVIEW_TOOL_NAME, "paireto_review");
   });
 
-  test("the description is unchanged", () => {
+  test("the description says feedback includes stable IDs", () => {
     assert.strictEqual(
       REVIEW_TOOL_DESCRIPTION,
       "Open an interactive code review in the connected VS Code window and wait for the user to " +
-        "submit feedback. Blocks until the user clicks Send Feedback or Cancel, then returns the " +
-        "review comments (file:line, kind, note) to act on. Call this when the user asks for a review.",
+        "submit feedback. Blocks until the user clicks Send Feedback or Approve, then returns " +
+        "review comments with stable feedback IDs. Call this when the user asks for a review.",
     );
+  });
+
+  test("registers independent reply and resolve tools with strict schemas", async () => {
+    const server = createMcpServer({
+      serverName: "paireto-test",
+      harness: "codex" as const,
+      resolveReviewTarget: () => undefined,
+      startLiveness: () => () => {},
+    });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const client = new Client({ name: "test", version: "0.0.0" });
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+    try {
+      const listed = await client.request({ method: "tools/list" }, ListToolsResultSchema);
+      const tools = new Map(listed.tools.map((tool) => [tool.name, tool]));
+      assert.deepStrictEqual(tools.get(FEEDBACK_REPLY_TOOL_NAME)?.inputSchema.required, [
+        "feedbackId",
+        "message",
+      ]);
+      assert.deepStrictEqual(tools.get(FEEDBACK_RESOLVE_TOOL_NAME)?.inputSchema.required, [
+        "feedbackId",
+      ]);
+    } finally {
+      await client.close();
+    }
+  });
+
+  test("a feedback mutation the extension never answers reports an error rather than hanging", async () => {
+    // The extension logs and sends nothing when a handler throws, so only a deadline on the request
+    // settles the tool call. Without one the agent waits until the socket drops.
+    const server = await startServer(ackWith(true));
+    try {
+      const result = await runFeedbackReply(
+        { target: server.target, cwd: server.target.repoRoot },
+        "codex",
+        { feedbackId: "feedback-1", message: "I changed it." },
+        undefined,
+        150,
+      );
+      assert.strictEqual(result.isError, true);
+      assert.match(result.content[0].text, /did not complete/);
+    } finally {
+      await server.dispose();
+    }
   });
 
   // A zero-argument tool may be called with no `arguments` field at all. Declaring an input schema
@@ -154,10 +203,13 @@ suite("MCP paireto_plan_review tool exposure", () => {
     }
   };
 
+  /** Every harness can answer feedback, so these ride alongside whatever else it is given. */
+  const FEEDBACK_TOOLS = [FEEDBACK_REPLY_TOOL_NAME, FEEDBACK_RESOLVE_TOOL_NAME];
+
   test("Kiro gets the plan-review tool", async () => {
     assert.deepStrictEqual(
       await toolNames("kiro"),
-      [PLAN_REVIEW_TOOL_NAME, REVIEW_TOOL_NAME, GUIDED_REVIEW_TOOL_NAME].sort(),
+      [PLAN_REVIEW_TOOL_NAME, REVIEW_TOOL_NAME, GUIDED_REVIEW_TOOL_NAME, ...FEEDBACK_TOOLS].sort(),
     );
   });
 
@@ -165,7 +217,7 @@ suite("MCP paireto_plan_review tool exposure", () => {
     test(`${harness} does not get the plan-review tool`, async () => {
       assert.deepStrictEqual(
         await toolNames(harness),
-        [REVIEW_TOOL_NAME, GUIDED_REVIEW_TOOL_NAME].sort(),
+        [REVIEW_TOOL_NAME, GUIDED_REVIEW_TOOL_NAME, ...FEEDBACK_TOOLS].sort(),
       );
     });
   }
