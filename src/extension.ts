@@ -370,6 +370,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // The MCP server holds a liveness connection per session; when the last one drops, the agent
     // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).
+    onFeedbackReply: (msg) => {
+      warnForeignRepo(msg.repoRoot);
+      return reviewController.replyToFeedback(
+        msg.repoRoot,
+        msg.feedbackId,
+        msg.message,
+        msg.harness,
+        msg.sessionId,
+      );
+    },
+    onFeedbackResolve: (msg) => {
+      warnForeignRepo(msg.repoRoot);
+      return reviewController.resolveFeedback(
+        msg.repoRoot,
+        msg.feedbackId,
+        msg.harness,
+        msg.sessionId,
+      );
+    },
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => agents.detachSession(sessionId),
     onHandshakeRejected: (rejection) => announceRefusedPlugin(rejection),

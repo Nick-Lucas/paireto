@@ -9,7 +9,12 @@ import { basename, join } from "node:path";
 import * as vscode from "vscode";
 
 import type { ReviewGateResult, StopGateResult } from "../bridge/types.js";
-import { CommentSession, GateComment, deleteComment } from "../comments/CommentSession.js";
+import {
+  CommentSession,
+  GateComment,
+  deleteComment,
+  feedbackActivityComment,
+} from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { kindLabel, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
@@ -30,6 +35,7 @@ import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { FeedbackStore } from "../storage/FeedbackStore.js";
 import type { FeedbackRef } from "../protocol/paths.js";
+import type { Harness } from "../protocol/types.js";
 import { currentFeedbackRef } from "../git/gitCli.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
@@ -70,7 +76,13 @@ import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { userFeedback, type ReviewThread } from "./reviewTypes.js";
-import { editFeedback, markFeedbackSent, pendingFeedback } from "./feedbackState.js";
+import {
+  appendFeedbackReply,
+  editFeedback,
+  markFeedbackSent,
+  pendingFeedback,
+  resolveFeedback,
+} from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
 
 /** A review comment: the VS Code comment instance paired with its serializable model. */
@@ -1988,7 +2000,14 @@ export class ReviewController implements vscode.Disposable {
     const label = model.changeset
       ? `Changeset: ${model.changeset.title}`
       : this.commentLocationLabel(model.repoRoot, model.filePath, line);
-    this.commentSession.restore(uri, range, comment, label);
+    this.commentSession.restore(
+      uri,
+      range,
+      comment,
+      activityComments(model),
+      label,
+      model.resolvedAt !== undefined,
+    );
     this.comments.set(model.id, { comment, model });
   }
 
@@ -2040,6 +2059,102 @@ export class ReviewController implements vscode.Disposable {
         "Paireto could not save feedback. The feedback remains visible in this window.",
       );
       return false;
+    }
+  }
+
+  /** Re-render one thread after its activity changed. It carries one comment, so this is the whole
+   *  thread: the reviewer's words, then everything the agent has added under them. */
+  private refreshFeedbackActivity(entry: ReviewEntry): void {
+    const thread = entry.comment.thread;
+    if (!thread) {
+      return;
+    }
+    thread.comments = [entry.comment, ...activityComments(entry.model)];
+    thread.state = entry.model.resolvedAt
+      ? vscode.CommentThreadState.Resolved
+      : vscode.CommentThreadState.Unresolved;
+  }
+
+  /** Add an agent's reply to one item. Works whether or not the item is live in this window: an agent
+   *  can answer long after the review closed, or after a checkout moved the bucket out of view. */
+  async replyToFeedback(
+    repoRoot: string,
+    feedbackId: string,
+    message: string,
+    harness: Harness,
+    sessionId?: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    const body = message.trim();
+    const id = feedbackId.trim();
+    if (!body) {
+      return { ok: false, message: "The feedback reply cannot be empty." };
+    }
+    const at = new Date().toISOString();
+    const root = this.roots.gitRoots.find((candidate) => candidate.repoRoot === repoRoot);
+    if (!root) {
+      return { ok: false, message: "The feedback repository is not open in this window." };
+    }
+    try {
+      const live = this.comments.get(id);
+      if (live && live.model.repoRoot === root.repoRoot) {
+        Object.assign(
+          live.model,
+          appendFeedbackReply(live.model, { body, at, harness, sessionId }),
+        );
+        if (!(await this.persistRepoFeedback(root.repoRoot))) {
+          return { ok: false, message: "Paireto could not save the feedback reply." };
+        }
+        this.refreshFeedbackActivity(live);
+        this.changeEmitter.fire();
+        return { ok: true, message: `Reply added to feedback ${id}.` };
+      }
+      const updated = await this.feedbackStore.updateById(root.repoRoot, id, (item) =>
+        appendFeedbackReply(item, { body, at, harness, sessionId }),
+      );
+      if (!updated) {
+        return { ok: false, message: `Feedback ${id} was not found in this repository.` };
+      }
+      return { ok: true, message: `Reply added to feedback ${id}.` };
+    } catch (error) {
+      log.error(`feedback reply failed: ${String(error)}`);
+      return { ok: false, message: "Paireto could not save the feedback reply." };
+    }
+  }
+
+  /** Mark one item resolved. Idempotent: a second resolve adds nothing and still reports success. */
+  async resolveFeedback(
+    repoRoot: string,
+    feedbackId: string,
+    harness: Harness,
+    sessionId?: string,
+  ): Promise<{ ok: boolean; message: string }> {
+    const at = new Date().toISOString();
+    const id = feedbackId.trim();
+    const root = this.roots.gitRoots.find((candidate) => candidate.repoRoot === repoRoot);
+    if (!root) {
+      return { ok: false, message: "The feedback repository is not open in this window." };
+    }
+    try {
+      const live = this.comments.get(id);
+      if (live && live.model.repoRoot === root.repoRoot) {
+        Object.assign(live.model, resolveFeedback(live.model, { at, harness, sessionId }));
+        if (!(await this.persistRepoFeedback(root.repoRoot))) {
+          return { ok: false, message: "Paireto could not save the feedback resolution." };
+        }
+        this.refreshFeedbackActivity(live);
+        this.changeEmitter.fire();
+        return { ok: true, message: `Feedback ${id} is resolved.` };
+      }
+      const updated = await this.feedbackStore.updateById(root.repoRoot, id, (item) =>
+        resolveFeedback(item, { at, harness, sessionId }),
+      );
+      if (!updated) {
+        return { ok: false, message: `Feedback ${id} was not found in this repository.` };
+      }
+      return { ok: true, message: `Feedback ${id} is resolved.` };
+    } catch (error) {
+      log.error(`feedback resolution failed: ${String(error)}`);
+      return { ok: false, message: "Paireto could not save the feedback resolution." };
     }
   }
 
@@ -2150,6 +2265,14 @@ function scopedChanges(repoRoot: string, changes: ChangesModel): RepositoryChang
     compareLabel: changes.compareLabel,
     compareRef: changes.compareRef,
   };
+}
+
+function activityComments(model: ReviewThread): vscode.Comment[] {
+  return model.activities.flatMap((activity) =>
+    activity.kind === "feedback"
+      ? []
+      : [feedbackActivityComment({ ...activity, author: `${activity.harness} agent` })],
+  );
 }
 
 function feedbackRefEqual(a: FeedbackRef, b: FeedbackRef): boolean {
