@@ -167,6 +167,9 @@ export class ReviewController implements vscode.Disposable {
   private readonly comments = new Map<string, ReviewEntry>();
   /** The bucket each repository's feedback is currently read from and written to. */
   private readonly activeFeedbackRefs = new Map<string, FeedbackRef>();
+  /** The buckets the open review claimed when it started. A checkout during a review cannot move it
+   *  onto another branch's feedback, and approving clears only what the review was actually shown. */
+  private reviewFeedbackRefs = new Map<string, FeedbackRef>();
   private readonly gate = new ReviewGateRegistry();
   private activeRequestId?: string;
   /** Owning agent session of the active review (best-effort; drives the Agents panel). */
@@ -481,7 +484,7 @@ export class ReviewController implements vscode.Disposable {
         await this.coordinator.switchTo(requestId);
         await this.focusView();
       } else if (choice === APPROVE) {
-        this.approve();
+        void this.approve();
       }
     });
   }
@@ -541,6 +544,7 @@ export class ReviewController implements vscode.Disposable {
     this.activeRequestId = requestId;
     this.activeSessionId = sessionId;
     await this.refresh();
+    this.reviewFeedbackRefs = new Map(this.activeFeedbackRefs);
     const entry: GateEntry = {
       id: requestId,
       sessionId,
@@ -576,6 +580,8 @@ export class ReviewController implements vscode.Disposable {
     await this.setReviewContext(false);
     await this.coordinator.unregister(requestId);
     this.releaseReviewSlot();
+    await this.refresh("feedback-scope");
+    this.reviewFeedbackRefs.clear();
     this.changeEmitter.fire();
   }
 
@@ -1856,18 +1862,44 @@ export class ReviewController implements vscode.Disposable {
 
   // ── GateSession (shared Approve / Send-Feedback commands dispatch here while active) ──
   /** Approve: proceed with no changes (the agent continues, no feedback). */
-  approve(): void {
-    if (this.activeRequestId) {
-      log.info(`review approved for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}`);
-      this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
+  async approve(): Promise<void> {
+    if (!this.activeRequestId) {
+      return;
     }
+    if (pendingFeedback(this.feedbackForReview()).length > 0) {
+      void vscode.window.showWarningMessage(
+        "This review has feedback that has not been sent. Send it before approving.",
+      );
+      return;
+    }
+    // Approving says the review is finished with, so its buckets go — including the delivered items
+    // it was showing. Clear the files first: a detach followed by a persist would write an empty set
+    // over feedback this review never owned.
+    try {
+      await Promise.all(
+        [...this.reviewFeedbackRefs].map(([repoRoot, ref]) =>
+          this.feedbackStore.clear(repoRoot, ref),
+        ),
+      );
+    } catch (error) {
+      log.error(`feedback clear failed: ${String(error)}`);
+      void vscode.window.showErrorMessage(
+        "Paireto could not clear feedback. Approval was cancelled.",
+      );
+      return;
+    }
+    for (const repoRoot of this.reviewFeedbackRefs.keys()) {
+      this.detachCommentsForRepo(repoRoot);
+    }
+    log.info(`review approved for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}`);
+    this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
   }
 
   async sendFeedback(): Promise<void> {
     if (!this.activeRequestId) {
       return;
     }
-    const comments = this.getPendingComments();
+    const comments = pendingFeedback(this.feedbackForReview());
     const feedback = renderRejectedReviewFeedback(comments, this.isMultiRepository());
     if (!feedback) {
       void vscode.window.showWarningMessage(
@@ -1884,7 +1916,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** True when there's ≥1 comment to send (drives which gate button shows). */
   hasFeedback(): boolean {
-    return this.getPendingComments().length > 0;
+    return pendingFeedback(this.feedbackForReview()).length > 0;
   }
 
   /** True when comment file paths need their repo root prefixed to stay unambiguous. */
@@ -2014,6 +2046,13 @@ export class ReviewController implements vscode.Disposable {
   /** Only what has not been delivered — what the next send carries. */
   getPendingComments(): ReviewThread[] {
     return pendingFeedback(this.getComments());
+  }
+
+  private feedbackForReview(): ReviewThread[] {
+    if (this.reviewFeedbackRefs.size === 0) {
+      return this.getComments();
+    }
+    return this.getComments().filter((item) => this.reviewFeedbackRefs.has(item.repoRoot));
   }
 
   async markCommentsSent(items: ReviewThread[]): Promise<boolean> {
