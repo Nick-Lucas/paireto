@@ -130,6 +130,7 @@ export class CommentSession implements vscode.Disposable {
   ): vscode.CommentThread {
     const thread = this.controller.createCommentThread(uri, range, [comment]);
     thread.label = label;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
     comment.thread = thread;
     comment.session = this;
     this.threadSet.add(thread);

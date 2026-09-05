@@ -31,7 +31,7 @@ export function activityDir(): string {
   return path.join(stateDir(), "activity");
 }
 
-/** Durable review feedback, partitioned below this directory by repository and Git ref. */
+/** Durable feedback files for repository refs and workspace fallbacks. */
 export function feedbackDir(): string {
   return path.join(stateDir(), "feedback");
 }

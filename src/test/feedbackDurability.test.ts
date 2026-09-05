@@ -1,15 +1,13 @@
-// Feedback outlives the window that took it. These drive the real add-comment command against the
-// fixture repository, then read the bucket file the extension wrote and reload it through a second
-// FeedbackStore — the same bytes a new window would hydrate from.
+// Read the bucket bytes directly because the extension and test have separate store caches.
 
 import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
+import { readFile } from "node:fs/promises";
 
 import * as vscode from "vscode";
 
 import { currentFeedbackRef } from "../git/gitCli.js";
-import { feedbackDir } from "../protocol/paths.js";
-import { FeedbackStore } from "../storage/FeedbackStore.js";
+import { feedbackFilePath, type FeedbackState } from "../storage/FeedbackStore.js";
 import {
   activateForFixtureRepo,
   inspect,
@@ -45,8 +43,18 @@ suite("feedback durability", () => {
   async function storedFeedback(): Promise<string[]> {
     const ref = await currentFeedbackRef(repoRoot);
     assert.ok(ref, "the fixture repository has a ref");
-    const stored = await new FeedbackStore(feedbackDir()).load(repoRoot, ref);
-    return stored.map((item) => item.id);
+    const file = feedbackFilePath(repoRoot, ref);
+    let raw: string;
+    try {
+      raw = await readFile(file, "utf8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+    const saved = JSON.parse(raw) as { state: FeedbackState };
+    return saved.state.threads.map((item) => item.id);
   }
 
   test("a queued comment is on disk before the window is asked again", async function () {
