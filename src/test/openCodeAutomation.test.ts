@@ -196,7 +196,7 @@ suite("OpenCode adapter automation helpers", () => {
 
     test("isNewUserTurn: a user message is a turn-start only on FIRST sight of its id", () => {
       // OpenCode re-fires message.updated for the SAME user message at turn end; a second forward
-      // would reset changedThisTurn AFTER the turn's edits and hide them from the turn-end review.
+      // would reset the Git baseline AFTER the turn's edits and hide them from the turn-end review.
       const seen = new Set<string>();
       assert.strictEqual(isNewUserTurn(seen, { role: "user", id: "msg_1" }), true);
       assert.strictEqual(

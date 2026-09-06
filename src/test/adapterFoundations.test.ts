@@ -294,22 +294,22 @@ suite("mapper-fixture helper (claudecode parity demo)", () => {
       expect: { kind: "planProposal", planText: "do the thing" },
     },
     {
-      name: "PreToolUse Edit → preToolUse, isEditTool true",
+      name: "PreToolUse Edit → preToolUse",
       raw: {
         ...base,
         hook_event_name: "PreToolUse",
         tool_name: "Edit",
       } as ClaudeCodeHookEvent,
-      expect: { kind: "preToolUse", toolName: "Edit", isEditTool: true },
+      expect: { kind: "preToolUse", toolName: "Edit" },
     },
     {
-      name: "PostToolUse Read → postToolUse, isEditTool false",
+      name: "PostToolUse Read → postToolUse",
       raw: {
         ...base,
         hook_event_name: "PostToolUse",
         tool_name: "Read",
       } as ClaudeCodeHookEvent,
-      expect: { kind: "postToolUse", isEditTool: false },
+      expect: { kind: "postToolUse" },
     },
     {
       name: "an unsubscribed hook name is dropped",

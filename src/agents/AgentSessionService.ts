@@ -37,7 +37,6 @@ export interface RepoActivity {
 /** What the Stop-gate review decision needs from a session's state — see
  *  AgentSessionService.turnState / ReviewController.awaitStopOutcome. */
 export interface TurnState {
-  changedThisTurn: boolean;
   /** A Task-tool subagent tracked via SubagentStart/Stop is still active, OR (Claude Code
    *  v2.1.145+) the session's latest Stop/SubagentStop reported pending background_tasks/
    *  session_crons — see AgentSession.hasPendingWork. */
@@ -254,15 +253,11 @@ export class AgentSessionService implements vscode.Disposable {
     this.sessions.get(sessionId)?.clearAttention();
   }
 
-  /** Everything the Stop-gate review decision needs from this session's state, in one query — see
-   *  ReviewController.awaitStopOutcome. AgentSession owns both facts; this is the single place a
-   *  caller reads them, rather than pulling each one separately. */
+  /** What the Stop-gate review decision needs from this session's state — see
+   *  ReviewController.awaitStopOutcome. */
   turnState(sessionId: string | undefined): TurnState {
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
-    return {
-      changedThisTurn: session?.changedThisTurn ?? false,
-      hasPendingWork: session?.hasPendingWork ?? false,
-    };
+    return { hasPendingWork: session?.hasPendingWork ?? false };
   }
 
   /** Record the background-task/session-cron counts from a Stop event (the blocking

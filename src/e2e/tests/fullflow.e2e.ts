@@ -16,6 +16,7 @@
 import * as fs from "node:fs";
 import * as crypto from "node:crypto";
 import * as path from "node:path";
+import * as assert from "node:assert";
 
 import * as vscode from "vscode";
 
@@ -135,6 +136,17 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         return reviewGates(snap)[0];
       });
       log.push(`review gate ${firstReview.id}`);
+      await wait("the edited files to be available for review", async () => {
+        const snap = await inspect();
+        const paths = snap.repositories.flatMap((repo) => [
+          ...repo.stagedPaths,
+          ...repo.unstagedPaths,
+        ]);
+        return paths.includes("hello.txt") && paths.includes("bye.txt");
+      });
+      if (driver.caps.turnEndReview === "blocking") {
+        assert.strictEqual((await inspect()).reviewActive, true);
+      }
       await ensureComment(
         { surface: "review", kind: "comment", path: "hello.txt", text: REVIEW_FEEDBACK },
         (snap) => snap.commentBucketCount > 0,
@@ -159,6 +171,11 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         },
       );
       log.push(`review gate ${secondReview.id}`);
+      await wait("the feedback edit to be available for review", async () =>
+        (await inspect()).repositories.some((repo) =>
+          [...repo.stagedPaths, ...repo.unstagedPaths].includes("note.txt"),
+        ),
+      );
       await driveUntil(
         "paireto.gate.approve",
         secondReview.id,

@@ -92,6 +92,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
         unstagedPaths: repository.changes.unstaged.map((file) => file.path),
         committedPaths: repository.changes.committed.map((file) => file.path),
       })),
+      turnBaselinePending: deps.reviewController.turns.capturing,
       guided: guidedSnapshot(),
     };
   };

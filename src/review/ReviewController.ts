@@ -27,6 +27,7 @@ import {
 } from "../git/DiffService.js";
 import type { WorkspaceRootCatalog } from "../git/WorkspaceRootCatalog.js";
 import { currentBranch } from "../git/gitCli.js";
+import { TurnReviewState } from "./TurnReviewState.js";
 import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
@@ -162,6 +163,8 @@ export class ReviewController implements vscode.Disposable {
   private readonly repositoryStates = new Map<string, RepositoryReviewState>();
   private readonly comments = new Map<string, ReviewEntry>();
   private readonly gate = new ReviewGateRegistry();
+  /** Turn-start Git snapshots, one per agent session — the turn-end gate's "did anything change?". */
+  readonly turns: TurnReviewState;
   private activeRequestId?: string;
   /** Owning agent session of the active review (best-effort; drives the Agents panel). */
   private activeSessionId?: string;
@@ -206,6 +209,7 @@ export class ReviewController implements vscode.Disposable {
   ) {
     this.compareTo = store.getCompareTo();
     this.layout = store.getLayout();
+    this.turns = new TurnReviewState(() => this.roots.gitRoots.map((root) => root.repoRoot));
     // Commenting is always available on the Changes diffs — on the review-scheme side of a locked
     // diff AND on the editable working-tree (file:) side of an editable one, so it works regardless
     // of whether the file can be edited. Comments remain queued until an agent review consumes them.
@@ -407,27 +411,23 @@ export class ReviewController implements vscode.Disposable {
 
   /**
    * The turn-end gate. Allows the agent to stop immediately unless there's something to review —
-   * the turn touched files, there are uncommitted changes, or the user has left comments — in which
-   * case it opens a review (consuming any unclaimed comments) and blocks until the user resolves it.
+   * the turn changed the working tree or the user has left comments — in which case it opens a
+   * review (consuming any unclaimed comments) and blocks until the user resolves it.
    * Never auto-submits: feedback reaches the agent only via an explicit Send Feedback.
    */
   async awaitStopOutcome(
     sessionId: string | undefined,
-    changedThisTurn: boolean,
     displayName: string,
     repoRoot: string,
     signal: AbortSignal,
     harnessSupported: boolean,
   ): Promise<StopGateResult> {
     const who = sessionId?.slice(0, 8) ?? "unknown";
-    const hasComments = this.hasComments();
     const automatic =
       vscode.workspace.getConfiguration("paireto").get<string>("review.mode", "automatic") ===
       "automatic";
-    // Only park if there's something to review: this agent's turn edited files (per the PostToolUse
-    // hook) or the user has comments to deliver — and no review already owns the surface. Whether a
-    // subagent/background task is still pending is decided by the caller (extension.ts, using
-    // AgentSession's own state) BEFORE this is even invoked — that's not this function's concern.
+    const changedThisTurn = await this.turns.changedSinceStart(sessionId, repoRoot);
+    const hasComments = this.hasComments();
     const open = shouldOpenTurnEndReview({
       reviewInProgress: this.reviewBusy,
       changedThisTurn,
@@ -435,8 +435,13 @@ export class ReviewController implements vscode.Disposable {
       automatic,
       harnessSupported,
     });
+    if (signal.aborted) {
+      return { block: false };
+    }
     if (!open) {
-      log.debug(`review gate: agent ${who} stop allowed, nothing to review`);
+      log.debug(
+        `review gate: agent ${who} stop allowed (changedThisTurn=${changedThisTurn} hasComments=${hasComments} automatic=${automatic} reviewInProgress=${this.reviewBusy} harnessSupported=${harnessSupported})`,
+      );
       return { block: false };
     }
     if (this.roots.gitRoots.length === 0) {
@@ -452,9 +457,13 @@ export class ReviewController implements vscode.Disposable {
       requestId,
       `${displayName} finished its turn and is waiting for your review.`,
     );
-    return this.runReview(requestId, sessionId, repoRoot, signal, (r) =>
+    const outcome = await this.runReview(requestId, sessionId, repoRoot, signal, (r) =>
       r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false },
     );
+    // Before the agent is released, not after: edits it makes on the way to its next Stop would
+    // otherwise be captured as this baseline, and that Stop would report nothing to review.
+    await this.turns.resetBaseline(sessionId, repoRoot);
+    return outcome;
   }
 
   /**
@@ -1880,6 +1889,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.turns.clear();
     this.drainGate();
     for (const d of this.disposables) {
       d.dispose();
@@ -2175,10 +2185,10 @@ export function isFileEditable(file: ChangedFile, changes: ChangesModel): boolea
 
 /**
  * Decide whether the turn-end gate should open a review. Pure/testable. Opens only when no review is
- * already in progress AND either this agent's turn edited files (the PostToolUse edit-tool hook sets
- * `changedThisTurn`) or the user has left review comments to deliver. A turn that changed nothing and
- * has no comments lets the agent stop immediately — we trust the per-turn hook signal, NOT the repo's
- * overall uncommitted state (which says nothing about whether *this* turn changed anything).
+ * already in progress AND either this agent's turn changed the working tree (`changedThisTurn`, from
+ * comparing every reviewed repository against its turn-start snapshot — see TurnReviewState) or the
+ * user has left review comments to deliver. A turn that changed nothing and has no comments lets the
+ * agent stop immediately.
  */
 export function shouldOpenTurnEndReview(opts: {
   reviewInProgress: boolean;

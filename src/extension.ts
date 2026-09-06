@@ -242,6 +242,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         return;
       }
       agents.ingest(event, msg.repoRoot);
+      reviewController.turns.observe(event, msg.repoRoot);
     },
     onPlanReviewHook: (msg, signal) => {
       const strategy = locator.strategyFor(msg.harness);
@@ -357,7 +358,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       return reviewController.awaitStopOutcome(
         sessionId,
-        turn.changedThisTurn,
         strategy.displayName,
         msg.repoRoot,
         signal,
@@ -368,7 +368,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // The MCP server holds a liveness connection per session; when the last one drops, the agent
     // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
-    onSessionDetached: (sessionId) => agents.detachSession(sessionId),
+    onSessionDetached: (sessionId) => {
+      agents.detachSession(sessionId);
+      // A killed agent fires no SessionEnd, so this is the only signal that its baseline is stale.
+      reviewController.turns.forget(sessionId);
+    },
     onHandshakeRejected: (rejection) => announceRefusedPlugin(rejection),
   };
 

@@ -77,11 +77,6 @@ export interface CodexHookEvent {
 // `HarnessEventMeta.planMarkdown`, because this type is BY DEFINITION Codex's own untouched payload.
 // ------------------------------------------------------------------------------------------------
 
-/** The one Codex tool that edits working-tree files. Codex mixes a Claude-style name for shell
- *  (`"Bash"`) with native names elsewhere; file edits arrive as `apply_patch` (patch text in
- *  `tool_input.command`). */
-const EDIT_TOOLS: ReadonlySet<string> = new Set<string>(["apply_patch"]);
-
 // Partial so an unsubscribed/future hook name reads as undefined (dropped) rather than lying about a
 // mapping. Codex has no Notification/SessionEnd/CwdChanged/FileChanged.
 const CODEX_KIND: Partial<Record<CodexHookEventName, AppEventKind>> = {
@@ -120,7 +115,6 @@ export class CodexStrategy implements AgentStrategy {
       harness: this.harness,
       sessionId: event.session_id,
       toolName: event.tool_name,
-      isEditTool: EDIT_TOOLS.has(event.tool_name ?? ""),
       // Present only on a plan-mode Stop (the Codex adapter recovers it from the rollout transcript's
       // Plan item and passes it in `meta`, never merged into the raw event); absent otherwise.
       planText: meta?.planMarkdown,

@@ -2,7 +2,7 @@
 // see the adapter empirical notes). The mapper is the one compile-time-unsound seam (method
 // bivariance narrows the wire union to Codex's dialect), so these fixtures are the safety net:
 // every kind, the plan-proposal edge (a Stop carrying an adapter-recovered plan in meta.planMarkdown,
-// alongside the raw event), the isEditTool=apply_patch classification, and the dropped-event cases.
+// alongside the raw event) and the dropped-event cases.
 
 import { CodexStrategy } from "../harness/CodexStrategy.js";
 import type { CodexHookEvent } from "../harness/CodexStrategy.js";
@@ -37,7 +37,7 @@ suite("CodexStrategy mapper fixtures", () => {
       expect: { kind: "userPromptSubmit" },
     },
     {
-      name: "PreToolUse Bash → preToolUse, isEditTool false (shell is the Claude-style name)",
+      name: "PreToolUse Bash → preToolUse (shell is the Claude-style name)",
       raw: {
         ...base,
         hook_event_name: "PreToolUse",
@@ -45,10 +45,10 @@ suite("CodexStrategy mapper fixtures", () => {
         tool_input: { command: "echo hello" },
         tool_use_id: "exec-fabf39ac",
       } as CodexHookEvent,
-      expect: { kind: "preToolUse", toolName: "Bash", isEditTool: false },
+      expect: { kind: "preToolUse", toolName: "Bash" },
     },
     {
-      name: "PreToolUse apply_patch → preToolUse, isEditTool true",
+      name: "PreToolUse apply_patch → preToolUse",
       raw: {
         ...base,
         hook_event_name: "PreToolUse",
@@ -56,10 +56,10 @@ suite("CodexStrategy mapper fixtures", () => {
         tool_input: { command: "*** Begin Patch\n*** Add File: note.txt\n+hi\n*** End Patch" },
         tool_use_id: "exec-0149",
       } as CodexHookEvent,
-      expect: { kind: "preToolUse", toolName: "apply_patch", isEditTool: true },
+      expect: { kind: "preToolUse", toolName: "apply_patch" },
     },
     {
-      name: "PreToolUse update_plan → preToolUse, isEditTool false",
+      name: "PreToolUse update_plan → preToolUse",
       raw: {
         ...base,
         hook_event_name: "PreToolUse",
@@ -67,10 +67,10 @@ suite("CodexStrategy mapper fixtures", () => {
         tool_input: { plan: [{ step: "inspect", status: "in_progress" }] },
         tool_use_id: "exec-3741660f",
       } as CodexHookEvent,
-      expect: { kind: "preToolUse", toolName: "update_plan", isEditTool: false },
+      expect: { kind: "preToolUse", toolName: "update_plan" },
     },
     {
-      name: "PostToolUse apply_patch → postToolUse, isEditTool true",
+      name: "PostToolUse apply_patch → postToolUse",
       raw: {
         ...base,
         hook_event_name: "PostToolUse",
@@ -78,7 +78,7 @@ suite("CodexStrategy mapper fixtures", () => {
         tool_response: "Exit code: 0\nWall time: 0.1 seconds\nOutput:\nSuccess.",
         tool_use_id: "exec-0149",
       } as CodexHookEvent,
-      expect: { kind: "postToolUse", isEditTool: true },
+      expect: { kind: "postToolUse" },
     },
     {
       name: "PermissionRequest → dropped (cannot distinguish auto-review from a user prompt)",

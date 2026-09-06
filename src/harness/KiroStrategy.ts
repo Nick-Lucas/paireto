@@ -27,19 +27,6 @@ export interface KiroHookEvent {
   file_path?: string;
 }
 
-/** The tools Kiro itself classifies as `fs_write`. A turn only earns a review when it changed
- *  files, so a name missing here means the turn-end review never opens. */
-const EDIT_TOOLS: ReadonlySet<string> = new Set([
-  "write",
-  "fs_write",
-  "fs_append",
-  "str_replace",
-  "delete_file",
-  "edit_code",
-  "semantic_rename",
-  "smart_relocate",
-]);
-
 const KIRO_KIND: Partial<Record<KiroHookEventName, AppEventKind>> = {
   SessionStart: "sessionStart",
   UserPromptSubmit: "userPromptSubmit",
@@ -96,7 +83,6 @@ export class KiroStrategy implements AgentStrategy {
       harness: this.harness,
       sessionId: event.session_id,
       toolName: event.tool_name,
-      isEditTool: EDIT_TOOLS.has(event.tool_name ?? ""),
       planText: nativePlan ?? fallbackPlan,
       backgroundTaskCount: 0,
       sessionCronCount: 0,

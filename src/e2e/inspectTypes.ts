@@ -75,6 +75,9 @@ export interface InspectSnapshot {
   /** Which tree row each open diff tab stands for — a tab that outlives its row is a stale record. */
   openDiffs: InspectOpenDiff[];
   repositories: InspectRepositoryChanges[];
+  /** True while a turn-start Git snapshot is still being taken — a test that edits files must wait
+   *  for this to clear, or its edit lands in the baseline it is about to be compared against. */
+  turnBaselinePending: boolean;
   /** Present only while a guided review is open. */
   guided?: InspectGuided;
 }

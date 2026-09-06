@@ -45,10 +45,6 @@ export interface AppEvent {
   agentId?: string;
   /** Present only on tool events; display-only from here on (the agent-row's last-tool label). */
   toolName?: string;
-  /** The strategy classified this tool as one that edits working-tree files — read on postToolUse to
-   *  mark the turn as having touched files. Harness-owned so the classification (e.g. Claude's
-   *  Edit/Write/MultiEdit/NotebookEdit) never lives in the shared state machine. */
-  isEditTool?: boolean;
   /** Plan markdown, when this event carries one (e.g. Claude Code's ExitPlanMode PermissionRequest). */
   planText?: string;
   /** Present only on notification-kind events. */

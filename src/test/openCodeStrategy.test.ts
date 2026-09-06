@@ -63,19 +63,19 @@ suite("OpenCodeStrategy mapper fixtures", () => {
       expect: { kind: "fileChanged", sessionId: TOP },
     },
     {
-      name: "tool.execute.before (edit) → preToolUse, isEditTool true",
+      name: "tool.execute.before (edit) → preToolUse",
       raw: ev("tool.execute.before", { sessionID: TOP, tool: "edit", callID: "call_1" }),
-      expect: { kind: "preToolUse", sessionId: TOP, toolName: "edit", isEditTool: true },
+      expect: { kind: "preToolUse", sessionId: TOP, toolName: "edit" },
     },
     {
-      name: "tool.execute.before (bash) → preToolUse, isEditTool false",
+      name: "tool.execute.before (bash) → preToolUse",
       raw: ev("tool.execute.before", { sessionID: TOP, tool: "bash", callID: "call_2" }),
-      expect: { kind: "preToolUse", toolName: "bash", isEditTool: false },
+      expect: { kind: "preToolUse", toolName: "bash" },
     },
     {
-      name: "tool.execute.after (write) → postToolUse, isEditTool true",
+      name: "tool.execute.after (write) → postToolUse",
       raw: ev("tool.execute.after", { sessionID: TOP, tool: "write", callID: "call_3" }),
-      expect: { kind: "postToolUse", isEditTool: true },
+      expect: { kind: "postToolUse" },
     },
     {
       name: "tool.execute.before (paireto_submit_plan) → planProposal (opt-in plan edge)",

@@ -117,14 +117,6 @@ export interface ClaudeCodeHookEvent {
 }
 // ------------------------------------------------------------------------------------------------
 
-/** Tools that edit files — running one marks the turn as having touched the working tree. */
-const EDIT_TOOLS: ReadonlySet<string> = new Set<string>([
-  "Edit",
-  "Write",
-  "MultiEdit",
-  "NotebookEdit",
-]);
-
 // Partial so an undocumented/future hook_event_name (one we don't subscribe to) reads as undefined
 // rather than lying about a mapping — toAppEvent then drops it.
 const CLAUDE_CODE_KIND: Partial<Record<ClaudeCodeHookEventName, AppEventKind>> = {
@@ -163,7 +155,6 @@ export class ClaudeCodeStrategy implements AgentStrategy {
       sessionId: event.session_id,
       agentId: event.agent_id,
       toolName: event.tool_name,
-      isEditTool: EDIT_TOOLS.has(event.tool_name ?? ""),
       // ExitPlanMode's `plan` argument is optional: the plan lives in a file, and the plugin
       // recovers it from there into meta.planMarkdown (see plan-file.js).
       planText: extractPlanText(event.tool_input) ?? meta?.planMarkdown,

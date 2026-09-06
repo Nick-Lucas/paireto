@@ -105,8 +105,8 @@ export function applyOpenCodeConfig(config: OpenCodeConfig, planningAgents: stri
 /** Whether a `message.updated` is a NEW user turn-start (its first sighting) rather than an OpenCode
  *  turn-end RE-fire of an already-seen user message. Mutates `seen` (adds the id on first sight).
  *  OpenCode fires message.updated for the SAME user message again at turn end (finalizing its
- *  metadata/summary); each one maps downstream to userPromptSubmit, which resets `changedThisTurn` —
- *  a second reset AFTER the turn's edits hides them from the post-hoc turn-end review. Non-user roles
+ *  metadata/summary); each one maps downstream to userPromptSubmit, which resets the turn's Git
+ *  baseline — a second reset AFTER the turn's edits hides them from the post-hoc turn-end review. Non-user roles
  *  are never a turn-start; a user message with no id can't be deduped, so it fails toward forwarding. */
 export function isNewUserTurn(seen: Set<string>, info: MessageInfo | undefined): boolean {
   if (!info || info.role !== "user") {

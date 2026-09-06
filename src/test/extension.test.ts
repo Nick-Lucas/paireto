@@ -924,14 +924,6 @@ suite("ClaudeCodeStrategy.toAppEvent (claudecode harness mapping)", () => {
     assert.strictEqual(map().kind, "preToolUse");
   });
 
-  test("flags edit-class tools with isEditTool (false for a read-only tool)", () => {
-    for (const tool of ["Edit", "Write", "MultiEdit", "NotebookEdit"]) {
-      assert.strictEqual(map({ tool_name: tool }).isEditTool, true, tool);
-    }
-    assert.strictEqual(map({ tool_name: "Read" }).isEditTool, false);
-    assert.strictEqual(map().isEditTool, false);
-  });
-
   test("returns undefined for an unrecognized hook_event_name (future-proofing, not a crash)", () => {
     assert.strictEqual(
       claudeStrategy.toAppEvent(raw({ hook_event_name: "Bogus" as never })),
@@ -2187,42 +2179,6 @@ suite("AgentSessionService.turnState (Stop-gate signal)", () => {
     mkHookEvent(event, { tool_name: toolName });
   const mk = () => new AgentSessionService(claudeLocator, () => false);
 
-  test("an edit-class tool marks the turn as having touched files", () => {
-    const svc = mk();
-    try {
-      ingestWire(svc, ev("UserPromptSubmit"));
-      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
-      ingestWire(svc, ev("PreToolUse", "Edit"));
-      ingestWire(svc, ev("PostToolUse", "Edit"));
-      assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
-    } finally {
-      svc.dispose();
-    }
-  });
-
-  test("a read-only tool does not mark the turn", () => {
-    const svc = mk();
-    try {
-      ingestWire(svc, ev("UserPromptSubmit"));
-      ingestWire(svc, ev("PostToolUse", "Read"));
-      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
-    } finally {
-      svc.dispose();
-    }
-  });
-
-  test("a new turn (UserPromptSubmit) resets the flag", () => {
-    const svc = mk();
-    try {
-      ingestWire(svc, ev("PostToolUse", "Write"));
-      assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
-      ingestWire(svc, ev("UserPromptSubmit"));
-      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
-    } finally {
-      svc.dispose();
-    }
-  });
-
   test("hasPendingWork reflects a Task-tool subagent believed still active", () => {
     const svc = mk();
     try {
@@ -2504,19 +2460,6 @@ suite("AgentStrategy agnosticism (a second, non-Claude harness)", () => {
       assert.strictEqual(session.state, "awaitingPlanApproval");
       await tick();
       assert.deepStrictEqual(fired, ["awaitingPlanApproval"]);
-    } finally {
-      svc.dispose();
-    }
-  });
-
-  test("isEditTool marks the turn regardless of the (non-Claude) tool name", () => {
-    const { svc } = mkSvc();
-    try {
-      svc.ingest(mk("userPromptSubmit"), "/repo");
-      svc.ingest(mk("postToolUse", { toolName: "shell", isEditTool: false }), "/repo");
-      assert.strictEqual(svc.turnState("s1").changedThisTurn, false);
-      svc.ingest(mk("postToolUse", { toolName: "apply_patch", isEditTool: true }), "/repo");
-      assert.strictEqual(svc.turnState("s1").changedThisTurn, true);
     } finally {
       svc.dispose();
     }
