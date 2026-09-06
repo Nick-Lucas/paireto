@@ -29,19 +29,19 @@ export class GateComment implements vscode.Comment {
   }
 }
 
-/** An agent's reply or resolution, shown under the comment it answers. */
-export function feedbackActivityComment(
-  activity:
+/** A reply or a resolution, shown under the comment it answers. */
+export function buildThreadItemComment(
+  item:
     | { kind: "reply"; body: string; at: string; author: string }
     | { kind: "resolved"; at: string; author: string },
 ): vscode.Comment {
   return {
-    body: activity.kind === "reply" ? activity.body : "Marked this feedback as resolved.",
+    body: item.kind === "reply" ? item.body : "Marked this comment as resolved.",
     mode: vscode.CommentMode.Preview,
-    author: { name: activity.author },
-    contextValue: "activity",
-    label: activity.kind === "reply" ? "Agent reply" : "Resolved",
-    timestamp: new Date(activity.at),
+    author: { name: item.author },
+    contextValue: "threadItem",
+    label: item.kind === "reply" ? "Agent reply" : "Resolved",
+    timestamp: new Date(item.at),
   };
 }
 
@@ -144,7 +144,7 @@ export class CommentSession implements vscode.Disposable {
     label: string;
     /** Each reviewer comment, and the agent's answers that sit under it. Only the reviewer's own
      *  comments are owned: an agent's answer has no owner to point back to. */
-    comments: Array<{ comment: GateComment; activity?: vscode.Comment[] }>;
+    comments: Array<{ comment: GateComment; replies?: vscode.Comment[] }>;
     previous?: vscode.CommentThread;
     resolved?: boolean;
   }): vscode.CommentThread {
@@ -152,7 +152,7 @@ export class CommentSession implements vscode.Disposable {
     const state = resolved
       ? vscode.CommentThreadState.Resolved
       : vscode.CommentThreadState.Unresolved;
-    const rendered = comments.flatMap(({ comment, activity }) => [comment, ...(activity ?? [])]);
+    const rendered = comments.flatMap(({ comment, replies }) => [comment, ...(replies ?? [])]);
     if (previous && previous.uri.toString() === uri.toString()) {
       previous.range = range;
       previous.label = label;

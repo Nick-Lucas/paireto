@@ -27,7 +27,7 @@ import type {
   GuidedFileRow,
   GuidedReviewState,
 } from "../review/guidedPlan.js";
-import { userFeedback, type FeedbackActivity, type ReviewThread } from "../review/reviewTypes.js";
+import { getOpeningComment, type ThreadItem, type ReviewThread } from "../review/reviewTypes.js";
 import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
 import type { SetupPrompt } from "../welcome/installStatus.js";
 import type { AgentSession } from "../agents/AgentSession.js";
@@ -94,11 +94,11 @@ type Node =
     }
   | { kind: "file"; file: RepoChangedFile }
   | { kind: "agent"; session: AgentSession }
-  | { kind: "reviewComment"; comment: ReviewThread }
+  | { kind: "reviewComment"; thread: ReviewThread }
   | {
-      kind: "feedbackActivity";
-      commentId: string;
-      activity: Exclude<FeedbackActivity, { kind: "feedback" }>;
+      kind: "threadItem";
+      threadId: string;
+      item: Exclude<ThreadItem, { kind: "comment" }>;
     }
   | { kind: "planComment"; comment: PlanCommentData }
   | { kind: "placeholder"; label: string };
@@ -342,7 +342,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "agent":
         return { kind: "section", id: "agents", label: "Agents" };
       case "reviewComment":
-      case "feedbackActivity":
+      case "threadItem":
         return { kind: "section", id: "feedback", label: "Feedback" };
       case "planComment":
         return { kind: "section", id: "plan", label: "Plan Review" };
@@ -430,9 +430,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         );
       }
       case "reviewComment":
-        return reviewCommentItem(node.comment);
-      case "feedbackActivity":
-        return createFeedbackThreadItem(node.activity);
+        return reviewCommentItem(node.thread);
+      case "threadItem":
+        return createThreadItemRow(node.item);
       case "planComment":
         return planCommentItem(node.comment);
       case "placeholder": {
@@ -459,10 +459,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "folder":
         return node.entry.children.map((e) => entryToNode(e, node.repoRoot, node.group));
       case "reviewComment":
-        return node.comment.activities.flatMap((activity) =>
-          activity.kind === "feedback"
+        return node.thread.items.flatMap((item) =>
+          item.kind === "comment"
             ? []
-            : [{ kind: "feedbackActivity" as const, commentId: node.comment.id, activity }],
+            : [{ kind: "threadItem" as const, threadId: node.thread.id, item }],
         );
       default:
         return [];
@@ -564,7 +564,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "feedback": {
         const comments = this.review.getComments();
         return comments.length
-          ? comments.map((comment) => ({ kind: "reviewComment", comment }) as Node)
+          ? comments.map((thread) => ({ kind: "reviewComment", thread }) as Node)
           : [placeholder("No comments yet — add them on the diff")];
       }
     }
@@ -897,7 +897,7 @@ export function changesetFileItem(
 }
 
 export function reviewCommentItem(c: ReviewThread): vscode.TreeItem {
-  const feedback = userFeedback(c);
+  const feedback = getOpeningComment(c);
   // A comment on a changeset description is about the grouping, not about a line of code: it carries
   // no file path, so it is named by the changeset it belongs to.
   const [label, where] = c.changeset
@@ -906,38 +906,38 @@ export function reviewCommentItem(c: ReviewThread): vscode.TreeItem {
         `${path.basename(c.filePath)}:${c.line + 1}`,
         `${path.join(c.repoRoot, c.filePath)}:${c.line + 1}`,
       ];
-  // Expandable only when an agent has done something to it, so a row with no activity has no
+  // Expandable only when something was said after the comment, so a lone comment has no
   // twisty to open onto nothing.
-  const hasActivity = c.activities.length > 1;
+  const hasReplies = c.items.length > 1;
   const item = new vscode.TreeItem(
     label,
-    hasActivity ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
+    hasReplies ? vscode.TreeItemCollapsibleState.Collapsed : vscode.TreeItemCollapsibleState.None,
   );
   item.description = `${commentScope(c)} · ${feedback.body}`;
-  item.iconPath = kindThemeIcon(feedback.feedbackKind);
+  item.iconPath = kindThemeIcon(feedback.commentKind);
   item.tooltip = new vscode.MarkdownString(
-    `**${kindLabel(feedback.feedbackKind)}** · ${where}\n\n> ${feedback.quote}\n\n${feedback.body}`,
+    `**${kindLabel(feedback.commentKind)}** · ${where}\n\n> ${feedback.quote}\n\n${feedback.body}`,
   );
   item.contextValue = "reviewComment";
   item.command = { command: Commands.reviewRevealComment, title: "Reveal Comment", arguments: [c] };
   return item;
 }
 
-export function createFeedbackThreadItem(
-  activity: Exclude<FeedbackActivity, { kind: "feedback" }>,
+export function createThreadItemRow(
+  item: Exclude<ThreadItem, { kind: "comment" }>,
 ): vscode.TreeItem {
-  const who = activity.author.kind === "agent" ? `${activity.author.harness} agent` : "You";
-  const item = new vscode.TreeItem(
-    activity.kind === "reply" ? `${who} replied` : "Resolved",
+  const who = item.author.kind === "agent" ? `${item.author.harness} agent` : "You";
+  const row = new vscode.TreeItem(
+    item.kind === "reply" ? `${who} replied` : "Resolved",
     vscode.TreeItemCollapsibleState.None,
   );
-  item.description = activity.kind === "reply" ? activity.body : who;
-  item.iconPath = new vscode.ThemeIcon(activity.kind === "reply" ? "reply" : "pass-filled");
-  item.tooltip = new vscode.MarkdownString(
-    activity.kind === "reply" ? `**Reply** · ${who}\n\n${activity.body}` : `**Resolved** · ${who}`,
+  row.description = item.kind === "reply" ? item.body : who;
+  row.iconPath = new vscode.ThemeIcon(item.kind === "reply" ? "reply" : "pass-filled");
+  row.tooltip = new vscode.MarkdownString(
+    item.kind === "reply" ? `**Reply** · ${who}\n\n${item.body}` : `**Resolved** · ${who}`,
   );
-  item.contextValue = "feedbackActivity";
-  return item;
+  row.contextValue = "threadItem";
+  return row;
 }
 
 /** Where a feedback row sits, shown ahead of its body: the changeset, or the file's directory. */

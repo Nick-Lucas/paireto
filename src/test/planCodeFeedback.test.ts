@@ -26,10 +26,10 @@ function reviewComment(overrides: Partial<ReviewThread> = {}): ReviewThread {
     delivery: "pending",
     createdAt: at,
     updatedAt: at,
-    activities: [
+    items: [
       {
-        kind: "feedback",
-        feedbackKind: "comment",
+        kind: "comment",
+        commentKind: "comment",
         body: "Rename this helper.",
         quote: "const x = 1;",
         at,

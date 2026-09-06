@@ -157,6 +157,21 @@ export function sendReviewRequest(
   });
 }
 
+export function sendStopGate(
+  wire: Wire,
+  opts: { repoRoot: string; id: string; sessionId: string },
+): void {
+  wire.send({
+    t: "stop.gate.request",
+    v: PLUGIN_VERSION,
+    id: opts.id,
+    ts: new Date().toISOString(),
+    harness: "claudecode",
+    repoRoot: opts.repoRoot,
+    event: { hook_event_name: "Stop", session_id: opts.sessionId },
+  });
+}
+
 /** Wait until a gate of this kind holds the foreground — the point from which the shared Approve /
  *  Send Feedback commands dispatch to it. */
 export async function waitForForegroundGate(kind: "plan" | "review" | "guided"): Promise<void> {

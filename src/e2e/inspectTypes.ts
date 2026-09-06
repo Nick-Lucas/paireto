@@ -64,7 +64,7 @@ export interface InspectFeedback {
   repoRoot: string;
   delivery: "pending" | "sent";
   resolved: boolean;
-  activityKinds: Array<"reply" | "resolved">;
+  itemKinds: Array<"reply" | "resolved">;
 }
 
 /** The full read-only snapshot the E2E test asserts against. `planTexts` maps a plan gate id to a

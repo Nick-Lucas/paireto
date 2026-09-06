@@ -37,7 +37,7 @@ suite("feedback lifecycle", () => {
     assert.ok(item, "the queued comment is in the bucket");
     assert.strictEqual(item.delivery, "pending");
     assert.strictEqual(item.resolved, false);
-    assert.deepStrictEqual(item.activityKinds, [], "the reviewer's words are not agent activity");
+    assert.deepStrictEqual(item.itemKinds, [], "the reviewer's words are not agent activity");
     assert.strictEqual(item.repoRoot, repoRoot);
   });
 

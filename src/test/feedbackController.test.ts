@@ -47,10 +47,10 @@ const comment = (id: string, repoRoot = REPO): ReviewThread => ({
   delivery: "pending",
   createdAt: "2026-08-12T20:00:00.000Z",
   updatedAt: "2026-08-12T20:00:00.000Z",
-  activities: [
+  items: [
     {
-      kind: "feedback",
-      feedbackKind: "question",
+      kind: "comment",
+      commentKind: "question",
       body: id,
       quote: "const answer = 42;",
       at: "2026-08-12T20:00:00.000Z",
@@ -106,15 +106,15 @@ function fakeComments(): CommentSession {
       uri: vscode.Uri;
       range: vscode.Range;
       label: string;
-      comments: Array<{ comment: GateComment; activity?: vscode.Comment[] }>;
+      comments: Array<{ comment: GateComment; replies?: vscode.Comment[] }>;
       previous?: vscode.CommentThread;
     }): vscode.CommentThread {
       const reuse =
         args.previous?.uri.toString() === args.uri.toString() ? args.previous : undefined;
       const thread = reuse ?? ({ uri: args.uri, dispose() {} } as unknown as vscode.CommentThread);
-      const rendered = args.comments.flatMap(({ comment, activity }) => [
+      const rendered = args.comments.flatMap(({ comment, replies }) => [
         comment,
-        ...(activity ?? []),
+        ...(replies ?? []),
       ]);
       Object.assign(thread, { range: args.range, label: args.label, comments: rendered });
       for (const { comment } of args.comments) {
@@ -192,9 +192,9 @@ suite("review controller feedback", () => {
     await session.edit("send", "latest text");
     const sent = await c.markCommentsSent(before);
 
-    assert.strictEqual(sent[0].activities[0].body, "latest text");
+    assert.strictEqual(sent[0].items[0].body, "latest text");
     assert.strictEqual(sent[0].delivery, "sent");
-    assert.strictEqual(before[0].activities[0].body, "send", "the earlier snapshot is untouched");
+    assert.strictEqual(before[0].items[0].body, "send", "the earlier snapshot is untouched");
     assert.strictEqual(before[0].delivery, "pending");
   });
 

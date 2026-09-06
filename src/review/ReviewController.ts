@@ -69,8 +69,8 @@ import {
 import { serialiseRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
-import { userFeedback, type ReviewThread } from "./reviewTypes.js";
-import { appendFeedbackReply, pendingFeedback, resolveFeedback } from "./feedbackState.js";
+import { getOpeningComment, type ReviewThread } from "./reviewTypes.js";
+import { appendFeedbackReply, pendingFeedback, resolveThread } from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
 import {
   contextKey,
@@ -207,6 +207,7 @@ export class ReviewController implements vscode.Disposable {
   /** The review slot: held while a review is in progress. A second agent review waits in
    *  `reviewWaiters` until the one ahead resolves (at most one review pending at a time). */
   private reviewBusy = false;
+  private agentRepliedOrResolvedComment = false;
   private readonly reviewWaiters: Array<() => void> = [];
   /** The file currently shown in the diff editor, including its independently pinned baseline. */
   private openDiffFile?: OpenDiffState;
@@ -461,6 +462,7 @@ export class ReviewController implements vscode.Disposable {
       reviewInProgress: this.reviewBusy,
       changedThisTurn,
       hasPendingFeedback,
+      agentRepliedOrResolvedComment: this.agentRepliedOrResolvedComment,
       automatic,
       harnessSupported,
     });
@@ -478,13 +480,15 @@ export class ReviewController implements vscode.Disposable {
       return { block: false };
     }
     // Technical, not narrative: the raw decision inputs, for debugging exactly why the gate opened.
-    const reason = `changedThisTurn=${changedThisTurn} hasPendingFeedback=${hasPendingFeedback} automatic=${automatic} reviewInProgress=${this.reviewBusy}`;
+    const reason = `changedThisTurn=${changedThisTurn} hasPendingFeedback=${hasPendingFeedback} agentRepliedOrResolvedToComment=${this.agentRepliedOrResolvedComment} automatic=${automatic} reviewInProgress=${this.reviewBusy}`;
     log.info(`review opened for agent ${who}: turn-end (${reason})`);
     this.reviewBusy = true;
     const requestId = newReviewId();
     this.notifyReviewOpened(
       requestId,
-      `${displayName} finished its turn and is waiting for your review.`,
+      !changedThisTurn && !hasPendingFeedback
+        ? `${displayName} answered your review comments.`
+        : `${displayName} finished its turn and is waiting for your review.`,
     );
     const outcome = await this.runReview(requestId, sessionId, repoRoot, signal, (r) =>
       r.status === "submitted" ? { block: true, reason: r.feedback } : { block: false },
@@ -597,6 +601,7 @@ export class ReviewController implements vscode.Disposable {
     this.activeSessionId = undefined;
     this.guidedPlan = undefined;
     this.guidedCompareTo = undefined;
+    this.agentRepliedOrResolvedComment = false;
     // Feedback left on a changeset description outlives the plan, and that document is the only home
     // its thread has — without the content the row would open nothing. The render puts the saved
     // copy back, and it must run before a rebuild the refresh starts can read the provider.
@@ -1537,7 +1542,7 @@ export class ReviewController implements vscode.Disposable {
       delivery: "pending",
       createdAt: now,
       updatedAt: now,
-      activities: [{ kind: "feedback", feedbackKind: kind, body: reply.text, quote, at: now }],
+      items: [{ kind: "comment", commentKind: kind, body: reply.text, quote, at: now }],
       anchor: {
         lineText: quote,
         contextBefore: anchorLines(line - 2, line),
@@ -1602,7 +1607,7 @@ export class ReviewController implements vscode.Disposable {
       delivery: "pending",
       createdAt: now,
       updatedAt: now,
-      activities: [{ kind: "feedback", feedbackKind: kind, body: reply.text, quote, at: now }],
+      items: [{ kind: "comment", commentKind: kind, body: reply.text, quote, at: now }],
       sourceDocument: { uri: reply.thread.uri.toString(), markdown: doc.getText() },
       anchor: {
         lineText: quote,
@@ -1833,9 +1838,9 @@ export class ReviewController implements vscode.Disposable {
     }
     // The count and the delete read the same rule, so the dialog cannot promise the wrong thing.
     const replies = this.feedback?.repliesFor(id).length ?? 0;
-    const opening = userFeedback(model);
+    const opening = getOpeningComment(model);
     const choice = await vscode.window.showWarningMessage(
-      `Delete this ${kindLabel(opening.feedbackKind).toLowerCase()}?`,
+      `Delete this ${kindLabel(opening.commentKind).toLowerCase()}?`,
       {
         modal: true,
         detail:
@@ -2062,14 +2067,14 @@ export class ReviewController implements vscode.Disposable {
       return { ok: false, message: "The feedback reply cannot be empty." };
     }
     const at = new Date().toISOString();
-    return this.amendFeedback(repoRoot, feedbackId, (item) =>
-      appendFeedbackReply(item, { body, at, author: { kind: "agent", harness, sessionId } }),
-    )
+    return this.amendFeedback(repoRoot, feedbackId, (item) => {
+      this.agentRepliedOrResolvedComment = true;
+      return appendFeedbackReply(item, { body, at, author: { kind: "agent", harness, sessionId } });
+    })
       ? { ok: true, message: `Reply added to feedback ${feedbackId.trim()}.` }
       : this.feedbackMiss(repoRoot, feedbackId);
   }
 
-  /** Mark one item resolved. Idempotent: a second resolve adds nothing and still reports success. */
   async resolveFeedback(
     repoRoot: string,
     feedbackId: string,
@@ -2077,9 +2082,12 @@ export class ReviewController implements vscode.Disposable {
     sessionId?: string,
   ): Promise<{ ok: boolean; message: string }> {
     const at = new Date().toISOString();
-    return this.amendFeedback(repoRoot, feedbackId, (item) =>
-      resolveFeedback(item, { at, author: { kind: "agent", harness, sessionId } }),
-    )
+    return this.amendFeedback(repoRoot, feedbackId, (item) => {
+      if (typeof item.resolvedAt === "undefined") {
+        this.agentRepliedOrResolvedComment = true;
+      }
+      return resolveThread(item, { at, author: { kind: "agent", harness, sessionId } });
+    })
       ? { ok: true, message: `Feedback ${feedbackId.trim()} is resolved.` }
       : this.feedbackMiss(repoRoot, feedbackId);
   }
@@ -2455,6 +2463,7 @@ export function shouldOpenTurnEndReview(opts: {
   reviewInProgress: boolean;
   changedThisTurn: boolean;
   hasPendingFeedback: boolean;
+  agentRepliedOrResolvedComment: boolean;
   /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only feedback does. */
   automatic: boolean;
   /** The harness can carry a turn-end review at all — see AgentStrategy.supportsTurnEndReview. */
@@ -2463,7 +2472,9 @@ export function shouldOpenTurnEndReview(opts: {
   return (
     opts.harnessSupported &&
     !opts.reviewInProgress &&
-    ((opts.automatic && opts.changedThisTurn) || opts.hasPendingFeedback)
+    ((opts.automatic && opts.changedThisTurn) ||
+      opts.hasPendingFeedback ||
+      opts.agentRepliedOrResolvedComment)
   );
 }
 

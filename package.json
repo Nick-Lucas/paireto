@@ -640,7 +640,7 @@
           ],
           "enumDescriptions": [
             "Open a Review automatically when the agent finishes a turn that edited files.",
-            "Only start a review if you have queued comments when the agent finishes, or when running /paireto-review from your agent."
+            "Only start a review if you have queued comments when the agent finishes, if an agent has answered a comment, or when running /paireto-review from your agent."
           ],
           "default": "automatic",
           "description": "When Paireto opens a code Review at the end of an agent's turn."

@@ -17,6 +17,7 @@ import {
   inspect,
   openWire,
   queueFileComment,
+  sendStopGate,
   startReview,
   stubWarnings,
   resetWorkbench,
@@ -50,14 +51,14 @@ suite("agent replies to feedback", () => {
   }
 
   /** Read the bucket bytes: the extension owns the only writer for that file. */
-  async function storedActivity(feedbackId: string): Promise<string[]> {
+  async function storedItemKinds(feedbackId: string): Promise<string[]> {
     const ref = await currentFeedbackRef(repoRoot);
     assert.ok(ref);
     const saved = JSON.parse(await readFile(feedbackFilePath(repoRoot, ref), "utf8")) as {
       state: FeedbackState;
     };
     const item = saved.state.threads.find((entry) => entry.id === feedbackId);
-    return (item?.activities ?? []).map((activity) => activity.kind);
+    return (item?.items ?? []).map((activity) => activity.kind);
   }
 
   test("a reply lands on the item, in the window and on disk", async function () {
@@ -75,9 +76,9 @@ suite("agent replies to feedback", () => {
     assert.strictEqual(response.ok, true, String(response.message));
 
     const item = (await inspect()).feedback.find((entry) => entry.id === id);
-    assert.deepStrictEqual(item?.activityKinds, ["reply"]);
+    assert.deepStrictEqual(item?.itemKinds, ["reply"]);
     assert.strictEqual(item?.resolved, false, "a reply is not a resolution");
-    assert.deepStrictEqual(await storedActivity(id), ["feedback", "reply"]);
+    assert.deepStrictEqual(await storedItemKinds(id), ["comment", "reply"]);
   });
 
   test("resolving marks the item resolved and is idempotent", async function () {
@@ -96,7 +97,7 @@ suite("agent replies to feedback", () => {
     assert.strictEqual(second.ok, true, "resolving twice is not an error");
     const item = (await inspect()).feedback.find((entry) => entry.id === id);
     assert.strictEqual(item?.resolved, true);
-    assert.deepStrictEqual(item?.activityKinds, ["resolved"], "the second resolve adds nothing");
+    assert.deepStrictEqual(item?.itemKinds, ["resolved"], "the second resolve adds nothing");
   });
 
   // A guided review E2E left a sent-and-resolved item in the bucket after approve, so pin the rule
@@ -146,5 +147,33 @@ suite("agent replies to feedback", () => {
     );
     assert.strictEqual(response.ok, false);
     assert.match(String(response.message), /not found/i);
+  });
+
+  test("an agent reply parks the next stop, with no files changed", async function () {
+    this.timeout(90_000);
+    const id = await queueFileComment("Rename this helper.");
+    await startReview(wire, { repoRoot, id: "gate-answer-1" });
+    await vscode.commands.executeCommand(Commands.gateSendFeedback);
+    await waitFor("the review to resolve on send", () =>
+      wire.messages.find((m) => m.t === "review.await.response"),
+    );
+
+    send("feedback.reply.request", "req-answer-1", {
+      feedbackId: id,
+      message: "Renamed it to loadSession.",
+    });
+    await waitFor("the reply response", () =>
+      wire.messages.find((m) => m.t === "feedback.reply.response" && m.id === "req-answer-1"),
+    );
+
+    sendStopGate(wire, { repoRoot, id: "stop-answer-1", sessionId: "answer-session" });
+    await waitFor("the review to open for the answer", async () =>
+      (await inspect()).reviewActive ? true : undefined,
+    );
+
+    await vscode.commands.executeCommand(Commands.gateApprove);
+    await waitFor("the stop gate to answer", () =>
+      wire.messages.find((m) => m.t === "stop.gate.response" && m.id === "stop-answer-1"),
+    );
   });
 });

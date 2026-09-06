@@ -4,12 +4,11 @@ import {
   appendFeedbackReply,
   editFeedback,
   editFeedbackReply,
-  markFeedbackSent,
   pendingFeedback,
   removeFeedbackReply,
-  resolveFeedback,
+  resolveThread,
 } from "../review/feedbackState.js";
-import { userFeedback, type ReviewThread } from "../review/reviewTypes.js";
+import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 
 suite("feedback lifecycle", () => {
   const item = (over: Partial<ReviewThread> = {}): ReviewThread => ({
@@ -22,10 +21,10 @@ suite("feedback lifecycle", () => {
     delivery: "pending",
     createdAt: "2026-08-12T20:00:00.000Z",
     updatedAt: "2026-08-12T20:00:00.000Z",
-    activities: [
+    items: [
       {
-        kind: "feedback",
-        feedbackKind: "comment",
+        kind: "comment",
+        commentKind: "comment",
         body: "Please simplify this.",
         quote: "complex();",
         at: "2026-08-12T20:00:00.000Z",
@@ -41,10 +40,6 @@ suite("feedback lifecycle", () => {
       pendingFeedback([sent, pending]).map((entry) => entry.id),
       ["pending"],
     );
-    assert.deepStrictEqual(markFeedbackSent([sent, pending], "2026-08-12T20:01:00.000Z"), [
-      sent,
-      { ...pending, delivery: "sent", updatedAt: "2026-08-12T20:01:00.000Z" },
-    ]);
   });
 
   test("editing sent or resolved feedback makes it pending and unresolved", () => {
@@ -55,7 +50,7 @@ suite("feedback lifecycle", () => {
     );
     assert.strictEqual(edited.delivery, "pending");
     assert.strictEqual(edited.resolvedAt, undefined);
-    assert.strictEqual(userFeedback(edited).body, "Please simplify both branches.");
+    assert.strictEqual(getOpeningComment(edited).body, "Please simplify both branches.");
   });
 
   test("an agent reply adds activity without resolving, and does not make the item sendable", () => {
@@ -66,8 +61,8 @@ suite("feedback lifecycle", () => {
     });
     assert.strictEqual(replied.resolvedAt, undefined);
     assert.strictEqual(replied.delivery, "sent", "an answer is not new feedback");
-    assert.deepStrictEqual(replied.activities, [
-      userFeedback(replied),
+    assert.deepStrictEqual(replied.items, [
+      getOpeningComment(replied),
       {
         id: `${replied.id}#1`,
         kind: "reply",
@@ -94,7 +89,7 @@ suite("feedback lifecycle", () => {
     const gone = removeFeedbackReply(two, `${two.id}#1`, at);
 
     const three = appendFeedbackReply(gone, { body: "third", at, author: { kind: "reviewer" } });
-    const ids = three.activities.flatMap((a) => (a.kind === "feedback" ? [] : [a.id]));
+    const ids = three.items.flatMap((a) => (a.kind === "comment" ? [] : [a.id]));
     assert.deepStrictEqual(ids, [`${three.id}#2`, `${three.id}#3`], "a deleted name is not reused");
   });
 
@@ -105,29 +100,26 @@ suite("feedback lifecycle", () => {
 
     const edited = editFeedbackReply(two, `${two.id}#1`, "first, revised", at);
 
-    const bodies = edited.activities.flatMap((a) => (a.kind === "reply" ? [a.body] : []));
+    const bodies = edited.items.flatMap((a) => (a.kind === "reply" ? [a.body] : []));
     assert.deepStrictEqual(bodies, ["first, revised", "second"]);
     assert.strictEqual(
-      userFeedback(edited).body,
-      userFeedback(two).body,
+      getOpeningComment(edited).body,
+      getOpeningComment(two).body,
       "the opener is untouched",
     );
   });
 
   test("resolve is idempotent", () => {
-    const first = resolveFeedback(item({ delivery: "sent" }), {
+    const first = resolveThread(item({ delivery: "sent" }), {
       at: "2026-08-12T20:05:00.000Z",
       author: { kind: "agent", harness: "codex" },
     });
-    const second = resolveFeedback(first, {
+    const second = resolveThread(first, {
       at: "2026-08-12T20:06:00.000Z",
       author: { kind: "agent", harness: "codex" },
     });
     assert.strictEqual(second, first);
     assert.strictEqual(first.resolvedAt, "2026-08-12T20:05:00.000Z");
-    assert.strictEqual(
-      first.activities.filter((activity) => activity.kind === "resolved").length,
-      1,
-    );
+    assert.strictEqual(first.items.filter((activity) => activity.kind === "resolved").length, 1);
   });
 });

@@ -19,7 +19,7 @@ import {
   type FeedbackHost,
 } from "../review/feedback/FeedbackSession.js";
 import { appendFeedbackReply } from "../review/feedbackState.js";
-import { userFeedback, type ReviewThread } from "../review/reviewTypes.js";
+import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 import { feedbackFilePath, type FeedbackState } from "../storage/FeedbackStore.js";
 
 const SCHEME = "paireto-feedback-session-doc";
@@ -63,10 +63,10 @@ const comment = (id: string, over: Partial<ReviewThread> = {}): ReviewThread => 
   delivery: "pending",
   createdAt: WHEN,
   updatedAt: WHEN,
-  activities: [
+  items: [
     {
-      kind: "feedback",
-      feedbackKind: "comment",
+      kind: "comment",
+      commentKind: "comment",
       body: id,
       quote: "const answer = 42;",
       at: WHEN,
@@ -173,7 +173,7 @@ suite("feedback session", () => {
   function seed(models: ReviewThread[], repoRoot = REPO, ref = MAIN): void {
     const file = feedbackFilePath(repoRoot, ref);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ version: 1, state: { threads: models } }));
+    fs.writeFileSync(file, JSON.stringify({ version: 2, state: { threads: models } }));
   }
 
   /** What a freshly opened window would read for this bucket. */
@@ -401,8 +401,12 @@ suite("feedback session", () => {
     saveComment(drawn);
     await written;
 
-    assert.strictEqual(userFeedback(session.allThreads()[0]).body, "edited in the editor");
-    assert.strictEqual(userFeedback(before[0]).body, "saved", "the earlier snapshot is untouched");
+    assert.strictEqual(getOpeningComment(session.allThreads()[0]).body, "edited in the editor");
+    assert.strictEqual(
+      getOpeningComment(before[0]).body,
+      "saved",
+      "the earlier snapshot is untouched",
+    );
   });
 
   test("a store change does not overwrite text the user is still typing", async () => {
@@ -415,7 +419,7 @@ suite("feedback session", () => {
     await session.edit("typing", "from the store");
 
     assert.strictEqual(String(drawn.body), "half typed");
-    assert.strictEqual(userFeedback(session.allThreads()[0]).body, "from the store");
+    assert.strictEqual(getOpeningComment(session.allThreads()[0]).body, "from the store");
   });
 
   test("a comment that moves document gets a new thread and the old one is disposed", async () => {
@@ -509,9 +513,9 @@ suite("feedback session", () => {
     await session.edit("send", "latest text");
     const sent = await session.markSent(new Set(["send"]), "2026-09-01T00:00:00.000Z");
 
-    assert.strictEqual(userFeedback(sent[0]).body, "latest text");
+    assert.strictEqual(getOpeningComment(sent[0]).body, "latest text");
     assert.strictEqual(sent[0].delivery, "sent");
-    assert.strictEqual(userFeedback(snapshot[0]).body, "send");
+    assert.strictEqual(getOpeningComment(snapshot[0]).body, "send");
     assert.strictEqual(snapshot[0].delivery, "pending");
   });
 

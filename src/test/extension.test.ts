@@ -527,13 +527,13 @@ suite("serialiseRejectedReviewFeedback", () => {
   const at = "2026-08-12T20:00:00.000Z";
   const mk = (
     over: Partial<ReviewThread> & {
-      feedbackKind?: CommentKind;
+      commentKind?: CommentKind;
       body?: string;
       quote?: string;
       replies?: Array<{ who: "reviewer" | "agent"; body: string }>;
     } = {},
   ): ReviewThread => {
-    const { feedbackKind = "comment", body = "fix", quote = "line", replies = [], ...rest } = over;
+    const { commentKind = "comment", body = "fix", quote = "line", replies = [], ...rest } = over;
     const id = rest.id ?? "x";
     return {
       id,
@@ -544,8 +544,8 @@ suite("serialiseRejectedReviewFeedback", () => {
       delivery: "pending",
       createdAt: at,
       updatedAt: at,
-      activities: [
-        { kind: "feedback", feedbackKind, body, quote, at },
+      items: [
+        { kind: "comment", commentKind, body, quote, at },
         ...replies.map((reply, index) => ({
           id: `${id}#${index + 1}`,
           kind: "reply" as const,
@@ -580,8 +580,8 @@ suite("serialiseRejectedReviewFeedback", () => {
   test("questions come before comments, each at its own line", () => {
     assert.strictEqual(
       serialiseRejectedReviewFeedback([
-        mk({ id: "c", feedbackKind: "comment", body: "a-comment", line: 41, quote: "later();" }),
-        mk({ id: "q", feedbackKind: "question", body: "a-question", quote: "first();" }),
+        mk({ id: "c", commentKind: "comment", body: "a-comment", line: 41, quote: "later();" }),
+        mk({ id: "q", commentKind: "question", body: "a-question", quote: "first();" }),
       ]),
       dedent`
         Code review feedback received from the user:
@@ -603,7 +603,7 @@ suite("serialiseRejectedReviewFeedback", () => {
     assert.strictEqual(
       serialiseRejectedReviewFeedback([
         mk({
-          feedbackKind: "question",
+          commentKind: "question",
           body: "Why the cast here?",
           quote: "const x = y as T;",
           replies: [
@@ -630,7 +630,7 @@ suite("serialiseRejectedReviewFeedback", () => {
 
   test("a resolution is not part of what the agent is asked to address", () => {
     const item = mk({ body: "Please simplify.", quote: "const x = 1;" });
-    item.activities.push({
+    item.items.push({
       id: "x#1",
       kind: "resolved",
       author: { kind: "agent", harness: "claudecode" },
@@ -2238,9 +2238,22 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
     reviewInProgress: false,
     changedThisTurn: false,
     hasPendingFeedback: false,
+    agentRepliedOrResolvedComment: false,
     automatic: true,
     harnessSupported: true,
   };
+
+  test("an agent answer opens a review even though nothing changed", () => {
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, agentRepliedOrResolvedComment: true }),
+      true,
+    );
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, automatic: false, agentRepliedOrResolvedComment: true }),
+      true,
+      "the reviewer asked the question, so manual mode shows the answer too",
+    );
+  });
   test("opens a review when the agent's turn edited files", () => {
     assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
   });
