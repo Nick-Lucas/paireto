@@ -1,640 +1,225 @@
+// What the review controller asks a FeedbackSession for, and what it reports to the window around
+// it. The session's own rules — buckets, rendering, thread groups — are proved in
+// feedbackSession.test.ts.
+
 import * as assert from "node:assert";
-import { mkdtemp, rm, readFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import * as fs from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { mock } from "node:test";
+
 import * as vscode from "vscode";
 
-import {
-  CommentSession,
-  GateComment,
-  deleteComment,
-  type CommentCallbacks,
-} from "../comments/CommentSession.js";
+import type { CommentSession, GateComment } from "../comments/CommentSession.js";
+import type { CommentKind } from "../comments/kinds.js";
+import type { ChangesModel } from "../git/DiffService.js";
 import type { FeedbackRef } from "../git/gitCli.js";
-import { ReviewController } from "../review/ReviewController.js";
-import type { ReviewThread } from "../review/reviewTypes.js";
-import feedbackStorage = require("../storage/FeedbackStore.js");
-import { createStore } from "zustand/vanilla";
-import { subscribeWithSelector } from "zustand/middleware";
-import { immer } from "zustand/middleware/immer";
-import type { FeedbackState, RepoFeedbackStore } from "../storage/FeedbackStore.js";
-
-const realGetFeedbackStore = feedbackStorage.getFeedbackStore;
-const realGetWorkspaceFeedbackStore = feedbackStorage.getWorkspaceFeedbackStore;
-let storeForRepo: (root: string, ref: FeedbackRef) => Promise<TestStore>;
 import { PlanReviewController } from "../plan/PlanReviewController.js";
 import { INCLUDE_FILE_COMMENTS } from "../plan/planCodeFeedback.js";
+import { ReviewController } from "../review/ReviewController.js";
+import {
+  FeedbackSession,
+  type FeedbackContext,
+  type FeedbackHost,
+} from "../review/feedback/FeedbackSession.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
+import gitCli = require("../git/gitCli.js");
+import feedbackId = require("../review/feedbackId.js");
+
+const REPO = "/repo";
+/** The review id every URI this window builds carries. */
+const WINDOW = "current-window";
 
 const branch = (value: string): FeedbackRef => ({ kind: "branch", value });
-const item = (id: string): ReviewThread => ({
+
+const comment = (id: string, repoRoot = REPO): ReviewThread => ({
   id,
-  repoRoot: "/repo",
-  filePath: "a.ts",
+  repoRoot,
+  filePath: "src/a.ts",
   side: "modified",
-  line: 0,
-  anchor: { lineText: "a", lineHash: "a", contextBefore: [], contextAfter: [] },
+  line: 2,
+  anchor: {
+    lineText: "const answer = 42;",
+    contextBefore: [],
+    contextAfter: [],
+    lineHash: "hash",
+  },
   delivery: "pending",
-  createdAt: "now",
-  updatedAt: "now",
-  activities: [{ kind: "feedback", feedbackKind: "comment", body: id, quote: "a", at: "now" }],
+  createdAt: "2026-08-12T20:00:00.000Z",
+  updatedAt: "2026-08-12T20:00:00.000Z",
+  activities: [
+    {
+      kind: "feedback",
+      feedbackKind: "question",
+      body: id,
+      quote: "const answer = 42;",
+      at: "2026-08-12T20:00:00.000Z",
+    },
+  ],
 });
 
-type TestStore = RepoFeedbackStore;
+const NO_CHANGES: ChangesModel = {
+  staged: [],
+  unstaged: [],
+  committed: [],
+  compareLabel: "main",
+  compareRef: null,
+};
 
-function testStore(threads: ReviewThread[] = [], ref: FeedbackRef | null = branch("a")): TestStore {
-  const store = createStore<FeedbackState>()(
-    subscribeWithSelector(immer(() => ({ repoRoot: "/repo", ref: ref ?? undefined, threads }))),
-  );
-  return Object.assign(store, {
-    persist: { rehydrate: async () => {} } as RepoFeedbackStore["persist"],
-  });
-}
-
-function activeStore(c: Harness, root: string): RepoFeedbackStore {
-  return c.feedbackStores.get(root)?.store ?? c.workspaceFeedback!.store;
-}
-
-function seed(c: Harness, model: ReviewThread, ref?: FeedbackRef): void {
-  if (ref && !c.feedbackStores.has(model.repoRoot)) {
-    c.observeFeedbackStore(model.repoRoot, testStore([], ref));
-  }
-  activeStore(c, model.repoRoot).setState((draft) => {
-    draft.threads.push(model);
-  });
-}
-
-interface Harness {
-  feedbackStores: Map<string, { store: RepoFeedbackStore; unsubscribe: () => void }>;
-  workspaceFeedback?: { store: RepoFeedbackStore; unsubscribe: () => void };
-  observeFeedbackStore(root: string, store: RepoFeedbackStore): void;
-  observeWorkspaceFeedbackStore(store: RepoFeedbackStore): void;
-  loadWorkspaceFeedback(root: string): Promise<RepoFeedbackStore>;
+/** The part of the controller these tests drive. Object.create skips the constructor, so each test
+ *  supplies the fields its own path reads. */
+interface Controller {
+  feedbackHost(): FeedbackHost;
+  useFeedback(session: FeedbackSession): void;
   getComments(): ReviewThread[];
-  addFeedback(model: ReviewThread): Promise<void>;
-  rehydrateFeedbackStores(): Promise<void>;
-  latestFeedbackSyncByRepo: Map<string, symbol>;
-  comments: Map<string, { repoRoot: string; comment: GateComment }>;
-  activeRequestId?: string;
-  reviewId: string;
-  syncFeedbackBucket(root: string, ref: FeedbackRef): Promise<void>;
-  restoreFeedback(model: ReviewThread): void;
-  restoreFeedbackUri(model: ReviewThread): vscode.Uri;
-  restoreChangesetDocs(): void;
-  clearAllFeedback(): Promise<void>;
-  dispose(): void;
+  addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<boolean>;
+  revealComment(id: string): Promise<void>;
   markCommentsSent(items: ReviewThread[]): Promise<ReviewThread[]>;
   sendFeedback(): Promise<void>;
-  refresh(): Promise<void>;
-  cleanupReview(id: string): Promise<void>;
-  revealComment(id: string): Promise<void>;
-  changesetDocs: { set(uri: vscode.Uri, markdown: string): void; clear(): void };
+  cleanupReview(requestId: string): Promise<void>;
+  refresh(reason?: string): Promise<void>;
+  feedbackUri(model: ReviewThread): vscode.Uri;
+  activeRequestId?: string;
 }
 
-function harness(): Harness {
-  const stores = new Map<string, TestStore>();
-  storeForRepo = async (root, ref) => {
-    const key = `${root}:${ref.kind}:${ref.value}`;
-    if (!stores.has(key)) {
-      stores.set(key, testStore([], ref));
-    }
-    return stores.get(key)!;
-  };
-  const c = Object.assign(Object.create(ReviewController.prototype), {
-    feedbackStores: new Map(),
-    latestFeedbackSyncByRepo: new Map(),
-    comments: new Map(),
-    reviewId: "current-window",
-    changeEmitter: { fire() {} },
-    disposables: [],
-    drainGate() {},
-    commentSession: {
-      add(reply: vscode.CommentReply, kind: "comment", callbacks: CommentCallbacks) {
-        const comment = new GateComment(reply.text, kind);
-        Object.assign(comment, callbacks);
-        comment.thread = reply.thread;
-        reply.thread.comments = [...reply.thread.comments, comment];
-        return comment;
-      },
-      remove(comment: GateComment) {
-        comment.thread = undefined;
-      },
-      restore(
-        uri: vscode.Uri,
-        range: vscode.Range,
-        comment: GateComment,
-        label: string,
-        existing?: vscode.CommentThread,
-      ) {
-        if (existing) {
-          existing.comments = [...existing.comments, comment];
-          comment.thread = existing;
-          return;
-        }
-        comment.thread = {
-          uri,
-          range,
-          label,
-          comments: [comment],
-          dispose() {},
-        } as unknown as vscode.CommentThread;
-      },
-      reattach(comment: GateComment, uri: vscode.Uri, range: vscode.Range, label: string) {
-        Object.assign(comment.thread!, { uri, range, label });
-        return comment.thread;
-      },
+function build(overrides: Record<string, unknown> = {}): Controller {
+  return Object.assign(
+    Object.create(ReviewController.prototype),
+    {
+      reviewId: WINDOW,
+      changeEmitter: { fire() {} },
+      changesetDocs: { set() {}, clear() {} },
+      commentSession: fakeComments(),
+      repositoryStates: new Map(),
+      lastFeedbackRef: new Map(),
+      roots: { gitRoots: [] },
     },
-    roots: { gitRoots: [] },
-    repositoryStates: new Map([["/repo", {}]]),
-    refreshSeq: new Map(),
-    refreshCounts: new Map(),
-    openDiffs: new Map(),
-    compareTo: { kind: "default" },
-    reviewContent: { refreshAllOpen() {} },
-    changesetDocs: { set() {}, clear() {} },
-    setGuidedContext: async () => {},
-    setReviewContext: async () => {},
-    coordinator: { unregister: async () => {} },
-    releaseReviewSlot() {},
-  }) as Harness;
-  c.observeWorkspaceFeedbackStore(testStore([], null));
-  mock.method(
-    feedbackStorage,
-    "getWorkspaceFeedbackStore",
-    async () => c.workspaceFeedback?.store ?? testStore([], null),
-  );
-  return c;
+    overrides,
+  ) as Controller;
 }
 
-suite("feedback controller persistence", () => {
+/** Enough of a CommentSession for a render to draw through. The real Comments API is proved in
+ *  commenting.test.ts. */
+function fakeComments(): CommentSession {
+  return {
+    place(args: {
+      uri: vscode.Uri;
+      range: vscode.Range;
+      label: string;
+      comments: GateComment[];
+      previous?: vscode.CommentThread;
+    }): vscode.CommentThread {
+      const reuse =
+        args.previous?.uri.toString() === args.uri.toString() ? args.previous : undefined;
+      const thread = reuse ?? ({ uri: args.uri, dispose() {} } as unknown as vscode.CommentThread);
+      Object.assign(thread, { range: args.range, label: args.label, comments: [...args.comments] });
+      for (const item of args.comments) {
+        item.thread = thread;
+      }
+      return thread;
+    },
+    remove(item: GateComment): GateComment[] {
+      item.thread = undefined;
+      return [item];
+    },
+    disposeThreads() {},
+  } as unknown as CommentSession;
+}
+
+/** A session that answers only what the send path asks it for. */
+function heldFeedback(threads: ReviewThread[]): FeedbackSession {
+  return { allThreads: () => threads, hasBucketFor: () => true } as unknown as FeedbackSession;
+}
+
+suite("review controller feedback", () => {
+  let stateHome: string;
+  const opened: FeedbackSession[] = [];
+
   setup(() => {
-    mock.method(
-      feedbackStorage,
-      "getFeedbackStore",
-      (root: string, ref: FeedbackRef) => storeForRepo(root, ref) as Promise<RepoFeedbackStore>,
-    );
-  });
-  teardown(() => {
-    mock.restoreAll();
-  });
-  test("adding feedback creates its VS Code comment through the store subscription", async () => {
-    const c = harness();
-    const session = (c as unknown as { commentSession: CommentSession }).commentSession;
-    const add = mock.method(session, "add", () => {
-      throw new Error("direct UI creation");
-    });
-    try {
-      await c.addFeedback(item("subscription"));
-      assert.strictEqual(c.comments.get("subscription")!.comment.body, "subscription");
-    } finally {
-      add.mock.restore();
-    }
+    stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-controller-"));
   });
 
-  test("deletion updates Zustand before removing the VS Code comment", () => {
-    const c = harness();
-    seed(c, item("delete"), branch("a"));
-    const session = (c as unknown as { commentSession: CommentSession }).commentSession;
-    const remove = mock.method(session, "remove", (comment: GateComment) => {
-      assert.deepStrictEqual(c.getComments(), []);
-      comment.thread = undefined;
-      return [comment];
-    });
-    try {
-      deleteComment(c.comments.get("delete")!.comment);
-      assert.strictEqual(remove.mock.callCount(), 1);
-      assert.strictEqual(c.comments.size, 0);
-    } finally {
-      remove.mock.restore();
-    }
-  });
-
-  test("stored thread groups restore together and delete together", async () => {
-    const c = harness();
-    const session = new CommentSession("feedback-group-state", "Test", "file", {});
-    Object.assign(c, { commentSession: session });
-    try {
-      const store = activeStore(c, "/repo");
-      store.setState((draft) => {
-        draft.threads = [
-          { ...item("parent"), threadId: "parent" },
-          { ...item("reply"), threadId: "parent" },
-          { ...item("separate"), threadId: "separate" },
-        ];
-      });
-      const parent = c.comments.get("parent")!.comment;
-      const reply = c.comments.get("reply")!.comment;
-      assert.strictEqual(parent.thread, reply.thread);
-      assert.notStrictEqual(parent.thread, c.comments.get("separate")!.comment.thread);
-      deleteComment(parent);
-      assert.deepStrictEqual(
-        store.getState().threads.map((model) => model.id),
-        ["separate"],
-      );
-      assert.deepStrictEqual([...c.comments.keys()], ["separate"]);
-    } finally {
-      c.dispose();
+  teardown(async () => {
+    for (const session of opened.splice(0)) {
+      // Close, not flush: the temporary directory goes away next.
+      await session.close();
       session.dispose();
     }
+    mock.restoreAll();
+    fs.rmSync(stateHome, { recursive: true, force: true });
   });
 
-  test("a VS Code rendering failure does not prevent the store write", async () => {
-    const root = await mkdtemp(join(tmpdir(), "paireto-render-failure-"));
-    const c = harness();
+  /** FeedbackSession.open reads the default feedback directory, so the state home points at a fresh
+   *  one while the buckets open. A bucket resolves its file once, so the swap ends there. */
+  async function openFeedback(
+    host: FeedbackHost,
+    roots: FeedbackContext["roots"],
+  ): Promise<FeedbackSession> {
+    const previous = process.env.XDG_STATE_HOME;
+    process.env.XDG_STATE_HOME = stateHome;
     try {
-      const store = await realGetFeedbackStore("/repo", branch("a"), root);
-      c.observeFeedbackStore("/repo", store);
-      Object.assign(c, {
-        restoreFeedback() {
-          throw new Error("editor unavailable");
-        },
-      });
-      await store.setState((draft) => {
-        draft.threads.push(item("kept"));
-      });
-      const saved = JSON.parse(
-        await readFile(feedbackStorage.feedbackFilePath("/repo", branch("a"), root), "utf8"),
-      );
-      assert.strictEqual(saved.state.threads[0].id, "kept");
+      const session = await FeedbackSession.open({ roots }, host);
+      opened.push(session);
+      return session;
     } finally {
-      c.dispose();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("rehydrating an active store updates VS Code through its subscription", async () => {
-    const root = await mkdtemp(join(tmpdir(), "paireto-rehydrate-ui-"));
-    const c = harness();
-    try {
-      const store = await realGetFeedbackStore("/repo", branch("a"), root);
-      await store.setState((draft) => {
-        draft.threads = [item("before")];
-      });
-      c.observeFeedbackStore("/repo", store);
-      const { writeFile } = await import("node:fs/promises");
-      await writeFile(
-        feedbackStorage.feedbackFilePath("/repo", branch("a"), root),
-        JSON.stringify({
-          version: 1,
-          state: { ...store.getState(), threads: [item("from-disk")] },
-        }),
-      );
-      await c.rehydrateFeedbackStores();
-      assert.deepStrictEqual([...c.comments.keys()], ["from-disk"]);
-      assert.deepStrictEqual(
-        c.getComments().map((model) => model.id),
-        ["from-disk"],
-      );
-    } finally {
-      c.dispose();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("adding feedback without a branch writes to the workspace file", async () => {
-    const root = await mkdtemp(join(tmpdir(), "paireto-workspace-controller-"));
-    const c = harness();
-    c.workspaceFeedback!.unsubscribe();
-    c.workspaceFeedback = undefined;
-    let identity: string[] = [];
-    const factory = mock.method(feedbackStorage, "getWorkspaceFeedbackStore", (paths: string[]) => {
-      identity = paths;
-      return realGetWorkspaceFeedbackStore(paths, root);
-    });
-    try {
-      await c.addFeedback(item("fallback"));
-      const file = vscode.workspace.workspaceFile;
-      assert.deepStrictEqual(
-        identity,
-        file && file.scheme !== "untitled"
-          ? [file.fsPath]
-          : vscode.workspace.workspaceFolders!.map((folder) => folder.uri.fsPath),
-      );
-      const saved = JSON.parse(
-        await readFile(feedbackStorage.workspaceFeedbackFilePath(identity, root), "utf8"),
-      );
-      assert.strictEqual(saved.state.threads[0].id, "fallback");
-      assert.strictEqual(c.getComments()[0], c.workspaceFeedback!.store.getState().threads[0]);
-      assert.strictEqual(c.feedbackStores.size, 0);
-    } finally {
-      c.dispose();
-      factory.mock.restore();
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("controller reads store edits and notifies the UI without a save call", async () => {
-    const root = await mkdtemp(join(tmpdir(), "paireto-store-source-"));
-    try {
-      const c = harness();
-      const store = await realGetFeedbackStore("/repo", branch("a"), root);
-      await store.setState((draft) => {
-        draft.threads.push(item("live"));
-      });
-      storeForRepo = async () => store;
-      await c.syncFeedbackBucket("/repo", branch("a"));
-      let changes = 0;
-      Object.assign(c, {
-        changeEmitter: {
-          fire() {
-            changes++;
-          },
-        },
-      });
-      await store.setState((draft) => {
-        draft.threads[0].activities[0].body = "edited in store";
-      });
-      const reader = c as unknown as { getComments(): ReviewThread[] };
-      assert.strictEqual(reader.getComments()[0].activities[0].body, "edited in store");
-      assert.strictEqual(changes, 1);
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
-  });
-
-  test("removing a workspace root detaches feedback without saving or deleting it", async () => {
-    const c = harness();
-    seed(c, item("kept"), branch("a"));
-    let saves = 0;
-    storeForRepo = async () => {
-      saves++;
-      return testStore();
-    };
-    await c.refresh();
-    assert.strictEqual(c.comments.size, 0);
-    assert.strictEqual(c.feedbackStores.size, 0);
-    assert.strictEqual(saves, 0);
-  });
-
-  test("a later bucket load replaces an earlier pending load", async () => {
-    const c = harness();
-    const store = testStore([item("b")]);
-    let finish!: (store: TestStore) => void;
-    let firstCall = true;
-    storeForRepo = async () => {
-      if (firstCall) {
-        firstCall = false;
-        return new Promise((resolve) => {
-          finish = resolve;
-        });
-      }
-      return store;
-    };
-    const first = c.syncFeedbackBucket("/repo", branch("a"));
-    await c.syncFeedbackBucket("/repo", branch("b"));
-    finish(testStore([item("a")]));
-    await first;
-    assert.deepStrictEqual([...c.comments.keys()], ["b"]);
-  });
-
-  test("returning to the active branch cancels a pending switch", async () => {
-    const c = harness();
-    seed(c, item("a"), branch("a"));
-    let finish!: (store: TestStore) => void;
-    storeForRepo = async () =>
-      new Promise((resolve) => {
-        finish = resolve;
-      });
-    const pending = c.syncFeedbackBucket("/repo", branch("b"));
-    await c.syncFeedbackBucket("/repo", branch("a"));
-    finish(testStore([item("b")]));
-    await pending;
-    assert.deepStrictEqual([...c.comments.keys()], ["a"]);
-  });
-
-  test("selecting a workspace store removes the previous workspace's comments", () => {
-    const c = harness();
-    seed(c, item("old-workspace"));
-    const next = testStore([item("new-workspace")], null);
-    c.observeWorkspaceFeedbackStore(next);
-    assert.deepStrictEqual(
-      c.getComments().map((model) => model.id),
-      ["new-workspace"],
-    );
-    assert.deepStrictEqual([...c.comments.keys()], ["new-workspace"]);
-  });
-
-  test("workspace feedback remains visible when a branch store opens", async () => {
-    const c = harness();
-    c.activeRequestId = "review";
-    seed(c, item("live"));
-    const store = testStore([item("stored")]);
-    storeForRepo = async () => store;
-    await c.syncFeedbackBucket("/repo", branch("a"));
-    assert.deepStrictEqual([...c.comments.keys()].sort(), ["live", "stored"]);
-    assert.deepStrictEqual(
-      store
-        .getState()
-        .threads.map((item) => item.id)
-        .sort(),
-      ["stored"],
-    );
-    assert.deepStrictEqual(
-      c.workspaceFeedback!.store.getState().threads.map((model) => model.id),
-      ["live"],
-    );
-  });
-
-  test("comment edits update the store and preserve previous snapshots", async () => {
-    const c = harness();
-    seed(c, item("saved"), branch("a"));
-    const store = activeStore(c, "/repo");
-    const before = store.getState();
-    c.comments.get("saved")!.comment.onSaved!("edited");
-    assert.strictEqual(store.getState().threads[0].activities[0].body, "edited");
-    assert.strictEqual(before.threads[0].activities[0].body, "saved");
-    assert.strictEqual(c.getComments()[0], store.getState().threads[0]);
-  });
-
-  test("store additions and deletions update inline comments", () => {
-    const c = harness();
-    const store = activeStore(c, "/repo");
-    store.setState((draft) => {
-      draft.threads.push(item("new"));
-    });
-    assert.strictEqual(c.comments.get("new")!.comment.body, "new");
-    store.setState((draft) => {
-      draft.threads = [];
-    });
-    assert.strictEqual(c.comments.size, 0);
-    assert.deepStrictEqual(c.getComments(), []);
-  });
-
-  test("store edits preserve unsaved editor text", () => {
-    const c = harness();
-    seed(c, item("editing"), branch("a"));
-    const comment = c.comments.get("editing")!.comment;
-    comment.mode = vscode.CommentMode.Editing;
-    comment.body = "unfinished edit";
-    activeStore(c, "/repo").setState((draft) => {
-      draft.threads[0].delivery = "sent";
-    });
-    assert.strictEqual(comment.body, "unfinished edit");
-  });
-
-  test("switching buckets removes the old UI subscription", async () => {
-    const c = harness();
-    seed(c, item("old"), branch("a"));
-    const old = activeStore(c, "/repo");
-    const next = testStore([item("new")], branch("b"));
-    storeForRepo = async () => next;
-    await c.syncFeedbackBucket("/repo", branch("b"));
-    let changes = 0;
-    Object.assign(c, {
-      changeEmitter: {
-        fire() {
-          changes++;
-        },
-      },
-    });
-    old.setState((draft) => {
-      draft.threads.push(item("hidden"));
-    });
-    assert.strictEqual(changes, 0);
-    assert.deepStrictEqual(
-      c.getComments().map((model) => model.id),
-      ["new"],
-    );
-    next.setState((draft) => {
-      draft.threads[0].activities[0].body = "visible edit";
-    });
-    assert.strictEqual(changes, 1);
-    assert.strictEqual(c.comments.get("new")!.comment.body, "visible edit");
-  });
-
-  test("removing a workspace root and disposing stop store notifications", async () => {
-    for (const remove of [true, false]) {
-      const c = harness();
-      seed(c, item("kept"), branch("a"));
-      const store = activeStore(c, "/repo");
-      if (remove) {
-        await c.refresh();
+      if (previous === undefined) {
+        delete process.env.XDG_STATE_HOME;
       } else {
-        c.dispose();
+        process.env.XDG_STATE_HOME = previous;
       }
-      let changes = 0;
-      Object.assign(c, {
-        changeEmitter: {
-          fire() {
-            changes++;
-          },
-        },
-      });
-      store.setState((draft) => {
-        draft.threads[0].activities[0].body = "after detach";
-      });
-      assert.strictEqual(changes, 0);
-      assert.deepStrictEqual(c.getComments(), []);
     }
-  });
+  }
 
-  test("workspace feedback survives branch switches without being copied into branch files", async () => {
-    const c = harness();
-    seed(c, item("workspace"));
-    seed(c, item("branch-a"), branch("a"));
-    const next = testStore([item("branch-b")], branch("b"));
-    storeForRepo = async () => next;
-    await c.syncFeedbackBucket("/repo", branch("b"));
-    assert.deepStrictEqual(
-      c
-        .getComments()
-        .map((model) => model.id)
-        .sort(),
-      ["branch-b", "workspace"],
-    );
-    assert.deepStrictEqual([...c.comments.keys()].sort(), ["branch-b", "workspace"]);
-    c.workspaceFeedback!.store.setState((draft) => {
-      draft.threads[0].activities[0].body = "updated";
-    });
-    assert.strictEqual(c.comments.get("workspace")!.comment.body, "updated");
-    assert.strictEqual(c.comments.get("branch-b")!.comment.body, "branch-b");
-    c.workspaceFeedback!.store.setState((draft) => {
-      draft.threads = [];
-    });
-    assert.deepStrictEqual([...c.comments.keys()], ["branch-b"]);
-    assert.deepStrictEqual(
-      next.getState().threads.map((model) => model.id),
-      ["branch-b"],
-    );
-  });
-
-  test("workspace comment edits still use the workspace store after a ref is known", async () => {
-    const c = harness();
-    seed(c, item("live"));
-    const store = testStore([item("stored")]);
-    storeForRepo = async () => store;
-    await c.syncFeedbackBucket("/repo", branch("a"));
-    c.comments.get("live")!.comment.onSaved!("assigned edit");
-    assert.strictEqual(
-      c.workspaceFeedback!.store.getState().threads.find((model) => model.id === "live")!
-        .activities[0].body,
-      "assigned edit",
-    );
-  });
+  /** A controller holding one open bucket for REPO. */
+  async function withFeedback(
+    overrides: Record<string, unknown> = {},
+  ): Promise<{ c: Controller; session: FeedbackSession }> {
+    const c = build(overrides);
+    const session = await openFeedback(c.feedbackHost(), [{ repoRoot: REPO, ref: branch("main") }]);
+    c.useFeedback(session);
+    return { c, session };
+  }
 
   test("sending uses the current store value instead of an earlier snapshot", async () => {
-    const c = harness();
-    seed(c, item("send"), branch("a"));
+    const { c, session } = await withFeedback();
+    await session.add(comment("send"));
     const before = c.getComments();
-    c.comments.get("send")!.comment.onSaved!("latest text");
+
+    await session.edit("send", "latest text");
     const sent = await c.markCommentsSent(before);
+
     assert.strictEqual(sent[0].activities[0].body, "latest text");
     assert.strictEqual(sent[0].delivery, "sent");
-    assert.strictEqual(before[0].activities[0].body, "send");
+    assert.strictEqual(before[0].activities[0].body, "send", "the earlier snapshot is untouched");
     assert.strictEqual(before[0].delivery, "pending");
   });
 
-  test("clearing feedback updates the stores and removes inline comments", async () => {
-    const c = harness();
-    seed(c, item("clear"), branch("a"));
-    const store = activeStore(c, "/repo");
-    const warning = mock.method(vscode.window, "showWarningMessage", async () => "Clear All");
-    try {
-      await c.clearAllFeedback();
-    } finally {
-      warning.mock.restore();
-    }
-    assert.deepStrictEqual(store.getState().threads, []);
-    assert.strictEqual(c.comments.size, 0);
-  });
-
-  test("workspace feedback can be sent without a Git ref", async () => {
-    const c = harness();
-    const model = item("retry");
-    seed(c, model);
-    const showError = mock.method(vscode.window, "showErrorMessage", async () => undefined);
-    try {
-      assert.strictEqual((await c.markCommentsSent([model]))[0].delivery, "sent");
-      assert.strictEqual(model.delivery, "pending");
-      assert.strictEqual(showError.mock.callCount(), 0);
-    } finally {
-      showError.mock.restore();
-    }
-  });
-
   test("a code review stays open if no feedback is eligible", async () => {
-    const c = harness();
-    c.activeRequestId = "review";
-    seed(c, item("retry"));
     let fulfilled = false;
-    c.markCommentsSent = async () => [];
-    Object.assign(c, {
+    const c = build({
+      activeRequestId: "review",
       gate: {
         fulfill: () => {
           fulfilled = true;
         },
       },
     });
+    c.useFeedback(heldFeedback([comment("retry")]));
+    c.markCommentsSent = async () => [];
+
     await c.sendFeedback();
+
     assert.strictEqual(fulfilled, false);
   });
 
   test("sending feedback skips items no longer in a store", async () => {
-    const c = harness();
-    const ready = item("ready-note");
-    const waiting = { ...item("waiting-note"), repoRoot: "/unknown" };
-    seed(c, ready, branch("main"));
+    const { c, session } = await withFeedback();
+    const ready = comment("ready-note");
+    const waiting = comment("waiting-note", "/unknown");
+    await session.add(ready);
+
     const sent = await c.markCommentsSent([ready, waiting]);
+
     assert.deepStrictEqual(
       sent.map((model) => model.id),
       [ready.id],
@@ -645,28 +230,28 @@ suite("feedback controller persistence", () => {
   });
 
   test("code review sends only the feedback returned by markCommentsSent", async () => {
-    const c = harness();
-    c.activeRequestId = "review";
-    const ready = item("ready-note");
-    seed(c, ready);
-    seed(c, item("waiting-note"));
-    c.markCommentsSent = async () => [ready];
+    const ready = comment("ready-note");
     let feedback = "";
-    Object.assign(c, {
+    const c = build({
+      activeRequestId: "review",
       gate: {
         fulfill: (_id: string, result: { feedback: string }) => {
           feedback = result.feedback;
         },
       },
     });
+    c.useFeedback(heldFeedback([ready, comment("waiting-note")]));
+    c.markCommentsSent = async () => [ready];
+
     await c.sendFeedback();
+
     assert.match(feedback, /ready-note/);
     assert.doesNotMatch(feedback, /waiting-note/);
   });
 
   test("plan review includes only file feedback returned by markCommentsSent", async () => {
-    const ready = item("ready-note");
-    const waiting = item("waiting-note");
+    const ready = comment("ready-note");
+    const waiting = comment("waiting-note");
     const review = { id: "plan", key: "plan-key", sessionId: "session", harness: "codex" };
     let reason = "";
     const c = Object.assign(Object.create(PlanReviewController.prototype), {
@@ -685,118 +270,156 @@ suite("feedback controller persistence", () => {
         },
       },
     }) as { sendFeedback(review: unknown): Promise<void> };
-    const warning = mock.method(
-      vscode.window,
-      "showWarningMessage",
-      async () => INCLUDE_FILE_COMMENTS,
-    );
-    try {
-      await c.sendFeedback(review);
-      assert.match(reason, /plan-note/);
-      assert.match(reason, /ready-note/);
-      assert.doesNotMatch(reason, /waiting-note/);
-    } finally {
-      warning.mock.restore();
-    }
+    mock.method(vscode.window, "showWarningMessage", async () => INCLUDE_FILE_COMMENTS);
+
+    await c.sendFeedback(review);
+
+    assert.match(reason, /plan-note/);
+    assert.match(reason, /ready-note/);
+    assert.doesNotMatch(reason, /waiting-note/);
   });
 
   test("review cleanup refreshes the branch before releasing the review slot", async () => {
-    const c = harness();
-    c.activeRequestId = "review";
-    let refreshed = false;
-    c.refresh = async () => {
-      assert.strictEqual(c.activeRequestId, undefined);
-      refreshed = true;
-    };
-    await c.cleanupReview("review");
-    assert.ok(refreshed);
-  });
-
-  test("restored diff addresses use this window", () => {
-    const c = harness();
-    const model = item("diff");
-    model.attachment = {
-      group: "staged",
-      baseRef: "INDEX",
-      sourceUri: "paireto-review://old/a.ts?side=base",
-    };
-    assert.strictEqual(c.restoreFeedbackUri(model).authority, "current-window");
-  });
-
-  test("saved changeset descriptions with the same title have separate addresses", () => {
-    const c = harness();
-    const first = item("first");
-    const second = item("second");
-    for (const model of [first, second]) {
-      model.sourceDocument = { uri: "paireto-changeset:/Same.md?id=cs1", markdown: model.id };
-      seed(c, model);
-    }
-    const docs = new Map<string, string>();
-    c.changesetDocs.set = (uri, markdown) => {
-      docs.set(uri.toString(), markdown);
-    };
-    c.restoreChangesetDocs();
-    assert.strictEqual(docs.size, 2);
-    assert.strictEqual(docs.get(c.restoreFeedbackUri(first).toString()), "first");
-    assert.strictEqual(docs.get(c.restoreFeedbackUri(second).toString()), "second");
-  });
-
-  test("review cleanup moves live changeset threads to their saved descriptions", () => {
-    const c = harness();
-    const model = item("snapshot");
-    model.sourceDocument = { uri: "paireto-changeset:/Same.md?id=cs1", markdown: "original" };
-    seed(c, model);
-    c.comments.get(model.id)!.comment.thread = {
-      uri: vscode.Uri.parse(model.sourceDocument.uri),
-      range: new vscode.Range(0, 0, 0, 1),
-      label: "Same",
-    } as vscode.CommentThread;
-    let attached: string | undefined;
-    Object.assign(c, {
-      commentSession: {
-        reattach: (_comment: GateComment, uri: vscode.Uri) => {
-          attached = uri.toString();
-        },
+    const order: string[] = [];
+    const c = build({
+      activeRequestId: "review",
+      changesetDocs: {
+        set() {},
+        clear: () => order.push("clear-docs"),
       },
+      setGuidedContext: async () => {},
+      setReviewContext: async () => {},
+      coordinator: { unregister: async () => {} },
+      releaseReviewSlot: () => order.push("release"),
     });
-    c.restoreChangesetDocs();
-    assert.strictEqual(attached, c.restoreFeedbackUri(model).toString());
+    c.useFeedback({ render: () => order.push("render") } as unknown as FeedbackSession);
+    c.refresh = async (reason) => {
+      assert.strictEqual(reason, "review-ended");
+      assert.strictEqual(c.activeRequestId, undefined, "the slot is already given up");
+      order.push("refresh");
+    };
+
+    await c.cleanupReview("review");
+
+    assert.deepStrictEqual(order, ["clear-docs", "render", "refresh", "release"]);
   });
 
   test("revealing a relocated comment saves its new line", async () => {
-    const c = harness();
     const doc = await vscode.workspace.openTextDocument({ content: "inserted\na\n" });
-    const model = item("moved");
-    seed(c, model);
-    const thread = {
-      uri: doc.uri,
-      range: new vscode.Range(0, 0, 0, 1),
-      comments: [c.comments.get(model.id)!.comment],
-    } as unknown as vscode.CommentThread;
-    c.comments.get(model.id)!.comment.thread = thread;
-    Object.assign(c, {
+    const { c, session } = await withFeedback({
       refresh: async () => {},
       changesFor: () => undefined,
       fallbackCommentUri: async () => doc.uri,
-      commentSession: { reattach: () => thread },
     });
+    const model: ReviewThread = {
+      ...comment("moved"),
+      line: 0,
+      anchor: { lineText: "a", contextBefore: [], contextAfter: [], lineHash: "hash" },
+    };
+    await session.add(model);
+
     await c.revealComment(model.id);
-    assert.strictEqual(c.getComments()[0].line, 1);
-    assert.strictEqual(model.line, 0);
+
+    assert.strictEqual(c.getComments()[0].line, 1, "the anchor found its new line");
+    assert.strictEqual(model.line, 0, "the earlier snapshot is untouched");
   });
 
-  test("restored comment threads are expanded", () => {
-    const session = new CommentSession("feedback-restore-test", "Test", "file", {});
+  test("restored diff addresses use this window", () => {
+    const c = build();
+    const model: ReviewThread = {
+      ...comment("diff"),
+      attachment: {
+        group: "staged",
+        baseRef: "INDEX",
+        sourceUri: "paireto-review://old/a.ts?side=base",
+      },
+    };
+
+    assert.strictEqual(c.feedbackUri(model).authority, WINDOW);
+  });
+
+  test("saved changeset descriptions with the same title have separate addresses", async () => {
+    const docs = new Map<string, string>();
+    const { c, session } = await withFeedback({
+      changesetDocs: {
+        set: (uri: vscode.Uri, markdown: string) => docs.set(uri.toString(), markdown),
+        clear() {},
+      },
+    });
+    const first = comment("first");
+    const second = comment("second");
+    for (const model of [first, second]) {
+      model.sourceDocument = { uri: "paireto-changeset:/Same.md?id=cs1", markdown: model.id };
+      await session.add(model);
+    }
+
+    assert.strictEqual(docs.size, 2);
+    assert.strictEqual(docs.get(c.feedbackUri(first).toString()), "first");
+    assert.strictEqual(docs.get(c.feedbackUri(second).toString()), "second");
+  });
+
+  test("a comment for a repository with no open bucket is refused and reported", async () => {
+    const c = build({
+      refresh: async () => {},
+      roots: {
+        gitRoots: [],
+        gitRootForPath: () => ({ repoRoot: REPO, displayName: "repo", workspaceIndex: 0 }),
+      },
+    });
+    const warning = mock.method(vscode.window, "showWarningMessage", async () => undefined);
+    const mintId = mock.method(feedbackId, "newFeedbackId");
+    const reply = {
+      thread: {
+        uri: vscode.Uri.file(path.join(REPO, "src/a.ts")),
+        range: new vscode.Range(0, 0, 0, 0),
+        comments: [],
+      },
+      text: "Rename this helper.",
+    } as unknown as vscode.CommentReply;
+
+    assert.strictEqual(await c.addComment(reply, "comment"), false);
+
+    assert.strictEqual(warning.mock.callCount(), 1, "the refusal is said out loud");
+    assert.strictEqual(mintId.mock.callCount(), 0, "a refused comment burns no id");
+  });
+
+  test("a context change is reported once, and not while a review is active", async () => {
+    const emitter = new vscode.EventEmitter<FeedbackContext>();
+    const seen: FeedbackContext[] = [];
+    const listener = emitter.event((context) => seen.push(context));
+    let ref = branch("main");
+    mock.method(gitCli, "currentFeedbackRef", async () => ref);
+    const c = build({
+      feedbackContextEmitter: emitter,
+      roots: { gitRoots: [{ repoRoot: REPO, displayName: "repo", workspaceIndex: 0 }] },
+      refreshSeq: new Map(),
+      refreshCounts: new Map(),
+      openDiffs: new Map(),
+      compareTo: { kind: "default" },
+      diff: { getChanges: async () => NO_CHANGES },
+      reviewContent: { refreshAllOpen() {} },
+    });
+
     try {
-      const thread = session.restore(
-        vscode.Uri.file("/repo/a.ts"),
-        new vscode.Range(0, 0, 0, 1),
-        new GateComment("a", "comment"),
-        "Test",
-      );
-      assert.strictEqual(thread.collapsibleState, vscode.CommentThreadCollapsibleState.Expanded);
+      await c.refresh();
+      assert.strictEqual(seen.length, 1);
+      assert.deepStrictEqual(seen[0].roots, [{ repoRoot: REPO, ref: branch("main") }]);
+
+      await c.refresh();
+      assert.strictEqual(seen.length, 1, "an unchanged context is not reported again");
+
+      ref = branch("other");
+      c.activeRequestId = "review";
+      await c.refresh();
+      assert.strictEqual(seen.length, 1, "a live review keeps the feedback it opened with");
+
+      c.activeRequestId = undefined;
+      await c.refresh();
+      assert.strictEqual(seen.length, 2);
+      assert.deepStrictEqual(seen[1].roots, [{ repoRoot: REPO, ref: branch("other") }]);
     } finally {
-      session.dispose();
+      listener.dispose();
+      emitter.dispose();
     }
   });
 });

@@ -293,17 +293,22 @@ export class PlanReviewController implements vscode.Disposable {
     this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
-  private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
+  /** Answers whether the comment attached, so a caller is never left waiting for a silent drop. */
+  private addComment(reply: vscode.CommentReply, kind: CommentKind): boolean {
     const review = this.planForUri(reply.thread.uri);
     if (!review) {
-      return;
+      return false;
     }
-    this.comments.add(reply, kind, {
+    const comment = this.comments.add(reply, kind, {
       label: kindLabel(kind),
       onSaved: () => this.changeEmitter.fire(),
-      onDeleted: () => this.changeEmitter.fire(),
     });
+    comment.onDelete = () => {
+      this.comments.remove(comment);
+      this.changeEmitter.fire();
+    };
     this.changeEmitter.fire();
+    return true;
   }
 
   /** Gathered comments for the foreground plan (drives the Plan Review panel). */

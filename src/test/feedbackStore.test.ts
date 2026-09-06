@@ -7,13 +7,11 @@ import { mock } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { currentFeedbackRef, type FeedbackRef } from "../git/gitCli.js";
-import { canonicalize, repoKey } from "../protocol/paths.js";
+import { repoKey } from "../protocol/paths.js";
 import {
-  getFeedbackStore,
-  getWorkspaceFeedbackStore,
-  workspaceFeedbackFilePath,
   feedbackFilePath,
-  type RepoFeedbackStore,
+  openFeedbackBucket,
+  type FeedbackBucket,
   type FeedbackState,
 } from "../storage/FeedbackStore.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
@@ -45,130 +43,30 @@ const comment = (id: string, repoRoot = "/repo"): ReviewThread => ({
   ],
 });
 
-suite("workspace feedback storage", () => {
-  test("workspace fallback has a stable persisted singleton", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-workspace-feedback-"));
-    try {
-      const store = await getWorkspaceFeedbackStore(["/workspace/b", "/workspace/a"], root);
-      assert.strictEqual(
-        await getWorkspaceFeedbackStore(["/workspace/a/../a", "/workspace/b"], root),
-        store,
-      );
-      await store.setState((draft) => {
-        draft.threads.push(comment("fallback"));
-      });
-      const files = fs.readdirSync(root);
-      assert.strictEqual(files.length, 1);
-      assert.match(files[0], /^workspace-.*\.json$/);
-      assert.strictEqual(
-        JSON.parse(fs.readFileSync(path.join(root, files[0]), "utf8")).state.threads[0].id,
-        "fallback",
-      );
-      assert.notStrictEqual(await getWorkspaceFeedbackStore(["/another-workspace"], root), store);
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-  test("restores workspace feedback on initial hydration", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-workspace-restore-"));
-    try {
-      const paths = ["/project/review.code-workspace"];
-      const file = workspaceFeedbackFilePath(paths, root);
-      fs.writeFileSync(
-        file,
-        JSON.stringify({ version: 1, state: { threads: [comment("restored")] } }),
-      );
-      const read = mock.method(fs.promises, "readFile");
-      try {
-        const store = await getWorkspaceFeedbackStore(paths, root);
-        assert.strictEqual(store.getState().threads[0].id, "restored");
-        assert.strictEqual(await getWorkspaceFeedbackStore(paths, root), store);
-        assert.strictEqual(
-          read.mock.calls.filter(({ arguments: args }) => args[0] === file).length,
-          1,
-        );
-      } finally {
-        read.mock.restore();
-      }
-    } finally {
-      fs.rmSync(root, { recursive: true, force: true });
-    }
-  });
-
-  test("workspace identities use canonical paths and do not collide with branch files", () => {
-    assert.strictEqual(
-      workspaceFeedbackFilePath(["/project/a", "/project/b"]),
-      workspaceFeedbackFilePath(["/project/b", "/project/a/../a", "/project/a"]),
-    );
-    assert.notStrictEqual(
-      workspaceFeedbackFilePath(["/project/a"]),
-      workspaceFeedbackFilePath(["/project/b"]),
-    );
-    assert.notStrictEqual(
-      workspaceFeedbackFilePath(["/project/a"]),
-      feedbackFilePath("/project/a", branch("main")),
-    );
-  });
-});
-
-suite("repository feedback stores", () => {
+suite("repository feedback buckets", () => {
   let root: string;
-  let store: RepoFeedbackStore;
+  let bucket: FeedbackBucket;
   const main = branch("main");
   const other = branch("feature/other");
 
   setup(async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-"));
-    store = await getFeedbackStore("/repo", main, root);
+    bucket = await openFeedbackBucket("/repo", main, root);
   });
 
-  teardown(() => {
+  teardown(async () => {
+    await bucket.close();
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  test("returns the same store for the same canonical repository and ref", async () => {
-    const [first, second] = await Promise.all([
-      getFeedbackStore("/repo/../repo", branch("main"), root),
-      getFeedbackStore("/repo", main, path.relative(process.cwd(), root)),
-    ]);
-    assert.strictEqual(first, store);
-    assert.strictEqual(second, store);
-    assert.notStrictEqual(await getFeedbackStore("/other", main, root), store);
-  });
-
-  test("different ref buckets use separate stores and files", async () => {
-    const second = await getFeedbackStore("/repo", other, root);
-    assert.notStrictEqual(store, second);
-    await Promise.all([
-      store.setState((draft) => {
-        draft.threads = [comment("main")];
-      }),
-      second.setState((draft) => {
-        draft.threads = [comment("other")];
-      }),
-    ]);
-    const firstFile = feedbackFilePath("/repo", main, root);
-    const secondFile = feedbackFilePath("/repo", other, root);
-    assert.notStrictEqual(firstFile, secondFile);
-    assert.strictEqual(path.dirname(firstFile), path.join(root, repoKey("/repo")));
-    assert.strictEqual(path.dirname(secondFile), path.dirname(firstFile));
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(firstFile, "utf8")), {
-      version: 1,
-      state: { repoRoot: canonicalize("/repo"), ref: main, threads: [comment("main")] },
-    });
-    const secondBytes = fs.readFileSync(secondFile, "utf8");
-    await store.setState((draft) => {
-      draft.threads = [];
-    });
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(firstFile, "utf8")).state.threads, []);
-    assert.strictEqual(fs.readFileSync(secondFile, "utf8"), secondBytes);
-    assert.strictEqual(second.getState().threads[0].id, "other");
-  });
-
-  test("branch and detached refs with the same value have separate paths", () => {
-    assert.notStrictEqual(
-      feedbackFilePath("/repo", branch("HEAD"), root),
-      feedbackFilePath("/repo", { kind: "detached", value: "HEAD" }, root),
+  test("the same repository and ref name one file whatever the spelling", () => {
+    assert.strictEqual(
+      feedbackFilePath("/repo", main, root),
+      feedbackFilePath("/repo/../repo", branch("main"), root),
+    );
+    assert.strictEqual(
+      feedbackFilePath("/repo", main, root),
+      feedbackFilePath("/repo", main, path.relative(process.cwd(), root)),
     );
     assert.notStrictEqual(
       feedbackFilePath("/repo", main, root),
@@ -176,139 +74,129 @@ suite("repository feedback stores", () => {
     );
   });
 
-  test("hydrates a saved bucket once and serves subsequent reads from memory", async () => {
+  test("different ref buckets use separate files", async () => {
+    const second = await openFeedbackBucket("/repo", other, root);
+    try {
+      bucket.update((draft) => {
+        draft.threads = [comment("main")];
+      });
+      second.update((draft) => {
+        draft.threads = [comment("other")];
+      });
+      await Promise.all([bucket.flush(), second.flush()]);
+      const firstFile = feedbackFilePath("/repo", main, root);
+      const secondFile = feedbackFilePath("/repo", other, root);
+      assert.notStrictEqual(firstFile, secondFile);
+      assert.strictEqual(path.dirname(firstFile), path.join(root, repoKey("/repo")));
+      assert.strictEqual(path.dirname(secondFile), path.dirname(firstFile));
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(firstFile, "utf8")), {
+        version: 1,
+        state: { threads: [comment("main")] },
+      });
+      const secondBytes = fs.readFileSync(secondFile, "utf8");
+      bucket.update((draft) => {
+        draft.threads = [];
+      });
+      await bucket.flush();
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(firstFile, "utf8")).state.threads, []);
+      assert.strictEqual(fs.readFileSync(secondFile, "utf8"), secondBytes);
+      assert.strictEqual(second.threads()[0].id, "other");
+    } finally {
+      await second.close();
+    }
+  });
+
+  test("branch and detached refs with the same value have separate paths", () => {
+    assert.notStrictEqual(
+      feedbackFilePath("/repo", branch("HEAD"), root),
+      feedbackFilePath("/repo", { kind: "detached", value: "HEAD" }, root),
+    );
+  });
+
+  test("a bucket reads its file exactly once when it opens", async () => {
     const repo = "/restored";
     const file = feedbackFilePath(repo, main, root);
-    const state: FeedbackState = { repoRoot: repo, ref: main, threads: [comment("first", repo)] };
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ version: 1, state }));
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, state: { threads: [comment("first", repo)] } }),
+    );
     const read = mock.method(fs.promises, "readFile");
     try {
-      const restored = await getFeedbackStore(repo, main, root);
-      assert.deepStrictEqual(restored.getState(), state);
-      assert.strictEqual(await getFeedbackStore(repo, main, root), restored);
+      const restored = await openFeedbackBucket(repo, main, root);
+      assert.deepStrictEqual(restored.threads(), [comment("first", repo)]);
+      assert.deepStrictEqual(restored.threads(), [comment("first", repo)]);
       assert.strictEqual(
         read.mock.calls.filter(({ arguments: args }) => args[0] === file).length,
         1,
       );
+      await restored.close();
     } finally {
       read.mock.restore();
     }
   });
 
-  test("rehydration keeps an edit made while the disk read is pending", async () => {
-    await store.setState((draft) => {
-      draft.threads = [comment("saved")];
-    });
-    const file = feedbackFilePath("/repo", main, root);
-    const old = fs.readFileSync(file, "utf8");
-    let finish!: (value: string) => void;
-    const original = fs.promises.readFile;
-    const read = mock.method(fs.promises, "readFile", (...args: Parameters<typeof original>) =>
-      args[0] === file
-        ? new Promise<string>((resolve) => {
-            finish = resolve;
-          })
-        : original(...args),
+  test("an old file that carries repoRoot and ref keeps its threads and drops them on write", async () => {
+    const repo = "/legacy";
+    const file = feedbackFilePath(repo, main, root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        state: { repoRoot: repo, ref: main, threads: [comment("kept", repo)] },
+      }),
     );
+    const legacy = await openFeedbackBucket(repo, main, root);
     try {
-      const hydration = store.persist.rehydrate();
-      const saved = store.setState((draft) => {
-        draft.threads[0].activities[0].body = "latest edit";
-      });
-      finish(old);
-      await Promise.all([hydration, saved]);
-      assert.strictEqual(store.getState().threads[0].activities[0].body, "latest edit");
-      assert.strictEqual(
-        JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].activities[0].body,
-        "latest edit",
+      assert.deepStrictEqual(
+        legacy.threads().map((item) => item.id),
+        ["kept"],
       );
+      legacy.update((draft) => {
+        draft.threads.push(comment("added", repo));
+      });
+      await legacy.flush();
+      assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(file, "utf8")).state), [
+        "threads",
+      ]);
     } finally {
-      read.mock.restore();
+      await legacy.close();
     }
   });
 
-  test("rehydration keeps an edit made after the file read completes", async () => {
-    await store.setState((draft) => {
-      draft.threads = [comment("saved")];
-    });
-    const file = feedbackFilePath("/repo", main, root);
-    const old = fs.readFileSync(file, "utf8");
-    let finish!: (value: string) => void;
-    const original = fs.promises.readFile;
-    const read = mock.method(fs.promises, "readFile", (...args: Parameters<typeof original>) =>
-      args[0] === file
-        ? new Promise<string>((resolve) => {
-            finish = resolve;
-          })
-        : original(...args),
-    );
-    try {
-      const hydration = store.persist.rehydrate();
-      finish(old);
-      // The adapter returns before Zustand's JSON parsing and merge callbacks run.
-      await Promise.resolve();
-      const saved = store.setState((draft) => {
-        draft.threads[0].activities[0].body = "late edit";
-      });
-      await Promise.all([hydration, saved]);
-      assert.strictEqual(store.getState().threads[0].activities[0].body, "late edit");
-      assert.strictEqual(
-        JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].activities[0].body,
-        "late edit",
-      );
-    } finally {
-      read.mock.restore();
-    }
+  test("the bucket names the repository and ref it was opened for", () => {
+    assert.strictEqual(bucket.repoRoot, path.resolve("/repo"));
+    assert.deepStrictEqual(bucket.ref, main);
+    assert.strictEqual(bucket.file, feedbackFilePath("/repo", main, root));
   });
 
-  test("Immer updates preserve previous snapshots and notify only the selected value", async () => {
-    await store.setState((draft) => {
+  test("Immer updates preserve previous snapshots", async () => {
+    bucket.update((draft) => {
       draft.threads = [comment("one")];
     });
-    const before = store.getState();
-    const seen: number[] = [];
-    const unsubscribe = store.subscribe(
-      (state) => state.threads[0].line,
-      (line) => {
-        seen.push(line);
-      },
-    );
-    try {
-      await store.setState((draft) => {
-        draft.threads[0].activities[0].body = "edited";
-      });
-      assert.deepStrictEqual(seen, []);
-      await store.setState((draft) => {
-        draft.threads[0].line = 10;
-      });
-      assert.strictEqual(before.threads[0].line, 2);
-      assert.strictEqual(before.threads[0].activities[0].body, "Why is this needed?");
-      assert.deepStrictEqual(seen, [10]);
-    } finally {
-      unsubscribe();
-    }
-    await store.setState((draft) => {
-      draft.threads[0].line = 11;
+    const before = bucket.threads();
+    bucket.update((draft) => {
+      draft.threads[0].line = 10;
     });
-    assert.deepStrictEqual(seen, [10]);
+    assert.strictEqual(before[0].line, 2, "the earlier snapshot is untouched");
+    assert.strictEqual(bucket.threads()[0].line, 10);
   });
 
   test("debounces draft updates into one disk write per bucket", async () => {
     const file = feedbackFilePath("/repo", main, root);
     const rename = mock.method(fs.promises, "rename");
     try {
-      await Promise.all([
-        store.setState((draft) => {
-          draft.threads = [comment("one")];
-        }),
-        store.setState((draft) => {
-          draft.threads.push(comment("two"));
-        }),
-        store.setState((draft) => {
-          draft.threads[0].delivery = "sent";
-        }),
-      ]);
+      bucket.update((draft) => {
+        draft.threads = [comment("one")];
+      });
+      bucket.update((draft) => {
+        draft.threads.push(comment("two"));
+      });
+      bucket.update((draft) => {
+        draft.threads[0].delivery = "sent";
+      });
+      await bucket.flush();
       assert.strictEqual(
         rename.mock.calls.filter(({ arguments: args }) => args[1] === file).length,
         1,
@@ -337,10 +225,11 @@ suite("repository feedback stores", () => {
       },
     );
     try {
-      await store.setState((draft) => {
+      bucket.update((draft) => {
         draft.threads = [comment("one")];
       });
-      assert.strictEqual(store.getState().threads[0].id, "one");
+      await bucket.flush();
+      assert.strictEqual(bucket.threads()[0].id, "one");
       for (let i = 0; i < 150 && !fs.existsSync(file); i++) {
         await delay(20);
       }
@@ -355,14 +244,62 @@ suite("repository feedback stores", () => {
     const file = feedbackFilePath("/corrupt", main, root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "{ truncated");
-    const recovered = await getFeedbackStore("/corrupt", main, root);
-    assert.deepStrictEqual(recovered.getState().threads, []);
+    const recovered = await openFeedbackBucket("/corrupt", main, root);
+    assert.deepStrictEqual(recovered.threads(), []);
+    await recovered.close();
+  });
+
+  test("closing a bucket writes its pending change before it resolves", async () => {
+    const closingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-close-"));
+    try {
+      const closing = await openFeedbackBucket("/closing", main, closingRoot);
+      closing.update((draft) => {
+        draft.threads = [comment("last", "/closing")];
+      });
+      await closing.close();
+      const file = feedbackFilePath("/closing", main, closingRoot);
+      assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].id, "last");
+    } finally {
+      fs.rmSync(closingRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("closing a bucket with nothing pending writes nothing", async () => {
+    const quietRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-quiet-"));
+    const rename = mock.method(fs.promises, "rename");
+    try {
+      const quiet = await openFeedbackBucket("/quiet", main, quietRoot);
+      await quiet.close();
+      assert.strictEqual(rename.mock.calls.length, 0);
+    } finally {
+      rename.mock.restore();
+      fs.rmSync(quietRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("a bucket opened after a close reads what the closed one wrote", async () => {
+    const reopenRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-reopen-"));
+    try {
+      const first = await openFeedbackBucket("/reopen", main, reopenRoot);
+      first.update((draft) => {
+        draft.threads = [comment("saved", "/reopen")];
+      });
+      await first.close();
+      const second = await openFeedbackBucket("/reopen", main, reopenRoot);
+      assert.deepStrictEqual(
+        second.threads().map((item) => item.id),
+        ["saved"],
+      );
+      await second.close();
+    } finally {
+      fs.rmSync(reopenRoot, { recursive: true, force: true });
+    }
   });
 });
 
 suite("feedback identity over a real repository", () => {
   let stateRoot: string;
-  let store: RepoFeedbackStore;
+  let bucket: FeedbackBucket;
   let repoRoot: string;
 
   const git = (args: string[]): string =>
@@ -381,10 +318,11 @@ suite("feedback identity over a real repository", () => {
     git(["config", "user.email", "test@example.com"]);
     git(["config", "user.name", "Test"]);
     commit("one.txt");
-    store = await getFeedbackStore(repoRoot, branch("main"), path.join(stateRoot, "feedback"));
+    bucket = await openFeedbackBucket(repoRoot, branch("main"), path.join(stateRoot, "feedback"));
   });
 
-  teardown(() => {
+  teardown(async () => {
+    await bucket.close();
     fs.rmSync(stateRoot, { recursive: true, force: true });
     fs.rmSync(repoRoot, { recursive: true, force: true });
   });
@@ -392,20 +330,21 @@ suite("feedback identity over a real repository", () => {
   test("feedback left on a branch survives a commit on that branch", async () => {
     const before = await currentFeedbackRef(repoRoot);
     assert.deepStrictEqual(before, { kind: "branch", value: "main" });
-    await store.setState((draft) => {
+    bucket.update((draft) => {
       draft.threads = [comment("one", repoRoot)];
     });
+    await bucket.close();
 
     commit("two.txt");
 
     const after = await currentFeedbackRef(repoRoot);
     assert.deepStrictEqual(after, before, "a commit does not move the branch a bucket is keyed by");
+    const reopened = await openFeedbackBucket(repoRoot, after!, path.join(stateRoot, "feedback"));
     assert.deepStrictEqual(
-      (await getFeedbackStore(repoRoot, after!, path.join(stateRoot, "feedback")))
-        .getState()
-        .threads.map((item) => item.id),
+      reopened.threads().map((item) => item.id),
       ["one"],
     );
+    await reopened.close();
   });
 
   test("detached feedback keeps its bucket after a commit", async () => {

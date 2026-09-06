@@ -138,11 +138,13 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
     const thread = existing ?? controller.createCommentThread(uri, range, []);
     openedThreads.set(key, thread);
     // Route through the real add-comment command with a CommentReply-shaped payload ({ thread, text }).
-    await vscode.commands.executeCommand(ADD_COMMENT_COMMAND[args.surface][args.kind], {
-      thread,
-      text: args.text,
-    });
-    return true;
+    // Answer what the command answered: a refused add must fail the caller, not time it out.
+    return (
+      (await vscode.commands.executeCommand<boolean>(ADD_COMMENT_COMMAND[args.surface][args.kind], {
+        thread,
+        text: args.text,
+      })) ?? false
+    );
   };
 
   return vscode.Disposable.from(

@@ -65,16 +65,6 @@ suite("automatic file storage", () => {
     }
   });
 
-  test("rehydration reads the latest value while a write is debounced", async () => {
-    const value = bucketValue("pending");
-    const saved = storage.setItem("feedback", value);
-    try {
-      assert.strictEqual(await storage.getItem("feedback"), value);
-    } finally {
-      await saved;
-    }
-  });
-
   test("removing an item also cancels its pending write", async () => {
     await storage.setItem("feedback", bucketValue("one"));
     await Promise.all([
@@ -168,6 +158,81 @@ suite("automatic file storage", () => {
       }
       assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].id, "two");
       assert.strictEqual(attempts, 2);
+    } finally {
+      rename.mock.restore();
+    }
+  });
+
+  test("close writes a pending value and resolves after it lands", async () => {
+    void storage.setItem("feedback", bucketValue("pending"));
+    await storage.close();
+    assert.strictEqual(fs.readFileSync(file, "utf8"), bucketValue("pending"));
+  });
+
+  test("close waits for a write that is already running", async function () {
+    this.timeout(5000);
+    const original = fs.promises.rename;
+    let release!: () => void;
+    let started!: () => void;
+    const writing = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let first = true;
+    const rename = mock.method(
+      fs.promises,
+      "rename",
+      async (from: fs.PathLike, to: fs.PathLike) => {
+        if (to === file && first) {
+          first = false;
+          started();
+          await blocked;
+        }
+        return original(from, to);
+      },
+    );
+    try {
+      void storage.setItem("feedback", bucketValue("slow"));
+      await writing;
+      let closed = false;
+      const closing = storage.close().then(() => {
+        closed = true;
+      });
+      await delay(50);
+      assert.strictEqual(closed, false, "close waits for the running write");
+      release();
+      await closing;
+      assert.strictEqual(fs.readFileSync(file, "utf8"), bucketValue("slow"));
+    } finally {
+      release();
+      rename.mock.restore();
+    }
+  });
+
+  test("close refuses a write that arrives after it", async () => {
+    await storage.setItem("feedback", bucketValue("kept"));
+    await storage.close();
+    await storage.setItem("feedback", bucketValue("late"));
+    await delay(120);
+    assert.strictEqual(fs.readFileSync(file, "utf8"), bucketValue("kept"));
+  });
+
+  test("close gives up after a failed write and does not arm a retry", async function () {
+    this.timeout(5000);
+    let attempts = 0;
+    const rename = mock.method(fs.promises, "rename", async (_from: unknown, to: fs.PathLike) => {
+      if (to === file) {
+        attempts++;
+        throw new Error("disk write failed");
+      }
+    });
+    try {
+      void storage.setItem("feedback", bucketValue("doomed"));
+      await storage.close();
+      await delay(1300);
+      assert.strictEqual(attempts, 1, "a closed adapter does not retry");
     } finally {
       rename.mock.restore();
     }

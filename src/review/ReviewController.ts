@@ -9,12 +9,7 @@ import { basename, join } from "node:path";
 import * as vscode from "vscode";
 
 import type { ReviewGateResult, StopGateResult } from "../bridge/types.js";
-import {
-  CommentSession,
-  GateComment,
-  deleteComment,
-  type CommentCallbacks,
-} from "../comments/CommentSession.js";
+import { CommentSession, GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
 import { kindLabel, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
@@ -34,12 +29,6 @@ import type { WorkspaceRootCatalog } from "../git/WorkspaceRootCatalog.js";
 import { TurnReviewState } from "./TurnReviewState.js";
 import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
-import {
-  getWorkspaceFeedbackStore,
-  workspaceFeedbackFilePath,
-  getFeedbackStore,
-  type RepoFeedbackStore,
-} from "../storage/FeedbackStore.js";
 import { currentFeedbackRef, type FeedbackRef } from "../git/gitCli.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
@@ -80,14 +69,14 @@ import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { userFeedback, type ReviewThread } from "./reviewTypes.js";
-import { editFeedback, pendingFeedback } from "./feedbackState.js";
+import { pendingFeedback } from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
-
-/** VS Code objects stay outside the immutable feedback store. */
-interface ReviewEntry {
-  comment: GateComment;
-  repoRoot: string;
-}
+import {
+  contextKey,
+  FeedbackSession,
+  type FeedbackContext,
+  type FeedbackHost,
+} from "./feedback/FeedbackSession.js";
 
 const EMPTY_CHANGES: ChangesModel = {
   staged: [],
@@ -174,15 +163,15 @@ export class ReviewController implements vscode.Disposable {
   private compareTo: CompareTo;
   private layout: FileLayout;
   private readonly repositoryStates = new Map<string, RepositoryReviewState>();
-  private readonly comments = new Map<string, ReviewEntry>();
-  private readonly feedbackStores = new Map<
-    string,
-    { store: RepoFeedbackStore; unsubscribe: () => void }
-  >();
-  private workspaceFeedback?: { store: RepoFeedbackStore; unsubscribe: () => void };
-  private workspaceFeedbackLoading?: Promise<RepoFeedbackStore>;
-  private workspaceFeedbackKey?: string;
-  private readonly latestFeedbackSyncByRepo = new Map<string, symbol>();
+  /** The last ref a scan really read for each root. A scan that failed says nothing about a branch,
+   *  so the remembered answer stands until another scan succeeds. */
+  private readonly lastFeedbackRef = new Map<string, FeedbackRef>();
+  /** The open buckets and their live threads. extension.ts owns its lifetime, not this class. */
+  private feedback?: FeedbackSession;
+  private readonly feedbackContextEmitter = new vscode.EventEmitter<FeedbackContext>();
+  /** Fires at the end of a refresh when the commenting context moved. */
+  readonly onDidChangeFeedbackContext = this.feedbackContextEmitter.event;
+  private lastFeedbackContextKey?: string;
   private readonly gate = new ReviewGateRegistry();
   /** Turn-start Git snapshots, one per agent session — the turn-end gate's "did anything change?". */
   readonly turns: TurnReviewState;
@@ -255,6 +244,7 @@ export class ReviewController implements vscode.Disposable {
       }),
       this.changeEmitter,
       this.activeDiffEmitter,
+      this.feedbackContextEmitter,
       reg(Commands.reviewRefresh, () => this.refresh()),
       reg(Commands.reviewPickCompareTo, () => this.changeCompareTo()),
       reg(Commands.reviewPickDiffCompareTo, () => this.changeActiveDiffCompareTo()),
@@ -332,10 +322,7 @@ export class ReviewController implements vscode.Disposable {
         this.syncActiveDiffContext();
       }),
       // Switching between already-open diff tabs re-selects that file's row in the tree.
-      vscode.window.onDidChangeActiveTextEditor(() => {
-        this.syncSelectionToActiveTab();
-        void this.rehydrateFeedbackStores();
-      }),
+      vscode.window.onDidChangeActiveTextEditor(() => this.syncSelectionToActiveTab()),
     );
     this.syncActiveDiffContext();
   }
@@ -593,11 +580,12 @@ export class ReviewController implements vscode.Disposable {
     this.activeSessionId = undefined;
     this.guidedPlan = undefined;
     this.guidedCompareTo = undefined;
-    await this.refresh("review-ended");
-    this.changesetDocs.clear();
     // Feedback left on a changeset description outlives the plan, and that document is the only home
-    // its thread has — without the content the row would open nothing.
-    this.restoreChangesetDocs();
+    // its thread has — without the content the row would open nothing. The render puts the saved
+    // copy back, and it must run before a rebuild the refresh starts can read the provider.
+    this.changesetDocs.clear();
+    this.feedback?.render();
+    await this.refresh("review-ended");
     await this.setGuidedContext(false);
     await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
     await this.setReviewContext(false);
@@ -733,16 +721,11 @@ export class ReviewController implements vscode.Disposable {
   async refresh(reason = "manual"): Promise<void> {
     this.refreshCounts.set(reason, (this.refreshCounts.get(reason) ?? 0) + 1);
     const roots = this.roots.gitRoots;
-    const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? roots[0]?.repoRoot;
-    if (workspaceRoot) {
-      await this.loadWorkspaceFeedback(workspaceRoot);
-    }
     if (!sharedCompareToHolds(roots.length, this.compareTo)) {
       this.compareTo = { kind: "default" };
       await this.store.setCompareTo(this.compareTo);
     }
     const desired = new Set(roots.map((root) => root.repoRoot));
-    const refreshedRefs = new Map<string, { ref: FeedbackRef; seq: number }>();
     let changed = false;
     const removedTabKeys = new Set<string>();
     for (const root of this.repositoryStates.keys()) {
@@ -758,10 +741,7 @@ export class ReviewController implements vscode.Disposable {
         if (this.openDiffFile?.repoRoot === root) {
           this.openDiffFile = undefined;
         }
-        this.latestFeedbackSyncByRepo.delete(root);
-        this.detachCommentsForRepo(root);
-        this.feedbackStores.get(root)?.unsubscribe();
-        this.feedbackStores.delete(root);
+        this.lastFeedbackRef.delete(root);
         changed = true;
       }
     }
@@ -798,7 +778,7 @@ export class ReviewController implements vscode.Disposable {
           return;
         }
         if (feedbackRef) {
-          refreshedRefs.set(root.repoRoot, { ref: feedbackRef, seq });
+          this.lastFeedbackRef.set(root.repoRoot, feedbackRef);
         }
         const branch = feedbackRef?.kind === "branch" ? feedbackRef.value : undefined;
         const previous = this.repositoryStates.get(root.repoRoot);
@@ -822,24 +802,36 @@ export class ReviewController implements vscode.Disposable {
       }),
     );
 
-    // Only a root whose scan produced a ref is re-keyed. A failed or superseded scan says nothing
-    // about which branch the repository is on, and feedback keyed by a guess would be lost.
-    for (const root of roots) {
-      const scanned = refreshedRefs.get(root.repoRoot);
-      const isRefreshCurrent = () =>
-        this.refreshSeq.get(root.repoRoot) === scanned?.seq &&
-        this.roots.gitRoots.some((candidate) => candidate.repoRoot === root.repoRoot);
-      if (scanned && isRefreshCurrent()) {
-        await this.syncFeedbackBucket(root.repoRoot, scanned.ref, isRefreshCurrent);
-      }
-    }
-
-    if (reason === "roots") {
-      await this.rehydrateFeedbackStores();
-    }
     this.reviewContent.refreshAllOpen();
     if (changed) {
       this.changeEmitter.fire();
+    }
+    this.reportFeedbackContext(roots);
+  }
+
+  /**
+   * Say which repositories the window comments on, and the ref each one is on. A root is named only
+   * when some scan has read its ref. A root drops out of the context when it leaves the window, and
+   * a failed or superseded scan therefore reads as no change rather than as a removal.
+   */
+  private reportFeedbackContext(roots: ReadonlyArray<{ repoRoot: string }>): void {
+    // A live review keeps the feedback it opened with. cleanupReview refreshes again at the end,
+    // and the context is reported then.
+    if (this.activeRequestId) {
+      return;
+    }
+    const context: FeedbackContext = {
+      roots: roots
+        .flatMap((root) => {
+          const ref = this.lastFeedbackRef.get(root.repoRoot);
+          return ref ? [{ repoRoot: root.repoRoot, ref }] : [];
+        })
+        .sort((a, b) => a.repoRoot.localeCompare(b.repoRoot)),
+    };
+    const key = contextKey(context);
+    if (key !== this.lastFeedbackContextKey) {
+      this.lastFeedbackContextKey = key;
+      this.feedbackContextEmitter.fire(context);
     }
   }
 
@@ -1450,21 +1442,23 @@ export class ReviewController implements vscode.Disposable {
     return this.allFiles(root.repoRoot).some((f) => f.path === rel);
   }
 
-  private async addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<void> {
+  private async addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<boolean> {
     await this.refresh("add-comment");
     const uri = reply.thread.uri;
     const changesetId = changesetIdFromDocUri(uri);
     if (changesetId !== undefined) {
-      await this.addChangesetComment(reply, kind, changesetId);
-      return;
+      return this.addChangesetComment(reply, kind, changesetId);
     }
     // Comments anchor on the review-scheme side of a locked diff OR the editable working-tree (file:)
     // side of an editable one (its modified side is the live file).
     const anchor = this.resolveCommentAnchor(uri);
     if (!anchor) {
-      return;
+      return false;
     }
     const { repoRoot, side, relPath } = anchor;
+    if (!this.holdsFeedbackFor(repoRoot)) {
+      return false;
+    }
     const line = reply.thread.range?.start.line ?? 0;
     const open = this.openStateForCommentUri(uri, repoRoot, relPath);
 
@@ -1507,10 +1501,15 @@ export class ReviewController implements vscode.Disposable {
           }
         : undefined,
     };
-    await this.addFeedback(model);
+    // A rebuild can replace the session across the awaits above, so ask the one holding it now.
+    if (!this.feedback?.add(model)) {
+      this.warnFeedbackClosed();
+      return false;
+    }
     if (reply.thread.comments.length === 0) {
       reply.thread.dispose();
     }
+    return true;
   }
 
   /**
@@ -1522,11 +1521,14 @@ export class ReviewController implements vscode.Disposable {
     reply: vscode.CommentReply,
     kind: CommentKind,
     changesetId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const guided = this.getState().guided;
     const changeset = guided?.changesets.find((c) => c.id === changesetId);
     if (!guided || !changeset) {
-      return;
+      return false;
+    }
+    if (!this.holdsFeedbackFor(guided.repoRoot)) {
+      return false;
     }
     const line = reply.thread.range?.start.line ?? 0;
     const doc = await vscode.workspace.openTextDocument(reply.thread.uri);
@@ -1554,10 +1556,15 @@ export class ReviewController implements vscode.Disposable {
         lineHash: crypto.createHash("sha1").update(quote).digest("hex"),
       },
     };
-    await this.addFeedback(model);
+    // A rebuild can replace the session across the awaits above, so ask the one holding it now.
+    if (!this.feedback?.add(model)) {
+      this.warnFeedbackClosed();
+      return false;
+    }
     if (reply.thread.comments.length === 0) {
       reply.thread.dispose();
     }
+    return true;
   }
 
   /**
@@ -1630,14 +1637,14 @@ export class ReviewController implements vscode.Disposable {
 
   /** Reveal a feedback row's line in its diff and expand the comment thread. */
   private async revealComment(id: string): Promise<void> {
-    const entry = this.comments.get(id);
-    if (!entry?.comment.thread) {
+    const entry = this.feedback?.commentFor(id);
+    if (!entry?.thread) {
       return;
     }
     await this.refresh("reveal-comment");
-    const store = this.storeForFeedback(entry.repoRoot, id);
-    const c = store?.getState().threads.find((model) => model.id === id);
-    if (!store || !c || this.comments.get(id) !== entry || !entry.comment.thread) {
+    const c = this.getComments().find((model) => model.id === id);
+    // A rebuild during the refresh replaces the comment; the new one is not this one.
+    if (!c || this.feedback?.commentFor(id) !== entry || !entry.thread) {
       return;
     }
     const changes = this.changesFor(c.repoRoot);
@@ -1674,7 +1681,7 @@ export class ReviewController implements vscode.Disposable {
         };
       }
     }
-    targetUri ??= await this.fallbackCommentUri(c, entry.comment.thread.uri);
+    targetUri ??= await this.fallbackCommentUri(c, entry.thread.uri);
     if (!targetUri) {
       return; // original live thread remains untouched
     }
@@ -1687,24 +1694,18 @@ export class ReviewController implements vscode.Disposable {
     }
     const lines = Array.from({ length: doc.lineCount }, (_, i) => doc.lineAt(i).text);
     const line = relocateReviewAnchor(lines, c.line, c.anchor);
-    await store.setState((draft) => {
-      const model = draft.threads.find((item) => item.id === id);
-      if (!model) {
-        return;
-      }
-      model.line = line;
-      model.sourceUri = targetUri.toString();
-      if (migratedAttachment) {
-        model.filePath = migratedAttachment.file.path;
-        model.attachment = {
-          group: migratedAttachment.file.group,
-          baseRef: migratedAttachment.baseRef,
-          baseLabel: migratedAttachment.baseLabel,
-          sourceUri: targetUri.toString(),
-        };
-      } else if (model.attachment) {
-        model.attachment.sourceUri = targetUri.toString();
-      }
+    this.feedback?.relocate(id, {
+      line,
+      sourceUri: targetUri.toString(),
+      filePath: migratedAttachment?.file.path,
+      attachment: migratedAttachment
+        ? {
+            group: migratedAttachment.file.group,
+            baseRef: migratedAttachment.baseRef,
+            baseLabel: migratedAttachment.baseLabel,
+            sourceUri: targetUri.toString(),
+          }
+        : c.attachment && { ...c.attachment, sourceUri: targetUri.toString() },
     });
 
     // openDiff already opened the target inside its diff/single review surface. Opening that side URI
@@ -1764,18 +1765,13 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async confirmDeleteComment(id: string): Promise<void> {
-    const entry = this.comments.get(id);
-    if (!entry) {
-      return;
-    }
     const DELETE = "Delete";
-    const replies = this.commentSession.wouldRemove(entry.comment).length - 1;
-    const model = this.storeForFeedback(entry.repoRoot, id)
-      ?.getState()
-      .threads.find((item) => item.id === id);
+    const model = this.getComments().find((item) => item.id === id);
     if (!model) {
       return;
     }
+    // The count and the delete read the same rule, so the dialog cannot promise the wrong thing.
+    const replies = (this.feedback?.repliesOf(id).length ?? 1) - 1;
     const opening = userFeedback(model);
     const choice = await vscode.window.showWarningMessage(
       `Delete this ${kindLabel(opening.feedbackKind).toLowerCase()}?`,
@@ -1789,17 +1785,10 @@ export class ReviewController implements vscode.Disposable {
       },
       DELETE,
     );
-    if (choice !== DELETE || !this.comments.has(id)) {
+    if (choice !== DELETE || !this.getComments().some((item) => item.id === id)) {
       return; // dismissed, or already gone while the dialog was open
     }
-    this.deleteComment(id);
-  }
-
-  private deleteComment(id: string): void {
-    const entry = this.comments.get(id);
-    if (entry) {
-      deleteComment(entry.comment);
-    }
+    this.feedback?.remove(id);
   }
 
   // ── Guided review ───────────────────────────────────────────────────────────
@@ -1866,10 +1855,22 @@ export class ReviewController implements vscode.Disposable {
   }
 
   getComments(): ReviewThread[] {
-    return [
-      ...(this.workspaceFeedback?.store.getState().threads ?? []),
-      ...Array.from(this.feedbackStores.values()).flatMap(({ store }) => store.getState().threads),
-    ];
+    return this.feedback?.allThreads() ?? [];
+  }
+
+  /** Refuse a comment for a repository whose bucket is not open, loudly rather than in silence. */
+  private holdsFeedbackFor(repoRoot: string): boolean {
+    if (this.feedback?.hasBucketFor(repoRoot)) {
+      return true;
+    }
+    this.warnFeedbackClosed();
+    return false;
+  }
+
+  private warnFeedbackClosed(): void {
+    void vscode.window.showWarningMessage(
+      "Paireto: feedback for this repository is not open yet. Try again in a moment.",
+    );
   }
 
   /** True when the bucket holds anything at all, delivered history included — what the Feedback
@@ -1926,214 +1927,31 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  /**
-   * Point a repository at the bucket its current ref names. A checkout swaps one branch's feedback
-   * for another's: the live threads are taken down and the stored ones put back in their place.
-   */
-  private async syncFeedbackBucket(
-    repoRoot: string,
-    nextRef: FeedbackRef,
-    isRefreshCurrent: () => boolean = () => true,
-  ): Promise<void> {
-    const feedbackSyncId = Symbol();
-    this.latestFeedbackSyncByRepo.set(repoRoot, feedbackSyncId);
-    const currentRef = this.feedbackStores.get(repoRoot)?.store.getState().ref;
-    if (currentRef && feedbackRefEqual(currentRef, nextRef)) {
-      return;
-    }
-    // A live review owns the buckets it opened with. A checkout cannot redirect its feedback.
-    if (this.activeRequestId && currentRef) {
-      return;
-    }
-    if (!this.workspaceFeedback) {
-      await this.loadWorkspaceFeedback(repoRoot);
-    }
-    const store = await getFeedbackStore(repoRoot, nextRef);
-
-    // A newer refresh can replace this request while its bucket is loading.
-    if (this.latestFeedbackSyncByRepo.get(repoRoot) !== feedbackSyncId || !isRefreshCurrent()) {
-      return;
-    }
-
-    this.observeFeedbackStore(repoRoot, store);
-    await store.persist.rehydrate();
-  }
-
-  private async rehydrateFeedbackStores(): Promise<void> {
-    const stores = [
-      ...Array.from(this.feedbackStores.values()),
-      ...(this.workspaceFeedback ? [this.workspaceFeedback] : []),
-    ];
-    await Promise.all(stores.map(({ store }) => store.persist.rehydrate()));
-  }
-
-  private async loadWorkspaceFeedback(fallbackRoot: string): Promise<RepoFeedbackStore> {
-    const file = vscode.workspace.workspaceFile;
-    const paths =
-      file && file.scheme !== "untitled"
-        ? [file.fsPath]
-        : (vscode.workspace.workspaceFolders?.map((folder) => folder.uri.fsPath) ?? [fallbackRoot]);
-    const identity = paths.length > 0 ? paths : [fallbackRoot];
-    const key = workspaceFeedbackFilePath(identity);
-    if (this.workspaceFeedbackKey !== key || !this.workspaceFeedbackLoading) {
-      this.workspaceFeedbackKey = key;
-      this.workspaceFeedbackLoading = getWorkspaceFeedbackStore(identity);
-    }
-    const loading = this.workspaceFeedbackLoading;
-    const store = await loading;
-    if (loading !== this.workspaceFeedbackLoading) {
-      return this.loadWorkspaceFeedback(fallbackRoot);
-    }
-    if (this.workspaceFeedback?.store !== store) {
-      this.observeWorkspaceFeedbackStore(store);
-    }
-    return store;
-  }
-
-  private observeWorkspaceFeedbackStore(store: RepoFeedbackStore): void {
-    let previousThreads = this.workspaceFeedback?.store.getState().threads ?? [];
-    this.workspaceFeedback?.unsubscribe();
-    const update = (threads: ReviewThread[]) => {
-      const previous = previousThreads;
-      previousThreads = threads;
-      const roots = new Set([...threads, ...previous].map((model) => model.repoRoot));
-      for (const root of roots) {
-        const branch = this.feedbackStores.get(root)?.store.getState().threads ?? [];
-        this.syncFeedbackComments(
-          root,
-          [...branch, ...threads.filter((model) => model.repoRoot === root)],
-          [...branch, ...previous.filter((model) => model.repoRoot === root)],
-        );
-      }
-      this.changeEmitter.fire();
-    };
-    this.workspaceFeedback = { store, unsubscribe: () => {} };
-    this.workspaceFeedback.unsubscribe = store.subscribe((state) => state.threads, update, {
-      fireImmediately: true,
-    });
-  }
-
-  private storeForFeedback(repoRoot: string, id: string): RepoFeedbackStore | undefined {
-    const branch = this.feedbackStores.get(repoRoot)?.store;
-    return branch?.getState().threads.some((model) => model.id === id)
-      ? branch
-      : this.workspaceFeedback?.store;
-  }
-
-  private observeFeedbackStore(repoRoot: string, store: RepoFeedbackStore): void {
-    const previous = this.feedbackStores.get(repoRoot);
-    previous?.unsubscribe();
-    const workspaceThreads = () =>
-      this.workspaceFeedback?.store
-        .getState()
-        .threads.filter((model) => model.repoRoot === repoRoot) ?? [];
-    let previousThreads = previous?.store.getState().threads ?? [];
-    const active = { store, unsubscribe: () => {} };
-    this.feedbackStores.set(repoRoot, active);
-    active.unsubscribe = store.subscribe(
-      (state) => state.threads,
-      (threads) => {
-        const before = previousThreads;
-        previousThreads = threads;
-        this.syncFeedbackComments(
-          repoRoot,
-          [...threads, ...workspaceThreads()],
-          [...before, ...workspaceThreads()],
-        );
-        this.changeEmitter.fire();
-      },
-      { fireImmediately: true },
-    );
-  }
-
-  private syncFeedbackComments(
-    repoRoot: string,
-    models: ReviewThread[],
-    previous: ReviewThread[],
-  ): void {
-    try {
-      const ids = new Set(models.map((model) => model.id));
-      for (const [id, entry] of this.comments) {
-        if (entry.repoRoot === repoRoot && !ids.has(id)) {
-          this.commentSession.remove(entry.comment);
-          this.comments.delete(id);
-        }
-      }
-      for (const model of models) {
-        const entry = this.comments.get(model.id);
-        if (!entry?.comment.thread) {
-          this.restoreFeedback(model);
-          continue;
-        }
-        const feedback = userFeedback(model);
-        const comment = entry.comment;
-        Object.assign(
-          comment,
-          this.feedbackCallbacks(this.storeForFeedback(repoRoot, model.id)!, model.id),
-        );
-        if (comment.mode !== vscode.CommentMode.Editing) {
-          comment.body = feedback.body;
-        }
-        comment.kind = feedback.feedbackKind;
-        comment.label = kindLabel(feedback.feedbackKind);
-        const before = previous.find((item) => item.id === model.id);
-        if (
-          before &&
-          (before.line !== model.line ||
-            before.filePath !== model.filePath ||
-            before.attachment !== model.attachment ||
-            before.sourceUri !== model.sourceUri)
-        ) {
-          this.commentSession.reattach(
-            comment,
-            before.filePath !== model.filePath ||
-              before.attachment !== model.attachment ||
-              before.sourceUri !== model.sourceUri
-              ? this.restoreFeedbackUri(model)
-              : comment.thread!.uri,
-            new vscode.Range(model.line, 0, model.line, feedback.quote.length),
-            model.changeset
-              ? `Changeset: ${model.changeset.title}`
-              : this.commentLocationLabel(repoRoot, model.filePath, model.line),
-          );
-        }
-        comment.thread!.comments = [...comment.thread!.comments];
-      }
-    } catch (error) {
-      // A rendering failure must not interrupt Zustand's persistence callback.
-      log.error(`feedback rendering failed for ${repoRoot}: ${String(error)}`);
-    }
-  }
-
-  private feedbackCallbacks(store: RepoFeedbackStore, id: string): CommentCallbacks {
+  /** The seam the feedback session draws through. Built on demand: the test harness builds this
+   *  class without its constructor. */
+  feedbackHost(): FeedbackHost {
     return {
-      id,
-      onSaved: (body) => {
-        void store.setState((draft) => {
-          const model = draft.threads.find((item) => item.id === id);
-          if (model) {
-            Object.assign(model, editFeedback(model, body, new Date().toISOString()));
-          }
-        });
-      },
-      onDeleteRequested: () => {
-        void store.setState((draft) => {
-          draft.threads = draft.threads.filter((model) => model.id !== id && model.threadId !== id);
-        });
-      },
+      comments: this.commentSession,
+      uriFor: (model) => this.feedbackUri(model),
+      labelFor: (model) => this.feedbackLabel(model),
+      registerDoc: (uri, markdown) => this.changesetDocs.set(uri, markdown),
+      changed: () => this.changeEmitter.fire(),
     };
   }
 
-  private async addFeedback(model: ReviewThread): Promise<void> {
-    const store =
-      this.feedbackStores.get(model.repoRoot)?.store ??
-      (await this.loadWorkspaceFeedback(model.repoRoot));
-    await store.setState((draft) => {
-      draft.threads.push(model);
-    });
+  /** Point the window at the feedback of the context it is now in. */
+  useFeedback(session: FeedbackSession): void {
+    this.feedback = session;
+    this.changeEmitter.fire();
   }
 
-  private restoreFeedbackUri(model: ReviewThread): vscode.Uri {
+  private feedbackLabel(model: ReviewThread): string {
+    return model.changeset
+      ? `Changeset: ${model.changeset.title}`
+      : this.commentLocationLabel(model.repoRoot, model.filePath, model.line);
+  }
+
+  private feedbackUri(model: ReviewThread): vscode.Uri {
     if (model.sourceDocument) {
       const source = model.sourceDocument;
       if (
@@ -2158,70 +1976,6 @@ export class ReviewController implements vscode.Disposable {
     return vscode.Uri.file(join(model.repoRoot, model.filePath));
   }
 
-  /** Put one stored item back on its document, so a reload shows what a reload should show. */
-  private restoreFeedback(model: ReviewThread): void {
-    if (this.comments.get(model.id)?.comment.thread) {
-      return;
-    }
-    const uri = this.restoreFeedbackUri(model);
-    if (model.sourceDocument) {
-      // The changeset description is a virtual document. Its content only exists while the plan is
-      // open, so the copy stored with the feedback is what the row opens after the plan has gone.
-      this.changesetDocs.set(uri, model.sourceDocument.markdown);
-    }
-    const line = Math.max(0, model.line);
-    const feedback = userFeedback(model);
-    const range = new vscode.Range(line, 0, line, Math.max(0, feedback.quote.length));
-    const comment = new GateComment(feedback.body, feedback.feedbackKind);
-    Object.assign(
-      comment,
-      this.feedbackCallbacks(this.storeForFeedback(model.repoRoot, model.id)!, model.id),
-    );
-    const label = model.changeset
-      ? `Changeset: ${model.changeset.title}`
-      : this.commentLocationLabel(model.repoRoot, model.filePath, line);
-    const sibling = model.threadId
-      ? this.getComments().find(
-          (item) =>
-            item.id !== model.id &&
-            item.threadId === model.threadId &&
-            this.comments.get(item.id)?.comment.thread,
-        )
-      : undefined;
-    const thread = sibling ? this.comments.get(sibling.id)?.comment.thread : undefined;
-    this.commentSession.restore(uri, range, comment, label, thread);
-    this.comments.set(model.id, { comment, repoRoot: model.repoRoot });
-  }
-
-  /** Workspace removal must leave the stored feedback available for the next session. */
-  private detachCommentsForRepo(repoRoot: string): void {
-    for (const [id, entry] of this.comments) {
-      if (entry.repoRoot === repoRoot) {
-        this.commentSession.remove(entry.comment);
-        this.comments.delete(id);
-      }
-    }
-  }
-
-  /** Re-register the description document of every changeset item still held. */
-  private restoreChangesetDocs(): void {
-    for (const model of this.getComments()) {
-      const comment = this.comments.get(model.id)?.comment;
-      if (model.sourceDocument) {
-        const uri = this.restoreFeedbackUri(model);
-        this.changesetDocs.set(uri, model.sourceDocument.markdown);
-        if (comment?.thread?.range) {
-          this.commentSession.reattach(
-            comment,
-            uri,
-            comment.thread.range,
-            comment.thread.label ?? "",
-          );
-        }
-      }
-    }
-  }
-
   /** Only what has not been delivered — what the next send carries. */
   getPendingComments(): ReviewThread[] {
     return pendingFeedback(this.getComments());
@@ -2229,28 +1983,7 @@ export class ReviewController implements vscode.Disposable {
 
   async markCommentsSent(items: ReviewThread[]): Promise<ReviewThread[]> {
     const ids = new Set(items.map((item) => item.id));
-    const stores = new Set(items.map((model) => this.storeForFeedback(model.repoRoot, model.id)));
-    const sent: ReviewThread[] = [];
-    const writes: unknown[] = [];
-    const at = new Date().toISOString();
-    for (const store of stores) {
-      if (!store) {
-        continue;
-      }
-      writes.push(
-        store.setState((draft) => {
-          for (const model of draft.threads) {
-            if (ids.has(model.id) && model.delivery === "pending") {
-              model.delivery = "sent";
-              model.updatedAt = at;
-            }
-          }
-        }),
-      );
-      sent.push(...store.getState().threads.filter((model) => ids.has(model.id)));
-    }
-    await Promise.all(writes);
-    return sent;
+    return this.feedback?.markSent(ids, new Date().toISOString()) ?? [];
   }
 
   private async clearAllFeedback(): Promise<void> {
@@ -2266,16 +1999,7 @@ export class ReviewController implements vscode.Disposable {
     if (choice !== CLEAR) {
       return;
     }
-    await Promise.all(
-      [
-        ...Array.from(this.feedbackStores.values()),
-        ...(this.workspaceFeedback ? [this.workspaceFeedback] : []),
-      ].map(({ store }) =>
-        store.setState((draft) => {
-          draft.threads = [];
-        }),
-      ),
-    );
+    this.feedback?.clear();
   }
 
   private changesFor(repoRoot: string): RepositoryChangesModel | undefined {
@@ -2296,13 +2020,7 @@ export class ReviewController implements vscode.Disposable {
   dispose(): void {
     this.turns.clear();
     this.drainGate();
-    this.latestFeedbackSyncByRepo.clear();
-    for (const { unsubscribe } of this.feedbackStores.values()) {
-      unsubscribe();
-    }
-    this.feedbackStores.clear();
-    this.workspaceFeedback?.unsubscribe();
-    this.workspaceFeedback = undefined;
+    // The feedback session belongs to extension.ts, which writes it out before this runs.
     for (const d of this.disposables) {
       d.dispose();
     }
@@ -2337,10 +2055,6 @@ function scopedChanges(repoRoot: string, changes: ChangesModel): RepositoryChang
     compareLabel: changes.compareLabel,
     compareRef: changes.compareRef,
   };
-}
-
-function feedbackRefEqual(a: FeedbackRef, b: FeedbackRef): boolean {
-  return a.kind === b.kind && a.value === b.value;
 }
 
 function newReviewId(): string {

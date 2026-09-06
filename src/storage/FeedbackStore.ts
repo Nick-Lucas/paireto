@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import * as path from "node:path";
 
-import { createJSONStorage, persist, subscribeWithSelector } from "zustand/middleware";
+import { createJSONStorage, persist } from "zustand/middleware";
 import { immer } from "zustand/middleware/immer";
 import { createStore } from "zustand/vanilla";
 
@@ -12,17 +12,22 @@ import type { ReviewThread } from "../review/reviewTypes.js";
 import { createAutoFileStorage } from "./createAutoFileStorage.js";
 
 export interface FeedbackState {
-  repoRoot?: string;
-  ref?: FeedbackRef;
   threads: ReviewThread[];
 }
 
-export type RepoFeedbackStore = Pick<
-  Awaited<ReturnType<typeof createFeedbackStore>>,
-  "getState" | "setState" | "subscribe" | "persist"
->;
-
-const stores = new Map<string, Promise<RepoFeedbackStore>>();
+/** One branch's feedback for one repository. Its file is read one time, when the bucket opens. */
+export interface FeedbackBucket {
+  readonly repoRoot: string;
+  readonly ref: FeedbackRef;
+  readonly file: string;
+  threads(): ReviewThread[];
+  /** Applies the change in memory at once. The disk write follows on its own. */
+  update(recipe: (draft: FeedbackState) => void): void;
+  /** Write out what is waiting, and answer when it has landed. */
+  flush(): Promise<void>;
+  /** Write out what is waiting, then refuse later writes. */
+  close(): Promise<void>;
+}
 
 export function feedbackFilePath(
   repoRoot: string,
@@ -33,72 +38,41 @@ export function feedbackFilePath(
   return path.resolve(directory, repoKey(repoRoot), `${key}.json`);
 }
 
-export function getFeedbackStore(
+export async function openFeedbackBucket(
   repoRoot: string,
   ref: FeedbackRef,
   directory = feedbackDir(),
-): Promise<RepoFeedbackStore> {
-  return storeForFile(canonicalize(repoRoot), ref, feedbackFilePath(repoRoot, ref, directory));
-}
-
-export function workspaceFeedbackFilePath(paths: string[], directory = feedbackDir()): string {
-  const identity = Array.from(new Set(paths.map(canonicalize))).sort();
-  const key = createHash("sha256").update(JSON.stringify(identity)).digest("hex");
-  return path.resolve(directory, `workspace-${key}.json`);
-}
-
-export function getWorkspaceFeedbackStore(
-  paths: string[],
-  directory = feedbackDir(),
-): Promise<RepoFeedbackStore> {
-  return storeForFile(undefined, undefined, workspaceFeedbackFilePath(paths, directory));
-}
-
-function storeForFile(
-  repoRoot: string | undefined,
-  ref: FeedbackRef | undefined,
-  file: string,
-): Promise<RepoFeedbackStore> {
-  let store = stores.get(file);
-  if (!store) {
-    store = createFeedbackStore(repoRoot, ref, file);
-    stores.set(file, store);
-  }
-  return store;
-}
-
-async function createFeedbackStore(
-  repoRoot: string | undefined,
-  ref: FeedbackRef | undefined,
-  file: string,
-) {
-  let threadsAtHydrationStart: ReviewThread[] | undefined;
+): Promise<FeedbackBucket> {
+  const file = feedbackFilePath(repoRoot, ref, directory);
+  const storage = createAutoFileStorage(file);
   const store = createStore<FeedbackState>()(
-    subscribeWithSelector(
-      persist(
-        immer(() => ({ repoRoot, ref, threads: [] as ReviewThread[] })),
-        {
-          name: "feedback",
-          version: 1,
-          storage: createJSONStorage<FeedbackState>(() => createAutoFileStorage(file)),
-          skipHydration: true,
-          // Zustand merges after the adapter returns, so edits in that gap must keep their state.
-          merge: (saved, current) =>
-            current.threads !== threadsAtHydrationStart
-              ? current
-              : { ...current, ...(saved as Partial<FeedbackState>) },
-          onRehydrateStorage: (state) => {
-            threadsAtHydrationStart = state.threads;
-            return (_state, error) => {
-              if (error) {
-                log.error(`feedback hydration failed for ${file}: ${String(error)}`);
-              }
-            };
-          },
+    persist(
+      immer(() => ({ threads: [] as ReviewThread[] })),
+      {
+        name: "feedback",
+        version: 1,
+        storage: createJSONStorage<FeedbackState>(() => storage),
+        skipHydration: true,
+        // Omit anything that isn't part of the state
+        partialize: (state) => ({ threads: state.threads }),
+        onRehydrateStorage: () => (_state, error) => {
+          if (error) {
+            log.error(`feedback hydration failed for ${file}: ${String(error)}`);
+          }
         },
-      ),
+      },
     ),
   );
+
   await store.persist.rehydrate();
-  return store;
+
+  return {
+    repoRoot: canonicalize(repoRoot),
+    ref,
+    file,
+    threads: () => store.getState().threads,
+    update: (recipe) => store.setState(recipe),
+    flush: () => storage.flush(),
+    close: () => storage.close(),
+  };
 }

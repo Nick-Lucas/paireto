@@ -2,7 +2,7 @@
 
 import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
 import * as vscode from "vscode";
 
@@ -20,6 +20,9 @@ import {
   type Wire,
 } from "./planGateHarness.js";
 
+/** A branch made only by this suite. The window is shared, so teardown must put the repo back. */
+const SWITCH_BRANCH = "paireto-feedback-switch";
+
 suite("feedback durability", () => {
   let repoRoot: string;
   let wire: Wire;
@@ -36,6 +39,15 @@ suite("feedback durability", () => {
   teardown(async () => {
     warnings?.restore();
     warnings = undefined;
+    // The fixture repository is shared with every other suite, so put its branch back.
+    if (repoRoot) {
+      if (git(["rev-parse", "--abbrev-ref", "HEAD"]) === SWITCH_BRANCH) {
+        git(["checkout", "-q", "-"]);
+      }
+      if (git(["branch", "--list", SWITCH_BRANCH])) {
+        git(["branch", "-q", "-D", SWITCH_BRANCH]);
+      }
+    }
     await resetWorkbench(wire);
   });
 
@@ -67,24 +79,25 @@ suite("feedback durability", () => {
     );
   });
 
-  test("opening an editor rehydrates feedback from disk", async function () {
+  test("a branch switch reads the new branch's feedback from disk", async function () {
     this.timeout(90_000);
-    const id = await queueFileComment("Reload this feedback.");
-    const ref = await currentFeedbackRef(repoRoot);
-    assert.ok(ref);
-    const file = feedbackFilePath(repoRoot, ref);
-    const saved = JSON.parse(await readFile(file, "utf8")) as {
-      version: number;
-      state: FeedbackState;
-    };
-    saved.state.threads.find((model) => model.id === id)!.delivery = "sent";
-    await writeFile(file, JSON.stringify(saved));
-    const doc = await vscode.workspace.openTextDocument({ content: "Feedback hydration test" });
-    await vscode.window.showTextDocument(doc);
-    await waitFor("the editor event to reload feedback", async () =>
-      (await inspect()).feedback.find((model) => model.id === id)?.delivery === "sent"
-        ? true
-        : undefined,
+    const id = await queueFileComment("Left on the first branch.");
+    await waitFor("the comment to reach the bucket file", async () =>
+      (await storedFeedback()).includes(id) ? true : undefined,
+    );
+    const original = git(["rev-parse", "--abbrev-ref", "HEAD"]);
+
+    git(["checkout", "-q", "-b", SWITCH_BRANCH]);
+    // Drive the refresh rather than wait on the git extension, which is slow under a headless run.
+    await vscode.commands.executeCommand("paireto.review.refresh");
+    await waitFor("the other branch's empty bucket to take over", async () =>
+      (await inspect()).feedback.some((model) => model.id === id) ? undefined : true,
+    );
+
+    git(["checkout", "-q", original]);
+    await vscode.commands.executeCommand("paireto.review.refresh");
+    await waitFor("the first branch's feedback to come back from disk", async () =>
+      (await inspect()).feedback.some((model) => model.id === id) ? true : undefined,
     );
   });
 
