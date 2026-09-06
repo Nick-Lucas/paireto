@@ -510,7 +510,7 @@ export class ReviewController implements vscode.Disposable {
         await this.coordinator.switchTo(requestId);
         await this.focusView();
       } else if (choice === APPROVE) {
-        void this.approve();
+        await this.approve();
       }
     });
   }
@@ -1938,9 +1938,7 @@ export class ReviewController implements vscode.Disposable {
       );
       return;
     }
-    // Approving says the review is finished with, so the feedback it was shown goes too, delivered
-    // items included. A review holds one set of buckets for its whole life, so what the window holds
-    // now is exactly what the review was shown.
+    // On approval we clear the feedback session since everything is considered done
     this.feedback?.clear();
     log.info(`review approved for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}`);
     this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
