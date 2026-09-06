@@ -16,7 +16,7 @@ import type { ChangesModel } from "../git/DiffService.js";
 import type { FeedbackRef } from "../git/gitCli.js";
 import { PlanReviewController } from "../plan/PlanReviewController.js";
 import { INCLUDE_FILE_COMMENTS } from "../plan/planCodeFeedback.js";
-import { ReviewController } from "../review/ReviewController.js";
+import { type RefreshReason, ReviewController } from "../review/ReviewController.js";
 import {
   FeedbackSession,
   type FeedbackContext,
@@ -77,7 +77,7 @@ interface Controller {
   markCommentsSent(items: ReviewThread[]): Promise<ReviewThread[]>;
   sendFeedback(): Promise<void>;
   cleanupReview(requestId: string): Promise<void>;
-  refresh(reason?: string): Promise<void>;
+  refresh(reason?: RefreshReason): Promise<void>;
   feedbackUri(model: ReviewThread): vscode.Uri;
   activeRequestId?: string;
 }

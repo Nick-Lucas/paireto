@@ -99,6 +99,22 @@ const LOWER_GROUPS: Record<FileGroup, FileGroup[]> = {
   unstaged: [],
 };
 
+export type RefreshReason =
+  | "init"
+  | "roots"
+  | "git"
+  | "manual"
+  | "compare-to"
+  | "review-opened"
+  | "review-foreground"
+  | "review-ended"
+  | "save"
+  | "write-op"
+  | "add-comment"
+  | "reveal-comment"
+  | "open-diff"
+  | "open-diff-superseded";
+
 export interface ReviewState {
   compareTo: CompareTo;
   layout: FileLayout;
@@ -245,7 +261,7 @@ export class ReviewController implements vscode.Disposable {
       this.changeEmitter,
       this.activeDiffEmitter,
       this.feedbackContextEmitter,
-      reg(Commands.reviewRefresh, () => this.refresh()),
+      reg(Commands.reviewRefresh, () => this.refresh("manual")),
       reg(Commands.reviewPickCompareTo, () => this.changeCompareTo()),
       reg(Commands.reviewPickDiffCompareTo, () => this.changeActiveDiffCompareTo()),
       reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
@@ -553,7 +569,7 @@ export class ReviewController implements vscode.Disposable {
   ): Promise<void> {
     this.activeRequestId = requestId;
     this.activeSessionId = sessionId;
-    await this.refresh();
+    await this.refresh("review-opened");
     const entry: GateEntry = {
       id: requestId,
       sessionId,
@@ -597,7 +613,7 @@ export class ReviewController implements vscode.Disposable {
   /** Foreground: commenting on, Feedback section shown, view focused. */
   private async foreground(): Promise<void> {
     await this.setReviewContext(true);
-    await this.refresh();
+    await this.refresh("review-foreground");
     await this.focusView();
     this.changeEmitter.fire();
   }
@@ -634,12 +650,12 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /** Adopt a Compare To point and persist it, so the Changes model and anything reading it agree. */
-  private async applyCompareTo(compareTo: CompareTo, reason: string): Promise<void> {
+  private async applyCompareTo(compareTo: CompareTo, by: string): Promise<void> {
     if (this.compareTo.kind === compareTo.kind && this.compareTo.ref === compareTo.ref) {
       return;
     }
     log.info(
-      `compare-to set to ${compareTo.kind}${compareTo.ref ? ` ${compareTo.ref}` : ""} by ${reason}`,
+      `compare-to set to ${compareTo.kind}${compareTo.ref ? ` ${compareTo.ref}` : ""} by ${by}`,
     );
     this.compareTo = compareTo;
     await this.store.setCompareTo(compareTo);
@@ -718,7 +734,7 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
-  async refresh(reason = "manual"): Promise<void> {
+  async refresh(reason: RefreshReason = "manual"): Promise<void> {
     this.refreshCounts.set(reason, (this.refreshCounts.get(reason) ?? 0) + 1);
     const roots = this.roots.gitRoots;
     if (!sharedCompareToHolds(roots.length, this.compareTo)) {
@@ -862,7 +878,7 @@ export class ReviewController implements vscode.Disposable {
     if (choice.kind === "ref" && choice.ref) {
       await this.store.addRecentRef(choice.ref);
     }
-    await this.refresh();
+    await this.refresh("compare-to");
   }
 
   /** Change only the active tab's pinned base; the Changes view's global Compare-To is untouched. */
@@ -947,11 +963,25 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.saveBeforeStage(files))) {
       return;
     }
-    for (const [repoRoot, repoFiles] of filesByRoot(files)) {
-      const paths = repoFiles.map((f) => f.path);
-      await this.diff.stage(repoRoot, paths);
-      await this.refresh();
-      await this.reconcileOpenDiffsAfterWrite(repoRoot, paths, "staged");
+    const byRoot = [...filesByRoot(files)];
+    try {
+      for (const [repoRoot, repoFiles] of byRoot) {
+        await this.diff.stage(
+          repoRoot,
+          repoFiles.map((f) => f.path),
+        );
+      }
+    } finally {
+      // One scan after every repository is written. The tab reconcile below reads that model, and
+      // a write that throws part way still leaves the repositories before it described correctly.
+      await this.refresh("write-op");
+    }
+    for (const [repoRoot, repoFiles] of byRoot) {
+      await this.reconcileOpenDiffsAfterWrite(
+        repoRoot,
+        repoFiles.map((f) => f.path),
+        "staged",
+      );
     }
   }
 
@@ -970,11 +1000,23 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async unstageFiles(files: RepoChangedFile[]): Promise<void> {
-    for (const [repoRoot, repoFiles] of filesByRoot(files)) {
-      const paths = repoFiles.map((f) => f.path);
-      await this.diff.unstage(repoRoot, paths);
-      await this.refresh();
-      await this.reconcileOpenDiffsAfterWrite(repoRoot, paths, "unstaged");
+    const byRoot = [...filesByRoot(files)];
+    try {
+      for (const [repoRoot, repoFiles] of byRoot) {
+        await this.diff.unstage(
+          repoRoot,
+          repoFiles.map((f) => f.path),
+        );
+      }
+    } finally {
+      await this.refresh("write-op");
+    }
+    for (const [repoRoot, repoFiles] of byRoot) {
+      await this.reconcileOpenDiffsAfterWrite(
+        repoRoot,
+        repoFiles.map((f) => f.path),
+        "unstaged",
+      );
     }
   }
 
@@ -984,12 +1026,18 @@ export class ReviewController implements vscode.Disposable {
     }
     const dirty = dirtyTargetDocs(vscode.workspace.textDocuments, files);
     await this.dropUnsavedEdits(dirty.map((target) => target.doc));
-    for (const [repoRoot, repoFiles] of filesByRoot(files)) {
-      await this.diff.discard(
-        repoRoot,
-        repoFiles.map((f) => ({ path: f.path, untracked: f.status === "U" })),
-      );
-      await this.refresh();
+    const byRoot = [...filesByRoot(files)];
+    try {
+      for (const [repoRoot, repoFiles] of byRoot) {
+        await this.diff.discard(
+          repoRoot,
+          repoFiles.map((f) => ({ path: f.path, untracked: f.status === "U" })),
+        );
+      }
+    } finally {
+      await this.refresh("write-op");
+    }
+    for (const [repoRoot, repoFiles] of byRoot) {
       await this.reconcileOpenDiffsAfterWrite(
         repoRoot,
         repoFiles.map((f) => f.path),
@@ -1443,18 +1491,17 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async addComment(reply: vscode.CommentReply, kind: CommentKind): Promise<boolean> {
-    await this.refresh("add-comment");
     const uri = reply.thread.uri;
     const changesetId = changesetIdFromDocUri(uri);
     if (changesetId !== undefined) {
       return this.addChangesetComment(reply, kind, changesetId);
     }
-    // Comments anchor on the review-scheme side of a locked diff OR the editable working-tree (file:)
-    // side of an editable one (its modified side is the live file).
+
     const anchor = this.resolveCommentAnchor(uri);
     if (!anchor) {
       return false;
     }
+    await this.refresh("add-comment");
     const { repoRoot, side, relPath } = anchor;
     if (!this.holdsFeedbackFor(repoRoot)) {
       return false;
