@@ -1,5 +1,4 @@
-import type { Harness } from "../protocol/types.js";
-import type { FeedbackActivity, ReviewThread } from "./reviewTypes.js";
+import type { FeedbackActivity, FeedbackAuthor, ReviewThread } from "./reviewTypes.js";
 
 export function pendingFeedback(items: ReviewThread[]): ReviewThread[] {
   return items.filter((item) => item.delivery === "pending");
@@ -9,6 +8,13 @@ export function markFeedbackSent(items: ReviewThread[], at: string): ReviewThrea
   return items.map((item) =>
     item.delivery === "pending" ? { ...item, delivery: "sent", updatedAt: at } : item,
   );
+}
+
+function nextThreadItemId(item: ReviewThread): string {
+  const used = item.activities.flatMap((activity) =>
+    activity.kind === "feedback" ? [] : [Number(activity.id.split("#").at(-1))],
+  );
+  return `${item.id}#${Math.max(0, ...used.filter(Number.isFinite)) + 1}`;
 }
 
 export function editFeedback(item: ReviewThread, body: string, at: string): ReviewThread {
@@ -24,24 +30,68 @@ export function editFeedback(item: ReviewThread, body: string, at: string): Revi
 
 export function appendFeedbackReply(
   item: ReviewThread,
-  reply: { body: string; at: string; harness: Harness; sessionId?: string },
+  reply: { body: string; at: string; author: FeedbackAuthor },
 ): ReviewThread {
-  const activity: FeedbackActivity = { kind: "reply", ...reply };
+  const activity: FeedbackActivity = { id: nextThreadItemId(item), kind: "reply", ...reply };
   return {
     ...item,
-    activities: [...item.activities, activity],
+    delivery: reply.author.kind === "reviewer" ? "pending" : item.delivery,
     updatedAt: reply.at,
+    activities: [...item.activities, activity],
+  };
+}
+
+export function editFeedbackReply(
+  item: ReviewThread,
+  activityId: string,
+  body: string,
+  at: string,
+): ReviewThread {
+  const [feedback, ...rest] = item.activities;
+  return {
+    ...item,
+    delivery: "pending",
+    updatedAt: at,
+    activities: [
+      feedback,
+      ...rest.map((activity) =>
+        activity.kind === "reply" && activity.id === activityId
+          ? { ...activity, body, at }
+          : activity,
+      ),
+    ],
+  };
+}
+
+export function removeFeedbackReply(
+  item: ReviewThread,
+  activityId: string,
+  at: string,
+): ReviewThread {
+  return {
+    ...item,
+    updatedAt: at,
+    activities: [
+      item.activities[0],
+      ...item.activities
+        .slice(1)
+        .filter((activity) => activity.kind === "feedback" || activity.id !== activityId),
+    ],
   };
 }
 
 export function resolveFeedback(
   item: ReviewThread,
-  resolution: { at: string; harness: Harness; sessionId?: string },
+  resolution: { at: string; author: FeedbackAuthor },
 ): ReviewThread {
   if (item.resolvedAt) {
     return item;
   }
-  const activity: FeedbackActivity = { kind: "resolved", ...resolution };
+  const activity: FeedbackActivity = {
+    id: nextThreadItemId(item),
+    kind: "resolved",
+    ...resolution,
+  };
   return {
     ...item,
     resolvedAt: resolution.at,

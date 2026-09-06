@@ -25,7 +25,7 @@ import { buildSwitcherSections } from "../status/switcherRows.js";
 import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderRejectedPlanFeedback } from "../plan/planFeedback.js";
-import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
+import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 import type { CommentKind } from "../comments/kinds.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
@@ -547,7 +547,7 @@ suite("renderRejectedReviewFeedback", () => {
   };
 
   test("includes both kinds, questions first", () => {
-    const out = renderRejectedReviewFeedback([
+    const out = serialiseRejectedReviewFeedback([
       mk({ feedbackKind: "comment", body: "a-comment", line: 41 }),
       mk({ feedbackKind: "question", body: "a-question" }),
     ]);
@@ -558,11 +558,11 @@ suite("renderRejectedReviewFeedback", () => {
   });
 
   test("returns empty when there are no comments", () => {
-    assert.strictEqual(renderRejectedReviewFeedback([]), "");
+    assert.strictEqual(serialiseRejectedReviewFeedback([]), "");
   });
 
   test("qualifies paths by absolute repo root in a multi-repository review", () => {
-    const out = renderRejectedReviewFeedback(
+    const out = serialiseRejectedReviewFeedback(
       [
         mk({ repoRoot: "/workspace/api", filePath: "src/a.ts", body: "api feedback" }),
         mk({ repoRoot: "/workspace/web", filePath: "src/a.ts", body: "web feedback" }),

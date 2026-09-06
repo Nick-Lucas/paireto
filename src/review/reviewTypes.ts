@@ -4,6 +4,10 @@ import type { CommentKind } from "../comments/kinds.js";
 import type { Harness } from "../protocol/types.js";
 import type { FileGroup } from "../types.js";
 
+export type FeedbackAuthor =
+  | { kind: "reviewer" }
+  | { kind: "agent"; harness: Harness; sessionId?: string };
+
 export type FeedbackActivity =
   | {
       kind: "feedback";
@@ -13,17 +17,17 @@ export type FeedbackActivity =
       at: string;
     }
   | {
+      id: string;
       kind: "reply";
+      author: FeedbackAuthor;
       body: string;
       at: string;
-      harness: Harness;
-      sessionId?: string;
     }
   | {
+      id: string;
       kind: "resolved";
+      author: FeedbackAuthor;
       at: string;
-      harness: Harness;
-      sessionId?: string;
     };
 
 export interface ReviewAnchor {
@@ -33,9 +37,9 @@ export interface ReviewAnchor {
   lineHash: string;
 }
 
+/** One thread: one place in the diff, and the whole conversation held there. */
 export interface ReviewThread {
   id: string;
-  threadId?: string;
   sourceUri?: string;
   /** Canonical repository root; filePath is relative to this root. */
   repoRoot: string;
@@ -65,6 +69,12 @@ export interface ReviewThread {
     /** Exact document URI used as a final historical fallback. */
     sourceUri: string;
   };
+}
+
+export function reviewerActivity(thread: ReviewThread): FeedbackActivity[] {
+  return thread.activities.filter(
+    (activity) => activity.kind === "feedback" || activity.author.kind === "reviewer",
+  );
 }
 
 /** The reviewer's own words — always the first activity, so this never fails. */

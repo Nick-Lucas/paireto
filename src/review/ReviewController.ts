@@ -66,7 +66,7 @@ import {
   type GuidedPlan,
   type GuidedReviewState,
 } from "./guidedPlan.js";
-import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
+import { serialiseRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { userFeedback, type ReviewThread } from "./reviewTypes.js";
@@ -1502,6 +1502,11 @@ export class ReviewController implements vscode.Disposable {
     if (!anchor) {
       return false;
     }
+
+    const answering = this.threadAnsweredBy(reply);
+    if (answering !== undefined) {
+      return this.feedback?.addReply(answering, reply.text) ?? false;
+    }
     await this.refresh("add-comment");
     const { repoRoot, side, relPath } = anchor;
     if (!this.holdsFeedbackFor(repoRoot)) {
@@ -1524,7 +1529,6 @@ export class ReviewController implements vscode.Disposable {
     const id = await newFeedbackId();
     const model: ReviewThread = {
       id,
-      threadId: (reply.thread.comments[0] as GateComment | undefined)?.id ?? id,
       sourceUri: reply.thread.uri.toString(),
       repoRoot,
       filePath: relPath,
@@ -1575,6 +1579,10 @@ export class ReviewController implements vscode.Disposable {
     if (!guided || !changeset) {
       return false;
     }
+    const answering = this.threadAnsweredBy(reply);
+    if (answering !== undefined) {
+      return this.feedback?.addReply(answering, reply.text) ?? false;
+    }
     if (!this.holdsFeedbackFor(guided.repoRoot)) {
       return false;
     }
@@ -1585,7 +1593,6 @@ export class ReviewController implements vscode.Disposable {
     const id = await newFeedbackId();
     const model: ReviewThread = {
       id,
-      threadId: (reply.thread.comments[0] as GateComment | undefined)?.id ?? id,
       sourceUri: reply.thread.uri.toString(),
       repoRoot: guided.repoRoot,
       filePath: "",
@@ -1613,6 +1620,12 @@ export class ReviewController implements vscode.Disposable {
       reply.thread.dispose();
     }
     return true;
+  }
+
+  private threadAnsweredBy(reply: vscode.CommentReply): string | undefined {
+    const opener = reply.thread.comments[0];
+    const id = opener instanceof GateComment ? opener.id : undefined;
+    return id !== undefined && this.getComments().some((model) => model.id === id) ? id : undefined;
   }
 
   /**
@@ -1819,7 +1832,7 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     // The count and the delete read the same rule, so the dialog cannot promise the wrong thing.
-    const replies = (this.feedback?.repliesOf(id).length ?? 1) - 1;
+    const replies = this.feedback?.repliesFor(id).length ?? 0;
     const opening = userFeedback(model);
     const choice = await vscode.window.showWarningMessage(
       `Delete this ${kindLabel(opening.feedbackKind).toLowerCase()}?`,
@@ -1836,7 +1849,7 @@ export class ReviewController implements vscode.Disposable {
     if (choice !== DELETE || !this.getComments().some((item) => item.id === id)) {
       return; // dismissed, or already gone while the dialog was open
     }
-    this.feedback?.remove(id);
+    this.feedback?.removeCommentOrThread(id);
   }
 
   // ── Guided review ───────────────────────────────────────────────────────────
@@ -1960,7 +1973,7 @@ export class ReviewController implements vscode.Disposable {
     if (comments.length === 0) {
       return;
     }
-    const feedback = renderRejectedReviewFeedback(comments, this.isMultiRepository());
+    const feedback = serialiseRejectedReviewFeedback(comments, this.isMultiRepository());
     log.info(
       `review feedback sent for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}: ${comments.length} comment(s)`,
     );
@@ -2050,7 +2063,7 @@ export class ReviewController implements vscode.Disposable {
     }
     const at = new Date().toISOString();
     return this.amendFeedback(repoRoot, feedbackId, (item) =>
-      appendFeedbackReply(item, { body, at, harness, sessionId }),
+      appendFeedbackReply(item, { body, at, author: { kind: "agent", harness, sessionId } }),
     )
       ? { ok: true, message: `Reply added to feedback ${feedbackId.trim()}.` }
       : this.feedbackMiss(repoRoot, feedbackId);
@@ -2065,7 +2078,7 @@ export class ReviewController implements vscode.Disposable {
   ): Promise<{ ok: boolean; message: string }> {
     const at = new Date().toISOString();
     return this.amendFeedback(repoRoot, feedbackId, (item) =>
-      resolveFeedback(item, { at, harness, sessionId }),
+      resolveFeedback(item, { at, author: { kind: "agent", harness, sessionId } }),
     )
       ? { ok: true, message: `Feedback ${feedbackId.trim()} is resolved.` }
       : this.feedbackMiss(repoRoot, feedbackId);

@@ -188,7 +188,7 @@ export class CommentSession implements vscode.Disposable {
 
   /** What a delete of this comment takes: the whole thread if it opens it, else itself. An agent's
    *  answers go down with the thread, but they are nobody's to hand back. */
-  private takenWith(comment: GateComment): GateComment[] {
+  private findCommentsDeletedWith(comment: GateComment): GateComment[] {
     const onThread = comment.thread?.comments.filter((item) => item instanceof GateComment);
     return onThread?.[0] === comment ? [...onThread] : [comment];
   }
@@ -198,12 +198,15 @@ export class CommentSession implements vscode.Disposable {
     if (!thread) {
       return [comment];
     }
-    const removed = this.takenWith(comment);
+    const removed = this.findCommentsDeletedWith(comment);
     for (const item of removed) {
       item.thread = undefined;
     }
-    const rest = (thread.comments as GateComment[]).filter((item) => !removed.includes(item));
-    if (rest.length > 0) {
+    const rest = thread.comments.filter(
+      (item) => !(item instanceof GateComment && removed.includes(item)),
+    );
+    // An agent's answer has no life without the words it answers, so it never keeps a thread up.
+    if (rest.some((item) => item instanceof GateComment)) {
       thread.comments = rest;
       return removed;
     }

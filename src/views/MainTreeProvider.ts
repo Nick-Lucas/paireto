@@ -432,7 +432,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "reviewComment":
         return reviewCommentItem(node.comment);
       case "feedbackActivity":
-        return feedbackActivityItem(node.activity);
+        return createFeedbackThreadItem(node.activity);
       case "planComment":
         return planCommentItem(node.comment);
       case "placeholder": {
@@ -923,20 +923,18 @@ export function reviewCommentItem(c: ReviewThread): vscode.TreeItem {
   return item;
 }
 
-/** One thing an agent did to a piece of feedback, shown under it. */
-export function feedbackActivityItem(
+export function createFeedbackThreadItem(
   activity: Exclude<FeedbackActivity, { kind: "feedback" }>,
 ): vscode.TreeItem {
+  const who = activity.author.kind === "agent" ? `${activity.author.harness} agent` : "You";
   const item = new vscode.TreeItem(
-    activity.kind === "reply" ? "Agent replied" : "Resolved",
+    activity.kind === "reply" ? `${who} replied` : "Resolved",
     vscode.TreeItemCollapsibleState.None,
   );
-  item.description = activity.kind === "reply" ? activity.body : activity.harness;
+  item.description = activity.kind === "reply" ? activity.body : who;
   item.iconPath = new vscode.ThemeIcon(activity.kind === "reply" ? "reply" : "pass-filled");
   item.tooltip = new vscode.MarkdownString(
-    activity.kind === "reply"
-      ? `**Agent reply** · ${activity.harness}\n\n${activity.body}`
-      : `**Resolved** · ${activity.harness}`,
+    activity.kind === "reply" ? `**Reply** · ${who}\n\n${activity.body}` : `**Resolved** · ${who}`,
   );
   item.contextValue = "feedbackActivity";
   return item;

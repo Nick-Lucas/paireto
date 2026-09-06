@@ -4,9 +4,9 @@
 import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
-import { userFeedback, type ReviewThread } from "./reviewTypes.js";
+import { reviewerActivity, userFeedback, type ReviewThread } from "./reviewTypes.js";
 
-export function renderRejectedReviewFeedback(
+export function serialiseRejectedReviewFeedback(
   items: ReviewThread[],
   multiRepository = false,
 ): string {
@@ -26,7 +26,11 @@ export function renderRejectedReviewFeedback(
     .map((item) => {
       const feedback = userFeedback(item);
       const quote = feedback.quote.trim() ? `\n> ${feedback.quote.trim()}` : "";
-      return `${location(item, multiRepository)}${quote}\n${feedback.body.trim()}`;
+      const said = reviewerActivity(item)
+        .flatMap((activity) => (activity.kind === "resolved" ? [] : [activity.body.trim()]))
+        .filter((body) => body.length > 0)
+        .join("\n\n");
+      return `${location(item, multiRepository)}${quote}\n${said}`;
     })
     .join("\n\n");
 
