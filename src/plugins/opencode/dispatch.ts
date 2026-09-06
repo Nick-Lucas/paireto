@@ -50,7 +50,7 @@ export function handleEvent(bridge: OpenCodeBridge, event: OpenCodeEvent): void 
     case "message.updated": {
       // Only the user's own prompt is a turn-start signal downstream (assistant/tool messages are
       // noise) AND only on its FIRST sighting — OpenCode re-fires message.updated for the same user
-      // message at turn end, and a repeat forward would reset changedThisTurn AFTER the turn's edits.
+      // message at turn end, and a repeat forward would reset the Git baseline AFTER the turn's edits.
       if (isNewUserTurn(bridge.seenUserMessages, event.properties?.info)) {
         bridge.forwardEvent(type, event);
       }

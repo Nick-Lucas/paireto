@@ -24,7 +24,7 @@ suite("KiroStrategy mapper fixtures", () => {
       expect: { kind: "userPromptSubmit" },
     },
     {
-      name: "write tool aliases are edit tools",
+      name: "PostToolUse carries Kiro's own tool name through",
       raw: {
         ...base,
         hook_event_name: "PostToolUse",
@@ -32,28 +32,7 @@ suite("KiroStrategy mapper fixtures", () => {
         tool_input: { path: "note.txt" },
         tool_response: "ok",
       } as KiroHookEvent,
-      expect: { kind: "postToolUse", toolName: "fs_write", isEditTool: true },
-    },
-    {
-      // Kiro classifies these as fs_write too, and a turn only earns a review when it changed files.
-      name: "an in-place edit is an edit tool",
-      raw: {
-        ...base,
-        hook_event_name: "PostToolUse",
-        tool_name: "str_replace",
-        tool_input: { path: "note.txt" },
-      } as KiroHookEvent,
-      expect: { kind: "postToolUse", toolName: "str_replace", isEditTool: true },
-    },
-    {
-      name: "a shell command is not an edit tool",
-      raw: {
-        ...base,
-        hook_event_name: "PostToolUse",
-        tool_name: "execute_bash",
-        tool_input: { command: "ls" },
-      } as KiroHookEvent,
-      expect: { kind: "postToolUse", toolName: "execute_bash", isEditTool: false },
+      expect: { kind: "postToolUse", toolName: "fs_write" },
     },
     {
       name: "switch_to_execution carries the exact native plan",
@@ -67,7 +46,6 @@ suite("KiroStrategy mapper fixtures", () => {
         kind: "planProposal",
         toolName: "switch_to_execution",
         planText: "# Plan\n\n1. Add Kiro support.\n2. Test it.",
-        isEditTool: false,
       },
     },
     {

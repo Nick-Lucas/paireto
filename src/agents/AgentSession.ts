@@ -135,8 +135,6 @@ export class AgentSession {
   lastEventAt: number;
   /** Set when the session enters a "needs you" state, until the user looks or the agent resumes. */
   needsAttention = false;
-  /** True if an edit-class tool ran (or a file changed) since this turn began. */
-  changedThisTurn = false;
   /** User-toggled visibility: a muted agent stays listed but never pings or joins aggregates. */
   muted = false;
   /** Running child/background agents (id -> last-seen ms). Gating-only: never displayed (see
@@ -185,7 +183,6 @@ export class AgentSession {
         break;
       case "userPromptSubmit":
         this.state = "thinking";
-        this.changedThisTurn = false; // a new turn begins — reset the "touched files" flag
         break;
       case "preToolUse":
         this.state = "toolRunning";
@@ -195,9 +192,6 @@ export class AgentSession {
         this.state = "awaitingPlanApproval";
         break;
       case "postToolUse":
-        if (event.isEditTool) {
-          this.changedThisTurn = true;
-        }
         this.state = "thinking";
         break;
       case "permissionRequest":
@@ -221,7 +215,8 @@ export class AgentSession {
         this.sessionCronCount = 0;
         break;
       case "fileChanged":
-        this.changedThisTurn = true;
+        // Liveness only: applyEvent has already stamped lastEventAt, and what the file change means
+        // for the turn-end review is decided by comparing Git state (see TurnReviewState).
         break;
       case "notification": {
         const wanted = stateForNotification(event.notificationKind);
