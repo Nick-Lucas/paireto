@@ -352,7 +352,11 @@ suite("feedback session", () => {
     ]);
     const session = await openSession();
 
-    assert.strictEqual(session.repliesFor("opener").length, 1, "the agent answer is not the user's");
+    assert.strictEqual(
+      session.repliesFor("opener").length,
+      1,
+      "the agent answer is not the user's",
+    );
     assert.strictEqual(session.repliesFor("alone").length, 0);
   });
 

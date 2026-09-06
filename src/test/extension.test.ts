@@ -1,4 +1,6 @@
 import * as assert from "node:assert";
+
+import dedent from "dedent";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -521,18 +523,20 @@ suite("renderRejectedPlanFeedback", () => {
   });
 });
 
-suite("renderRejectedReviewFeedback", () => {
+suite("serialiseRejectedReviewFeedback", () => {
+  const at = "2026-08-12T20:00:00.000Z";
   const mk = (
     over: Partial<ReviewThread> & {
       feedbackKind?: CommentKind;
       body?: string;
       quote?: string;
+      replies?: Array<{ who: "reviewer" | "agent"; body: string }>;
     } = {},
   ): ReviewThread => {
-    const { feedbackKind = "comment", body = "fix", quote = "line", ...rest } = over;
-    const at = "2026-08-12T20:00:00.000Z";
+    const { feedbackKind = "comment", body = "fix", quote = "line", replies = [], ...rest } = over;
+    const id = rest.id ?? "x";
     return {
-      id: "x",
+      id,
       repoRoot: "/repo",
       filePath: "src/a.ts",
       side: "modified",
@@ -540,21 +544,110 @@ suite("renderRejectedReviewFeedback", () => {
       delivery: "pending",
       createdAt: at,
       updatedAt: at,
-      activities: [{ kind: "feedback", feedbackKind, body, quote, at }],
+      activities: [
+        { kind: "feedback", feedbackKind, body, quote, at },
+        ...replies.map((reply, index) => ({
+          id: `${id}#${index + 1}`,
+          kind: "reply" as const,
+          author:
+            reply.who === "reviewer"
+              ? ({ kind: "reviewer" } as const)
+              : ({ kind: "agent", harness: "claudecode" } as const),
+          body: reply.body,
+          at,
+        })),
+      ],
       anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
       ...rest,
     };
   };
 
-  test("includes both kinds, questions first", () => {
-    const out = serialiseRejectedReviewFeedback([
-      mk({ feedbackKind: "comment", body: "a-comment", line: 41 }),
-      mk({ feedbackKind: "question", body: "a-question" }),
-    ]);
-    assert.ok(out.includes("a-comment"));
-    assert.ok(out.includes("a-question"));
-    assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
-    assert.ok(out.includes("src/a.ts:42"));
+  test("one comment reads as the location, the quoted line, and the words", () => {
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([mk({ body: "Rename this helper.", quote: "const x = 1;" })]),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+
+        src/a.ts:1  [COMMENT]
+        > const x = 1;
+        Rename this helper.
+      `,
+    );
+  });
+
+  test("questions come before comments, each at its own line", () => {
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([
+        mk({ id: "c", feedbackKind: "comment", body: "a-comment", line: 41, quote: "later();" }),
+        mk({ id: "q", feedbackKind: "question", body: "a-question", quote: "first();" }),
+      ]),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+
+        src/a.ts:1  [QUESTION]
+        > first();
+        a-question
+
+        src/a.ts:42  [COMMENT]
+        > later();
+        a-comment
+      `,
+    );
+  });
+
+  test("a thread that has been talked over names who said what", () => {
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([
+        mk({
+          feedbackKind: "question",
+          body: "Why the cast here?",
+          quote: "const x = y as T;",
+          replies: [
+            { who: "agent", body: "It narrows the union." },
+            { who: "reviewer", body: "That is not what I meant — drop it entirely." },
+          ],
+        }),
+      ]),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+
+        src/a.ts:1  [QUESTION]
+        > const x = y as T;
+        Reviewer: Why the cast here?
+
+        Agent: It narrows the union.
+
+        Reviewer: That is not what I meant — drop it entirely.
+      `,
+    );
+  });
+
+  test("a resolution is not part of what the agent is asked to address", () => {
+    const item = mk({ body: "Please simplify.", quote: "const x = 1;" });
+    item.activities.push({
+      id: "x#1",
+      kind: "resolved",
+      author: { kind: "agent", harness: "claudecode" },
+      at,
+    });
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([item]),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+
+        src/a.ts:1  [COMMENT]
+        > const x = 1;
+        Please simplify.
+      `,
+    );
   });
 
   test("returns empty when there are no comments", () => {
@@ -562,15 +655,28 @@ suite("renderRejectedReviewFeedback", () => {
   });
 
   test("qualifies paths by absolute repo root in a multi-repository review", () => {
-    const out = serialiseRejectedReviewFeedback(
-      [
-        mk({ repoRoot: "/workspace/api", filePath: "src/a.ts", body: "api feedback" }),
-        mk({ repoRoot: "/workspace/web", filePath: "src/a.ts", body: "web feedback" }),
-      ],
-      true,
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback(
+        [
+          mk({ id: "a", repoRoot: "/workspace/api", body: "api feedback", quote: "a();" }),
+          mk({ id: "w", repoRoot: "/workspace/web", body: "web feedback", quote: "w();" }),
+        ],
+        true,
+      ),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item is file:line and its kind, the quoted line, and the comment.
+
+        /workspace/api/src/a.ts:1  [COMMENT]
+        > a();
+        api feedback
+
+        /workspace/web/src/a.ts:1  [COMMENT]
+        > w();
+        web feedback
+      `,
     );
-    assert.ok(out.includes("/workspace/api/src/a.ts:1"));
-    assert.ok(out.includes("/workspace/web/src/a.ts:1"));
   });
 });
 

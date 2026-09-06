@@ -4,7 +4,7 @@
 import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
-import { reviewerActivity, userFeedback, type ReviewThread } from "./reviewTypes.js";
+import { userFeedback, type FeedbackActivity, type ReviewThread } from "./reviewTypes.js";
 
 export function serialiseRejectedReviewFeedback(
   items: ReviewThread[],
@@ -26,11 +26,7 @@ export function serialiseRejectedReviewFeedback(
     .map((item) => {
       const feedback = userFeedback(item);
       const quote = feedback.quote.trim() ? `\n> ${feedback.quote.trim()}` : "";
-      const said = reviewerActivity(item)
-        .flatMap((activity) => (activity.kind === "resolved" ? [] : [activity.body.trim()]))
-        .filter((body) => body.length > 0)
-        .join("\n\n");
-      return `${location(item, multiRepository)}${quote}\n${said}`;
+      return `${location(item, multiRepository)}${quote}\n${serialiseThreadItems(item)}`;
     })
     .join("\n\n");
 
@@ -41,6 +37,21 @@ export function serialiseRejectedReviewFeedback(
 
     ${rendered}
   `;
+}
+
+function serialiseThreadItems(thread: ReviewThread): string {
+  const turns = thread.activities.flatMap((activity) =>
+    activity.kind === "resolved" || !activity.body.trim()
+      ? []
+      : [{ who: speaker(activity), body: activity.body.trim() }],
+  );
+  return turns.length > 1
+    ? turns.map((turn) => `${turn.who}: ${turn.body}`).join("\n\n")
+    : (turns[0]?.body ?? "");
+}
+
+function speaker(activity: Exclude<FeedbackActivity, { kind: "resolved" }>): string {
+  return activity.kind === "feedback" || activity.author.kind === "reviewer" ? "Reviewer" : "Agent";
 }
 
 /** Where feedback was left: a file:line, or the changeset whose description it sits on. */
