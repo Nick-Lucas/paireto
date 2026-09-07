@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-import type { Harness } from "../../../protocol/types.js";
+import type {
+  FeedbackReplyRequest,
+  FeedbackResolveRequest,
+  FeedbackResolveRequest,
+  Harness,
+} from "../../../protocol/types.js";
 import { connect } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
 import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
@@ -76,8 +81,8 @@ export async function runFeedbackResolve(
 async function runMutation(
   target: ReviewTarget | undefined,
   body:
-    | Omit<import("../../../protocol/types.js").FeedbackReplyRequest, "id" | "v" | "ts">
-    | Omit<import("../../../protocol/types.js").FeedbackResolveRequest, "id" | "v" | "ts">,
+    | Omit<FeedbackReplyRequest, "id" | "v" | "ts">
+    | Omit<FeedbackResolveRequest, "id" | "v" | "ts">,
   noTargetMessage: string,
   timeoutMs: number,
 ): Promise<ToolResult> {
