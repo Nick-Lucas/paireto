@@ -32,6 +32,7 @@ import {
 import { mockProxyEnv, resolveMockProxy } from "../e2e/mockserver/proxyEnv.js";
 import {
   isPairetoTool,
+  normalizeRequestBody,
   normalizeClaudeBody,
   normalizeCodexBody,
   normalizeKiroBody,
@@ -301,6 +302,98 @@ suite("provider-replay: fixture normalization", () => {
     assert.ok(
       recorded.includes("changesets"),
       "Paireto's own tool keeps its schema, so a lost parameter breaks replay",
+    );
+  });
+
+  test("normalizes feedback ids in prompts, tool input, and tool output", () => {
+    const body = (feedbackId: string): string =>
+      JSON.stringify({
+        messages: [
+          { role: "user", content: `Feedback ID: ${feedbackId}\nPlease fix this.` },
+          {
+            role: "assistant",
+            content: [{ type: "tool_use", input: { feedbackId } }],
+          },
+          { role: "user", content: `Reply added to feedback ${feedbackId}.` },
+        ],
+      });
+    // The shape production mints: 21 characters of nanoid's default alphabet.
+    const first = body("V1StGXR8_Z5jdHi6B-myT");
+    const second = body("bSdaFxG9-2Qm7HvKzLpRn");
+
+    for (const driver of ["claudecode", "codex", "opencode"]) {
+      const normalized = normalizeRequestBody(driver, first);
+      assert.strictEqual(normalized, normalizeRequestBody(driver, second));
+      assert.ok(normalized.includes("PAIRETO_E2E_FEEDBACK_ID"), "the ID is replaced, not dropped");
+      assert.ok(!normalized.includes("V1StGXR8"), `${driver} left a volatile ID in the match key`);
+      assert.strictEqual(
+        normalizeRequestBody(driver, normalized),
+        normalized,
+        "normalizing an already-normalized body must change nothing",
+      );
+    }
+  });
+
+  test("normalizes feedback workflow wording and bundled review skill text", () => {
+    const feedbackBody = (instruction: string): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: `Code review feedback received from the user:\n\n${instruction}\n\nFeedback ID: V1StGXR8_Z5jdHi6B-myT\nsrc/a.ts:1 [COMMENT]\nFix this.`,
+          },
+        ],
+      });
+    assert.strictEqual(
+      normalizeRequestBody("codex", feedbackBody("Address these comments.")),
+      normalizeRequestBody("codex", feedbackBody("Address every item and call both tools.")),
+    );
+
+    const skillBody = (instruction: string): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "input_text",
+            text: `---\nname: paireto-review\ndescription: Review.\n---\n\n# Paireto Review\n\n${instruction}`,
+          },
+        ],
+      });
+    assert.strictEqual(
+      normalizeRequestBody("codex", skillBody("Old workflow.")),
+      normalizeRequestBody("codex", skillBody("New workflow.")),
+    );
+
+    const guidedCommandBody = (instruction: string): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Prepare a review plan so a human can review these changes, then hand it to Paireto.\n\n${instruction}\n\nARGUMENTS: Review the working tree.`,
+              },
+            ],
+          },
+        ],
+      });
+    assert.strictEqual(
+      normalizeRequestBody("claudecode", guidedCommandBody("Old workflow.")),
+      normalizeRequestBody("claudecode", guidedCommandBody("New workflow.")),
+    );
+
+    const guidedSkillBody = (instruction: string): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "input_text",
+            text: `---\nname: paireto-guided-review\ndescription: Guided review.\n---\n\n${instruction}`,
+          },
+        ],
+      });
+    assert.strictEqual(
+      normalizeRequestBody("codex", guidedSkillBody("Old workflow.")),
+      normalizeRequestBody("codex", guidedSkillBody("New workflow.")),
     );
   });
 
