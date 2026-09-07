@@ -59,11 +59,12 @@ suite("Stop review over the bridge", function () {
             try {
               // A hook that prints anything but its JSON response must fail this test, not throw
               // uncaught out of the close callback and take the whole run down with it.
-              if (id)
+              if (id) {
                 responses.push({
                   id,
                   ...(output.trim() ? JSON.parse(output) : { decision: "allow" }),
                 });
+              }
             } catch (error) {
               reject(
                 new Error(`hook wrote unparseable output ${JSON.stringify(output)}: ${error}`),
@@ -116,7 +117,9 @@ suite("Stop review over the bridge", function () {
         assert.ok(!responses.some((m) => m.id === "first-stop"), "Stop must wait for the reviewer");
         await waitForForegroundGate("review");
         await waitFor("the feedback comment", async () => {
-          if ((await inspect()).gateHasFeedback) return true;
+          if ((await inspect()).gateHasFeedback) {
+            return true;
+          }
           await vscode.commands.executeCommand("paireto.test.addComment", {
             surface: "review",
             path: path.basename(file),
@@ -173,7 +176,11 @@ suite("Stop review over the bridge", function () {
           "existing changes must not trigger another review",
         );
       } finally {
-        for (const child of children) if (child.exitCode === null) child.kill();
+        for (const child of children) {
+          if (child.exitCode === null) {
+            child.kill();
+          }
+        }
         await fs.rm(file, { force: true });
         // Release a review the test left open (an assertion failed mid-review) BEFORE waiting for
         // the gates to clear, or that wait times out and reports itself instead of the real failure.

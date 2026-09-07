@@ -124,7 +124,9 @@ suite("Central turn review state", () => {
     const turns = new TurnReviewState(
       () => ["/a", "/b"],
       async (root) => {
-        if (root === "/a") throw new Error("git is gone");
+        if (root === "/a") {
+          throw new Error("git is gone");
+        }
         return fingerprint;
       },
     );
@@ -180,10 +182,15 @@ suite("Central Git turn comparison", () => {
     test(`detects ${change}`, async () => {
       const before = await workingTreeFingerprint(root);
       const tracked = path.join(root, "tracked");
-      if (change === "delete") await fs.unlink(tracked);
-      else if (change === "rename") await fs.rename(tracked, path.join(root, "renamed"));
-      else if (change === "binary") await fs.writeFile(tracked, Buffer.from([0, 255, 1]));
-      else await fs.writeFile(path.join(root, change === "create" ? "new" : "tracked"), "changed");
+      if (change === "delete") {
+        await fs.unlink(tracked);
+      } else if (change === "rename") {
+        await fs.rename(tracked, path.join(root, "renamed"));
+      } else if (change === "binary") {
+        await fs.writeFile(tracked, Buffer.from([0, 255, 1]));
+      } else {
+        await fs.writeFile(path.join(root, change === "create" ? "new" : "tracked"), "changed");
+      }
       if (change === "commit") {
         git("add", "tracked");
         git("commit", "-m", "agent edit");
