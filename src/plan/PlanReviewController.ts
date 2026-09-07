@@ -11,7 +11,7 @@ import type { AppEvent } from "../harness/appEvent.js";
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import { CommentSession, commentText, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
-import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
+import { kindLabel, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { closeTabsForUri, tabUri } from "../gate/tabs.js";
@@ -303,15 +303,10 @@ export class PlanReviewController implements vscode.Disposable {
       return;
     }
     this.comments.add(reply, kind, {
+      label: kindLabel(kind),
       onSaved: () => this.changeEmitter.fire(),
-      onDeleted: () => {
-        if (reply.thread.comments.length === 0) {
-          this.comments.forget(reply.thread);
-        }
-        this.changeEmitter.fire();
-      },
+      onDeleted: () => this.changeEmitter.fire(),
     });
-    reply.thread.label = kindLabel(kind);
     this.changeEmitter.fire();
   }
 
@@ -344,14 +339,12 @@ export class PlanReviewController implements vscode.Disposable {
         continue;
       }
       const line = thread.range?.start.line ?? 0;
-      const cs = thread.comments as GateComment[];
-      const kind = highestKind(cs);
-      const body = cs
-        .map((c) => commentText(c.body))
-        .join(" ")
-        .trim();
-      if (body) {
-        result.push({ line, quote: lines[line] ?? "", body, kind });
+
+      for (const comment of thread.comments as GateComment[]) {
+        const body = commentText(comment.body).trim();
+        if (body) {
+          result.push({ line, quote: lines[line] ?? "", body, kind: comment.kind });
+        }
       }
     }
     return result;
@@ -437,12 +430,7 @@ export class PlanReviewController implements vscode.Disposable {
 
   private disposeThreadsFor(uri: vscode.Uri): void {
     const target = uri.toString();
-    for (const thread of this.comments.threads()) {
-      if (thread.uri.toString() === target) {
-        thread.dispose();
-        this.comments.forget(thread);
-      }
-    }
+    this.comments.disposeThreads((thread) => thread.uri.toString() === target);
   }
 
   private updatePendingContext(): void {
@@ -467,9 +455,4 @@ export function resolvePlanApproveMode(
 ): string | undefined {
   const mode = configuredMode ?? defaultMode;
   return mode && mode !== "off" ? mode : undefined;
-}
-
-/** The highest-priority kind among a thread's comments (question > comment). */
-function highestKind(comments: GateComment[]): CommentKind {
-  return comments.map((c) => c.kind).sort((a, b) => KIND_RANK[a] - KIND_RANK[b])[0] ?? "comment";
 }

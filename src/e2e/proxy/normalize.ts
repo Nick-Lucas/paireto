@@ -166,6 +166,7 @@ export function normalizeClaudeBody(raw: string): string {
   sortParallelToolResults(body);
   trimToolResultTrailingWhitespace(body);
   normalizeClaudeWorkflowToolResults(body);
+  stripTypedReturn(body);
   return JSON.stringify(body);
 }
 
@@ -249,6 +250,24 @@ function dropEmptyTextBlocks(body: Record<string, unknown>): void {
       return (block as { type?: unknown }).type !== "text" || String(text ?? "").trim() !== "";
     });
   }
+}
+
+/**
+ * Drop the Enter keystroke a harness left at the front of a typed prompt.
+ *
+ * tmux types the prompt and sends Enter as a separate key, and Claude Code 2.1.258 began carrying
+ * that keystroke into the message as a leading carriage return. The prompt is the same prompt, so
+ * pinning the control character would expire every Claude cassette on a release that changed only
+ * how the composer handles a keypress. A carriage return anywhere else is left alone: there it is
+ * content the model reasons about.
+ */
+function stripTypedReturn(body: Record<string, unknown>): void {
+  walk(body, (object) => {
+    if (object.type !== "text" || typeof object.text !== "string") {
+      return;
+    }
+    object.text = object.text.replace(/^\r+/, "");
+  });
 }
 
 /** Paireto's own tools — the ones this project ships and can regress. Everything else belongs to the

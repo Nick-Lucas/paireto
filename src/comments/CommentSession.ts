@@ -1,9 +1,3 @@
-// Shared inline-comment machinery for both gate flows (Plan Review + Code Review). Each controller
-// owns one CommentSession: it wraps a vscode.CommentController for a scheme, hands out comment
-// instances, and owns reset. The add/save/delete *commands* are global (registered once) and operate
-// on any GateComment via the callbacks the owning controller attaches — so editing and deleting work
-// identically in plan and review, while each flow keeps its own model/collect logic.
-
 import * as vscode from "vscode";
 
 import { Commands } from "../config.js";
@@ -21,9 +15,10 @@ export class GateComment implements vscode.Comment {
   thread?: vscode.CommentThread;
   /** Owner-supplied id (review uses the model id; plan leaves it unset). */
   id?: string;
+  session?: CommentSession;
   /** Called with the edited text after the user saves an edit — sync your model here. */
   onSaved?: (newBody: string) => void;
-  /** Called after the comment is removed from its thread — clean up your model here. */
+  /** Called after the comment and its thread are gone — clean up your model here. */
   onDeleted?: () => void;
 
   constructor(
@@ -61,16 +56,12 @@ export function saveComment(comment: GateComment): void {
   comment.onSaved?.(commentText(comment.body));
 }
 
-/** Remove a comment from its thread (disposing the thread if it empties), then sync via onDeleted. */
+/** Delete a comment, and every comment that goes down with it, then sync each via onDeleted. */
 export function deleteComment(comment: GateComment): void {
-  const thread = comment.thread;
-  if (thread) {
-    thread.comments = thread.comments.filter((c) => c !== comment);
-    if (thread.comments.length === 0) {
-      thread.dispose();
-    }
+  const removed = comment.session?.remove(comment) ?? [comment];
+  for (const item of removed) {
+    item.onDeleted?.();
   }
-  comment.onDeleted?.();
 }
 
 /**
@@ -89,6 +80,7 @@ export interface CommentCallbacks {
   onSaved?: (newBody: string) => void;
   onDeleted?: () => void;
   id?: string;
+  label?: string;
 }
 
 /** Wraps a CommentController for one scheme: ranges, options, comment creation, and reset. */
@@ -112,16 +104,52 @@ export class CommentSession implements vscode.Disposable {
     };
   }
 
-  /** Append a new comment to the reply's thread and track the thread. */
   add(reply: vscode.CommentReply, kind: CommentKind, cb?: CommentCallbacks): GateComment {
     const comment = new GateComment(reply.text, kind);
-    comment.thread = reply.thread;
     comment.onSaved = cb?.onSaved;
     comment.onDeleted = cb?.onDeleted;
     comment.id = cb?.id;
-    reply.thread.comments = [...reply.thread.comments, comment];
-    this.threadSet.add(reply.thread);
+    comment.session = this;
+    const thread = reply.thread;
+    comment.thread = thread;
+    if (thread.comments.length === 0 && cb?.label !== undefined) {
+      thread.label = cb.label;
+    }
+    thread.comments = [...thread.comments, comment];
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    this.threadSet.add(thread);
     return comment;
+  }
+
+  wouldRemove(comment: GateComment): GateComment[] {
+    const onThread = comment.thread?.comments as GateComment[] | undefined;
+    return onThread?.[0] === comment ? [...onThread] : [comment];
+  }
+
+  remove(comment: GateComment): GateComment[] {
+    const thread = comment.thread;
+    if (!thread) {
+      return [comment];
+    }
+    const removed = this.wouldRemove(comment);
+    for (const item of removed) {
+      item.thread = undefined;
+    }
+    const rest = (thread.comments as GateComment[]).filter((item) => !removed.includes(item));
+    if (rest.length > 0) {
+      thread.comments = rest;
+      return removed;
+    }
+    this.threadSet.delete(thread);
+    thread.dispose();
+    return removed;
+  }
+
+  disposeThreads(select: (thread: vscode.CommentThread) => boolean): void {
+    for (const thread of this.threads().filter(select)) {
+      this.threadSet.delete(thread);
+      thread.dispose();
+    }
   }
 
   /** Move a live comment to a new document/range without losing it when its backing diff changes. */
@@ -147,8 +175,10 @@ export class CommentSession implements vscode.Disposable {
     comment.thread = replacement;
 
     if (old) {
-      old.comments = old.comments.filter((item) => item !== comment);
-      if (old.comments.length === 0) {
+      const rest = old.comments.filter((item) => item !== comment);
+      if (rest.length > 0) {
+        old.comments = rest;
+      } else {
         this.threadSet.delete(old);
         old.dispose();
       }
@@ -159,11 +189,6 @@ export class CommentSession implements vscode.Disposable {
   /** All tracked threads (plan collects per-thread; review tracks per-comment). */
   threads(): vscode.CommentThread[] {
     return [...this.threadSet];
-  }
-
-  /** Forget a thread (after it has been disposed by a delete). */
-  forget(thread: vscode.CommentThread): void {
-    this.threadSet.delete(thread);
   }
 
   /** Dispose every thread and clear tracking. */

@@ -855,6 +855,26 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(tools.get("bash")?.parameters, undefined);
   });
 
+  // tmux types the prompt and then sends Enter separately. Claude Code 2.1.258 began keeping that
+  // keystroke in the composer, so the same prompt arrives with a leading carriage return — content
+  // the user never typed, and no reason to expire a cassette.
+  test("a typed prompt matches whether or not the harness kept the Enter keystroke", () => {
+    const body = (text: string): string =>
+      JSON.stringify({
+        messages: [{ role: "user", content: [{ type: "text", text }] }],
+      });
+
+    assert.strictEqual(
+      normalizeClaudeBody(body("\rPlan how to add a file")),
+      normalizeClaudeBody(body("Plan how to add a file")),
+    );
+    // Only the leading keystroke goes: a carriage return inside the prompt is content.
+    assert.notStrictEqual(
+      normalizeClaudeBody(body("Plan how\rto add a file")),
+      normalizeClaudeBody(body("Plan howto add a file")),
+    );
+  });
+
   // Codex advertises its built-ins in an `additional_tools` developer item, not the top-level
   // `tools` field, and rewrites their prose on its own release schedule — 0.152.0 reworded `exec`
   // and expired every Codex cassette. The CLI is installed unpinned, so that prose cannot be part

@@ -50,7 +50,7 @@ import {
   sharedCompareToHolds,
 } from "../review/ReviewController.js";
 import type { ReviewComment } from "../review/reviewTypes.js";
-import { ChangesetIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
+import { ChangesetIdArg, CommentIdArg, FileArg, readArg, withArg } from "../review/commandArgs.js";
 import type { CompareTo, FileGroup } from "../types.js";
 
 const REPO = "/repo";
@@ -678,6 +678,15 @@ suite("guided review — command arguments", () => {
     assert.strictEqual(readArg(ChangesetIdArg, { kind: "file" }), undefined);
   });
 
+  test("a feedback row resolves to its comment id, from the node or the model itself", () => {
+    // The Feedback rows carry the model on a `comment` field. The row's own click command passes that
+    // model, but the inline Delete button is a view/item/context menu — VS Code hands those the NODE.
+    const model = { id: "c0", body: "why?" };
+    assert.strictEqual(readArg(CommentIdArg, { kind: "reviewComment", comment: model }), "c0");
+    assert.strictEqual(readArg(CommentIdArg, model), "c0");
+    assert.strictEqual(readArg(CommentIdArg, { kind: "file" }), undefined);
+  });
+
   test("withArg hands the handler a parsed value, and refuses an argument it cannot read", () => {
     const seen: string[] = [];
     const run = withArg(ChangesetIdArg, (id) => seen.push(id));
@@ -688,6 +697,36 @@ suite("guided review — command arguments", () => {
     // A wired-up-wrong menu must be loud: silently doing nothing is the hardest version to find.
     assert.throws(() => run({ kind: "file" }), /command argument rejected/);
     assert.deepStrictEqual(seen, ["cs0"], "the handler never ran on a rejected argument");
+  });
+
+  // executeCommand resolves with whatever the handler returns, so a caller that awaits a command is
+  // waiting for the work rather than for the dispatch.
+  test("withArg resolves with an asynchronous handler's completion", async () => {
+    let release = (): void => {};
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let finished = false;
+    const run = withArg(ChangesetIdArg, async () => {
+      await blocked;
+      finished = true;
+      return "done";
+    });
+
+    const pending = run({ kind: "changeset", changeset: { id: "cs0" } }) as Promise<string>;
+    assert.strictEqual(finished, false, "the handler is still in flight");
+    release();
+
+    assert.strictEqual(await pending, "done");
+    assert.strictEqual(finished, true);
+  });
+
+  test("withArg hands a rejected handler back to its caller", async () => {
+    const run = withArg(ChangesetIdArg, () => Promise.reject(new Error("handler blew up")));
+    await assert.rejects(
+      run({ kind: "changeset", changeset: { id: "cs0" } }) as Promise<unknown>,
+      /handler blew up/,
+    );
   });
 
   // The schemas name only the fields a command reads, so a node that grows one keeps working — while
