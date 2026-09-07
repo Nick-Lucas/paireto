@@ -510,7 +510,7 @@ export class ReviewController implements vscode.Disposable {
         await this.coordinator.switchTo(requestId);
         await this.focusView();
       } else if (choice === APPROVE) {
-        this.approve();
+        await this.approve();
       }
     });
   }
@@ -1928,11 +1928,20 @@ export class ReviewController implements vscode.Disposable {
 
   // ── GateSession (shared Approve / Send-Feedback commands dispatch here while active) ──
   /** Approve: proceed with no changes (the agent continues, no feedback). */
-  approve(): void {
-    if (this.activeRequestId) {
-      log.info(`review approved for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}`);
-      this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
+  async approve(): Promise<void> {
+    if (!this.activeRequestId) {
+      return;
     }
+    if (this.getPendingComments().length > 0) {
+      void vscode.window.showWarningMessage(
+        "This review has feedback that has not been sent. Send it before approving.",
+      );
+      return;
+    }
+    // On approval we clear the feedback session since everything is considered done
+    this.feedback?.clear();
+    log.info(`review approved for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}`);
+    this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
   }
 
   async sendFeedback(): Promise<void> {
