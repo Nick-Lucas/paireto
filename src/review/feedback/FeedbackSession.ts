@@ -4,21 +4,33 @@
 
 import * as vscode from "vscode";
 
-import { GateComment, type CommentSession } from "../../comments/CommentSession.js";
-import { kindLabel } from "../../comments/kinds.js";
+import {
+  buildThreadItemComment,
+  GateComment,
+  type CommentSession,
+} from "../../comments/CommentSession.js";
+import { kindLabel, type CommentKind } from "../../comments/kinds.js";
 import type { FeedbackRef } from "../../git/gitCli.js";
 import { log } from "../../log.js";
 import { canonicalize } from "../../protocol/paths.js";
 import { openFeedbackBucket, type FeedbackBucket } from "../../storage/FeedbackStore.js";
-import { editFeedback } from "../feedbackState.js";
-import { userFeedback, type ReviewThread } from "../reviewTypes.js";
+import {
+  appendFeedbackReply,
+  editFeedback,
+  editFeedbackReply,
+  removeFeedbackReply,
+} from "../feedbackState.js";
+import {
+  getReviewerItems,
+  getOpeningComment,
+  type ThreadItem,
+  type ReviewThread,
+} from "../reviewTypes.js";
 
-/** The repositories the window comments on, and the ref each one is on. */
 export interface FeedbackContext {
   roots: ReadonlyArray<{ repoRoot: string; ref: FeedbackRef }>;
 }
 
-/** A stable name for a context, so an unchanged one can be recognised. */
 export function contextKey(context: FeedbackContext): string {
   return context.roots
     .map((root) => `${canonicalize(root.repoRoot)}@${root.ref.kind}:${root.ref.value}`)
@@ -99,9 +111,9 @@ export class FeedbackSession {
     return this.live.get(id);
   }
 
-  /** The models a delete of `id` takes: itself, and every reply on its thread. */
-  repliesOf(id: string): ReviewThread[] {
-    return this.allThreads().filter((model) => takenWithId(model, id));
+  repliesFor(id: string): ThreadItem[] {
+    const model = this.allThreads().find((item) => item.id === id);
+    return (model ? getReviewerItems(model) : []).slice(1);
   }
 
   /** Answers false when this session holds no bucket for the model's repository. */
@@ -113,40 +125,99 @@ export class FeedbackSession {
 
   edit(id: string, body: string): boolean {
     const at = new Date().toISOString();
-    return this.writeTo(id, (draft) => {
-      const model = draft.threads.find((item) => item.id === id);
+    const target = this.locate(id);
+    if (!target) {
+      log.error(`feedback ${id} is not held by this session`);
+      return false;
+    }
+    const { thread, itemId } = target;
+    return this.write(thread.repoRoot, (draft) => {
+      const model = draft.threads.find((item) => item.id === thread.id);
       if (model) {
-        Object.assign(model, editFeedback(model, body, at));
+        Object.assign(
+          model,
+          itemId ? editFeedbackReply(model, itemId, body, at) : editFeedback(model, body, at),
+        );
       }
     });
   }
 
-  remove(id: string): boolean {
-    return this.writeTo(id, (draft) => {
-      draft.threads = draft.threads.filter((model) => !takenWithId(model, id));
-    });
-  }
-
-  /** A thread has one range, so a move applies to every comment on it. */
-  relocate(id: string, patch: RelocatePatch): boolean {
-    return this.writeTo(id, (draft) => {
-      const target = draft.threads.find((item) => item.id === id);
-      if (!target) {
+  removeCommentOrThread(id: string): boolean {
+    const at = new Date().toISOString();
+    const target = this.locate(id);
+    if (!target) {
+      log.error(`feedback ${id} is not held by this session`);
+      return false;
+    }
+    const { thread, itemId } = target;
+    return this.write(thread.repoRoot, (draft) => {
+      if (!itemId) {
+        draft.threads = draft.threads.filter((model) => model.id !== thread.id);
         return;
       }
-      const group = threadKey(target);
-      for (const model of draft.threads) {
-        if (threadKey(model) !== group) {
-          continue;
-        }
-        model.line = patch.line;
-        model.sourceUri = patch.sourceUri;
-        if (patch.filePath !== undefined) {
-          model.filePath = patch.filePath;
-        }
-        if (patch.attachment !== undefined) {
-          model.attachment = patch.attachment;
-        }
+      const model = draft.threads.find((item) => item.id === thread.id);
+      if (model) {
+        Object.assign(model, removeFeedbackReply(model, itemId, at));
+      }
+    });
+  }
+
+  addReply(id: string, body: string): boolean {
+    const thread = this.allThreads().find((item) => item.id === id);
+    if (!thread) {
+      log.error(`feedback ${id} is not held by this session`);
+      return false;
+    }
+    const at = new Date().toISOString();
+    return this.write(thread.repoRoot, (draft) => {
+      const model = draft.threads.find((item) => item.id === id);
+      if (model) {
+        Object.assign(
+          model,
+          appendFeedbackReply(model, { body, at, author: { kind: "reviewer" } }),
+        );
+      }
+    });
+  }
+
+  private locate(id: string): { thread: ReviewThread; itemId?: string } | undefined {
+    for (const thread of this.allThreads()) {
+      if (thread.id === id) {
+        return { thread };
+      }
+      if (thread.items.some((a) => a.kind !== "comment" && a.id === id)) {
+        return { thread, itemId: id };
+      }
+    }
+    return undefined;
+  }
+
+  amend(repoRoot: string, id: string, change: (item: ReviewThread) => ReviewThread): boolean {
+    const bucket = this.buckets.get(canonicalize(repoRoot));
+    if (!bucket?.threads().some((model) => model.id === id)) {
+      return false;
+    }
+    return this.write(repoRoot, (draft) => {
+      const model = draft.threads.find((item) => item.id === id);
+      if (model) {
+        Object.assign(model, change(model));
+      }
+    });
+  }
+
+  relocate(id: string, patch: RelocatePatch): boolean {
+    return this.writeTo(id, (draft) => {
+      const model = draft.threads.find((item) => item.id === id);
+      if (!model) {
+        return;
+      }
+      model.line = patch.line;
+      model.sourceUri = patch.sourceUri;
+      if (patch.filePath !== undefined) {
+        model.filePath = patch.filePath;
+      }
+      if (patch.attachment !== undefined) {
+        model.attachment = patch.attachment;
       }
     });
   }
@@ -179,7 +250,6 @@ export class FeedbackSession {
     }
   }
 
-  /** Make the editor agree with the store. Safe to call at any time. */
   render(): void {
     try {
       const models = this.allThreads();
@@ -198,26 +268,20 @@ export class FeedbackSession {
         }
       }
 
-      for (const [openerId, group] of groupThreads(models)) {
-        for (const model of group) {
-          this.draw(model);
-        }
-        const opener = group.find((model) => model.id === openerId) ?? group[0];
-        const feedback = userFeedback(opener);
+      for (const model of models) {
+        const feedback = getOpeningComment(model);
         this.host.comments.place({
-          uri: this.host.uriFor(opener),
+          uri: this.host.uriFor(model),
           range: new vscode.Range(
-            Math.max(0, opener.line),
+            Math.max(0, model.line),
             0,
-            Math.max(0, opener.line),
+            Math.max(0, model.line),
             Math.max(0, feedback.quote.length),
           ),
-          label: this.host.labelFor(opener),
-          comments: group.map((model) => this.live.get(model.id)!),
-          // Any comment of the group names the one thread they share.
-          previous: group
-            .map((model) => this.live.get(model.id)?.thread)
-            .find((thread) => thread !== undefined),
+          label: this.host.labelFor(model),
+          comments: this.getConversation(model),
+          previous: this.live.get(model.id)?.thread,
+          resolved: model.resolvedAt !== undefined,
         });
       }
     } catch (error) {
@@ -244,24 +308,45 @@ export class FeedbackSession {
     this.live.clear();
   }
 
-  /** One GateComment per model, kept in step with what the store says. */
-  private draw(model: ReviewThread): void {
-    const feedback = userFeedback(model);
-    let comment = this.live.get(model.id);
+  private getConversation(
+    model: ReviewThread,
+  ): Array<{ comment: GateComment; replies?: vscode.Comment[] }> {
+    const feedback = getOpeningComment(model);
+    const out: Array<{ comment: GateComment; replies?: vscode.Comment[] }> = [
+      { comment: this.draw(model.id, feedback.body, feedback.commentKind) },
+    ];
+    for (const item of model.items.slice(1)) {
+      // Only the first item is ever the comment.
+      if (item.kind === "comment") {
+        continue;
+      }
+      if (item.kind === "reply" && item.author.kind === "reviewer") {
+        out.push({ comment: this.draw(item.id, item.body, feedback.commentKind) });
+        continue;
+      }
+      const last = out.at(-1)!;
+      last.replies = [...(last.replies ?? []), agentComment(item)];
+    }
+    return out;
+  }
+
+  private draw(id: string, body: string, kind: CommentKind): GateComment {
+    let comment = this.live.get(id);
     if (!comment) {
-      comment = new GateComment(feedback.body, feedback.feedbackKind);
-      // A reply reads the opener's id to work out which thread it joins.
-      comment.id = model.id;
+      comment = new GateComment(body, kind);
+      // A reply reads the id of the comment it answers to find its thread.
+      comment.id = id;
       comment.session = this.host.comments;
-      comment.onSaved = (body) => this.edit(model.id, body);
-      comment.onDelete = () => this.remove(model.id);
-      this.live.set(model.id, comment);
+      comment.onSaved = (next) => this.edit(id, next);
+      comment.onDelete = () => this.removeCommentOrThread(id);
+      this.live.set(id, comment);
     } else if (comment.mode !== vscode.CommentMode.Editing) {
       // Text the user is still typing is theirs until they save it.
-      comment.body = feedback.body;
+      comment.body = body;
     }
-    comment.kind = feedback.feedbackKind;
-    comment.label = kindLabel(feedback.feedbackKind);
+    comment.kind = kind;
+    comment.label = kindLabel(kind);
+    return comment;
   }
 
   private writeTo(id: string, recipe: (draft: { threads: ReviewThread[] }) => void): boolean {
@@ -287,30 +372,11 @@ export class FeedbackSession {
   }
 }
 
-/** A delete of `id` takes the comment itself and every reply that answers it. */
-function takenWithId(model: ReviewThread, id: string): boolean {
-  return model.id === id || model.threadId === id;
-}
-
-/** The thread a comment sits on: the id of the comment that opened it. */
-function threadKey(model: ReviewThread): string {
-  return model.threadId ?? model.id;
-}
-
-/** Group the models by the thread they sit on, oldest comment first. */
-function groupThreads(models: ReviewThread[]): Map<string, ReviewThread[]> {
-  const groups = new Map<string, ReviewThread[]>();
-  for (const model of models) {
-    const key = threadKey(model);
-    const group = groups.get(key);
-    if (group) {
-      group.push(model);
-    } else {
-      groups.set(key, [model]);
-    }
-  }
-  for (const group of groups.values()) {
-    group.sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
-  }
-  return groups;
+function agentComment(item: Exclude<ThreadItem, { kind: "comment" }>): vscode.Comment {
+  const author = item.author.kind === "agent" ? `${item.author.harness} agent` : "You";
+  return buildThreadItemComment(
+    item.kind === "reply"
+      ? { kind: "reply", body: item.body, at: item.at, author }
+      : { kind: "resolved", at: item.at, author },
+  );
 }

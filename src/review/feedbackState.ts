@@ -1,51 +1,87 @@
-import type { Harness } from "../protocol/types.js";
-import type { FeedbackActivity, ReviewThread } from "./reviewTypes.js";
+import type { ReviewThread, ThreadItem, ThreadItemAuthor } from "./reviewTypes.js";
 
-export function pendingFeedback(items: ReviewThread[]): ReviewThread[] {
-  return items.filter((item) => item.delivery === "pending");
+export function pendingFeedback(threads: ReviewThread[]): ReviewThread[] {
+  return threads.filter((thread) => thread.delivery === "pending");
 }
 
-export function markFeedbackSent(items: ReviewThread[], at: string): ReviewThread[] {
-  return items.map((item) =>
-    item.delivery === "pending" ? { ...item, delivery: "sent", updatedAt: at } : item,
+function nextThreadItemId(thread: ReviewThread): string {
+  const used = thread.items.flatMap((item) =>
+    item.kind === "comment" ? [] : [Number(item.id.split("#").at(-1))],
   );
+  return `${thread.id}#${Math.max(0, ...used.filter(Number.isFinite)) + 1}`;
 }
 
-export function editFeedback(item: ReviewThread, body: string, at: string): ReviewThread {
-  const [feedback, ...activity] = item.activities;
+export function editFeedback(thread: ReviewThread, body: string, at: string): ReviewThread {
+  const [comment, ...rest] = thread.items;
   return {
-    ...item,
+    ...thread,
     delivery: "pending",
     resolvedAt: undefined,
     updatedAt: at,
-    activities: [{ ...feedback, body, at }, ...activity],
+    items: [{ ...comment, body, at }, ...rest],
   };
 }
 
 export function appendFeedbackReply(
-  item: ReviewThread,
-  reply: { body: string; at: string; harness: Harness; sessionId?: string },
+  thread: ReviewThread,
+  reply: { body: string; at: string; author: ThreadItemAuthor },
 ): ReviewThread {
-  const activity: FeedbackActivity = { kind: "reply", ...reply };
+  const item: ThreadItem = { id: nextThreadItemId(thread), kind: "reply", ...reply };
   return {
-    ...item,
-    activities: [...item.activities, activity],
+    ...thread,
+    delivery: reply.author.kind === "reviewer" ? "pending" : thread.delivery,
     updatedAt: reply.at,
+    items: [...thread.items, item],
   };
 }
 
-export function resolveFeedback(
-  item: ReviewThread,
-  resolution: { at: string; harness: Harness; sessionId?: string },
+export function editFeedbackReply(
+  thread: ReviewThread,
+  itemId: string,
+  body: string,
+  at: string,
 ): ReviewThread {
-  if (item.resolvedAt) {
-    return item;
-  }
-  const activity: FeedbackActivity = { kind: "resolved", ...resolution };
+  const [comment, ...rest] = thread.items;
   return {
-    ...item,
+    ...thread,
+    delivery: "pending",
+    updatedAt: at,
+    items: [
+      comment,
+      ...rest.map((item) =>
+        item.kind === "reply" && item.id === itemId ? { ...item, body, at } : item,
+      ),
+    ],
+  };
+}
+
+export function removeFeedbackReply(
+  thread: ReviewThread,
+  itemId: string,
+  at: string,
+): ReviewThread {
+  return {
+    ...thread,
+    updatedAt: at,
+    items: [
+      thread.items[0],
+      ...thread.items.slice(1).filter((item) => item.kind === "comment" || item.id !== itemId),
+    ],
+  };
+}
+
+export function resolveThread(
+  thread: ReviewThread,
+  resolution: { at: string; author: ThreadItemAuthor },
+): ReviewThread {
+  if (thread.resolvedAt) {
+    return thread;
+  }
+  const item: ThreadItem = { id: nextThreadItemId(thread), kind: "resolved", ...resolution };
+  return {
+    ...thread,
     resolvedAt: resolution.at,
     updatedAt: resolution.at,
-    activities: [...item.activities, activity],
+    items: [...thread.items, item],
   };
 }

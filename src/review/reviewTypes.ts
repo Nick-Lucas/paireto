@@ -1,29 +1,33 @@
-// Data shapes for code-review feedback and its re-attachment anchors.
+// Data shapes for a review thread and its re-attachment anchors.
 
 import type { CommentKind } from "../comments/kinds.js";
 import type { Harness } from "../protocol/types.js";
 import type { FileGroup } from "../types.js";
 
-export type FeedbackActivity =
+export type ThreadItemAuthor =
+  | { kind: "reviewer" }
+  | { kind: "agent"; harness: Harness; sessionId?: string };
+
+export type ThreadItem =
   | {
-      kind: "feedback";
-      feedbackKind: CommentKind;
+      kind: "comment";
+      commentKind: CommentKind;
       body: string;
       quote: string;
       at: string;
     }
   | {
+      id: string;
       kind: "reply";
+      author: ThreadItemAuthor;
       body: string;
       at: string;
-      harness: Harness;
-      sessionId?: string;
     }
   | {
+      id: string;
       kind: "resolved";
+      author: ThreadItemAuthor;
       at: string;
-      harness: Harness;
-      sessionId?: string;
     };
 
 export interface ReviewAnchor {
@@ -33,9 +37,9 @@ export interface ReviewAnchor {
   lineHash: string;
 }
 
+/** One thread: one place in the diff, and the whole conversation held there. */
 export interface ReviewThread {
   id: string;
-  threadId?: string;
   sourceUri?: string;
   /** Canonical repository root; filePath is relative to this root. */
   repoRoot: string;
@@ -51,11 +55,11 @@ export interface ReviewThread {
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
-  activities: [Extract<FeedbackActivity, { kind: "feedback" }>, ...FeedbackActivity[]];
+  items: [Extract<ThreadItem, { kind: "comment" }>, ...ThreadItem[]];
   /** The changeset description as it read when the comment was left. The document is virtual and
-   *  only exists while the plan is open, so the copy travels with the feedback. */
+   *  only exists while the plan is open, so the copy travels with the thread. */
   sourceDocument?: { uri: string; markdown: string };
-  /** Durable location metadata. Optional for compatibility with older exported review artifacts. */
+  /** Durable location metadata. Absent on a thread whose diff tab was never opened. */
   attachment?: {
     /** Git layer where the comment was last attached. */
     group: FileGroup;
@@ -67,9 +71,11 @@ export interface ReviewThread {
   };
 }
 
-/** The reviewer's own words — always the first activity, so this never fails. */
-export function userFeedback(
-  thread: ReviewThread,
-): Extract<FeedbackActivity, { kind: "feedback" }> {
-  return thread.activities[0];
+export function getReviewerItems(thread: ReviewThread): ThreadItem[] {
+  return thread.items.filter((item) => item.kind === "comment" || item.author.kind === "reviewer");
+}
+
+/** The comment that opens a thread — always the first item, so this never fails. */
+export function getOpeningComment(thread: ReviewThread): Extract<ThreadItem, { kind: "comment" }> {
+  return thread.items[0];
 }

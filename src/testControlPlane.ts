@@ -82,14 +82,12 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       reviewActive: deps.reviewController.isSessionActive(),
       commentBucketCount: deps.reviewController.getComments().length,
       commentIds: deps.reviewController.getComments().map((c) => c.id),
-      feedback: deps.reviewController.getComments().map((item) => ({
-        id: item.id,
-        repoRoot: item.repoRoot,
-        delivery: item.delivery,
-        resolved: item.resolvedAt !== undefined,
-        activityKinds: item.activities.flatMap((activity) =>
-          activity.kind === "feedback" ? [] : [activity.kind],
-        ),
+      feedback: deps.reviewController.getComments().map((thread) => ({
+        id: thread.id,
+        repoRoot: thread.repoRoot,
+        delivery: thread.delivery,
+        resolved: thread.resolvedAt !== undefined,
+        itemKinds: thread.items.flatMap((item) => (item.kind === "comment" ? [] : [item.kind])),
       })),
       gateHasFeedback: deps.coordinator.current?.hasFeedback() ?? false,
       refreshCounts: deps.reviewController.getRefreshCounts(),

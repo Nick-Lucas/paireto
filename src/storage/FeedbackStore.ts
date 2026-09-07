@@ -50,7 +50,7 @@ export async function openFeedbackBucket(
       immer(() => ({ threads: [] as ReviewThread[] })),
       {
         name: "feedback",
-        version: 1,
+        version: 2,
         storage: createJSONStorage<FeedbackState>(() => storage),
         skipHydration: true,
         // Omit anything that isn't part of the state

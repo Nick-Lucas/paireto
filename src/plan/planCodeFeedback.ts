@@ -2,7 +2,7 @@
 // the wording can be tested without the UI: the plan gate asks these functions what to do, then
 // shows the modal itself.
 
-import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
+import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 import { renderRejectedPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 
@@ -59,7 +59,7 @@ export function composeRejectedPlanFeedback(args: {
     args.toolName,
     args.rejectedPlanReviewInstructions,
   );
-  const code = renderRejectedReviewFeedback(args.codeComments, args.multiRepository);
+  const code = serialiseRejectedReviewFeedback(args.codeComments, args.multiRepository);
   if (!code) {
     return plan;
   }

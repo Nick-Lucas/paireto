@@ -4,15 +4,15 @@
 import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
-import { userFeedback, type ReviewThread } from "./reviewTypes.js";
+import { getOpeningComment, type ReviewThread, type ThreadItem } from "./reviewTypes.js";
 
-export function renderRejectedReviewFeedback(
+export function serialiseRejectedReviewFeedback(
   items: ReviewThread[],
   multiRepository = false,
 ): string {
   const actionable = [...items].sort(
     (a, b) =>
-      KIND_RANK[userFeedback(a).feedbackKind] - KIND_RANK[userFeedback(b).feedbackKind] ||
+      KIND_RANK[getOpeningComment(a).commentKind] - KIND_RANK[getOpeningComment(b).commentKind] ||
       a.repoRoot.localeCompare(b.repoRoot) ||
       a.filePath.localeCompare(b.filePath) ||
       a.line - b.line,
@@ -24,9 +24,9 @@ export function renderRejectedReviewFeedback(
 
   const rendered = actionable
     .map((item) => {
-      const feedback = userFeedback(item);
+      const feedback = getOpeningComment(item);
       const quote = feedback.quote.trim() ? `\n> ${feedback.quote.trim()}` : "";
-      return `${location(item, multiRepository)}${quote}\n${feedback.body.trim()}`;
+      return `${location(item, multiRepository)}${quote}\n${serialiseThreadItems(item)}`;
     })
     .join("\n\n");
 
@@ -39,9 +39,24 @@ export function renderRejectedReviewFeedback(
   `;
 }
 
+function serialiseThreadItems(thread: ReviewThread): string {
+  const turns = thread.items.flatMap((item) =>
+    item.kind === "resolved" || !item.body.trim()
+      ? []
+      : [{ who: speaker(item), body: item.body.trim() }],
+  );
+  return turns.length > 1
+    ? turns.map((turn) => `${turn.who}: ${turn.body}`).join("\n\n")
+    : (turns[0]?.body ?? "");
+}
+
+function speaker(item: Exclude<ThreadItem, { kind: "resolved" }>): string {
+  return item.kind === "comment" || item.author.kind === "reviewer" ? "Reviewer" : "Agent";
+}
+
 /** Where feedback was left: a file:line, or the changeset whose description it sits on. */
 function location(item: ReviewThread, multiRepository: boolean): string {
-  const kind = `[${userFeedback(item).feedbackKind.toUpperCase()}]`;
+  const kind = `[${getOpeningComment(item).commentKind.toUpperCase()}]`;
   if (item.changeset) {
     return `Changeset "${item.changeset.title}"  ${kind}`;
   }

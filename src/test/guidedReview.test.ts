@@ -322,9 +322,9 @@ suite("guided review — a planned row opens against the plan's comparison point
 
 suite("guided review — feedback rows", () => {
   const comment = (
-    over: Partial<ReviewThread> & { feedbackKind?: CommentKind; body?: string } = {},
+    over: Partial<ReviewThread> & { commentKind?: CommentKind; body?: string } = {},
   ): ReviewThread => {
-    const { feedbackKind = "comment", body = "split this up", ...rest } = over;
+    const { commentKind = "comment", body = "split this up", ...rest } = over;
     const at = "2026-08-12T20:00:00.000Z";
     return {
       id: "c1",
@@ -335,7 +335,7 @@ suite("guided review — feedback rows", () => {
       delivery: "pending",
       createdAt: at,
       updatedAt: at,
-      activities: [{ kind: "feedback", feedbackKind, body, quote: "> why", at }],
+      items: [{ kind: "comment", commentKind, body, quote: "> why", at }],
       anchor: { lineText: "", contextBefore: [], contextAfter: [], lineHash: "" },
       ...rest,
     };

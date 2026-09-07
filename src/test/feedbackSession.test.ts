@@ -18,7 +18,8 @@ import {
   contextKey,
   type FeedbackHost,
 } from "../review/feedback/FeedbackSession.js";
-import { userFeedback, type ReviewThread } from "../review/reviewTypes.js";
+import { appendFeedbackReply } from "../review/feedbackState.js";
+import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 import { feedbackFilePath, type FeedbackState } from "../storage/FeedbackStore.js";
 
 const SCHEME = "paireto-feedback-session-doc";
@@ -28,6 +29,24 @@ const MAIN: FeedbackRef = { kind: "branch", value: "main" };
 const WHEN = "2026-08-12T20:00:00.000Z";
 
 const branch = (value: string): FeedbackRef => ({ kind: "branch", value });
+
+/** A thread with replies already on it, named the way the store names them. */
+const withReplies = (
+  model: ReviewThread,
+  replies: Array<{ who: "reviewer" | "agent"; body: string }>,
+): ReviewThread =>
+  replies.reduce(
+    (item, reply, index) =>
+      appendFeedbackReply(item, {
+        body: reply.body,
+        at: `2026-08-12T2${index}:00:00.000Z`,
+        author:
+          reply.who === "reviewer"
+            ? { kind: "reviewer" }
+            : { kind: "agent", harness: "claudecode" },
+      }),
+    model,
+  );
 
 const comment = (id: string, over: Partial<ReviewThread> = {}): ReviewThread => ({
   id,
@@ -44,10 +63,10 @@ const comment = (id: string, over: Partial<ReviewThread> = {}): ReviewThread => 
   delivery: "pending",
   createdAt: WHEN,
   updatedAt: WHEN,
-  activities: [
+  items: [
     {
-      kind: "feedback",
-      feedbackKind: "comment",
+      kind: "comment",
+      commentKind: "comment",
       body: id,
       quote: "const answer = 42;",
       at: WHEN,
@@ -154,7 +173,7 @@ suite("feedback session", () => {
   function seed(models: ReviewThread[], repoRoot = REPO, ref = MAIN): void {
     const file = feedbackFilePath(repoRoot, ref);
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, JSON.stringify({ version: 1, state: { threads: models } }));
+    fs.writeFileSync(file, JSON.stringify({ version: 2, state: { threads: models } }));
   }
 
   /** What a freshly opened window would read for this bucket. */
@@ -196,20 +215,36 @@ suite("feedback session", () => {
     assert.strictEqual(comments.threads().length, 2);
   });
 
-  test("comments sharing a threadId restore onto one thread", async () => {
+  test("a thread restores with its whole conversation, in the order it was said", async () => {
     seed([
-      comment("opener", { threadId: "opener" }),
-      comment("reply", { threadId: "opener", createdAt: "2026-08-12T21:00:00.000Z" }),
+      withReplies(comment("opener"), [
+        { who: "reviewer", body: "and another thing" },
+        { who: "agent", body: "fixed both" },
+      ]),
       comment("alone", { line: 5 }),
     ]);
 
     const session = await openSession();
 
     const opener = session.commentFor("opener")!;
-    assert.strictEqual(session.commentFor("reply")!.thread, opener.thread);
-    assert.deepStrictEqual(bodies(opener.thread!), ["opener", "reply"]);
+    assert.deepStrictEqual(bodies(opener.thread!), ["opener", "and another thing", "fixed both"]);
+    assert.strictEqual(comments.threads().length, 2, "one thread per piece of feedback");
     assert.notStrictEqual(session.commentFor("alone")!.thread, opener.thread);
-    assert.strictEqual(comments.threads().length, 2);
+  });
+
+  test("the reviewer's own replies stay theirs to edit, an agent's do not", async () => {
+    seed([
+      withReplies(comment("opener"), [
+        { who: "reviewer", body: "mine" },
+        { who: "agent", body: "theirs" },
+      ]),
+    ]);
+    const session = await openSession();
+
+    const mine = session.commentFor("opener#1");
+    assert.ok(mine, "the reviewer's reply is a comment of its own");
+    assert.strictEqual(String(mine.body), "mine");
+    assert.strictEqual(session.commentFor("opener#2"), undefined, "an agent answer is read-only");
   });
 
   test("a restored comment carries its model id, so a reply can join its thread", async () => {
@@ -217,16 +252,22 @@ suite("feedback session", () => {
     const session = await openSession();
     const thread = session.commentFor("opener")!.thread!;
 
-    // The reply's threadId is read off the comment that opens the thread it was typed into.
-    const openerId = (thread.comments[0] as GateComment).id;
-    assert.strictEqual(openerId, "opener");
-    await session.add(
-      comment("reply", { threadId: openerId, createdAt: "2026-08-12T21:00:00.000Z" }),
-    );
+    // A reply is routed by the id of the comment that opens the thread it was typed into.
+    assert.strictEqual((thread.comments[0] as GateComment).id, "opener");
+    session.addReply("opener", "a follow-up");
 
-    assert.strictEqual(session.commentFor("reply")!.thread, thread);
-    assert.deepStrictEqual(bodies(thread), ["opener", "reply"]);
-    assert.strictEqual(comments.threads().length, 1);
+    assert.deepStrictEqual(bodies(thread), ["opener", "a follow-up"]);
+    assert.strictEqual(comments.threads().length, 1, "a reply opens no second thread");
+    assert.deepStrictEqual(ids(session.allThreads()), ["opener"], "and no second feedback item");
+  });
+
+  test("the reviewer's reply makes a delivered thread sendable again", async () => {
+    seed([comment("sent-already", { delivery: "sent" })]);
+    const session = await openSession();
+
+    session.addReply("sent-already", "one more thing");
+
+    assert.strictEqual(session.allThreads()[0].delivery, "pending");
   });
 
   test("adding feedback creates its comment from store state", async () => {
@@ -255,7 +296,7 @@ suite("feedback session", () => {
       return original(target);
     });
 
-    await session.remove("gone");
+    await session.removeCommentOrThread("gone");
 
     assert.strictEqual(remove.mock.callCount(), 1);
     assert.deepStrictEqual(heldAtRemoval, [], "the store is already clear when the editor is told");
@@ -265,45 +306,58 @@ suite("feedback session", () => {
     assert.strictEqual(comments.threads().length, 0);
   });
 
-  test("deleting the comment that opens a thread deletes its replies too", async () => {
+  test("deleting the comment that opens a thread takes its whole conversation", async () => {
     seed([
-      comment("opener", { threadId: "opener" }),
-      comment("reply", { threadId: "opener", createdAt: "2026-08-12T21:00:00.000Z" }),
+      withReplies(comment("opener"), [
+        { who: "reviewer", body: "mine" },
+        { who: "agent", body: "theirs" },
+      ]),
       comment("alone", { line: 5 }),
     ]);
     const session = await openSession();
 
-    await session.remove("opener");
+    await session.removeCommentOrThread("opener");
 
     assert.deepStrictEqual(ids(session.allThreads()), ["alone"]);
     await session.flush();
     assert.deepStrictEqual(ids(stored()), ["alone"]);
     assert.strictEqual(session.commentFor("opener"), undefined);
-    assert.strictEqual(session.commentFor("reply"), undefined);
+    assert.strictEqual(session.commentFor("opener#1"), undefined);
     assert.strictEqual(comments.threads().length, 1);
   });
 
-  test("the reply count for a delete comes from the stored models", async () => {
+  test("deleting one reply leaves the thread and everything else on it", async () => {
     seed([
-      comment("opener", { threadId: "opener" }),
-      comment("reply-one", { threadId: "opener", createdAt: "2026-08-12T21:00:00.000Z" }),
+      withReplies(comment("opener"), [
+        { who: "reviewer", body: "first" },
+        { who: "reviewer", body: "second" },
+      ]),
+    ]);
+    const session = await openSession();
+
+    await session.removeCommentOrThread("opener#1");
+
+    assert.deepStrictEqual(ids(session.allThreads()), ["opener"], "the thread stays");
+    assert.deepStrictEqual(bodies(session.commentFor("opener")!.thread!), ["opener", "second"]);
+    assert.strictEqual(session.commentFor("opener#1"), undefined);
+  });
+
+  test("the reply count for a delete counts only the reviewer's own words", async () => {
+    seed([
+      withReplies(comment("opener"), [
+        { who: "reviewer", body: "mine" },
+        { who: "agent", body: "theirs" },
+      ]),
       comment("alone", { line: 5 }),
     ]);
     const session = await openSession();
 
-    assert.deepStrictEqual(ids(session.repliesOf("opener")).sort(), ["opener", "reply-one"]);
-    assert.deepStrictEqual(ids(session.repliesOf("reply-one")), ["reply-one"]);
-    assert.deepStrictEqual(ids(session.repliesOf("alone")), ["alone"]);
-
-    await session.add(
-      comment("reply-two", { threadId: "opener", createdAt: "2026-08-12T22:00:00.000Z" }),
+    assert.strictEqual(
+      session.repliesFor("opener").length,
+      1,
+      "the agent answer is not the user's",
     );
-
-    assert.deepStrictEqual(ids(session.repliesOf("opener")).sort(), [
-      "opener",
-      "reply-one",
-      "reply-two",
-    ]);
+    assert.strictEqual(session.repliesFor("alone").length, 0);
   });
 
   test("a rendering failure does not prevent the store write", async () => {
@@ -332,7 +386,7 @@ suite("feedback session", () => {
     session.render();
     assert.strictEqual(host.changes, 2, "a render on its own is not a change");
 
-    await session.remove("counted");
+    await session.removeCommentOrThread("counted");
     assert.strictEqual(host.changes, 3);
   });
 
@@ -347,8 +401,12 @@ suite("feedback session", () => {
     saveComment(drawn);
     await written;
 
-    assert.strictEqual(userFeedback(session.allThreads()[0]).body, "edited in the editor");
-    assert.strictEqual(userFeedback(before[0]).body, "saved", "the earlier snapshot is untouched");
+    assert.strictEqual(getOpeningComment(session.allThreads()[0]).body, "edited in the editor");
+    assert.strictEqual(
+      getOpeningComment(before[0]).body,
+      "saved",
+      "the earlier snapshot is untouched",
+    );
   });
 
   test("a store change does not overwrite text the user is still typing", async () => {
@@ -361,7 +419,7 @@ suite("feedback session", () => {
     await session.edit("typing", "from the store");
 
     assert.strictEqual(String(drawn.body), "half typed");
-    assert.strictEqual(userFeedback(session.allThreads()[0]).body, "from the store");
+    assert.strictEqual(getOpeningComment(session.allThreads()[0]).body, "from the store");
   });
 
   test("a comment that moves document gets a new thread and the old one is disposed", async () => {
@@ -396,27 +454,23 @@ suite("feedback session", () => {
     assert.strictEqual(after.collapsibleState, vscode.CommentThreadCollapsibleState.Collapsed);
   });
 
-  test("relocating a reply moves the whole thread", async () => {
+  test("relocating a thread moves its whole conversation", async () => {
     seed([
-      comment("opener", { threadId: "opener", sourceUri: docA.uri.toString() }),
-      comment("reply", {
-        threadId: "opener",
-        sourceUri: docA.uri.toString(),
-        createdAt: "2026-08-12T21:00:00.000Z",
-      }),
+      withReplies(comment("opener", { sourceUri: docA.uri.toString() }), [
+        { who: "reviewer", body: "and this" },
+      ]),
     ]);
     const session = await openSession();
 
-    await session.relocate("reply", { line: 6, sourceUri: docB.uri.toString() });
+    await session.relocate("opener", { line: 6, sourceUri: docB.uri.toString() });
 
-    for (const model of session.allThreads()) {
-      assert.strictEqual(model.sourceUri, docB.uri.toString(), model.id);
-      assert.strictEqual(model.line, 6, model.id);
-    }
+    const model = session.allThreads()[0];
+    assert.strictEqual(model.sourceUri, docB.uri.toString());
+    assert.strictEqual(model.line, 6);
     const thread = session.commentFor("opener")!.thread!;
-    assert.strictEqual(session.commentFor("reply")!.thread, thread);
+    assert.strictEqual(session.commentFor("opener#1")!.thread, thread, "the reply travels with it");
     assert.strictEqual(thread.uri.toString(), docB.uri.toString());
-    assert.deepStrictEqual(bodies(thread), ["opener", "reply"]);
+    assert.deepStrictEqual(bodies(thread), ["opener", "and this"]);
     assert.strictEqual(comments.threads().length, 1);
   });
 
@@ -459,9 +513,9 @@ suite("feedback session", () => {
     await session.edit("send", "latest text");
     const sent = await session.markSent(new Set(["send"]), "2026-09-01T00:00:00.000Z");
 
-    assert.strictEqual(userFeedback(sent[0]).body, "latest text");
+    assert.strictEqual(getOpeningComment(sent[0]).body, "latest text");
     assert.strictEqual(sent[0].delivery, "sent");
-    assert.strictEqual(userFeedback(snapshot[0]).body, "send");
+    assert.strictEqual(getOpeningComment(snapshot[0]).body, "send");
     assert.strictEqual(snapshot[0].delivery, "pending");
   });
 

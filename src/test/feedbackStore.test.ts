@@ -32,10 +32,10 @@ const comment = (id: string, repoRoot = "/repo"): ReviewThread => ({
   delivery: "pending",
   createdAt: "2026-08-12T20:00:00.000Z",
   updatedAt: "2026-08-12T20:00:00.000Z",
-  activities: [
+  items: [
     {
-      kind: "feedback",
-      feedbackKind: "question",
+      kind: "comment",
+      commentKind: "question",
       body: "Why is this needed?",
       quote: "const answer = 42;",
       at: "2026-08-12T20:00:00.000Z",
@@ -90,7 +90,7 @@ suite("repository feedback buckets", () => {
       assert.strictEqual(path.dirname(firstFile), path.join(root, repoKey("/repo")));
       assert.strictEqual(path.dirname(secondFile), path.dirname(firstFile));
       assert.deepStrictEqual(JSON.parse(fs.readFileSync(firstFile, "utf8")), {
-        version: 1,
+        version: 2,
         state: { threads: [comment("main")] },
       });
       const secondBytes = fs.readFileSync(secondFile, "utf8");
@@ -119,7 +119,7 @@ suite("repository feedback buckets", () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(
       file,
-      JSON.stringify({ version: 1, state: { threads: [comment("first", repo)] } }),
+      JSON.stringify({ version: 2, state: { threads: [comment("first", repo)] } }),
     );
     const read = mock.method(fs.promises, "readFile");
     try {
@@ -143,7 +143,7 @@ suite("repository feedback buckets", () => {
     fs.writeFileSync(
       file,
       JSON.stringify({
-        version: 1,
+        version: 2,
         state: { repoRoot: repo, ref: main, threads: [comment("kept", repo)] },
       }),
     );
@@ -238,6 +238,21 @@ suite("repository feedback buckets", () => {
     } finally {
       rename.mock.restore();
     }
+  });
+
+  test("a bucket written by an older shape is discarded rather than half read", async () => {
+    const repo = "/older";
+    const file = feedbackFilePath(repo, main, root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, state: { threads: [{ id: "old", items: [] }] } }),
+    );
+
+    const opened = await openFeedbackBucket(repo, main, root);
+
+    assert.deepStrictEqual(opened.threads(), []);
+    await opened.close();
   });
 
   test("a corrupt bucket file keeps the initial empty state", async () => {
