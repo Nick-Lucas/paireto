@@ -46,6 +46,12 @@ class Logger {
     }
   }
 
+  warn(msg: string): void {
+    if (this.verbosity() >= SEVERITY.info) {
+      this.write(`[warn] ${msg}`);
+    }
+  }
+
   info(msg: string): void {
     if (this.verbosity() >= SEVERITY.info) {
       this.write(msg);

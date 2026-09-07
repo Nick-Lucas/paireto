@@ -181,7 +181,7 @@ suite("commenting integration", () => {
     }
   });
 
-  test("deleteComment takes the thread with it and leaves a line-mate alone", async () => {
+  test("remove takes the thread with it and leaves a line-mate alone", async () => {
     const session = new CommentSession("paireto-test-del", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
@@ -190,14 +190,9 @@ suite("commenting integration", () => {
       const doc = await openDoc(4);
       const keep = session.add(replyOn(session, doc, 1, "keep"), "comment");
       const drop = session.add(replyOn(session, doc, 1, "drop"), "question");
-      let deleted = false;
-      drop.onDeleted = () => {
-        deleted = true;
-      };
 
-      deleteComment(drop);
+      session.remove(drop);
 
-      assert.strictEqual(deleted, true, "the owner is told so it can drop its model");
       assert.strictEqual(drop.thread, undefined, "the deleted comment keeps no thread");
       assert.strictEqual(session.threads().length, 1, "only the line-mate is still tracked");
       assert.strictEqual(session.threads()[0], keep.thread);
@@ -217,7 +212,7 @@ suite("commenting integration", () => {
       const keep = session.add(replyOn(session, doc, 1, "keep"), "comment");
       const drop = session.add({ thread: keep.thread!, text: "drop" }, "question");
 
-      deleteComment(drop);
+      session.remove(drop);
 
       assert.strictEqual(drop.thread, undefined, "the deleted comment keeps no thread");
       assert.deepStrictEqual(bodies(keep.thread!), ["keep"], "its thread-mate is untouched");
@@ -228,7 +223,7 @@ suite("commenting integration", () => {
     }
   });
 
-  test("wouldRemove reports what a delete would take, so a confirmation can say so", async () => {
+  test("removing the opener takes its replies, a reply takes only itself", async () => {
     const session = new CommentSession("paireto-test-would", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
@@ -239,21 +234,42 @@ suite("commenting integration", () => {
       const reply = session.add({ thread: opener.thread!, text: "reply" }, "question");
 
       assert.deepStrictEqual(
-        session.wouldRemove(opener).map((c) => String(c.body)),
-        ["opener", "reply"],
-        "the opener takes the thread",
-      );
-      assert.deepStrictEqual(
-        session.wouldRemove(reply).map((c) => String(c.body)),
+        session.remove(reply).map((c) => String(c.body)),
         ["reply"],
         "a reply takes only itself",
+      );
+      assert.deepStrictEqual(
+        session.remove(opener).map((c) => String(c.body)),
+        ["opener"],
+        "the opener takes what is left on its thread",
       );
     } finally {
       session.dispose();
     }
   });
 
-  test("deleting the comment that opens a thread takes the replies with it", async () => {
+  test("deleteComment asks the owner to delete", async () => {
+    const session = new CommentSession("paireto-test-owner-delete", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const doc = await openDoc(4);
+      const comment = session.add(replyOn(session, doc, 1, "mine"), "comment");
+      let asked = 0;
+      comment.onDelete = () => asked++;
+
+      deleteComment(comment);
+
+      assert.strictEqual(asked, 1, "the owner decides what goes down with it");
+      assert.notStrictEqual(comment.thread, undefined, "the session is not touched");
+      assert.strictEqual(session.threads().length, 1);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test("removing the comment that opens a thread takes the replies with it", async () => {
     // The thread belongs to the comment that started it. Removing that comment alone would promote a
     // reply into a top-level comment answering nothing.
     const session = new CommentSession("paireto-test-del-opener", "Test", SCHEME, {
@@ -264,22 +280,23 @@ suite("commenting integration", () => {
       const doc = await openDoc(4);
       const opener = session.add(replyOn(session, doc, 1, "opener"), "comment");
       const reply = session.add({ thread: opener.thread!, text: "reply" }, "question");
-      const told: string[] = [];
-      opener.onDeleted = () => told.push("opener");
-      reply.onDeleted = () => told.push("reply");
 
-      deleteComment(opener);
+      const removed = session.remove(opener);
 
       assert.strictEqual(session.threads().length, 0, "the thread goes down with its opener");
       assert.strictEqual(opener.thread, undefined);
       assert.strictEqual(reply.thread, undefined, "the reply keeps no thread either");
-      assert.deepStrictEqual(told, ["opener", "reply"], "each owner is told to drop its model");
+      assert.deepStrictEqual(
+        removed.map((c) => String(c.body)),
+        ["opener", "reply"],
+        "the caller is told what went down with it",
+      );
     } finally {
       session.dispose();
     }
   });
 
-  test("a deleted comment's thread stops being collected", async () => {
+  test("a removed comment's thread stops being collected", async () => {
     // The plan gate gathers its feedback by walking session.threads(), so a thread left tracked
     // after its comment was deleted would put the deleted text back into what the agent receives.
     const session = new CommentSession("paireto-test-collect", "Test", SCHEME, {
@@ -290,7 +307,7 @@ suite("commenting integration", () => {
       const doc = await openDoc(4);
       const only = session.add(replyOn(session, doc, 2, "only"), "comment");
 
-      deleteComment(only);
+      session.remove(only);
 
       assert.strictEqual(session.threads().length, 0);
     } finally {
@@ -319,35 +336,33 @@ suite("commenting integration", () => {
     }
   });
 
-  test("reattach moves the same live comment to a replacement document without losing it", async () => {
-    const session = new CommentSession("paireto-test-reattach", "Test", SCHEME, {
+  test("place moves a whole thread to a replacement document and disposes the old one", async () => {
+    const session = new CommentSession("paireto-test-place-move", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
     try {
       const oldDoc = await openDoc(3);
       const newDoc = await openDoc(6);
-      const oldThread = session.controller.createCommentThread(
-        oldDoc.uri,
-        new vscode.Range(1, 0, 1, 0),
-        [],
-      );
-      const comment = new GateComment("keep me", "comment");
-      comment.thread = oldThread;
-      oldThread.comments = [comment];
+      const opener = session.add(replyOn(session, oldDoc, 1, "opener"), "comment");
+      const reply = session.add({ thread: opener.thread!, text: "reply" }, "question");
+      const original = opener.thread!;
 
-      const replacement = session.reattach(
-        comment,
-        newDoc.uri,
-        new vscode.Range(4, 0, 4, 6),
-        "file.ts:5",
-      );
+      const replacement = session.place({
+        uri: newDoc.uri,
+        range: new vscode.Range(4, 0, 4, 6),
+        label: "file.ts:5",
+        comments: [opener, reply],
+        previous: original,
+      });
 
-      assert.strictEqual(comment.thread, replacement);
+      assert.notStrictEqual(replacement, original, "a new document needs a new thread");
+      assert.strictEqual(opener.thread, replacement);
+      assert.strictEqual(reply.thread, replacement, "the whole group moves together");
       assert.strictEqual(replacement.uri.toString(), newDoc.uri.toString());
       assert.strictEqual(replacement.range?.start.line, 4);
-      assert.deepStrictEqual(bodies(replacement), ["keep me"]);
       assert.strictEqual(replacement.label, "file.ts:5");
+      assert.deepStrictEqual(bodies(replacement), ["opener", "reply"]);
       assert.strictEqual(session.threads().length, 1, "the vacated thread is not kept");
       assert.strictEqual(session.threads()[0], replacement);
     } finally {
@@ -355,25 +370,59 @@ suite("commenting integration", () => {
     }
   });
 
-  test("reattach leaves a thread standing while it still carries other comments", async () => {
-    const session = new CommentSession("paireto-test-reattach-reply", "Test", SCHEME, {
+  test("place keeps the thread and its collapsed state while the document is unchanged", async () => {
+    const session = new CommentSession("paireto-test-place-keep", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
     try {
-      const oldDoc = await openDoc(3);
-      const newDoc = await openDoc(6);
-      const stay = session.add(replyOn(session, oldDoc, 1, "stay"), "comment");
-      const moved = session.add({ thread: stay.thread!, text: "moved" }, "question");
-      const original = stay.thread!;
+      const doc = await openDoc(6);
+      const comment = session.add(replyOn(session, doc, 1, "stay"), "comment");
+      const original = comment.thread!;
+      original.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
 
-      const replacement = session.reattach(moved, newDoc.uri, new vscode.Range(4, 0, 4, 6), "f:5");
+      const same = session.place({
+        uri: doc.uri,
+        range: new vscode.Range(4, 0, 4, 4),
+        label: "f:5",
+        comments: [comment],
+        previous: original,
+      });
 
-      assert.deepStrictEqual(bodies(original), ["stay"], "the thread keeps what did not move");
-      assert.deepStrictEqual(bodies(replacement), ["moved"]);
-      assert.strictEqual(session.threads().length, 2);
-      assert.strictEqual(session.threads()[0], original);
-      assert.strictEqual(session.threads()[1], replacement);
+      assert.strictEqual(same, original, "the same document keeps the same thread");
+      assert.strictEqual(same.range?.start.line, 4);
+      assert.strictEqual(same.label, "f:5");
+      assert.strictEqual(same.collapsibleState, vscode.CommentThreadCollapsibleState.Collapsed);
+      assert.strictEqual(session.threads().length, 1);
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test("place labels a thread from its opening comment, not from a reply", async () => {
+    const session = new CommentSession("paireto-test-place-label", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const doc = await openDoc(6);
+      const opener = new GateComment("opener", "comment");
+      const reply = new GateComment("reply", "question");
+
+      const thread = session.place({
+        uri: doc.uri,
+        range: new vscode.Range(2, 0, 2, 3),
+        label: "opener label",
+        comments: [opener, reply],
+      });
+
+      assert.strictEqual(thread.label, "opener label");
+      assert.deepStrictEqual(bodies(thread), ["opener", "reply"]);
+      assert.strictEqual(
+        thread.collapsibleState,
+        vscode.CommentThreadCollapsibleState.Expanded,
+        "a restored thread is open",
+      );
     } finally {
       session.dispose();
     }

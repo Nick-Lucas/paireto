@@ -35,6 +35,8 @@ export interface ReviewAnchor {
 
 export interface ReviewThread {
   id: string;
+  threadId?: string;
+  sourceUri?: string;
   /** Canonical repository root; filePath is relative to this root. */
   repoRoot: string;
   /** Repo-relative file the comment sits on. Empty for a comment left on a changeset description,
@@ -50,6 +52,9 @@ export interface ReviewThread {
   updatedAt: string;
   resolvedAt?: string;
   activities: [Extract<FeedbackActivity, { kind: "feedback" }>, ...FeedbackActivity[]];
+  /** The changeset description as it read when the comment was left. The document is virtual and
+   *  only exists while the plan is open, so the copy travels with the feedback. */
+  sourceDocument?: { uri: string; markdown: string };
   /** Durable location metadata. Optional for compatibility with older exported review artifacts. */
   attachment?: {
     /** Git layer where the comment was last attached. */

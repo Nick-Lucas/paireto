@@ -277,7 +277,7 @@ export class PlanReviewController implements vscode.Disposable {
       include = choice === INCLUDE_FILE_COMMENTS;
     }
 
-    const sentCode = include ? codeComments : [];
+    const sentCode = include ? await this.codeFeedback.markCommentsSent(codeComments) : [];
     log.info(
       `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
@@ -290,26 +290,25 @@ export class PlanReviewController implements vscode.Disposable {
       multiRepository: this.codeFeedback.isMultiRepository(),
     });
 
-    if (include && !(await this.codeFeedback.markCommentsSent(sentCode))) {
-      void vscode.window.showErrorMessage(
-        "Paireto could not record the file feedback as sent. Plan feedback was not sent.",
-      );
-      return;
-    }
     this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
-  private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
+  /** Answers whether the comment attached, so a caller is never left waiting for a silent drop. */
+  private addComment(reply: vscode.CommentReply, kind: CommentKind): boolean {
     const review = this.planForUri(reply.thread.uri);
     if (!review) {
-      return;
+      return false;
     }
-    this.comments.add(reply, kind, {
+    const comment = this.comments.add(reply, kind, {
       label: kindLabel(kind),
       onSaved: () => this.changeEmitter.fire(),
-      onDeleted: () => this.changeEmitter.fire(),
     });
+    comment.onDelete = () => {
+      this.comments.remove(comment);
+      this.changeEmitter.fire();
+    };
     this.changeEmitter.fire();
+    return true;
   }
 
   /** Gathered comments for the foreground plan (drives the Plan Review panel). */

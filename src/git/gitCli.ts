@@ -13,7 +13,7 @@ export interface GitResult {
   stderr: string;
 }
 
-export type FeedbackRef = { kind: "branch"; value: string } | { kind: "commit"; value: string };
+export type FeedbackRef = { kind: "branch"; value: string } | { kind: "detached"; value: "HEAD" };
 
 /** Run `git -C <repoRoot> <args...>`. Rejects on non-zero exit. */
 export async function git(repoRoot: string, args: string[]): Promise<GitResult> {
@@ -73,7 +73,7 @@ export async function currentFeedbackRef(repoRoot: string): Promise<FeedbackRef 
     return { kind: "branch", value: branch };
   }
   const commit = (await gitSafe(repoRoot, ["rev-parse", "--verify", "HEAD"])).trim();
-  return commit ? { kind: "commit", value: commit } : undefined;
+  return commit ? { kind: "detached", value: "HEAD" } : undefined;
 }
 
 /**

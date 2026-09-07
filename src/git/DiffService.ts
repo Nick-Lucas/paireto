@@ -103,47 +103,31 @@ export class DiffService {
     compareRef: string | null,
     paths: string[] = [],
   ): Promise<{ staged: ChangedFile[]; unstaged: ChangedFile[]; committed: ChangedFile[] }> {
-    // Tracked diffs are NEVER pathspec-limited: git pairs a rename only when BOTH sides are inside
-    // the pathspec, so scoping to one side degrades the R into a phantom D/A the full scan would
-    // never report. Run them whole and filter afterwards.
-    const stagedAll = await this.collect(repoRoot, ["diff", "--cached"], "staged");
-    const unstagedAll = await this.collect(repoRoot, ["diff"], "unstaged");
+    const unscopedUntracked =
+      paths.length === 0
+        ? gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"])
+        : undefined;
 
-    // A bad or unresolvable compare ref is a persistent condition, so degrade the committed group
-    // to empty rather than failing the whole model. Staged and unstaged failures still propagate so
-    // the caller can keep the last good model.
-    let committedAll: ChangedFile[] = [];
-    if (compareRef) {
-      try {
-        committedAll = await this.collect(repoRoot, ["diff", compareRef, "HEAD"], "committed");
-      } catch {
-        committedAll = [];
-      }
-    }
+    const [stagedAll, unstagedAll, committedAll] = await Promise.all([
+      this.collect(repoRoot, ["diff", "--cached"], "staged"),
+      this.collect(repoRoot, ["diff"], "unstaged"),
+      compareRef
+        ? this.collect(repoRoot, ["diff", compareRef, "HEAD"], "committed").catch(
+            (): ChangedFile[] => [],
+          )
+        : [],
+    ]);
 
-    // A scoped scan must return EVERY entry mergeChangesForPath will count as affected: a matched
-    // rename widens the scope with its other half, which can itself match further entries (an edit
-    // at the rename's new path, a chained rename) — so widen to a fixpoint. An entry at a widened
-    // path missing from the result would be dropped from the merged model with no replacement.
     const scoped = widenAcrossRenames(paths, [...stagedAll, ...unstagedAll, ...committedAll]);
     const scope = (files: ChangedFile[]): ChangedFile[] =>
       scoped === undefined ? files : files.filter((f) => matchesPaths(f, scoped));
     const staged = scope(stagedAll);
     const unstaged = scope(unstagedAll);
 
-    // Untracked files are working-tree changes → Unstaged group. ls-files keeps the (widened)
-    // pathspec — untracked files can't be rename halves, and the untracked walk is the expensive
-    // call here. `:(literal)` so a path starting with ':' (pathspec magic) or holding glob
-    // characters still matches itself exactly.
     const pathspec =
       scoped === undefined ? [] : ["--", ...[...scoped].map((p) => `:(literal)${p}`)];
-    const untrackedOut = await gitSafe(repoRoot, [
-      "ls-files",
-      "--others",
-      "--exclude-standard",
-      "-z",
-      ...pathspec,
-    ]);
+    const untrackedOut = await (unscopedUntracked ??
+      gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z", ...pathspec]));
     for (const p of splitNul(untrackedOut)) {
       unstaged.push({
         path: p,
@@ -166,9 +150,12 @@ export class DiffService {
     diffArgs: string[],
     group: FileGroup,
   ): Promise<ChangedFile[]> {
-    const nameStatus = (await git(repoRoot, [...diffArgs, "--name-status", "-z"])).stdout;
-    const files = parseNameStatus(nameStatus, group);
-    const counts = parseNumstat(await gitSafe(repoRoot, [...diffArgs, "--numstat", "-z"]));
+    const [nameStatus, numstat] = await Promise.all([
+      git(repoRoot, [...diffArgs, "--name-status", "-z"]),
+      gitSafe(repoRoot, [...diffArgs, "--numstat", "-z"]),
+    ]);
+    const files = parseNameStatus(nameStatus.stdout, group);
+    const counts = parseNumstat(numstat);
     for (const f of files) {
       const c = counts.get(f.path);
       if (c) {

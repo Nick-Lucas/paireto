@@ -12,7 +12,7 @@ export interface CodeFeedbackSource {
   getPendingComments(): ReviewThread[];
   isMultiRepository(): boolean;
   isSessionActive(): boolean;
-  markCommentsSent(items: ReviewThread[]): Promise<boolean>;
+  markCommentsSent(items: ReviewThread[]): Promise<ReviewThread[]>;
 }
 
 export type PlanSendAction =

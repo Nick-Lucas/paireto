@@ -4,10 +4,16 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { mock } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { currentFeedbackRef, type FeedbackRef } from "../git/gitCli.js";
 import { repoKey } from "../protocol/paths.js";
-import { FeedbackStore } from "../storage/FeedbackStore.js";
+import {
+  feedbackFilePath,
+  openFeedbackBucket,
+  type FeedbackBucket,
+  type FeedbackState,
+} from "../storage/FeedbackStore.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 
 const branch = (value: string): FeedbackRef => ({ kind: "branch", value });
@@ -37,331 +43,263 @@ const comment = (id: string, repoRoot = "/repo"): ReviewThread => ({
   ],
 });
 
-suite("persistent feedback store", () => {
-  let stateRoot: string;
-  let feedbackRoot: string;
-  let store: FeedbackStore;
+suite("repository feedback buckets", () => {
+  let root: string;
+  let bucket: FeedbackBucket;
+  const main = branch("main");
+  const other = branch("feature/other");
 
-  setup(() => {
-    stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-"));
-    feedbackRoot = path.join(stateRoot, "feedback");
-    store = new FeedbackStore(feedbackRoot);
+  setup(async () => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-"));
+    bucket = await openFeedbackBucket("/repo", main, root);
   });
 
-  teardown(() => {
-    fs.rmSync(stateRoot, { recursive: true, force: true });
+  teardown(async () => {
+    await bucket.close();
+    fs.rmSync(root, { recursive: true, force: true });
   });
 
-  test("debounces writes from multiple consumers into one disk write", async () => {
-    const ref = branch("main");
-    const other = new FeedbackStore(feedbackRoot);
-    const rename = mock.method(fs.promises, "rename");
+  test("the same repository and ref name one file whatever the spelling", () => {
+    assert.strictEqual(
+      feedbackFilePath("/repo", main, root),
+      feedbackFilePath("/repo/../repo", branch("main"), root),
+    );
+    assert.strictEqual(
+      feedbackFilePath("/repo", main, root),
+      feedbackFilePath("/repo", main, path.relative(process.cwd(), root)),
+    );
+    assert.notStrictEqual(
+      feedbackFilePath("/repo", main, root),
+      feedbackFilePath("/other", main, root),
+    );
+  });
+
+  test("different ref buckets use separate files", async () => {
+    const second = await openFeedbackBucket("/repo", other, root);
     try {
-      await Promise.all([
-        store.save("/repo", ref, [comment("one")]),
-        other.save("/repo", ref, [comment("two")]),
-        store.save("/repo", ref, [comment("three")]),
-      ]);
+      bucket.update((draft) => {
+        draft.threads = [comment("main")];
+      });
+      second.update((draft) => {
+        draft.threads = [comment("other")];
+      });
+      await Promise.all([bucket.flush(), second.flush()]);
+      const firstFile = feedbackFilePath("/repo", main, root);
+      const secondFile = feedbackFilePath("/repo", other, root);
+      assert.notStrictEqual(firstFile, secondFile);
+      assert.strictEqual(path.dirname(firstFile), path.join(root, repoKey("/repo")));
+      assert.strictEqual(path.dirname(secondFile), path.dirname(firstFile));
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(firstFile, "utf8")), {
+        version: 1,
+        state: { threads: [comment("main")] },
+      });
+      const secondBytes = fs.readFileSync(secondFile, "utf8");
+      bucket.update((draft) => {
+        draft.threads = [];
+      });
+      await bucket.flush();
+      assert.deepStrictEqual(JSON.parse(fs.readFileSync(firstFile, "utf8")).state.threads, []);
+      assert.strictEqual(fs.readFileSync(secondFile, "utf8"), secondBytes);
+      assert.strictEqual(second.threads()[0].id, "other");
+    } finally {
+      await second.close();
+    }
+  });
 
-      const file = store.bucketPath("/repo", ref);
+  test("branch and detached refs with the same value have separate paths", () => {
+    assert.notStrictEqual(
+      feedbackFilePath("/repo", branch("HEAD"), root),
+      feedbackFilePath("/repo", { kind: "detached", value: "HEAD" }, root),
+    );
+  });
+
+  test("a bucket reads its file exactly once when it opens", async () => {
+    const repo = "/restored";
+    const file = feedbackFilePath(repo, main, root);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      JSON.stringify({ version: 1, state: { threads: [comment("first", repo)] } }),
+    );
+    const read = mock.method(fs.promises, "readFile");
+    try {
+      const restored = await openFeedbackBucket(repo, main, root);
+      assert.deepStrictEqual(restored.threads(), [comment("first", repo)]);
+      assert.deepStrictEqual(restored.threads(), [comment("first", repo)]);
       assert.strictEqual(
-        rename.mock.calls.filter(({ arguments: args }) => args[1] === file).length,
+        read.mock.calls.filter(({ arguments: args }) => args[0] === file).length,
         1,
       );
-      assert.deepStrictEqual(
-        JSON.parse(fs.readFileSync(file, "utf8")).state.threads.map(
-          (item: ReviewThread) => item.id,
-        ),
-        ["three"],
-      );
+      await restored.close();
     } finally {
-      rename.mock.restore();
+      read.mock.restore();
     }
   });
 
-  test("updates feedback before its first debounced write reaches disk", async () => {
-    const ref = branch("main");
-    const save = store.save("/repo", ref, [comment("one")]);
-    const update = store.updateById("/repo", "one", (item) => ({ ...item, delivery: "sent" }));
-    const [, updated] = await Promise.all([save, update]);
-
-    assert.strictEqual(updated?.item.delivery, "sent");
-    const persisted = JSON.parse(fs.readFileSync(store.bucketPath("/repo", ref), "utf8"));
-    assert.strictEqual(persisted.state.threads[0].delivery, "sent");
-  });
-
-  test("clearing pending feedback does not leave a delayed write behind", async () => {
-    const ref = branch("main");
-    const other = new FeedbackStore(feedbackRoot);
-    await Promise.all([store.save("/repo", ref, [comment("one")]), other.clear("/repo", ref)]);
-
-    assert.deepStrictEqual(await store.load("/repo", ref), []);
-    assert.strictEqual(fs.existsSync(store.bucketPath("/repo", ref)), false);
-  });
-
-  test("a failed batch rejects every save and permits a later write", async () => {
-    const ref = branch("main");
-    const file = store.bucketPath("/repo", ref);
-    const failure = new Error("disk write failed");
-    const original = fs.promises.rename;
-    const rename = mock.method(
-      fs.promises,
-      "rename",
-      async (from: fs.PathLike, to: fs.PathLike) => {
-        if (to === file) {
-          throw failure;
-        }
-        return original(from, to);
-      },
-    );
-    try {
-      const results = await Promise.allSettled([
-        store.save("/repo", ref, [comment("one")]),
-        store.save("/repo", ref, [comment("two")]),
-      ]);
-      assert.deepStrictEqual(results, [
-        { status: "rejected", reason: failure },
-        { status: "rejected", reason: failure },
-      ]);
-    } finally {
-      rename.mock.restore();
-    }
-
-    await store.save("/repo", ref, [comment("three")]);
-    assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].id, "three");
-  });
-
-  test("consumers share one hydrated bucket in memory", async () => {
-    const ref = branch("main");
-    const file = store.bucketPath("/repo", ref);
+  test("an old file that carries repoRoot and ref keeps its threads and drops them on write", async () => {
+    const repo = "/legacy";
+    const file = feedbackFilePath(repo, main, root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(
       file,
       JSON.stringify({
         version: 1,
-        state: { repoRoot: "/repo", ref, threads: [comment("one")] },
+        state: { repoRoot: repo, ref: main, threads: [comment("kept", repo)] },
       }),
     );
-    const other = new FeedbackStore(path.relative(process.cwd(), feedbackRoot));
-
-    const [first, second] = await Promise.all([store.load("/repo", ref), other.load("/repo", ref)]);
-
-    assert.strictEqual(first, second);
-    fs.writeFileSync(file, "{ truncated");
-    assert.strictEqual(await other.load("/repo", ref), first);
-
-    await Promise.all([
-      store.updateById("/repo", "one", (item) => ({ ...item, delivery: "sent" })),
-      other.updateById("/repo", "one", (item) => ({ ...item, line: 10 })),
-    ]);
-    const [updated] = await store.load("/repo", ref);
-    assert.strictEqual(updated.delivery, "sent");
-    assert.strictEqual(updated.line, 10);
-    assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads, [updated]);
-
-    await other.clear("/repo", ref);
-    assert.deepStrictEqual(await store.load("/repo", ref), []);
-    assert.strictEqual(fs.existsSync(file), false);
-    await store.save("/repo", ref, [comment("two")]);
-    assert.deepStrictEqual(
-      (await other.load("/repo", ref)).map((item) => item.id),
-      ["two"],
-    );
+    const legacy = await openFeedbackBucket(repo, main, root);
+    try {
+      assert.deepStrictEqual(
+        legacy.threads().map((item) => item.id),
+        ["kept"],
+      );
+      legacy.update((draft) => {
+        draft.threads.push(comment("added", repo));
+      });
+      await legacy.flush();
+      assert.deepStrictEqual(Object.keys(JSON.parse(fs.readFileSync(file, "utf8")).state), [
+        "threads",
+      ]);
+    } finally {
+      await legacy.close();
+    }
   });
 
-  test("restores a bucket and isolates repository, branch, and detached commit", async () => {
-    await store.save("/repo", branch("feature/a"), [comment("one")]);
-    await store.save("/repo", branch("feature/b"), [comment("two")]);
-    await store.save("/other", branch("feature/a"), [comment("three", "/other")]);
-    await store.save("/repo", { kind: "commit", value: "abc123" }, [comment("four")]);
-
-    assert.deepStrictEqual(
-      (await store.load("/repo", branch("feature/a"))).map((item) => item.id),
-      ["one"],
-    );
-    assert.deepStrictEqual(
-      (await store.load("/repo", branch("feature/b"))).map((item) => item.id),
-      ["two"],
-    );
-    assert.deepStrictEqual(
-      (await store.load("/other", branch("feature/a"))).map((item) => item.id),
-      ["three"],
-    );
-    assert.deepStrictEqual(
-      (await store.load("/repo", { kind: "commit", value: "abc123" })).map((item) => item.id),
-      ["four"],
-    );
+  test("the bucket names the repository and ref it was opened for", () => {
+    assert.strictEqual(bucket.repoRoot, path.resolve("/repo"));
+    assert.deepStrictEqual(bucket.ref, main);
+    assert.strictEqual(bucket.file, feedbackFilePath("/repo", main, root));
   });
 
-  test("finds and updates an item in its original branch after checkout changes", async () => {
-    await store.save("/repo", branch("old-branch"), [comment("target")]);
-    await store.save("/repo", branch("new-branch"), []);
-
-    const updated = await store.updateById("/repo", "target", (item) => ({
-      ...item,
-      activities: [
-        ...item.activities,
-        {
-          kind: "reply",
-          body: "It prevents the race.",
-          at: "2026-08-12T20:01:00.000Z",
-          harness: "codex",
-          sessionId: "session-1",
-        },
-      ],
-    }));
-
-    assert.strictEqual(updated?.ref.kind, "branch");
-    assert.strictEqual(updated?.ref.value, "old-branch");
-    const restored = await store.load("/repo", branch("old-branch"));
-    assert.strictEqual(restored[0].activities[1]?.kind, "reply");
+  test("Immer updates preserve previous snapshots", async () => {
+    bucket.update((draft) => {
+      draft.threads = [comment("one")];
+    });
+    const before = bucket.threads();
+    bucket.update((draft) => {
+      draft.threads[0].line = 10;
+    });
+    assert.strictEqual(before[0].line, 2, "the earlier snapshot is untouched");
+    assert.strictEqual(bucket.threads()[0].line, 10);
   });
 
-  test("does not update a matching ID in another repository", async () => {
-    await store.save("/other", branch("main"), [comment("target", "/other")]);
-
-    const updated = await store.updateById("/repo", "target", (item) => ({
-      ...item,
-      delivery: "sent",
-    }));
-
-    assert.strictEqual(updated, undefined);
-    assert.strictEqual((await store.load("/other", branch("main")))[0].delivery, "pending");
+  test("debounces draft updates into one disk write per bucket", async () => {
+    const file = feedbackFilePath("/repo", main, root);
+    const rename = mock.method(fs.promises, "rename");
+    try {
+      bucket.update((draft) => {
+        draft.threads = [comment("one")];
+      });
+      bucket.update((draft) => {
+        draft.threads.push(comment("two"));
+      });
+      bucket.update((draft) => {
+        draft.threads[0].delivery = "sent";
+      });
+      await bucket.flush();
+      assert.strictEqual(
+        rename.mock.calls.filter(({ arguments: args }) => args[1] === file).length,
+        1,
+      );
+      const saved = JSON.parse(fs.readFileSync(file, "utf8")) as { state: FeedbackState };
+      assert.strictEqual(saved.state.threads[0].delivery, "sent");
+      assert.strictEqual(saved.state.threads[1].id, "two");
+    } finally {
+      rename.mock.restore();
+    }
   });
 
-  test("clears only the selected bucket", async () => {
-    await store.save("/repo", branch("feature/a"), [comment("one")]);
-    await store.save("/repo", branch("feature/b"), [comment("two")]);
-
-    await store.clear("/repo", branch("feature/a"));
-
-    assert.deepStrictEqual(await store.load("/repo", branch("feature/a")), []);
-    assert.deepStrictEqual(
-      (await store.load("/repo", branch("feature/b"))).map((item) => item.id),
-      ["two"],
+  test("failed disk writes keep draft updates available and retry the bucket", async function () {
+    this.timeout(5000);
+    const file = feedbackFilePath("/repo", main, root);
+    const original = fs.promises.rename;
+    let attempts = 0;
+    const rename = mock.method(
+      fs.promises,
+      "rename",
+      async (from: fs.PathLike, to: fs.PathLike) => {
+        if (to === file && ++attempts === 1) {
+          throw new Error("disk full");
+        }
+        return original(from, to);
+      },
     );
+    try {
+      bucket.update((draft) => {
+        draft.threads = [comment("one")];
+      });
+      await bucket.flush();
+      assert.strictEqual(bucket.threads()[0].id, "one");
+      for (let i = 0; i < 150 && !fs.existsSync(file); i++) {
+        await delay(20);
+      }
+      assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].id, "one");
+      assert.strictEqual(attempts, 2);
+    } finally {
+      rename.mock.restore();
+    }
   });
 
-  test("gives every repository and ref its own file below its repository key", async () => {
-    await store.save("/repo", branch("feature/a"), [comment("one")]);
-    await store.save("/repo", branch("feature/b"), [comment("two")]);
-    await store.save("/other", branch("feature/a"), [comment("three", "/other")]);
-
-    const repoFiles = fs.readdirSync(path.join(feedbackRoot, repoKey("/repo")));
-    const otherFiles = fs.readdirSync(path.join(feedbackRoot, repoKey("/other")));
-    assert.strictEqual(repoFiles.length, 2, "one file per ref");
-    assert.strictEqual(otherFiles.length, 1);
-    const persisted = JSON.parse(
-      fs.readFileSync(path.join(feedbackRoot, repoKey("/other"), otherFiles[0]), "utf8"),
-    );
-    assert.strictEqual(persisted.version, 1, "the Zustand store stamps its schema version");
-    assert.deepStrictEqual(persisted.state.ref, { kind: "branch", value: "feature/a" });
-    assert.strictEqual(persisted.state.repoRoot, "/other");
-    assert.deepStrictEqual(
-      persisted.state.threads.map((item: ReviewThread) => item.id),
-      ["three"],
-    );
-  });
-
-  test("a second window's save keeps the buckets the first window wrote", async () => {
-    // Two windows are two FeedbackStore instances over the same state directory. A window that
-    // rewrote the whole file from its own view of the world would drop the other window's feedback.
-    const windowA = new FeedbackStore(feedbackRoot);
-    const windowB = new FeedbackStore(feedbackRoot);
-
-    await windowA.save("/repo-a", branch("feature/a"), [comment("from-a", "/repo-a")]);
-    await windowB.save("/repo-b", branch("feature/b"), [comment("from-b", "/repo-b")]);
-    await windowA.save("/repo-a", branch("feature/a"), [
-      comment("from-a", "/repo-a"),
-      comment("from-a-again", "/repo-a"),
-    ]);
-
-    assert.deepStrictEqual(
-      (await windowB.load("/repo-a", branch("feature/a"))).map((item) => item.id),
-      ["from-a", "from-a-again"],
-    );
-    assert.deepStrictEqual(
-      (await windowA.load("/repo-b", branch("feature/b"))).map((item) => item.id),
-      ["from-b"],
-    );
-  });
-
-  test("deleting the last item of a bucket leaves no file behind", async () => {
-    await store.save("/repo", branch("feature/a"), [comment("one")]);
-    await store.save("/repo", branch("feature/a"), []);
-
-    assert.deepStrictEqual(fs.readdirSync(path.join(feedbackRoot, repoKey("/repo"))), []);
-    assert.deepStrictEqual(await store.load("/repo", branch("feature/a")), []);
-  });
-
-  // save() awaits Zustand's persist middleware, which returns its storage write from setState. That
-  // is not a documented guarantee, so it is pinned here: no polling, no second await — if the bytes
-  // are not there the moment save() resolves, every durability test above becomes a race.
-  test("save resolves only once the bytes are on disk", async () => {
-    const ref = branch("feature/a");
-    await store.save("/repo", ref, [comment("one")]);
-
-    const persisted = JSON.parse(fs.readFileSync(store.bucketPath("/repo", ref), "utf8"));
-    assert.strictEqual(persisted.version, 1);
-    assert.deepStrictEqual(
-      persisted.state.threads.map((item: ReviewThread) => item.id),
-      ["one"],
-    );
-  });
-
-  test("an empty save resolves only once the file is gone", async () => {
-    const ref = branch("feature/a");
-    await store.save("/repo", ref, [comment("one")]);
-
-    await store.save("/repo", ref, []);
-
-    assert.strictEqual(fs.existsSync(store.bucketPath("/repo", ref)), false);
-  });
-
-  // An agent answers and resolves one item in a single turn, so two writes to one bucket are in
-  // flight together. Both have to land: a rejected save is reported to the agent as lost feedback.
-  test("two writes to one bucket in flight together both land", async () => {
-    const ref = branch("feature/a");
-
-    await Promise.all([
-      store.save("/repo", ref, [comment("one")]),
-      store.save("/repo", ref, [comment("one"), comment("two")]),
-    ]);
-
-    const ids = (await store.load("/repo", ref)).map((item) => item.id);
-    assert.ok(ids.length > 0, "the bucket must not be left empty");
-  });
-
-  // Read-modify-write: without one lock over both halves the second update overwrites the first
-  // with a copy it read before that change existed.
-  test("concurrent updates to one bucket keep both changes", async () => {
-    const ref = branch("feature/a");
-    await store.save("/repo", ref, [comment("one"), comment("two")]);
-
-    await Promise.all([
-      store.updateById("/repo", "one", (item) => ({ ...item, delivery: "sent" })),
-      store.updateById("/repo", "two", (item) => ({ ...item, delivery: "sent" })),
-    ]);
-
-    assert.deepStrictEqual(
-      (await store.load("/repo", ref)).map((item) => item.delivery),
-      ["sent", "sent"],
-    );
-  });
-
-  test("a corrupt bucket file reads as empty instead of throwing", async () => {
-    const file = store.bucketPath("/repo", branch("feature/a"));
+  test("a corrupt bucket file keeps the initial empty state", async () => {
+    const file = feedbackFilePath("/corrupt", main, root);
     fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, "{ truncated");
+    const recovered = await openFeedbackBucket("/corrupt", main, root);
+    assert.deepStrictEqual(recovered.threads(), []);
+    await recovered.close();
+  });
 
-    assert.deepStrictEqual(await store.load("/repo", branch("feature/a")), []);
-    assert.strictEqual(await store.updateById("/repo", "one", (item) => item), undefined);
+  test("closing a bucket writes its pending change before it resolves", async () => {
+    const closingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-close-"));
+    try {
+      const closing = await openFeedbackBucket("/closing", main, closingRoot);
+      closing.update((draft) => {
+        draft.threads = [comment("last", "/closing")];
+      });
+      await closing.close();
+      const file = feedbackFilePath("/closing", main, closingRoot);
+      assert.strictEqual(JSON.parse(fs.readFileSync(file, "utf8")).state.threads[0].id, "last");
+    } finally {
+      fs.rmSync(closingRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("closing a bucket with nothing pending writes nothing", async () => {
+    const quietRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-quiet-"));
+    const rename = mock.method(fs.promises, "rename");
+    try {
+      const quiet = await openFeedbackBucket("/quiet", main, quietRoot);
+      await quiet.close();
+      assert.strictEqual(rename.mock.calls.length, 0);
+    } finally {
+      rename.mock.restore();
+      fs.rmSync(quietRoot, { recursive: true, force: true });
+    }
+  });
+
+  test("a bucket opened after a close reads what the closed one wrote", async () => {
+    const reopenRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-reopen-"));
+    try {
+      const first = await openFeedbackBucket("/reopen", main, reopenRoot);
+      first.update((draft) => {
+        draft.threads = [comment("saved", "/reopen")];
+      });
+      await first.close();
+      const second = await openFeedbackBucket("/reopen", main, reopenRoot);
+      assert.deepStrictEqual(
+        second.threads().map((item) => item.id),
+        ["saved"],
+      );
+      await second.close();
+    } finally {
+      fs.rmSync(reopenRoot, { recursive: true, force: true });
+    }
   });
 });
 
 suite("feedback identity over a real repository", () => {
   let stateRoot: string;
-  let store: FeedbackStore;
+  let bucket: FeedbackBucket;
   let repoRoot: string;
 
   const git = (args: string[]): string =>
@@ -373,17 +311,18 @@ suite("feedback identity over a real repository", () => {
     git(["commit", "-q", "-m", name]);
   };
 
-  setup(() => {
+  setup(async () => {
     stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-repo-"));
-    store = new FeedbackStore(path.join(stateRoot, "feedback"));
     repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-git-"));
     git(["init", "-q", "-b", "main"]);
     git(["config", "user.email", "test@example.com"]);
     git(["config", "user.name", "Test"]);
     commit("one.txt");
+    bucket = await openFeedbackBucket(repoRoot, branch("main"), path.join(stateRoot, "feedback"));
   });
 
-  teardown(() => {
+  teardown(async () => {
+    await bucket.close();
     fs.rmSync(stateRoot, { recursive: true, force: true });
     fs.rmSync(repoRoot, { recursive: true, force: true });
   });
@@ -391,24 +330,28 @@ suite("feedback identity over a real repository", () => {
   test("feedback left on a branch survives a commit on that branch", async () => {
     const before = await currentFeedbackRef(repoRoot);
     assert.deepStrictEqual(before, { kind: "branch", value: "main" });
-    await store.save(repoRoot, before!, [comment("one", repoRoot)]);
+    bucket.update((draft) => {
+      draft.threads = [comment("one", repoRoot)];
+    });
+    await bucket.close();
 
     commit("two.txt");
 
     const after = await currentFeedbackRef(repoRoot);
     assert.deepStrictEqual(after, before, "a commit does not move the branch a bucket is keyed by");
+    const reopened = await openFeedbackBucket(repoRoot, after!, path.join(stateRoot, "feedback"));
     assert.deepStrictEqual(
-      (await store.load(repoRoot, after!)).map((item) => item.id),
+      reopened.threads().map((item) => item.id),
       ["one"],
     );
+    await reopened.close();
   });
 
-  test("a detached HEAD falls back to the commit it sits on", async () => {
+  test("detached feedback keeps its bucket after a commit", async () => {
     git(["checkout", "-q", "--detach"]);
 
-    assert.deepStrictEqual(await currentFeedbackRef(repoRoot), {
-      kind: "commit",
-      value: git(["rev-parse", "HEAD"]),
-    });
+    const before = await currentFeedbackRef(repoRoot);
+    commit("detached.txt");
+    assert.deepStrictEqual(await currentFeedbackRef(repoRoot), before);
   });
 });
