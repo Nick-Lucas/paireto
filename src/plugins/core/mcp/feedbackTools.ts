@@ -15,7 +15,8 @@ export const FEEDBACK_RESOLVE_TOOL_NAME = "paireto_resolve_feedback";
 export const FEEDBACK_REPLY_TOOL_DESCRIPTION =
   "Add an agent reply to one Paireto feedback item. Use the feedback ID returned by a review.";
 export const FEEDBACK_RESOLVE_TOOL_DESCRIPTION =
-  "Mark one Paireto feedback item resolved after you have addressed it.";
+  "Mark one Paireto COMMENT resolved after you have addressed it. A QUESTION cannot be " +
+  "resolved: reply to it and leave it open for the reviewer to close.";
 
 export const FeedbackReplyArgs = z.object({
   feedbackId: z.string().trim().min(1).describe("The stable feedback ID."),

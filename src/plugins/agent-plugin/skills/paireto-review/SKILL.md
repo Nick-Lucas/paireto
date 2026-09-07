@@ -11,7 +11,7 @@ submits feedback or approves the changes. Wait for it to return.
 
 When it returns:
 
-- Address every review comment. Each has a feedback ID. Answer each `QUESTION` with the `paireto_reply_to_feedback` tool, and action each `COMMENT` then call the `paireto_resolve_feedback` to resolve it.
+- Address every review comment. Each has a feedback ID. Answer each `QUESTION` with the `paireto_reply_to_feedback` tool and leave it open; only the reviewer closes a question. Action each `COMMENT` then call `paireto_resolve_feedback` to resolve it.
 - If the review was approved or closed without feedback, acknowledge that briefly and continue.
 
 Do not run a shell helper or ask the user to paste feedback manually; the tool returns it directly.

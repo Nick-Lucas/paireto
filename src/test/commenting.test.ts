@@ -399,6 +399,64 @@ suite("commenting integration", () => {
     }
   });
 
+  test("a resolved thread says so, folds away, and keeps its words", async () => {
+    const session = new CommentSession("paireto-test-resolved", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const doc = await openDoc(6);
+      const opener = new GateComment("look at this", "comment");
+      const args = {
+        uri: doc.uri,
+        range: new vscode.Range(1, 0, 1, 4),
+        label: "src/a.ts:2",
+        comments: [{ comment: opener }],
+      };
+
+      const open = session.place(args);
+      assert.strictEqual(open.label, "src/a.ts:2");
+      assert.strictEqual(open.state, vscode.CommentThreadState.Unresolved);
+      assert.strictEqual(open.collapsibleState, vscode.CommentThreadCollapsibleState.Expanded);
+
+      const resolved = session.place({ ...args, previous: open, resolved: true });
+
+      assert.strictEqual(resolved, open, "the same thread settles in place");
+      assert.strictEqual(resolved.state, vscode.CommentThreadState.Resolved);
+      assert.strictEqual(resolved.label, "Marked as resolved");
+      assert.strictEqual(resolved.collapsibleState, vscode.CommentThreadCollapsibleState.Collapsed);
+      assert.deepStrictEqual(bodies(resolved), ["look at this"], "its words stay inside");
+    } finally {
+      session.dispose();
+    }
+  });
+
+  test("a resolved thread a reviewer opens does not shut on the next write", async () => {
+    const session = new CommentSession("paireto-test-reopened", "Test", SCHEME, {
+      prompt: "Test",
+      placeHolder: "Test",
+    });
+    try {
+      const doc = await openDoc(6);
+      const comment = new GateComment("done", "comment");
+      const args = {
+        uri: doc.uri,
+        range: new vscode.Range(1, 0, 1, 4),
+        label: "src/a.ts:2",
+        comments: [{ comment }],
+        resolved: true,
+      };
+      const thread = session.place(args);
+      thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+
+      session.place({ ...args, previous: thread });
+
+      assert.strictEqual(thread.collapsibleState, vscode.CommentThreadCollapsibleState.Expanded);
+    } finally {
+      session.dispose();
+    }
+  });
+
   test("place labels a thread from its opening comment, not from a reply", async () => {
     const session = new CommentSession("paireto-test-place-label", "Test", SCHEME, {
       prompt: "Test",

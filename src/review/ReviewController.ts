@@ -317,6 +317,10 @@ export class ReviewController implements vscode.Disposable {
         withArg(CommentReplyArg, (reply) => this.addComment(reply, "comment")),
       ),
       reg(
+        Commands.reviewAddReply,
+        withArg(CommentReplyArg, (reply) => this.addReply(reply)),
+      ),
+      reg(
         Commands.reviewRevealComment,
         withArg(CommentIdArg, (id) => this.revealComment(id)),
       ),
@@ -1627,6 +1631,18 @@ export class ReviewController implements vscode.Disposable {
     return true;
   }
 
+  /**
+   * Add to a thread that is already open. A reply carries no kind of its own: the comment that
+   * opens the thread says whether it is a question or a comment, and a review answers on that.
+   */
+  private addReply(reply: vscode.CommentReply): boolean {
+    const answering = this.threadAnsweredBy(reply);
+    if (answering === undefined) {
+      return false;
+    }
+    return this.feedback?.addReply(answering, reply.text) ?? false;
+  }
+
   private threadAnsweredBy(reply: vscode.CommentReply): string | undefined {
     const opener = reply.thread.comments[0];
     const id = opener instanceof GateComment ? opener.id : undefined;
@@ -2081,6 +2097,15 @@ export class ReviewController implements vscode.Disposable {
     harness: Harness,
     sessionId?: string,
   ): Promise<{ ok: boolean; message: string }> {
+    const id = feedbackId.trim();
+    // A question is answered, not closed off: only the reviewer knows when their question is done.
+    const thread = this.getComments().find((item) => item.id === id);
+    if (thread && getOpeningComment(thread).commentKind === "question") {
+      return {
+        ok: false,
+        message: `Feedback ${id} is a question. Reply to it instead; only the reviewer closes a question.`,
+      };
+    }
     const at = new Date().toISOString();
     return this.amendFeedback(repoRoot, feedbackId, (item) => {
       if (typeof item.resolvedAt === "undefined") {
@@ -2088,7 +2113,7 @@ export class ReviewController implements vscode.Disposable {
       }
       return resolveThread(item, { at, author: { kind: "agent", harness, sessionId } });
     })
-      ? { ok: true, message: `Feedback ${feedbackId.trim()} is resolved.` }
+      ? { ok: true, message: `Feedback ${id} is resolved.` }
       : this.feedbackMiss(repoRoot, feedbackId);
   }
 

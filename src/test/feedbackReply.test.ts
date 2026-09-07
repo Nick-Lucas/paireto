@@ -100,6 +100,37 @@ suite("agent replies to feedback", () => {
     assert.deepStrictEqual(item?.itemKinds, ["resolved"], "the second resolve adds nothing");
   });
 
+  test("a question is answered, never resolved", async function () {
+    this.timeout(90_000);
+    const id = await queueFileComment("Why the cast here?", { kind: "question" });
+
+    send("feedback.resolve.request", "req-resolve-question", { feedbackId: id });
+    const refused = await waitFor("the resolve response", () =>
+      wire.messages.find(
+        (m) => m.t === "feedback.resolve.response" && m.id === "req-resolve-question",
+      ),
+    );
+
+    assert.strictEqual(refused.ok, false, "a question cannot be resolved");
+    assert.match(String(refused.message), /question/i, "the agent is told why");
+    const item = (await inspect()).feedback.find((entry) => entry.id === id);
+    assert.strictEqual(item?.resolved, false, "the question stays open");
+    assert.deepStrictEqual(item?.itemKinds, [], "and nothing is added to it");
+
+    // The same question still takes a reply.
+    send("feedback.reply.request", "req-reply-question", {
+      feedbackId: id,
+      message: "Because the union is wider than it looks.",
+    });
+    const replied = await waitFor("the reply response", () =>
+      wire.messages.find((m) => m.t === "feedback.reply.response" && m.id === "req-reply-question"),
+    );
+    assert.strictEqual(replied.ok, true, String(replied.message));
+    assert.deepStrictEqual((await inspect()).feedback.find((entry) => entry.id === id)?.itemKinds, [
+      "reply",
+    ]);
+  });
+
   // A guided review E2E left a sent-and-resolved item in the bucket after approve, so pin the rule
   // here where resolution exists: approving a review takes ALL of its feedback, history included.
   test("approve clears feedback the agent has already resolved", async function () {

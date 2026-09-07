@@ -158,7 +158,10 @@ suite("command manifest", () => {
     engines: { vscode: string };
     contributes: {
       commands: Array<{ command: string; title: string }>;
-      menus: { commandPalette: Array<{ command: string; when?: string }> };
+      menus: {
+        commandPalette: Array<{ command: string; when?: string }>;
+        "comments/commentThread/context": Array<{ command: string; when?: string }>;
+      };
     };
   };
 
@@ -185,6 +188,24 @@ suite("command manifest", () => {
     assert.ok(
       manifest.activationEvents.includes(`onFileSystem:${Schemes.review}`),
       `activationEvents must include onFileSystem:${Schemes.review}: ${manifest.activationEvents.join(", ")}`,
+    );
+  });
+
+  // Only package.json decides which action the reply box offers, so the split lives here or nowhere.
+  test("a new thread offers Comment and Question, an open one offers only Reply", () => {
+    const forCommand = (command: string): string =>
+      manifest.contributes.menus["comments/commentThread/context"].find(
+        (item) => item.command === command,
+      )?.when ?? "";
+
+    for (const command of ["paireto.review.addComment", "paireto.review.addQuestion"]) {
+      assert.match(forCommand(command), /!commentThread/, `${command} must need a fresh thread`);
+    }
+    assert.match(forCommand("paireto.review.addReply"), /&& commentThread/);
+    assert.doesNotMatch(
+      forCommand("paireto.review.addReply"),
+      /!commentThread/,
+      "a reply needs a thread to answer",
     );
   });
 

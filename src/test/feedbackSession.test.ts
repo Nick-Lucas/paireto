@@ -18,7 +18,7 @@ import {
   contextKey,
   type FeedbackHost,
 } from "../review/feedback/FeedbackSession.js";
-import { appendFeedbackReply } from "../review/feedbackState.js";
+import { appendFeedbackReply, resolveThread } from "../review/feedbackState.js";
 import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 import { feedbackFilePath, type FeedbackState } from "../storage/FeedbackStore.js";
 
@@ -33,20 +33,18 @@ const branch = (value: string): FeedbackRef => ({ kind: "branch", value });
 /** A thread with replies already on it, named the way the store names them. */
 const withReplies = (
   model: ReviewThread,
-  replies: Array<{ who: "reviewer" | "agent"; body: string }>,
+  replies: Array<{ who: "reviewer" | "agent"; body: string; kind?: "reply" | "resolved" }>,
 ): ReviewThread =>
-  replies.reduce(
-    (item, reply, index) =>
-      appendFeedbackReply(item, {
-        body: reply.body,
-        at: `2026-08-12T2${index}:00:00.000Z`,
-        author:
-          reply.who === "reviewer"
-            ? { kind: "reviewer" }
-            : { kind: "agent", harness: "claudecode" },
-      }),
-    model,
-  );
+  replies.reduce((item, reply, index) => {
+    const at = `2026-08-12T2${index}:00:00.000Z`;
+    const author =
+      reply.who === "reviewer"
+        ? ({ kind: "reviewer" } as const)
+        : ({ kind: "agent", harness: "claudecode" } as const);
+    return reply.kind === "resolved"
+      ? resolveThread(item, { at, author })
+      : appendFeedbackReply(item, { body: reply.body, at, author });
+  }, model);
 
 const comment = (id: string, over: Partial<ReviewThread> = {}): ReviewThread => ({
   id,
@@ -259,6 +257,21 @@ suite("feedback session", () => {
     assert.deepStrictEqual(bodies(thread), ["opener", "a follow-up"]);
     assert.strictEqual(comments.threads().length, 1, "a reply opens no second thread");
     assert.deepStrictEqual(ids(session.allThreads()), ["opener"], "and no second feedback item");
+  });
+
+  test("a resolution is carried by the thread, not drawn as another comment", async () => {
+    seed([
+      withReplies(comment("opener"), [
+        { who: "agent", body: "fixed it" },
+        { who: "agent", body: "", kind: "resolved" },
+      ]),
+    ]);
+    const session = await openSession();
+
+    const thread = session.commentFor("opener")!.thread!;
+    assert.deepStrictEqual(bodies(thread), ["opener", "fixed it"], "no Resolved pseudo-comment");
+    assert.strictEqual(thread.state, vscode.CommentThreadState.Resolved);
+    assert.strictEqual(thread.label, "Marked as resolved");
   });
 
   test("the reviewer's reply makes a delivered thread sendable again", async () => {

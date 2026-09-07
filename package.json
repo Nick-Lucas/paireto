@@ -188,6 +188,11 @@
         "enablement": "!commentIsEmpty"
       },
       {
+        "command": "paireto.review.addReply",
+        "title": "Reply",
+        "enablement": "!commentIsEmpty"
+      },
+      {
         "command": "paireto.review.addQuestion",
         "title": "Question",
         "enablement": "!commentIsEmpty"
@@ -295,6 +300,10 @@
         },
         {
           "command": "paireto.review.addComment",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.addReply",
           "when": "false"
         },
         {
@@ -408,13 +417,18 @@
         },
         {
           "command": "paireto.review.addComment",
-          "when": "commentController == paireto.review",
+          "when": "commentController == paireto.review && !commentThread",
           "group": "inline@1"
         },
         {
           "command": "paireto.review.addQuestion",
-          "when": "commentController == paireto.review",
+          "when": "commentController == paireto.review && !commentThread",
           "group": "inline@2"
+        },
+        {
+          "command": "paireto.review.addReply",
+          "when": "commentController == paireto.review && commentThread",
+          "group": "inline@1"
         }
       ],
       "comments/comment/title": [

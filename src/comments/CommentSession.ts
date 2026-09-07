@@ -29,18 +29,18 @@ export class GateComment implements vscode.Comment {
   }
 }
 
-/** A reply or a resolution, shown under the comment it answers. */
-export function buildThreadItemComment(
-  item:
-    | { kind: "reply"; body: string; at: string; author: string }
-    | { kind: "resolved"; at: string; author: string },
-): vscode.Comment {
+/** A reply, shown under the comment it answers. A resolution is carried by the thread's own state. */
+export function buildThreadItemComment(item: {
+  body: string;
+  at: string;
+  author: string;
+}): vscode.Comment {
   return {
-    body: item.kind === "reply" ? item.body : "Marked this comment as resolved.",
+    body: item.body,
     mode: vscode.CommentMode.Preview,
     author: { name: item.author },
     contextValue: "threadItem",
-    label: item.kind === "reply" ? "Agent reply" : "Resolved",
+    label: "Agent reply",
     timestamp: new Date(item.at),
   };
 }
@@ -152,10 +152,18 @@ export class CommentSession implements vscode.Disposable {
     const state = resolved
       ? vscode.CommentThreadState.Resolved
       : vscode.CommentThreadState.Unresolved;
+    // A resolved thread reads as settled: it says so, and folds away. Its own words stay inside.
+    const shown = resolved ? "Marked as resolved" : label;
     const rendered = comments.flatMap(({ comment, replies }) => [comment, ...(replies ?? [])]);
     if (previous && previous.uri.toString() === uri.toString()) {
       previous.range = range;
-      previous.label = label;
+      previous.label = shown;
+      previous.contextValue = resolved ? "resolved" : "open";
+      // Fold it away the moment it settles, and leave it alone after that: a reviewer who opens a
+      // resolved thread to read it should not have it shut again on the next write.
+      if (resolved && previous.state !== state) {
+        previous.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+      }
       previous.state = state;
       // VS Code redraws a changed body only when the array is new.
       previous.comments = rendered;
@@ -166,10 +174,12 @@ export class CommentSession implements vscode.Disposable {
 
     // Create first: if VS Code refuses the new attachment, the old thread stays whole.
     const thread = this.controller.createCommentThread(uri, range, rendered);
-    thread.label = label;
+    thread.label = shown;
     thread.state = state;
-    thread.collapsibleState =
-      previous?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded;
+    thread.contextValue = resolved ? "resolved" : "open";
+    thread.collapsibleState = resolved
+      ? vscode.CommentThreadCollapsibleState.Collapsed
+      : (previous?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded);
     this.threadSet.add(thread);
     this.own(comments, thread);
     if (previous) {

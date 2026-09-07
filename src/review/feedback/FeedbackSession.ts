@@ -316,8 +316,9 @@ export class FeedbackSession {
       { comment: this.draw(model.id, feedback.body, feedback.commentKind) },
     ];
     for (const item of model.items.slice(1)) {
-      // Only the first item is ever the comment.
-      if (item.kind === "comment") {
+      // Only the first item is ever the comment. A resolution is carried by the thread's own state,
+      // so drawing it as another comment would say the same thing twice.
+      if (item.kind === "comment" || item.kind === "resolved") {
         continue;
       }
       if (item.kind === "reply" && item.author.kind === "reviewer") {
@@ -372,11 +373,7 @@ export class FeedbackSession {
   }
 }
 
-function agentComment(item: Exclude<ThreadItem, { kind: "comment" }>): vscode.Comment {
+function agentComment(item: Extract<ThreadItem, { kind: "reply" }>): vscode.Comment {
   const author = item.author.kind === "agent" ? `${item.author.harness} agent` : "You";
-  return buildThreadItemComment(
-    item.kind === "reply"
-      ? { kind: "reply", body: item.body, at: item.at, author }
-      : { kind: "resolved", at: item.at, author },
-  );
+  return buildThreadItemComment({ body: item.body, at: item.at, author });
 }

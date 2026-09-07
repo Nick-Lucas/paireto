@@ -33,6 +33,7 @@ export const Commands = {
   reviewDiscardAll: "paireto.review.discardAll",
   reviewAddQuestion: "paireto.review.addQuestion",
   reviewAddComment: "paireto.review.addComment",
+  reviewAddReply: "paireto.review.addReply",
   reviewRevealComment: "paireto.review.revealComment",
   reviewDeleteComment: "paireto.review.deleteComment",
   reviewClearFeedback: "paireto.review.clearFeedback",
