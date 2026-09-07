@@ -3,7 +3,6 @@ import { z } from "zod";
 import type {
   FeedbackReplyRequest,
   FeedbackResolveRequest,
-  FeedbackResolveRequest,
   Harness,
 } from "../../../protocol/types.js";
 import { connect } from "../bridgeClient.js";
