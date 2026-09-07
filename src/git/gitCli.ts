@@ -13,6 +13,8 @@ export interface GitResult {
   stderr: string;
 }
 
+export type FeedbackRef = { kind: "branch"; value: string } | { kind: "commit"; value: string };
+
 /** Run `git -C <repoRoot> <args...>`. Rejects on non-zero exit. */
 export async function git(repoRoot: string, args: string[]): Promise<GitResult> {
   const { stdout, stderr } = await execFileAsync("git", ["-C", repoRoot, ...args], {
@@ -60,6 +62,18 @@ export function branchFromRevParse(stdout: string): string | undefined {
 /** Current branch of a repo/worktree root, or undefined when detached / on error. */
 export async function currentBranch(repoRoot: string): Promise<string | undefined> {
   return branchFromRevParse(await gitSafe(repoRoot, ["rev-parse", "--abbrev-ref", "HEAD"]));
+}
+
+/**
+ * Identifier used to key stored feedback against a git position
+ */
+export async function currentFeedbackRef(repoRoot: string): Promise<FeedbackRef | undefined> {
+  const branch = (await gitSafe(repoRoot, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim();
+  if (branch) {
+    return { kind: "branch", value: branch };
+  }
+  const commit = (await gitSafe(repoRoot, ["rev-parse", "--verify", "HEAD"])).trim();
+  return commit ? { kind: "commit", value: commit } : undefined;
 }
 
 /**
