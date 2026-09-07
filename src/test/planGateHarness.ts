@@ -166,11 +166,13 @@ export async function waitForForegroundGate(kind: "plan" | "review" | "guided"):
 }
 
 /** Comment on a repository file. Outside a review session this is what queues the bucket. */
+/** Comment on a repository file and report the id the extension minted for it. The bucket is shared
+ *  with whatever other suites left in it, so a caller identifies its own item by that id. */
 export async function queueFileComment(
   text: string,
   opts: { path?: string; line?: number; kind?: AddCommentArgs["kind"] } = {},
-): Promise<void> {
-  const before = (await inspect()).commentBucketCount;
+): Promise<string> {
+  const before = new Set((await inspect()).feedback.map((item) => item.id));
   const args: AddCommentArgs = {
     surface: "review",
     kind: opts.kind ?? "comment",
@@ -180,8 +182,8 @@ export async function queueFileComment(
   };
   const queued = await vscode.commands.executeCommand<boolean>("paireto.test.addComment", args);
   assert.strictEqual(queued, true, "the file comment must attach to the fixture repo");
-  await waitFor("the file comment to register", async () =>
-    (await inspect()).commentBucketCount > before ? true : undefined,
+  return waitFor("the file comment to register", async () =>
+    (await inspect()).feedback.map((item) => item.id).find((id) => !before.has(id)),
   );
 }
 

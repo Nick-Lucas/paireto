@@ -59,6 +59,14 @@ export interface InspectRepositoryChanges {
   committedPaths: string[];
 }
 
+export interface InspectFeedback {
+  id: string;
+  repoRoot: string;
+  delivery: "pending" | "sent";
+  resolved: boolean;
+  activityKinds: Array<"reply" | "resolved">;
+}
+
 /** The full read-only snapshot the E2E test asserts against. `planTexts` maps a plan gate id to a
  *  cheap fingerprint (`<sha1>:<length>`) so a re-proposed plan is detectable without shipping the
  *  whole markdown across the command boundary. */
@@ -69,6 +77,7 @@ export interface InspectSnapshot {
   reviewActive: boolean;
   commentBucketCount: number;
   commentIds: string[];
+  feedback: InspectFeedback[];
   gateHasFeedback: boolean;
   /** Per-reason ReviewController.refresh() tally (e.g. proves openDiff never ran the full refresh). */
   refreshCounts: Record<string, number>;

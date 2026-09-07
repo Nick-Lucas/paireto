@@ -68,12 +68,14 @@ import {
 import { renderRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
-import type { ReviewComment } from "./reviewTypes.js";
+import { userFeedback, type ReviewThread } from "./reviewTypes.js";
+import { editFeedback } from "./feedbackState.js";
+import { newFeedbackId } from "./feedbackId.js";
 
 /** A review comment: the VS Code comment instance paired with its serializable model. */
 interface ReviewEntry {
   comment: GateComment;
-  model: ReviewComment;
+  model: ReviewThread;
 }
 
 const EMPTY_CHANGES: ChangesModel = {
@@ -1426,15 +1428,17 @@ export class ReviewController implements vscode.Disposable {
       return out;
     };
 
-    const model: ReviewComment = {
-      id: crypto.randomUUID(),
+    const now = new Date().toISOString();
+    const model: ReviewThread = {
+      id: await newFeedbackId(),
       repoRoot,
       filePath: relPath,
       side,
       line,
-      kind,
-      body: reply.text,
-      quote,
+      delivery: "pending",
+      createdAt: now,
+      updatedAt: now,
+      activities: [{ kind: "feedback", feedbackKind: kind, body: reply.text, quote, at: now }],
       anchor: {
         lineText: quote,
         contextBefore: anchorLines(line - 2, line),
@@ -1454,7 +1458,7 @@ export class ReviewController implements vscode.Disposable {
       id: model.id,
       label: this.commentLocationLabel(repoRoot, relPath, line),
       onSaved: (newBody) => {
-        model.body = newBody;
+        Object.assign(model, editFeedback(model, newBody, new Date().toISOString()));
         this.changeEmitter.fire();
       },
       onDeleted: () => {
@@ -1487,16 +1491,18 @@ export class ReviewController implements vscode.Disposable {
     const line = reply.thread.range?.start.line ?? 0;
     const doc = await vscode.workspace.openTextDocument(reply.thread.uri);
     const quote = line < doc.lineCount ? doc.lineAt(line).text : "";
-    const model: ReviewComment = {
-      id: crypto.randomUUID(),
+    const now = new Date().toISOString();
+    const model: ReviewThread = {
+      id: await newFeedbackId(),
       repoRoot: guided.repoRoot,
       filePath: "",
       changeset: { id: changeset.id, title: changeset.title },
       side: "modified",
       line,
-      kind,
-      body: reply.text,
-      quote,
+      delivery: "pending",
+      createdAt: now,
+      updatedAt: now,
+      activities: [{ kind: "feedback", feedbackKind: kind, body: reply.text, quote, at: now }],
       anchor: {
         lineText: quote,
         contextBefore: [],
@@ -1508,7 +1514,7 @@ export class ReviewController implements vscode.Disposable {
       id: model.id,
       label: `Changeset: ${changeset.title}`,
       onSaved: (newBody) => {
-        model.body = newBody;
+        Object.assign(model, editFeedback(model, newBody, new Date().toISOString()));
         this.changeEmitter.fire();
       },
       onDeleted: () => {
@@ -1682,7 +1688,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** Best-effort home when the file no longer appears in any Changes group. */
   private async fallbackCommentUri(
-    c: ReviewComment,
+    c: ReviewThread,
     currentThreadUri: vscode.Uri,
   ): Promise<vscode.Uri | undefined> {
     const candidates: vscode.Uri[] = [];
@@ -1729,12 +1735,13 @@ export class ReviewController implements vscode.Disposable {
     }
     const DELETE = "Delete";
     const replies = this.commentSession.wouldRemove(entry.comment).length - 1;
+    const opening = userFeedback(entry.model);
     const choice = await vscode.window.showWarningMessage(
-      `Delete this ${kindLabel(entry.model.kind).toLowerCase()}?`,
+      `Delete this ${kindLabel(opening.feedbackKind).toLowerCase()}?`,
       {
         modal: true,
         detail:
-          `"${entry.model.body}"` +
+          `"${opening.body}"` +
           (replies > 0
             ? `\n\nThe ${replies === 1 ? "reply" : `${replies} replies`} on this thread ${replies === 1 ? "is" : "are"} deleted with it.`
             : ""),
@@ -1817,7 +1824,7 @@ export class ReviewController implements vscode.Disposable {
     return this.getState().guided;
   }
 
-  getComments(): ReviewComment[] {
+  getComments(): ReviewThread[] {
     return [...this.comments.values()].map((e) => e.model);
   }
 
