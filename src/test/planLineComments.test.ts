@@ -62,7 +62,7 @@ suite("two comments on one plan line", () => {
     );
   });
 
-  test("a reply on an existing thread reaches the agent too", async function () {
+  test("a reply joins the comment it answers, as one item of that comment's kind", async function () {
     this.timeout(90_000);
     warnings = stubWarnings((message) =>
       message.includes("file comment") ? PLAN_FEEDBACK_ONLY : undefined,
@@ -79,11 +79,14 @@ suite("two comments on one plan line", () => {
     );
 
     const reason = String(response.reason);
-    assert.ok(reason.includes("Split step two."), "the comment replied to reaches the agent");
-    assert.ok(reason.includes("Why two steps?"), "so does the reply");
     assert.ok(
-      reason.includes("[QUESTION]") && reason.includes("[COMMENT]"),
-      `each keeps its own kind: ${reason}`,
+      reason.includes("Split step two.\n\nWhy two steps?"),
+      `the reply reads as more of the same comment: ${reason}`,
     );
+    assert.ok(
+      reason.includes("[COMMENT]") && !reason.includes("[QUESTION]"),
+      `the comment that opens the thread says what kind it is: ${reason}`,
+    );
+    assert.ok(reason.includes("(0 question, 1 comment)"), `one item, not two: ${reason}`);
   });
 });

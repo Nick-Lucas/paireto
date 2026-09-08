@@ -4,7 +4,8 @@
 import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
-import { getOpeningComment, type ReviewThread, type ThreadItem } from "./reviewTypes.js";
+import { serialiseConversation } from "../comments/threadModel.js";
+import { getOpeningComment, type ReviewThread } from "./reviewTypes.js";
 
 export function serialiseRejectedReviewFeedback(
   items: ReviewThread[],
@@ -26,7 +27,7 @@ export function serialiseRejectedReviewFeedback(
     .map((item) => {
       const feedback = getOpeningComment(item);
       const quote = feedback.quote.trim() ? `\n> ${feedback.quote.trim()}` : "";
-      return `Feedback ID: ${item.id}\n${location(item, multiRepository)}${quote}\n${serialiseThreadItems(item)}`;
+      return `Feedback ID: ${item.id}\n${location(item, multiRepository)}${quote}\n${serialiseConversation(item)}`;
     })
     .join("\n\n");
 
@@ -37,19 +38,6 @@ export function serialiseRejectedReviewFeedback(
 
     ${rendered}
   `;
-}
-
-function serialiseThreadItems(thread: ReviewThread): string {
-  const turns = thread.items.flatMap((item) =>
-    item.body.trim() ? [{ who: speaker(item), body: item.body.trim() }] : [],
-  );
-  return turns.length > 1
-    ? turns.map((turn) => `${turn.who}: ${turn.body}`).join("\n\n")
-    : (turns[0]?.body ?? "");
-}
-
-function speaker(item: ThreadItem): string {
-  return item.kind === "comment" || item.author.kind === "reviewer" ? "Reviewer" : "Agent";
 }
 
 /** Where feedback was left: a file:line, or the changeset whose description it sits on. */
