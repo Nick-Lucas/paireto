@@ -9,6 +9,6 @@ Call the `paireto_review` tool now. It opens the review panels in the connected 
 
 When it returns:
 
-- If it returns review comments (each has a feedback ID, `file:line`, a `QUESTION` or `COMMENT` kind, the quoted line, and a note), address each one:
-  - **QUESTION**: answer it with `paireto_reply_to_feedback`. Do not resolve a question; the reviewer closes it.
-  - **COMMENT**: action the comment and call `paireto_resolve_feedback` to resolve it.
+If it returns feedback, address every item.
+
+Reply to questions with the `paireto_reply_to_feedback` tool.

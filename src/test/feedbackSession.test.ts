@@ -18,7 +18,7 @@ import {
   contextKey,
   type FeedbackHost,
 } from "../review/feedback/FeedbackSession.js";
-import { appendFeedbackReply, resolveThread } from "../review/feedbackState.js";
+import { appendFeedbackReply, resolveThread, unresolveThread } from "../review/feedbackState.js";
 import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 import { feedbackFilePath, type FeedbackState } from "../storage/FeedbackStore.js";
 
@@ -33,7 +33,7 @@ const branch = (value: string): FeedbackRef => ({ kind: "branch", value });
 /** A thread with replies already on it, named the way the store names them. */
 const withReplies = (
   model: ReviewThread,
-  replies: Array<{ who: "reviewer" | "agent"; body: string; kind?: "reply" | "resolved" }>,
+  replies: Array<{ who: "reviewer" | "agent"; body: string }>,
 ): ReviewThread =>
   replies.reduce((item, reply, index) => {
     const at = `2026-08-12T2${index}:00:00.000Z`;
@@ -41,9 +41,7 @@ const withReplies = (
       reply.who === "reviewer"
         ? ({ kind: "reviewer" } as const)
         : ({ kind: "agent", harness: "claudecode" } as const);
-    return reply.kind === "resolved"
-      ? resolveThread(item, { at, author })
-      : appendFeedbackReply(item, { body: reply.body, at, author });
+    return appendFeedbackReply(item, { body: reply.body, at, author });
   }, model);
 
 const comment = (id: string, over: Partial<ReviewThread> = {}): ReviewThread => ({
@@ -259,13 +257,28 @@ suite("feedback session", () => {
     assert.deepStrictEqual(ids(session.allThreads()), ["opener"], "and no second feedback item");
   });
 
+  test("the reviewer settles a thread and opens it again", async () => {
+    seed([comment("mine")]);
+    const session = await openSession();
+    const at = "2026-09-08T10:00:00.000Z";
+
+    session.amendThread("mine", (thread) => resolveThread(thread, at));
+    assert.strictEqual(session.allThreads()[0].resolvedAt, at);
+    const thread = session.commentFor("mine")!.thread!;
+    assert.strictEqual(thread.state, vscode.CommentThreadState.Resolved);
+    assert.strictEqual(thread.label, "Marked as resolved");
+
+    session.amendThread("mine", (item) => unresolveThread(item, at));
+    assert.strictEqual(session.allThreads()[0].resolvedAt, undefined);
+    assert.strictEqual(
+      session.commentFor("mine")!.thread!.state,
+      vscode.CommentThreadState.Unresolved,
+    );
+  });
+
   test("a resolution is carried by the thread, not drawn as another comment", async () => {
-    seed([
-      withReplies(comment("opener"), [
-        { who: "agent", body: "fixed it" },
-        { who: "agent", body: "", kind: "resolved" },
-      ]),
-    ]);
+    const at = "2026-09-08T10:00:00.000Z";
+    seed([resolveThread(withReplies(comment("opener"), [{ who: "agent", body: "fixed it" }]), at)]);
     const session = await openSession();
 
     const thread = session.commentFor("opener")!.thread!;
@@ -524,7 +537,7 @@ suite("feedback session", () => {
     const snapshot = session.allThreads();
 
     await session.edit("send", "latest text");
-    const sent = await session.markSent(new Set(["send"]), "2026-09-01T00:00:00.000Z");
+    const sent = await session.markResolved(new Set(["send"]), "2026-09-01T00:00:00.000Z");
 
     assert.strictEqual(getOpeningComment(sent[0]).body, "latest text");
     assert.strictEqual(sent[0].delivery, "sent");
@@ -536,7 +549,7 @@ suite("feedback session", () => {
     seed([comment("here")]);
     const session = await openSession();
 
-    const sent = await session.markSent(new Set(["here", "gone"]), "2026-09-01T00:00:00.000Z");
+    const sent = await session.markResolved(new Set(["here", "gone"]), "2026-09-01T00:00:00.000Z");
 
     assert.deepStrictEqual(ids(sent), ["here"]);
     assert.strictEqual(session.allThreads()[0].delivery, "sent");
@@ -546,8 +559,8 @@ suite("feedback session", () => {
     seed([comment("once")]);
     const session = await openSession();
 
-    await session.markSent(new Set(["once"]), "2026-09-01T00:00:00.000Z");
-    await session.markSent(new Set(["once"]), "2026-09-02T00:00:00.000Z");
+    await session.markResolved(new Set(["once"]), "2026-09-01T00:00:00.000Z");
+    await session.markResolved(new Set(["once"]), "2026-09-02T00:00:00.000Z");
 
     assert.strictEqual(session.allThreads()[0].delivery, "sent");
     assert.strictEqual(session.allThreads()[0].updatedAt, "2026-09-01T00:00:00.000Z");

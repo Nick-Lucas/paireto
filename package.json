@@ -193,6 +193,19 @@
         "enablement": "!commentIsEmpty"
       },
       {
+        "command": "paireto.review.unresolveThread",
+        "title": "Unresolve"
+      },
+      {
+        "command": "paireto.review.resolveThread",
+        "title": "Resolve"
+      },
+      {
+        "command": "paireto.review.unresolveAndReply",
+        "title": "Unresolve & Reply",
+        "enablement": "!commentIsEmpty"
+      },
+      {
         "command": "paireto.review.addQuestion",
         "title": "Question",
         "enablement": "!commentIsEmpty"
@@ -385,6 +398,18 @@
         {
           "command": "paireto.guidedReview.openPlan",
           "when": "false"
+        },
+        {
+          "command": "paireto.review.unresolveAndReply",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.resolveThread",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.unresolveThread",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -427,7 +452,12 @@
         },
         {
           "command": "paireto.review.addReply",
-          "when": "commentController == paireto.review && commentThread",
+          "when": "commentController == paireto.review && commentThread == open",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.unresolveAndReply",
+          "when": "commentController == paireto.review && commentThread == resolved",
           "group": "inline@1"
         }
       ],
@@ -612,6 +642,18 @@
           "command": "paireto.gate.sendFeedback",
           "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && paireto.gateHasFeedback",
           "group": "navigation@5"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "paireto.review.resolveThread",
+          "when": "commentController == paireto.review && commentThread == open",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.unresolveThread",
+          "when": "commentController == paireto.review && commentThread == resolved",
+          "group": "inline@1"
         }
       ]
     },

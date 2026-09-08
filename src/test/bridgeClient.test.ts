@@ -31,7 +31,6 @@ suite("plugin bridge client", () => {
   test("response tags cover every request tag", () => {
     assert.deepStrictEqual(Object.keys(RESPONSE_TAG).sort(), [
       "feedback.reply.request",
-      "feedback.resolve.request",
       "guided.review.await.request",
       "plan.review.hook.request",
       "plan.review.tool.request",
@@ -198,16 +197,8 @@ suite("plugin bridge client", () => {
       feedbackId: "feedback-1",
       message: "I changed it.",
     });
-    const resolved = await result.connection.request({
-      t: "feedback.resolve.request",
-      repoRoot: server.target.repoRoot,
-      harness: "codex",
-      sessionId: "session-1",
-      feedbackId: "feedback-1",
-    });
 
     assert.strictEqual(reply?.ok, true);
-    assert.strictEqual(resolved?.ok, true);
     const sent = server.received.slice(1).map((line) => JSON.parse(line));
     assert.deepStrictEqual(
       sent.map(({ t, repoRoot, feedbackId, message }) => ({
@@ -222,12 +213,6 @@ suite("plugin bridge client", () => {
           repoRoot: server.target.repoRoot,
           feedbackId: "feedback-1",
           message: "I changed it.",
-        },
-        {
-          t: "feedback.resolve.request",
-          repoRoot: server.target.repoRoot,
-          feedbackId: "feedback-1",
-          message: undefined,
         },
       ],
     );

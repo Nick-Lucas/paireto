@@ -107,6 +107,12 @@ export const CommentReplyArg = z.custom<vscode.CommentReply>(
 );
 export type CommentReplyArg = z.infer<typeof CommentReplyArg>;
 
+export const CommentThreadArg = z.custom<vscode.CommentThread>(
+  (value) => !!value && typeof value === "object" && "comments" in value && "uri" in value,
+  { message: "expected a comment thread" },
+);
+export type CommentThreadArg = z.infer<typeof CommentThreadArg>;
+
 /**
  * Wrap a command handler so it receives the argument it asks for, already typed. An argument that
  * does not match is a WIRING BUG — a menu pointed at the wrong node, or a caller passing the wrong

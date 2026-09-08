@@ -33,7 +33,7 @@ export function serialiseRejectedReviewFeedback(
   return dedent`
     Code review feedback received from the user:
 
-    Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
+    Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
     ${rendered}
   `;
@@ -41,16 +41,14 @@ export function serialiseRejectedReviewFeedback(
 
 function serialiseThreadItems(thread: ReviewThread): string {
   const turns = thread.items.flatMap((item) =>
-    item.kind === "resolved" || !item.body.trim()
-      ? []
-      : [{ who: speaker(item), body: item.body.trim() }],
+    item.body.trim() ? [{ who: speaker(item), body: item.body.trim() }] : [],
   );
   return turns.length > 1
     ? turns.map((turn) => `${turn.who}: ${turn.body}`).join("\n\n")
     : (turns[0]?.body ?? "");
 }
 
-function speaker(item: Exclude<ThreadItem, { kind: "resolved" }>): string {
+function speaker(item: ThreadItem): string {
   return item.kind === "comment" || item.author.kind === "reviewer" ? "Reviewer" : "Agent";
 }
 

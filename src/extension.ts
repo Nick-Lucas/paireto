@@ -396,15 +396,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         msg.sessionId,
       );
     },
-    onFeedbackResolve: (msg) => {
-      warnForeignRepo(msg.repoRoot);
-      return reviewController.resolveFeedback(
-        msg.repoRoot,
-        msg.feedbackId,
-        msg.harness,
-        msg.sessionId,
-      );
-    },
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => {
       agents.detachSession(sessionId);

@@ -42,6 +42,7 @@ import {
   ChangesetIdArg,
   CommentIdArg,
   CommentReplyArg,
+  CommentThreadArg,
   FileArg,
   FilesArg,
   GuidedRowArg,
@@ -70,7 +71,12 @@ import { serialiseRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { getOpeningComment, type ReviewThread } from "./reviewTypes.js";
-import { appendFeedbackReply, pendingFeedback, resolveThread } from "./feedbackState.js";
+import {
+  appendFeedbackReply,
+  pendingFeedback,
+  resolveThread,
+  unresolveThread,
+} from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
 import {
   contextKey,
@@ -319,6 +325,18 @@ export class ReviewController implements vscode.Disposable {
       reg(
         Commands.reviewAddReply,
         withArg(CommentReplyArg, (reply) => this.addReply(reply)),
+      ),
+      reg(
+        Commands.reviewUnresolveAndReply,
+        withArg(CommentReplyArg, (reply) => this.unresolveAndReply(reply)),
+      ),
+      reg(
+        Commands.reviewResolveThread,
+        withArg(CommentThreadArg, (thread) => this.setThreadResolved(thread, true)),
+      ),
+      reg(
+        Commands.reviewUnresolveThread,
+        withArg(CommentThreadArg, (thread) => this.setThreadResolved(thread, false)),
       ),
       reg(
         Commands.reviewRevealComment,
@@ -1643,6 +1661,30 @@ export class ReviewController implements vscode.Disposable {
     return this.feedback?.addReply(answering, reply.text) ?? false;
   }
 
+  private setThreadResolved(thread: vscode.CommentThread, resolved: boolean): void {
+    const opener = thread.comments[0];
+    const id = opener instanceof GateComment ? opener.id : undefined;
+    if (id !== undefined) {
+      this.setResolved(id, resolved);
+    }
+  }
+
+  private setResolved(id: string, resolved: boolean): void {
+    const at = new Date().toISOString();
+    this.feedback?.amendThread(id, (thread) =>
+      resolved ? resolveThread(thread, at) : unresolveThread(thread, at),
+    );
+  }
+
+  private unresolveAndReply(reply: vscode.CommentReply): boolean {
+    const answering = this.threadAnsweredBy(reply);
+    if (answering === undefined) {
+      return false;
+    }
+    this.setResolved(answering, false);
+    return this.addReply(reply);
+  }
+
   private threadAnsweredBy(reply: vscode.CommentReply): string | undefined {
     const opener = reply.thread.comments[0];
     const id = opener instanceof GateComment ? opener.id : undefined;
@@ -2091,32 +2133,6 @@ export class ReviewController implements vscode.Disposable {
       : this.feedbackMiss(repoRoot, feedbackId);
   }
 
-  async resolveFeedback(
-    repoRoot: string,
-    feedbackId: string,
-    harness: Harness,
-    sessionId?: string,
-  ): Promise<{ ok: boolean; message: string }> {
-    const id = feedbackId.trim();
-    // A question is answered, not closed off: only the reviewer knows when their question is done.
-    const thread = this.getComments().find((item) => item.id === id);
-    if (thread && getOpeningComment(thread).commentKind === "question") {
-      return {
-        ok: false,
-        message: `Feedback ${id} is a question. Reply to it instead; only the reviewer closes a question.`,
-      };
-    }
-    const at = new Date().toISOString();
-    return this.amendFeedback(repoRoot, feedbackId, (item) => {
-      if (typeof item.resolvedAt === "undefined") {
-        this.agentRepliedOrResolvedComment = true;
-      }
-      return resolveThread(item, { at, author: { kind: "agent", harness, sessionId } });
-    })
-      ? { ok: true, message: `Feedback ${id} is resolved.` }
-      : this.feedbackMiss(repoRoot, feedbackId);
-  }
-
   private amendFeedback(
     repoRoot: string,
     feedbackId: string,
@@ -2147,7 +2163,7 @@ export class ReviewController implements vscode.Disposable {
 
   async markCommentsSent(items: ReviewThread[]): Promise<ReviewThread[]> {
     const ids = new Set(items.map((item) => item.id));
-    return this.feedback?.markSent(ids, new Date().toISOString()) ?? [];
+    return this.feedback?.markResolved(ids, new Date().toISOString()) ?? [];
   }
 
   private async clearAllFeedback(): Promise<void> {

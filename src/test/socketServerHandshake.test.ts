@@ -24,7 +24,6 @@ function stubHandlers(rejections: HandshakeRejection[]): BridgeHandlers {
     onSessionAttached: () => {},
     onSessionDetached: () => {},
     onFeedbackReply: () => Promise.resolve({ ok: true, message: "" }),
-    onFeedbackResolve: () => Promise.resolve({ ok: true, message: "" }),
     onHandshakeRejected: (info) => rejections.push(info),
   };
 }

@@ -162,6 +162,20 @@ export class FeedbackSession {
     });
   }
 
+  amendThread(id: string, change: (thread: ReviewThread) => ReviewThread): boolean {
+    const thread = this.allThreads().find((item) => item.id === id);
+    if (!thread) {
+      log.error(`feedback ${id} is not held by this session`);
+      return false;
+    }
+    return this.write(thread.repoRoot, (draft) => {
+      const model = draft.threads.find((item) => item.id === id);
+      if (model) {
+        Object.assign(model, change(model));
+      }
+    });
+  }
+
   addReply(id: string, body: string): boolean {
     const thread = this.allThreads().find((item) => item.id === id);
     if (!thread) {
@@ -222,7 +236,7 @@ export class FeedbackSession {
     });
   }
 
-  markSent(ids: Set<string>, at: string): ReviewThread[] {
+  markResolved(ids: Set<string>, at: string): ReviewThread[] {
     const roots = new Set(
       this.allThreads()
         .filter((model) => ids.has(model.id))
@@ -235,6 +249,10 @@ export class FeedbackSession {
           if (ids.has(model.id) && model.delivery === "pending") {
             model.delivery = "sent";
             model.updatedAt = at;
+
+            if (getOpeningComment(model).commentKind === "comment") {
+              model.resolvedAt = at;
+            }
           }
         }
       });
@@ -316,12 +334,10 @@ export class FeedbackSession {
       { comment: this.draw(model.id, feedback.body, feedback.commentKind) },
     ];
     for (const item of model.items.slice(1)) {
-      // Only the first item is ever the comment. A resolution is carried by the thread's own state,
-      // so drawing it as another comment would say the same thing twice.
-      if (item.kind === "comment" || item.kind === "resolved") {
+      if (item.kind === "comment") {
         continue;
       }
-      if (item.kind === "reply" && item.author.kind === "reviewer") {
+      if (item.author.kind === "reviewer") {
         out.push({ comment: this.draw(item.id, item.body, feedback.commentKind) });
         continue;
       }

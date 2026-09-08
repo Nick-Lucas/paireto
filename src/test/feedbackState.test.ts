@@ -7,6 +7,7 @@ import {
   pendingFeedback,
   removeFeedbackReply,
   resolveThread,
+  unresolveThread,
 } from "../review/feedbackState.js";
 import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 
@@ -109,17 +110,15 @@ suite("feedback lifecycle", () => {
     );
   });
 
-  test("resolve is idempotent", () => {
-    const first = resolveThread(item({ delivery: "sent" }), {
-      at: "2026-08-12T20:05:00.000Z",
-      author: { kind: "agent", harness: "codex" },
-    });
-    const second = resolveThread(first, {
-      at: "2026-08-12T20:06:00.000Z",
-      author: { kind: "agent", harness: "codex" },
-    });
-    assert.strictEqual(second, first);
+  test("resolve is idempotent, and unresolve puts it back", () => {
+    const first = resolveThread(item({ delivery: "sent" }), "2026-08-12T20:05:00.000Z");
+    const second = resolveThread(first, "2026-08-12T20:06:00.000Z");
+    assert.strictEqual(second, first, "resolving twice changes nothing");
     assert.strictEqual(first.resolvedAt, "2026-08-12T20:05:00.000Z");
-    assert.strictEqual(first.items.filter((activity) => activity.kind === "resolved").length, 1);
+    assert.deepStrictEqual(first.items, item({ delivery: "sent" }).items, "and adds no item");
+
+    const reopened = unresolveThread(first, "2026-08-12T20:07:00.000Z");
+    assert.strictEqual(reopened.resolvedAt, undefined);
+    assert.strictEqual(unresolveThread(reopened, "2026-08-12T20:08:00.000Z"), reopened);
   });
 });

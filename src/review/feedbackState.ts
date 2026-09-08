@@ -70,18 +70,10 @@ export function removeFeedbackReply(
   };
 }
 
-export function resolveThread(
-  thread: ReviewThread,
-  resolution: { at: string; author: ThreadItemAuthor },
-): ReviewThread {
-  if (thread.resolvedAt) {
-    return thread;
-  }
-  const item: ThreadItem = { id: nextThreadItemId(thread), kind: "resolved", ...resolution };
-  return {
-    ...thread,
-    resolvedAt: resolution.at,
-    updatedAt: resolution.at,
-    items: [...thread.items, item],
-  };
+export function resolveThread(thread: ReviewThread, at: string): ReviewThread {
+  return thread.resolvedAt ? thread : { ...thread, resolvedAt: at, updatedAt: at };
+}
+
+export function unresolveThread(thread: ReviewThread, at: string): ReviewThread {
+  return thread.resolvedAt ? { ...thread, resolvedAt: undefined, updatedAt: at } : thread;
 }

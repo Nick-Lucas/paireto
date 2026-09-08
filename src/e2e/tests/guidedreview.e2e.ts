@@ -235,7 +235,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
           ),
         PLAN_TIMEOUT_MS,
       );
-      await wait("the agent to resolve the feedback", async () => {
+      await wait("the feedback to settle on send", async () => {
         const feedback = (await inspect()).feedback[0];
         return feedback?.delivery === "sent" && feedback.resolved;
       });

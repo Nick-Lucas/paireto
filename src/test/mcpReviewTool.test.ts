@@ -20,11 +20,7 @@ import {
 } from "../plugins/core/mcp/reviewTool.js";
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
 import { type Harness, PLUGIN_VERSION } from "../protocol/types.js";
-import {
-  FEEDBACK_REPLY_TOOL_NAME,
-  FEEDBACK_RESOLVE_TOOL_NAME,
-  runFeedbackReply,
-} from "../plugins/core/mcp/feedbackTools.js";
+import { FEEDBACK_REPLY_TOOL_NAME, runFeedbackReply } from "../plugins/core/mcp/feedbackTools.js";
 import { ackWith, startServer } from "./fakeBridgeServer.js";
 
 suite("MCP paireto_review tool", () => {
@@ -41,7 +37,7 @@ suite("MCP paireto_review tool", () => {
     );
   });
 
-  test("registers independent reply and resolve tools with strict schemas", async () => {
+  test("registers a reply tool with a strict schema, and no resolve tool", async () => {
     const server = createMcpServer({
       serverName: "paireto-test",
       harness: "codex" as const,
@@ -58,9 +54,11 @@ suite("MCP paireto_review tool", () => {
         "feedbackId",
         "message",
       ]);
-      assert.deepStrictEqual(tools.get(FEEDBACK_RESOLVE_TOOL_NAME)?.inputSchema.required, [
-        "feedbackId",
-      ]);
+      assert.strictEqual(
+        tools.has("paireto_resolve_feedback"),
+        false,
+        "only the reviewer resolves a thread",
+      );
     } finally {
       await client.close();
     }
@@ -203,8 +201,8 @@ suite("MCP paireto_plan_review tool exposure", () => {
     }
   };
 
-  /** Every harness can answer feedback, so these ride alongside whatever else it is given. */
-  const FEEDBACK_TOOLS = [FEEDBACK_REPLY_TOOL_NAME, FEEDBACK_RESOLVE_TOOL_NAME];
+  /** Every harness can answer feedback, so this rides alongside whatever else it is given. */
+  const FEEDBACK_TOOLS = [FEEDBACK_REPLY_TOOL_NAME];
 
   test("Kiro gets the plan-review tool", async () => {
     assert.deepStrictEqual(

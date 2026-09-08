@@ -23,12 +23,8 @@ import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTo
 import {
   FEEDBACK_REPLY_TOOL_DESCRIPTION,
   FEEDBACK_REPLY_TOOL_NAME,
-  FEEDBACK_RESOLVE_TOOL_DESCRIPTION,
-  FEEDBACK_RESOLVE_TOOL_NAME,
   FeedbackReplyArgs,
-  FeedbackResolveArgs,
   runFeedbackReply,
-  runFeedbackResolve,
 } from "./feedbackTools.js";
 
 /** Everything a harness supplies to the shared core. */
@@ -99,21 +95,6 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
     },
     (args) =>
       runFeedbackReply(
-        adapter.resolveReviewTarget(),
-        adapter.harness,
-        args,
-        adapter.noTargetMessage,
-      ),
-  );
-
-  server.registerTool(
-    FEEDBACK_RESOLVE_TOOL_NAME,
-    {
-      description: FEEDBACK_RESOLVE_TOOL_DESCRIPTION,
-      inputSchema: FeedbackResolveArgs.shape,
-    },
-    (args) =>
-      runFeedbackResolve(
         adapter.resolveReviewTarget(),
         adapter.harness,
         args,

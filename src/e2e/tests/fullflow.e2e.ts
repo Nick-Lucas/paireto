@@ -164,13 +164,11 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         "the review gate to resolve on send-feedback",
       );
       await wait("note.txt to be written", () => Promise.resolve(fileIs("note.txt", "note")));
-      await wait("the agent reply and resolution to appear", async () => {
+      await wait("the agent reply to appear on the settled comment", async () => {
         const feedback = (await inspect()).feedback[0];
+
         return (
-          feedback?.delivery === "sent" &&
-          feedback.resolved &&
-          feedback.itemKinds.includes("reply") &&
-          feedback.itemKinds.includes("resolved")
+          feedback?.delivery === "sent" && feedback.resolved && feedback.itemKinds.includes("reply")
         );
       });
       log.push("note.txt present");

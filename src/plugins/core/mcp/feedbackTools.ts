@@ -1,33 +1,20 @@
 import { z } from "zod";
 
-import type {
-  FeedbackReplyRequest,
-  FeedbackResolveRequest,
-  Harness,
-} from "../../../protocol/types.js";
+import type { FeedbackReplyRequest, Harness } from "../../../protocol/types.js";
 import { connect } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
 import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
 
 export const FEEDBACK_REPLY_TOOL_NAME = "paireto_reply_to_feedback";
-export const FEEDBACK_RESOLVE_TOOL_NAME = "paireto_resolve_feedback";
 
 export const FEEDBACK_REPLY_TOOL_DESCRIPTION =
   "Add an agent reply to one Paireto feedback item. Use the feedback ID returned by a review.";
-export const FEEDBACK_RESOLVE_TOOL_DESCRIPTION =
-  "Mark one Paireto COMMENT resolved after you have addressed it. A QUESTION cannot be " +
-  "resolved: reply to it and leave it open for the reviewer to close.";
 
 export const FeedbackReplyArgs = z.object({
   feedbackId: z.string().trim().min(1).describe("The stable feedback ID."),
   message: z.string().trim().min(1).describe("The reply shown to the reviewer."),
 });
 export type FeedbackReplyArgs = z.infer<typeof FeedbackReplyArgs>;
-
-export const FeedbackResolveArgs = z.object({
-  feedbackId: z.string().trim().min(1).describe("The stable feedback ID."),
-});
-export type FeedbackResolveArgs = z.infer<typeof FeedbackResolveArgs>;
 
 const CONNECT_TIMEOUT_MS = 3_000;
 
@@ -57,32 +44,9 @@ export async function runFeedbackReply(
   );
 }
 
-export async function runFeedbackResolve(
-  target: ReviewTarget | undefined,
-  harness: Harness,
-  args: FeedbackResolveArgs,
-  noTargetMessage = NO_WINDOW_MESSAGE,
-  timeoutMs = MUTATION_TIMEOUT_MS,
-): Promise<ToolResult> {
-  return runMutation(
-    target,
-    {
-      t: "feedback.resolve.request",
-      repoRoot: target?.target.repoRoot ?? "",
-      harness,
-      sessionId: target?.sessionId,
-      feedbackId: args.feedbackId,
-    },
-    noTargetMessage,
-    timeoutMs,
-  );
-}
-
 async function runMutation(
   target: ReviewTarget | undefined,
-  body:
-    | Omit<FeedbackReplyRequest, "id" | "v" | "ts">
-    | Omit<FeedbackResolveRequest, "id" | "v" | "ts">,
+  body: Omit<FeedbackReplyRequest, "id" | "v" | "ts">,
   noTargetMessage: string,
   timeoutMs: number,
 ): Promise<ToolResult> {

@@ -10,7 +10,6 @@ import type {
   AnyMessage,
   GuidedReviewAwaitRequest,
   FeedbackReplyRequest,
-  FeedbackResolveRequest,
   HookEventMessage,
   PlanReviewHookRequest,
   PlanReviewToolRequest,
@@ -47,7 +46,6 @@ export type RequestBody =
   | Omit<ReviewAwaitRequest, Stamped | "id">
   | Omit<GuidedReviewAwaitRequest, Stamped | "id">
   | Omit<FeedbackReplyRequest, Stamped | "id">
-  | Omit<FeedbackResolveRequest, Stamped | "id">
   | Omit<StopGateRequest, Stamped | "id">;
 
 export type RequestTag = RequestBody["t"];
@@ -59,7 +57,6 @@ export interface ResponseTagOf {
   "review.await.request": "review.await.response";
   "guided.review.await.request": "guided.review.await.response";
   "feedback.reply.request": "feedback.reply.response";
-  "feedback.resolve.request": "feedback.resolve.response";
   "stop.gate.request": "stop.gate.response";
 }
 
@@ -69,7 +66,6 @@ export const RESPONSE_TAG: ResponseTagOf = {
   "review.await.request": "review.await.response",
   "guided.review.await.request": "guided.review.await.response",
   "feedback.reply.request": "feedback.reply.response",
-  "feedback.resolve.request": "feedback.resolve.response",
   "stop.gate.request": "stop.gate.response",
 };
 

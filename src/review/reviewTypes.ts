@@ -22,12 +22,6 @@ export type ThreadItem =
       author: ThreadItemAuthor;
       body: string;
       at: string;
-    }
-  | {
-      id: string;
-      kind: "resolved";
-      author: ThreadItemAuthor;
-      at: string;
     };
 
 export interface ReviewAnchor {

@@ -589,7 +589,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: x
         src/a.ts:1  [COMMENT]
@@ -608,7 +608,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: q
         src/a.ts:1  [QUESTION]
@@ -639,7 +639,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: x
         src/a.ts:1  [QUESTION]
@@ -649,29 +649,6 @@ suite("serialiseRejectedReviewFeedback", () => {
         Agent: It narrows the union.
 
         Reviewer: That is not what I meant — drop it entirely.
-      `,
-    );
-  });
-
-  test("a resolution is not part of what the agent is asked to address", () => {
-    const item = mk({ body: "Please simplify.", quote: "const x = 1;" });
-    item.items.push({
-      id: "x#1",
-      kind: "resolved",
-      author: { kind: "agent", harness: "claudecode" },
-      at,
-    });
-    assert.strictEqual(
-      serialiseRejectedReviewFeedback([item]),
-      dedent`
-        Code review feedback received from the user:
-
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
-
-        Feedback ID: x
-        src/a.ts:1  [COMMENT]
-        > const x = 1;
-        Please simplify.
       `,
     );
   });
@@ -692,7 +669,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Before you finish, call paireto_reply_to_feedback for every QUESTION and call paireto_resolve_feedback for every item after it is addressed.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: a
         /workspace/api/src/a.ts:1  [COMMENT]

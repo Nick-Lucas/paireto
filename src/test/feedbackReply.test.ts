@@ -81,43 +81,34 @@ suite("agent replies to feedback", () => {
     assert.deepStrictEqual(await storedItemKinds(id), ["comment", "reply"]);
   });
 
-  test("resolving marks the item resolved and is idempotent", async function () {
+  test("sending a comment settles it, and a question stays open for the reviewer", async function () {
     this.timeout(90_000);
-    const id = await queueFileComment("Please simplify.");
+    const comment = await queueFileComment("Please simplify.");
+    const question = await queueFileComment("Why the cast here?", { kind: "question", line: 1 });
 
-    send("feedback.resolve.request", "req-resolve-1", { feedbackId: id });
-    await waitFor("the resolve response", () =>
-      wire.messages.find((m) => m.t === "feedback.resolve.response" && m.id === "req-resolve-1"),
-    );
-    send("feedback.resolve.request", "req-resolve-2", { feedbackId: id });
-    const second = await waitFor("the second resolve response", () =>
-      wire.messages.find((m) => m.t === "feedback.resolve.response" && m.id === "req-resolve-2"),
+    await startReview(wire, { repoRoot, id: "send-settles" });
+    await vscode.commands.executeCommand(Commands.gateSendFeedback);
+    await waitFor("the review to resolve on send", () =>
+      wire.messages.find((m) => m.t === "review.await.response"),
     );
 
-    assert.strictEqual(second.ok, true, "resolving twice is not an error");
-    const item = (await inspect()).feedback.find((entry) => entry.id === id);
-    assert.strictEqual(item?.resolved, true);
-    assert.deepStrictEqual(item?.itemKinds, ["resolved"], "the second resolve adds nothing");
+    const held = (await inspect()).feedback;
+    assert.strictEqual(
+      held.find((entry) => entry.id === comment)?.resolved,
+      true,
+      "handing a comment over settles it",
+    );
+    assert.strictEqual(
+      held.find((entry) => entry.id === question)?.resolved,
+      false,
+      "a question is settled by an answer the reviewer has read, not by sending it",
+    );
   });
 
-  test("a question is answered, never resolved", async function () {
+  test("a question takes a reply and stays open", async function () {
     this.timeout(90_000);
     const id = await queueFileComment("Why the cast here?", { kind: "question" });
 
-    send("feedback.resolve.request", "req-resolve-question", { feedbackId: id });
-    const refused = await waitFor("the resolve response", () =>
-      wire.messages.find(
-        (m) => m.t === "feedback.resolve.response" && m.id === "req-resolve-question",
-      ),
-    );
-
-    assert.strictEqual(refused.ok, false, "a question cannot be resolved");
-    assert.match(String(refused.message), /question/i, "the agent is told why");
-    const item = (await inspect()).feedback.find((entry) => entry.id === id);
-    assert.strictEqual(item?.resolved, false, "the question stays open");
-    assert.deepStrictEqual(item?.itemKinds, [], "and nothing is added to it");
-
-    // The same question still takes a reply.
     send("feedback.reply.request", "req-reply-question", {
       feedbackId: id,
       message: "Because the union is wider than it looks.",
@@ -125,15 +116,16 @@ suite("agent replies to feedback", () => {
     const replied = await waitFor("the reply response", () =>
       wire.messages.find((m) => m.t === "feedback.reply.response" && m.id === "req-reply-question"),
     );
+
     assert.strictEqual(replied.ok, true, String(replied.message));
-    assert.deepStrictEqual((await inspect()).feedback.find((entry) => entry.id === id)?.itemKinds, [
-      "reply",
-    ]);
+    const item = (await inspect()).feedback.find((entry) => entry.id === id);
+    assert.deepStrictEqual(item?.itemKinds, ["reply"]);
+    assert.strictEqual(item?.resolved, false, "only the reviewer closes a question");
   });
 
   // A guided review E2E left a sent-and-resolved item in the bucket after approve, so pin the rule
   // here where resolution exists: approving a review takes ALL of its feedback, history included.
-  test("approve clears feedback the agent has already resolved", async function () {
+  test("approve clears feedback that sending already settled", async function () {
     this.timeout(90_000);
     const warnings = stubWarnings(() => undefined);
     try {
@@ -145,12 +137,6 @@ suite("agent replies to feedback", () => {
         wire.messages.find((m) => m.t === "review.await.response"),
       );
 
-      send("feedback.resolve.request", "req-approve-resolved", { feedbackId: id });
-      await waitFor("the resolve response", () =>
-        wire.messages.find(
-          (m) => m.t === "feedback.resolve.response" && m.id === "req-approve-resolved",
-        ),
-      );
       const resolved = (await inspect()).feedback.find((f) => f.id === id);
       assert.strictEqual(resolved?.resolved, true, "the item is resolved before the approve");
 
