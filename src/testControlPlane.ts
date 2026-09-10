@@ -13,6 +13,7 @@ import * as vscode from "vscode";
 import type { AgentSessionService } from "./agents/AgentSessionService.js";
 import { Commands, Schemes } from "./config.js";
 import type { GateCoordinator } from "./gate/GateCoordinator.js";
+import { tabUri } from "./gate/tabs.js";
 import type { RepoService } from "./git/RepoService.js";
 import type { PlanReviewController } from "./plan/PlanReviewController.js";
 import type { ReviewController } from "./review/ReviewController.js";
@@ -166,13 +167,14 @@ function resolveTargetUri(args: AddCommentArgs, repoService: RepoService): vscod
   return vscode.Uri.file(path.join(root, args.path));
 }
 
-/** The URI of the currently-open paireto-plan tab (the foreground plan doc), if any. */
+/** The URI of the currently-open paireto-plan tab (the foreground plan doc), if any. A revised plan
+ *  opens as a diff, and tabUri answers with its modified side — the plan waiting for feedback. */
 function findOpenPlanTabUri(): vscode.Uri | undefined {
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
-      const input = tab.input;
-      if (input instanceof vscode.TabInputText && input.uri.scheme === Schemes.plan) {
-        return input.uri;
+      const uri = tabUri(tab);
+      if (uri?.scheme === Schemes.plan) {
+        return uri;
       }
     }
   }

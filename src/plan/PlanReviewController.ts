@@ -32,6 +32,13 @@ interface PlanReview {
   harness: Harness;
   uri: vscode.Uri;
   markdown: string;
+  /** The plan this one answers, shown as the left side of a diff. Unset for a first plan. */
+  previousUri?: vscode.Uri;
+}
+
+/** The left side of the plan diff: the plan the reviewer already answered. */
+function previousPlanUri(uri: vscode.Uri): vscode.Uri {
+  return uri.with({ fragment: "previous" });
 }
 
 let planCounter = 0;
@@ -46,6 +53,9 @@ export class PlanReviewController implements vscode.Disposable {
   private readonly plans = new Map<string, PlanReview>();
   private foregroundReview?: PlanReview;
   private readonly closingTabs = new Set<string>();
+  /** The plan each agent session was last sent feedback on, keyed by session id. The next plan from
+   *  that session is a revision of it, so it is shown as a diff. An approval ends the revising. */
+  private readonly answeredPlans = new Map<string, string>();
 
   constructor(
     private readonly provider: PlanContentProvider,
@@ -54,10 +64,17 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly locator: AgentServiceLocator,
     private readonly codeFeedback: CodeFeedbackSource,
   ) {
-    this.comments = new CommentSession("paireto.plan", "Paireto: Add Comment", Schemes.plan, {
-      prompt: "Add plan feedback",
-      placeHolder: "Comment on this line of the plan",
-    });
+    this.comments = new CommentSession(
+      "paireto.plan",
+      "Paireto: Add Comment",
+      Schemes.plan,
+      {
+        prompt: "Add plan feedback",
+        placeHolder: "Comment on this line of the plan",
+      },
+      // Feedback belongs on the plan waiting for it, not on the one it revises.
+      (doc) => doc.uri.scheme === Schemes.plan && doc.uri.fragment !== "previous",
+    );
     this.threads = new PlanThreads(this.comments, () => this.changeEmitter.fire());
     this.disposables.push(
       this.comments,
@@ -94,6 +111,8 @@ export class PlanReviewController implements vscode.Disposable {
       query: planId,
     });
     const key = PlanGateRegistry.key(sessionId, planId);
+    const answered = this.answeredPlans.get(sessionId);
+    const previousUri = answered === undefined ? undefined : previousPlanUri(uri);
     const review: PlanReview = {
       id: key,
       key,
@@ -101,9 +120,13 @@ export class PlanReviewController implements vscode.Disposable {
       harness: event.harness,
       uri,
       markdown: plan,
+      previousUri,
     };
 
     this.provider.set(uri, plan);
+    if (previousUri !== undefined && answered !== undefined) {
+      this.provider.set(previousUri, answered);
+    }
     this.plans.set(review.id, review);
 
     const entry: GateEntry = {
@@ -193,9 +216,7 @@ export class PlanReviewController implements vscode.Disposable {
     } catch {
       /* view may not be registered yet — non-fatal */
     }
-    const doc = await vscode.workspace.openTextDocument(review.uri);
-    await vscode.languages.setTextDocumentLanguage(doc, "markdown");
-    await vscode.window.showTextDocument(doc, { preview: false });
+    await this.show(review);
     this.foregroundReview = review;
     void ensureCommentingVisible();
     this.changeEmitter.fire();
@@ -230,6 +251,8 @@ export class PlanReviewController implements vscode.Disposable {
       `plan review approved for agent ${review.sessionId.slice(0, 8)}` +
         (nextMode ? ` (mode -> ${nextMode})` : ""),
     );
+    // The revising is over. A plan this session proposes later is new work, not a revision.
+    this.answeredPlans.delete(review.sessionId);
     this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
 
@@ -286,6 +309,7 @@ export class PlanReviewController implements vscode.Disposable {
       multiRepository: this.codeFeedback.isMultiRepository(),
     });
 
+    this.answeredPlans.set(review.sessionId, review.markdown);
     this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
@@ -383,8 +407,26 @@ export class PlanReviewController implements vscode.Disposable {
   }
 
   private async reopen(review: PlanReview): Promise<void> {
+    await this.show(review);
+  }
+
+  /** Put the plan on screen: against the plan it revises when there is one, otherwise on its own. */
+  private async show(review: PlanReview): Promise<void> {
     const doc = await vscode.workspace.openTextDocument(review.uri);
-    await vscode.window.showTextDocument(doc, { preview: false });
+    await vscode.languages.setTextDocumentLanguage(doc, "markdown");
+    if (!review.previousUri) {
+      await vscode.window.showTextDocument(doc, { preview: false });
+      return;
+    }
+    const previous = await vscode.workspace.openTextDocument(review.previousUri);
+    await vscode.languages.setTextDocumentLanguage(previous, "markdown");
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      review.previousUri,
+      review.uri,
+      `${review.uri.path.replace(/^\//, "")} (revised)`,
+      { preview: false },
+    );
   }
 
   /** Resolve cleanup: dispose this plan's comments + tab, then unregister (promotes the next gate). */
@@ -400,6 +442,9 @@ export class PlanReviewController implements vscode.Disposable {
     this.closingTabs.add(review.uri.toString());
     await closeTabsForUri(review.uri);
     this.provider.clear(review.uri);
+    if (review.previousUri) {
+      this.provider.clear(review.previousUri);
+    }
     await this.coordinator.unregister(review.id);
     this.updatePendingContext();
     this.changeEmitter.fire();
@@ -414,6 +459,7 @@ export class PlanReviewController implements vscode.Disposable {
       d.dispose();
     }
     this.plans.clear();
+    this.answeredPlans.clear();
     this.foregroundReview = undefined;
   }
 }

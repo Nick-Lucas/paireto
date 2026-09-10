@@ -11,6 +11,7 @@ import * as net from "node:net";
 import * as vscode from "vscode";
 
 import { Commands, Schemes } from "../config.js";
+import { tabUri } from "../gate/tabs.js";
 import type { AddCommentArgs, InspectSnapshot } from "../e2e/inspectTypes.js";
 import { canonicalize, repoKey, socketPath } from "../protocol/paths.js";
 import type { Harness } from "../protocol/types.js";
@@ -50,10 +51,11 @@ export async function waitFor<T>(
   }
 }
 
+/** The open plan tab: a plain document, or the diff a revised plan opens as. */
 export function planTab(): vscode.Tab | undefined {
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {
-      if (tab.input instanceof vscode.TabInputText && tab.input.uri.scheme === Schemes.plan) {
+      if (tabUri(tab)?.scheme === Schemes.plan) {
         return tab;
       }
     }
