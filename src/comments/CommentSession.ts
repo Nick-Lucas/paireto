@@ -1,9 +1,3 @@
-// Shared inline-comment machinery for both gate flows (Plan Review + Code Review). Each controller
-// owns one CommentSession: it wraps a vscode.CommentController for a scheme, hands out comment
-// instances, and owns reset. The add/save/delete *commands* are global (registered once) and operate
-// on any GateComment via the callbacks the owning controller attaches — so editing and deleting work
-// identically in plan and review, while each flow keeps its own model/collect logic.
-
 import * as vscode from "vscode";
 
 import { Commands } from "../config.js";
@@ -11,7 +5,7 @@ import { commentAuthorName } from "./author.js";
 import { wholeDocumentRange } from "./commentingRanges.js";
 import { kindLabel, type CommentKind } from "./kinds.js";
 
-/** A reviewer comment shared across both flows. The owner attaches onSaved/onDeleted to sync state. */
+/** A reviewer comment shared across both flows. The owner attaches onSaved/onDelete to sync state. */
 export class GateComment implements vscode.Comment {
   mode = vscode.CommentMode.Preview;
   author: vscode.CommentAuthorInformation = { name: commentAuthorName() };
@@ -21,10 +15,11 @@ export class GateComment implements vscode.Comment {
   thread?: vscode.CommentThread;
   /** Owner-supplied id (review uses the model id; plan leaves it unset). */
   id?: string;
+  session?: CommentSession;
   /** Called with the edited text after the user saves an edit — sync your model here. */
   onSaved?: (newBody: string) => void;
-  /** Called after the comment is removed from its thread — clean up your model here. */
-  onDeleted?: () => void;
+  /** Asks the owner to delete this comment and everything that goes down with it. */
+  onDelete?: () => void;
 
   constructor(
     public body: string | vscode.MarkdownString,
@@ -32,6 +27,22 @@ export class GateComment implements vscode.Comment {
   ) {
     this.label = kindLabel(kind);
   }
+}
+
+/** A reply, shown under the comment it answers. A resolution is carried by the thread's own state. */
+export function buildThreadItemComment(item: {
+  body: string;
+  at: string;
+  author: string;
+}): vscode.Comment {
+  return {
+    body: item.body,
+    mode: vscode.CommentMode.Preview,
+    author: { name: item.author },
+    contextValue: "threadItem",
+    label: "Agent reply",
+    timestamp: new Date(item.at),
+  };
 }
 
 export function commentText(body: string | vscode.MarkdownString): string {
@@ -61,16 +72,9 @@ export function saveComment(comment: GateComment): void {
   comment.onSaved?.(commentText(comment.body));
 }
 
-/** Remove a comment from its thread (disposing the thread if it empties), then sync via onDeleted. */
+/** Ask the comment's owner to delete it. The owner decides what else goes down with it. */
 export function deleteComment(comment: GateComment): void {
-  const thread = comment.thread;
-  if (thread) {
-    thread.comments = thread.comments.filter((c) => c !== comment);
-    if (thread.comments.length === 0) {
-      thread.dispose();
-    }
-  }
-  comment.onDeleted?.();
+  comment.onDelete?.();
 }
 
 /**
@@ -87,8 +91,9 @@ export function registerCommentEditingCommands(): vscode.Disposable {
 
 export interface CommentCallbacks {
   onSaved?: (newBody: string) => void;
-  onDeleted?: () => void;
+  onDelete?: () => void;
   id?: string;
+  label?: string;
 }
 
 /** Wraps a CommentController for one scheme: ranges, options, comment creation, and reset. */
@@ -112,58 +117,124 @@ export class CommentSession implements vscode.Disposable {
     };
   }
 
-  /** Append a new comment to the reply's thread and track the thread. */
   add(reply: vscode.CommentReply, kind: CommentKind, cb?: CommentCallbacks): GateComment {
     const comment = new GateComment(reply.text, kind);
-    comment.thread = reply.thread;
     comment.onSaved = cb?.onSaved;
-    comment.onDeleted = cb?.onDeleted;
+    comment.onDelete = cb?.onDelete;
     comment.id = cb?.id;
-    reply.thread.comments = [...reply.thread.comments, comment];
-    this.threadSet.add(reply.thread);
+    comment.session = this;
+    const thread = reply.thread;
+    comment.thread = thread;
+    if (thread.comments.length === 0 && cb?.label !== undefined) {
+      thread.label = cb.label;
+    }
+    thread.comments = [...thread.comments, comment];
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    this.threadSet.add(thread);
     return comment;
   }
 
-  /** Move a live comment to a new document/range without losing it when its backing diff changes. */
-  reattach(
-    comment: GateComment,
-    uri: vscode.Uri,
-    range: vscode.Range,
-    label: string,
-  ): vscode.CommentThread {
-    const old = comment.thread;
-    if (old?.uri.toString() === uri.toString()) {
-      old.range = range;
-      old.label = label;
-      return old;
-    }
-
-    // Create first: if VS Code rejects the new attachment, the original thread remains intact.
-    const replacement = this.controller.createCommentThread(uri, range, [comment]);
-    replacement.label = label;
-    replacement.collapsibleState =
-      old?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded;
-    this.threadSet.add(replacement);
-    comment.thread = replacement;
-
-    if (old) {
-      old.comments = old.comments.filter((item) => item !== comment);
-      if (old.comments.length === 0) {
-        this.threadSet.delete(old);
-        old.dispose();
+  /**
+   * Put a whole thread group on its document. The uri, range and label always come from the comment
+   * that opens the thread, so a reply never moves or re-labels the thread it sits on.
+   */
+  place(args: {
+    uri: vscode.Uri;
+    range: vscode.Range;
+    label: string;
+    /** Each reviewer comment, and the agent's answers that sit under it. Only the reviewer's own
+     *  comments are owned: an agent's answer has no owner to point back to. */
+    comments: Array<{ comment: GateComment; replies?: vscode.Comment[] }>;
+    previous?: vscode.CommentThread;
+    resolved?: boolean;
+  }): vscode.CommentThread {
+    const { uri, range, label, comments, previous, resolved } = args;
+    const state = resolved
+      ? vscode.CommentThreadState.Resolved
+      : vscode.CommentThreadState.Unresolved;
+    // A resolved thread reads as settled: it says so, and folds away. Its own words stay inside.
+    const shown = resolved ? "Marked as resolved" : label;
+    const rendered = comments.flatMap(({ comment, replies }) => [comment, ...(replies ?? [])]);
+    if (previous && previous.uri.toString() === uri.toString()) {
+      previous.range = range;
+      previous.label = shown;
+      previous.contextValue = resolved ? "resolved" : "open";
+      // Fold it away the moment it settles, and leave it alone after that: a reviewer who opens a
+      // resolved thread to read it should not have it shut again on the next write.
+      if (resolved && previous.state !== state) {
+        previous.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
       }
+      previous.state = state;
+      // VS Code redraws a changed body only when the array is new.
+      previous.comments = rendered;
+      this.own(comments, previous);
+      this.threadSet.add(previous);
+      return previous;
     }
-    return replacement;
+
+    // Create first: if VS Code refuses the new attachment, the old thread stays whole.
+    const thread = this.controller.createCommentThread(uri, range, rendered);
+    thread.label = shown;
+    thread.state = state;
+    thread.contextValue = resolved ? "resolved" : "open";
+    thread.collapsibleState = resolved
+      ? vscode.CommentThreadCollapsibleState.Collapsed
+      : (previous?.collapsibleState ?? vscode.CommentThreadCollapsibleState.Expanded);
+    this.threadSet.add(thread);
+    this.own(comments, thread);
+    if (previous) {
+      this.threadSet.delete(previous);
+      previous.dispose();
+    }
+    return thread;
+  }
+
+  private own(comments: Array<{ comment: GateComment }>, thread: vscode.CommentThread): void {
+    for (const { comment } of comments) {
+      comment.thread = thread;
+      comment.session = this;
+    }
+  }
+
+  /** What a delete of this comment takes: the whole thread if it opens it, else itself. An agent's
+   *  answers go down with the thread, but they are nobody's to hand back. */
+  private findCommentsDeletedWith(comment: GateComment): GateComment[] {
+    const onThread = comment.thread?.comments.filter((item) => item instanceof GateComment);
+    return onThread?.[0] === comment ? [...onThread] : [comment];
+  }
+
+  remove(comment: GateComment): GateComment[] {
+    const thread = comment.thread;
+    if (!thread) {
+      return [comment];
+    }
+    const removed = this.findCommentsDeletedWith(comment);
+    for (const item of removed) {
+      item.thread = undefined;
+    }
+    const rest = thread.comments.filter(
+      (item) => !(item instanceof GateComment && removed.includes(item)),
+    );
+    // An agent's answer has no life without the words it answers, so it never keeps a thread up.
+    if (rest.some((item) => item instanceof GateComment)) {
+      thread.comments = rest;
+      return removed;
+    }
+    this.threadSet.delete(thread);
+    thread.dispose();
+    return removed;
+  }
+
+  disposeThreads(select: (thread: vscode.CommentThread) => boolean): void {
+    for (const thread of this.threads().filter(select)) {
+      this.threadSet.delete(thread);
+      thread.dispose();
+    }
   }
 
   /** All tracked threads (plan collects per-thread; review tracks per-comment). */
   threads(): vscode.CommentThread[] {
     return [...this.threadSet];
-  }
-
-  /** Forget a thread (after it has been disposed by a delete). */
-  forget(thread: vscode.CommentThread): void {
-    this.threadSet.delete(thread);
   }
 
   /** Dispose every thread and clear tracking. */

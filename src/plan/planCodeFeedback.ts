@@ -2,16 +2,17 @@
 // the wording can be tested without the UI: the plan gate asks these functions what to do, then
 // shows the modal itself.
 
-import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 import { renderRejectedPlanFeedback, type PlanCommentData } from "./planFeedback.js";
 
 /** What the plan gate needs from the code-review side. ReviewController satisfies this shape. */
 export interface CodeFeedbackSource {
-  getComments(): ReviewComment[];
+  getComments(): ReviewThread[];
+  getPendingComments(): ReviewThread[];
   isMultiRepository(): boolean;
   isSessionActive(): boolean;
-  clearComments(): void;
+  markCommentsSent(items: ReviewThread[]): Promise<ReviewThread[]>;
 }
 
 export type PlanSendAction =
@@ -48,7 +49,7 @@ export function codeFeedbackPromptText(count: number): { message: string; detail
 /** The plan block, then the file comments when the user includes them. */
 export function composeRejectedPlanFeedback(args: {
   planComments: PlanCommentData[];
-  codeComments: ReviewComment[];
+  codeComments: ReviewThread[];
   toolName: string;
   rejectedPlanReviewInstructions?: string[];
   multiRepository: boolean;
@@ -58,7 +59,7 @@ export function composeRejectedPlanFeedback(args: {
     args.toolName,
     args.rejectedPlanReviewInstructions,
   );
-  const code = renderRejectedReviewFeedback(args.codeComments, args.multiRepository);
+  const code = serialiseRejectedReviewFeedback(args.codeComments, args.multiRepository);
   if (!code) {
     return plan;
   }

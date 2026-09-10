@@ -11,7 +11,7 @@ import type { AppEvent } from "../harness/appEvent.js";
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import { CommentSession, commentText, type GateComment } from "../comments/CommentSession.js";
 import { ensureCommentingVisible } from "../comments/commentingVisibility.js";
-import { kindLabel, KIND_RANK, type CommentKind } from "../comments/kinds.js";
+import { kindLabel, type CommentKind } from "../comments/kinds.js";
 import { Commands, ContextKeys, Schemes, Views } from "../config.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
 import { closeTabsForUri, tabUri } from "../gate/tabs.js";
@@ -242,7 +242,7 @@ export class PlanReviewController implements vscode.Disposable {
       return;
     }
     const comments = this.collect(review);
-    const codeComments = this.codeFeedback.getComments();
+    const codeComments = this.codeFeedback.getPendingComments();
     const decision = planSendDecision({
       planComments: comments.length,
       codeComments: codeComments.length,
@@ -277,42 +277,38 @@ export class PlanReviewController implements vscode.Disposable {
       include = choice === INCLUDE_FILE_COMMENTS;
     }
 
-    const sentCode = include ? codeComments : [];
+    const sentCode = include ? await this.codeFeedback.markCommentsSent(codeComments) : [];
     log.info(
       `plan review feedback sent for agent ${review.sessionId.slice(0, 8)}: ${comments.length} comment(s), ${sentCode.length} file comment(s)`,
     );
     const strategy = this.locator.strategyFor(review.harness);
-    this.registry.fulfill(review.key, {
-      decision: "deny",
-      reason: composeRejectedPlanFeedback({
-        planComments: comments,
-        codeComments: sentCode,
-        toolName: strategy.planToolName,
-        rejectedPlanReviewInstructions: strategy.rejectedPlanReviewInstructions,
-        multiRepository: this.codeFeedback.isMultiRepository(),
-      }),
+    const reason = composeRejectedPlanFeedback({
+      planComments: comments,
+      codeComments: sentCode,
+      toolName: strategy.planToolName,
+      rejectedPlanReviewInstructions: strategy.rejectedPlanReviewInstructions,
+      multiRepository: this.codeFeedback.isMultiRepository(),
     });
-    if (include) {
-      this.codeFeedback.clearComments();
-    }
+
+    this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
-  private addComment(reply: vscode.CommentReply, kind: CommentKind): void {
+  /** Answers whether the comment attached, so a caller is never left waiting for a silent drop. */
+  private addComment(reply: vscode.CommentReply, kind: CommentKind): boolean {
     const review = this.planForUri(reply.thread.uri);
     if (!review) {
-      return;
+      return false;
     }
-    this.comments.add(reply, kind, {
+    const comment = this.comments.add(reply, kind, {
+      label: kindLabel(kind),
       onSaved: () => this.changeEmitter.fire(),
-      onDeleted: () => {
-        if (reply.thread.comments.length === 0) {
-          this.comments.forget(reply.thread);
-        }
-        this.changeEmitter.fire();
-      },
     });
-    reply.thread.label = kindLabel(kind);
+    comment.onDelete = () => {
+      this.comments.remove(comment);
+      this.changeEmitter.fire();
+    };
     this.changeEmitter.fire();
+    return true;
   }
 
   /** Gathered comments for the foreground plan (drives the Plan Review panel). */
@@ -344,14 +340,12 @@ export class PlanReviewController implements vscode.Disposable {
         continue;
       }
       const line = thread.range?.start.line ?? 0;
-      const cs = thread.comments as GateComment[];
-      const kind = highestKind(cs);
-      const body = cs
-        .map((c) => commentText(c.body))
-        .join(" ")
-        .trim();
-      if (body) {
-        result.push({ line, quote: lines[line] ?? "", body, kind });
+
+      for (const comment of thread.comments as GateComment[]) {
+        const body = commentText(comment.body).trim();
+        if (body) {
+          result.push({ line, quote: lines[line] ?? "", body, kind: comment.kind });
+        }
       }
     }
     return result;
@@ -437,12 +431,7 @@ export class PlanReviewController implements vscode.Disposable {
 
   private disposeThreadsFor(uri: vscode.Uri): void {
     const target = uri.toString();
-    for (const thread of this.comments.threads()) {
-      if (thread.uri.toString() === target) {
-        thread.dispose();
-        this.comments.forget(thread);
-      }
-    }
+    this.comments.disposeThreads((thread) => thread.uri.toString() === target);
   }
 
   private updatePendingContext(): void {
@@ -467,9 +456,4 @@ export function resolvePlanApproveMode(
 ): string | undefined {
   const mode = configuredMode ?? defaultMode;
   return mode && mode !== "off" ? mode : undefined;
-}
-
-/** The highest-priority kind among a thread's comments (question > comment). */
-function highestKind(comments: GateComment[]): CommentKind {
-  return comments.map((c) => c.kind).sort((a, b) => KIND_RANK[a] - KIND_RANK[b])[0] ?? "comment";
 }

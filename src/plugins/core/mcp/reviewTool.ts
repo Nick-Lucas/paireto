@@ -13,9 +13,9 @@ import type { BridgeTarget } from "../target.js";
 export const REVIEW_TOOL_NAME = "paireto_review";
 
 export const REVIEW_TOOL_DESCRIPTION =
-  "Open an interactive code review in the connected VS Code window and wait for the user to " +
-  "submit feedback. Blocks until the user clicks Send Feedback or Cancel, then returns the " +
-  "review comments (file:line, kind, note) to act on. Call this when the user asks for a review.";
+  "Open an interactive code review in the connected editor and wait for the user to " +
+  "submit feedback. Blocks until the user sends feedback or approves, and returns " +
+  "review comments with stable feedback IDs";
 
 export const REVIEW_APPROVED = "Review approved — proceeding with no changes.";
 

@@ -10,7 +10,7 @@ import * as net from "node:net";
 
 import * as vscode from "vscode";
 
-import { Schemes } from "../config.js";
+import { Commands, Schemes } from "../config.js";
 import type { AddCommentArgs, InspectSnapshot } from "../e2e/inspectTypes.js";
 import { canonicalize, repoKey, socketPath } from "../protocol/paths.js";
 import type { Harness } from "../protocol/types.js";
@@ -157,6 +157,21 @@ export function sendReviewRequest(
   });
 }
 
+export function sendStopGate(
+  wire: Wire,
+  opts: { repoRoot: string; id: string; sessionId: string },
+): void {
+  wire.send({
+    t: "stop.gate.request",
+    v: PLUGIN_VERSION,
+    id: opts.id,
+    ts: new Date().toISOString(),
+    harness: "claudecode",
+    repoRoot: opts.repoRoot,
+    event: { hook_event_name: "Stop", session_id: opts.sessionId },
+  });
+}
+
 /** Wait until a gate of this kind holds the foreground — the point from which the shared Approve /
  *  Send Feedback commands dispatch to it. */
 export async function waitForForegroundGate(kind: "plan" | "review" | "guided"): Promise<void> {
@@ -166,11 +181,13 @@ export async function waitForForegroundGate(kind: "plan" | "review" | "guided"):
 }
 
 /** Comment on a repository file. Outside a review session this is what queues the bucket. */
+/** Comment on a repository file and report the id the extension minted for it. The bucket is shared
+ *  with whatever other suites left in it, so a caller identifies its own item by that id. */
 export async function queueFileComment(
   text: string,
   opts: { path?: string; line?: number; kind?: AddCommentArgs["kind"] } = {},
-): Promise<void> {
-  const before = (await inspect()).commentBucketCount;
+): Promise<string> {
+  const before = new Set((await inspect()).feedback.map((item) => item.id));
   const args: AddCommentArgs = {
     surface: "review",
     kind: opts.kind ?? "comment",
@@ -180,20 +197,32 @@ export async function queueFileComment(
   };
   const queued = await vscode.commands.executeCommand<boolean>("paireto.test.addComment", args);
   assert.strictEqual(queued, true, "the file comment must attach to the fixture repo");
-  await waitFor("the file comment to register", async () =>
-    (await inspect()).commentBucketCount > before ? true : undefined,
+  return waitFor("the file comment to register", async () =>
+    (await inspect()).feedback.map((item) => item.id).find((id) => !before.has(id)),
   );
+}
+
+/** Wait until nothing in the bucket is pending. Delivered feedback stays as history, so its delivery
+ *  state — not the size of the bucket — is what says it went out. */
+export async function waitForFeedbackDelivered(): Promise<void> {
+  await waitFor("the file comments to be delivered", async () => {
+    const { feedback } = await inspect();
+    return feedback.length > 0 && feedback.every((item) => item.delivery === "sent")
+      ? true
+      : undefined;
+  });
 }
 
 /** Comment on the open plan document. */
 export async function addPlanComment(
   text: string,
-  opts: { line?: number; kind?: AddCommentArgs["kind"] } = {},
+  opts: { line?: number; kind?: AddCommentArgs["kind"]; reply?: boolean } = {},
 ): Promise<void> {
   const args: AddCommentArgs = {
     surface: "plan",
     kind: opts.kind ?? "comment",
     line: opts.line ?? 2,
+    reply: opts.reply,
     text,
   };
   const commented = await vscode.commands.executeCommand<boolean>("paireto.test.addComment", args);
@@ -230,6 +259,23 @@ export async function resetWorkbench(wire: Wire): Promise<void> {
   await waitFor("the gates to clear", async () =>
     (await inspect()).gates.length === 0 ? true : undefined,
   );
+  await clearFeedback();
+}
+
+/** Delivered feedback stays in the bucket, so a test that sends any would hand it to the next one. */
+export async function clearFeedback(): Promise<void> {
+  if ((await inspect()).commentBucketCount === 0) {
+    return;
+  }
+  const stub = stubWarnings(() => "Clear All");
+  try {
+    await vscode.commands.executeCommand(Commands.reviewClearFeedback);
+    await waitFor("the feedback bucket to empty", async () =>
+      (await inspect()).commentBucketCount === 0 ? true : undefined,
+    );
+  } finally {
+    stub.restore();
+  }
 }
 
 async function connectBridge(sockPath: string): Promise<Wire> {

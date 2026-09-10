@@ -20,4 +20,6 @@ Group the changed files into changesets representing logical threads or features
 
 Call the `paireto_start_guided_review` tool once, with every changeset and the `compareTo` from step 1. It blocks until the reviewer responds.
 
-If it returns comments then action them appropriately.
+If it returns feedback, address every item.
+
+Reply to questions with the `paireto_reply_to_feedback` tool.

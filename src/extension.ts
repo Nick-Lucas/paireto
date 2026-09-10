@@ -25,6 +25,11 @@ import { PlanReviewController } from "./plan/PlanReviewController.js";
 import { canonicalize } from "./protocol/paths.js";
 import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
+import { FeedbackSession } from "./review/feedback/FeedbackSession.js";
+import {
+  createFeedbackRebuilder,
+  type FeedbackRebuilder,
+} from "./review/feedback/feedbackRebuilder.js";
 import { RecentRepoStore } from "./storage/RecentRepoStore.js";
 import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
@@ -33,6 +38,9 @@ import { MainTreeProvider } from "./views/MainTreeProvider.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
 import { exposeTestControlPlane } from "./testControlPlane.js";
+
+// Held at module scope so deactivate() can write out the last debounced change.
+let feedbackRebuilder: FeedbackRebuilder | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   // Which agents carry the shipped Paireto plugin — read by the Welcome screen and the sidebar nudge.
@@ -79,6 +87,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewStore,
     reviewContent,
     coordinator,
+  );
+
+  // The buckets and the comment threads of one commenting context. A branch or repository change
+  // reports a new context, and the whole set is opened again from disk.
+  const _feedbackRebuilder = createFeedbackRebuilder({
+    open: (next, outgoing) => FeedbackSession.open(next, reviewController.feedbackHost(), outgoing),
+    install: (session) => reviewController.useFeedback(session),
+  });
+  feedbackRebuilder = _feedbackRebuilder;
+  context.subscriptions.push(
+    reviewController.onDidChangeFeedbackContext((next) => void _feedbackRebuilder.apply(next)),
   );
 
   // Constructed after reviewController: a plan's Send Feedback can carry the file comments it holds.
@@ -367,6 +386,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // The MCP server holds a liveness connection per session; when the last one drops, the agent
     // process has died (handles hard kills / terminal close, which fire no SessionEnd hook).
+    onFeedbackReply: (msg) => {
+      warnForeignRepo(msg.repoRoot);
+      return reviewController.replyToFeedback(
+        msg.repoRoot,
+        msg.feedbackId,
+        msg.message,
+        msg.harness,
+        msg.sessionId,
+      );
+    },
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => {
       agents.detachSession(sessionId);
@@ -383,7 +412,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   await repoService.init();
   await roots.init();
-  void reviewController.refresh("init"); // after init so the first model has a real repo
+  // Awaited: the first feedback session must be open, and the repository names known, before a
+  // comment can be added or a restored thread labelled.
+  await reviewController.refresh("init");
+  await _feedbackRebuilder.settled();
   await bridge.reconcileRoots(roots.agentRoots);
 
   context.subscriptions.push(
@@ -406,6 +438,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   console.log("paireto active:", path.basename(context.extensionUri.fsPath));
 }
 
-export function deactivate(): void {
-  // Disposables registered on context.subscriptions handle teardown (sockets, index entries).
+export function deactivate(): Promise<void> {
+  // Disposables registered on context.subscriptions handle teardown (sockets, index entries), but
+  // they run after this. The race bounds the wait: shutdown is short, and a retrying disk write
+  // must not hold the window open. It narrows the loss window; it does not close it.
+  const written = feedbackRebuilder?.dispose() ?? Promise.resolve();
+  feedbackRebuilder = undefined;
+  return Promise.race([written, new Promise<void>((done) => setTimeout(done, 1500))]);
 }

@@ -43,9 +43,12 @@
   },
   "dependencies": {
     "dedent": "^1.7.2",
+    "immer": "^11.1.18",
     "jsonc-parser": "^3.3.1",
+    "nanoid": "^6.0.1",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -185,6 +188,24 @@
         "enablement": "!commentIsEmpty"
       },
       {
+        "command": "paireto.review.addReply",
+        "title": "Reply",
+        "enablement": "!commentIsEmpty"
+      },
+      {
+        "command": "paireto.review.unresolveThread",
+        "title": "Unresolve"
+      },
+      {
+        "command": "paireto.review.resolveThread",
+        "title": "Resolve"
+      },
+      {
+        "command": "paireto.review.unresolveAndReply",
+        "title": "Unresolve & Reply",
+        "enablement": "!commentIsEmpty"
+      },
+      {
         "command": "paireto.review.addQuestion",
         "title": "Question",
         "enablement": "!commentIsEmpty"
@@ -197,6 +218,11 @@
         "command": "paireto.review.deleteComment",
         "title": "Delete Comment",
         "icon": "$(trash)"
+      },
+      {
+        "command": "paireto.review.clearFeedback",
+        "title": "Clear All Feedback",
+        "icon": "$(clear-all)"
       },
       {
         "command": "paireto.focusAgent",
@@ -290,6 +316,10 @@
           "when": "false"
         },
         {
+          "command": "paireto.review.addReply",
+          "when": "false"
+        },
+        {
           "command": "paireto.review.openDiff",
           "when": "false"
         },
@@ -319,6 +349,10 @@
         },
         {
           "command": "paireto.review.deleteComment",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.clearFeedback",
           "when": "false"
         },
         {
@@ -364,6 +398,18 @@
         {
           "command": "paireto.guidedReview.openPlan",
           "when": "false"
+        },
+        {
+          "command": "paireto.review.unresolveAndReply",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.resolveThread",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.unresolveThread",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -396,13 +442,23 @@
         },
         {
           "command": "paireto.review.addComment",
-          "when": "commentController == paireto.review",
+          "when": "commentController == paireto.review && !commentThread",
           "group": "inline@1"
         },
         {
           "command": "paireto.review.addQuestion",
-          "when": "commentController == paireto.review",
+          "when": "commentController == paireto.review && !commentThread",
           "group": "inline@2"
+        },
+        {
+          "command": "paireto.review.addReply",
+          "when": "commentController == paireto.review && commentThread == open",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.unresolveAndReply",
+          "when": "commentController == paireto.review && commentThread == resolved",
+          "group": "inline@1"
         }
       ],
       "comments/comment/title": [
@@ -453,6 +509,11 @@
         {
           "command": "paireto.review.deleteComment",
           "when": "view == paireto.main && viewItem == reviewComment",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.clearFeedback",
+          "when": "view == paireto.main && viewItem == section:feedback",
           "group": "inline@1"
         },
         {
@@ -582,6 +643,18 @@
           "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && paireto.gateHasFeedback",
           "group": "navigation@5"
         }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "paireto.review.resolveThread",
+          "when": "commentController == paireto.review && commentThread == open",
+          "group": "inline@1"
+        },
+        {
+          "command": "paireto.review.unresolveThread",
+          "when": "commentController == paireto.review && commentThread == resolved",
+          "group": "inline@1"
+        }
       ]
     },
     "configuration": {
@@ -623,7 +696,7 @@
           ],
           "enumDescriptions": [
             "Open a Review automatically when the agent finishes a turn that edited files.",
-            "Only start a review if you have queued comments when the agent finishes, or when running /paireto-review from your agent."
+            "Only start a review if you have queued comments when the agent finishes, if an agent has answered a comment, or when running /paireto-review from your agent."
           ],
           "default": "automatic",
           "description": "When Paireto opens a code Review at the end of an agent's turn."

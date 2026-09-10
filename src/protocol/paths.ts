@@ -31,6 +31,11 @@ export function activityDir(): string {
   return path.join(stateDir(), "activity");
 }
 
+/** Durable feedback files for repository refs and workspace fallbacks. */
+export function feedbackDir(): string {
+  return path.join(stateDir(), "feedback");
+}
+
 /** Activity file for a repo/worktree root: `activity/<repoKey>.json`. */
 export function activityPath(toplevel: string): string {
   return path.join(activityDir(), `${repoKey(toplevel)}.json`);

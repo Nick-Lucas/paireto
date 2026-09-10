@@ -76,8 +76,22 @@ function fixtureFiles(): string[] {
     .map((name) => path.join(FIXTURES_DIR, name));
 }
 
+/** Every cassette's bytes, read once. Each scan below walks all of them, and a re-record that grows
+ *  the committed fixtures turns that repeated I/O into a timeout rather than a finding. */
+const cassetteText = new Map<string, string>();
+
+function fixtureText(file: string): string {
+  const cached = cassetteText.get(file);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const text = fs.readFileSync(file, "utf8");
+  cassetteText.set(file, text);
+  return text;
+}
+
 function expectationsOf(file: string): CassetteExpectation[] {
-  const parsed = JSON.parse(fs.readFileSync(file, "utf8")) as {
+  const parsed = JSON.parse(fixtureText(file)) as {
     expectations?: CassetteExpectation[];
   };
   return parsed.expectations ?? [];
@@ -94,7 +108,11 @@ function offenders(text: string, pattern: RegExp, allow: RegExp[] = []): string[
   ];
 }
 
-suite("fixture privacy", () => {
+suite("fixture privacy", function () {
+  // Reading and scanning every committed cassette is real work — 11MB today and growing with each
+  // re-record — so this suite states its own budget rather than inheriting the default for a unit test.
+  this.timeout(30_000);
+
   test("every committed cassette exists and is scanned", () => {
     const files = fixtureFiles();
     assert.ok(files.length >= 3, `expected the three per-driver cassettes, found ${files.length}`);
@@ -102,7 +120,7 @@ suite("fixture privacy", () => {
 
   test("no cassette contains a personal email address", () => {
     for (const file of fixtureFiles()) {
-      const found = offenders(fs.readFileSync(file, "utf8"), EMAIL, VENDOR_EMAILS);
+      const found = offenders(fixtureText(file), EMAIL, VENDOR_EMAILS);
       assert.deepStrictEqual(
         found,
         [],
@@ -113,7 +131,7 @@ suite("fixture privacy", () => {
 
   test("no cassette contains a provider account identifier", () => {
     for (const file of fixtureFiles()) {
-      const found = offenders(fs.readFileSync(file, "utf8"), ACCOUNT_ID);
+      const found = offenders(fixtureText(file), ACCOUNT_ID);
       assert.deepStrictEqual(
         found,
         [],
@@ -124,7 +142,7 @@ suite("fixture privacy", () => {
 
   test("no cassette contains a provider conversation handle", () => {
     for (const file of fixtureFiles()) {
-      const text = fs.readFileSync(file, "utf8");
+      const text = fixtureText(file);
       const found = [
         ...new Set(
           [...text.matchAll(SESSION_HANDLE)]
@@ -142,7 +160,7 @@ suite("fixture privacy", () => {
 
   test("no cassette contains a credential", () => {
     for (const file of fixtureFiles()) {
-      const text = fs.readFileSync(file, "utf8");
+      const text = fixtureText(file);
       for (const [name, pattern] of SECRET_SHAPES) {
         const found = offenders(text, pattern);
         assert.deepStrictEqual(
@@ -156,7 +174,7 @@ suite("fixture privacy", () => {
 
   test("no cassette contains the recorder's home directory", () => {
     for (const file of fixtureFiles()) {
-      const found = offenders(fs.readFileSync(file, "utf8"), HOME_PATH, VENDOR_HOME_PATHS);
+      const found = offenders(fixtureText(file), HOME_PATH, VENDOR_HOME_PATHS);
       assert.deepStrictEqual(
         found,
         [],

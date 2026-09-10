@@ -500,7 +500,12 @@ suite("openDiff integration (activated extension)", () => {
       const snapshot = (await vscode.commands.executeCommand(
         "paireto.test.inspect",
       )) as InspectSnapshot;
-      return snapshot.refreshCounts["open-diff"] ?? 0;
+      // Both fallback reasons count: a fall back through the superseded path leaves the other
+      // key flat, and the assertion would pass without proving anything.
+      return (
+        (snapshot.refreshCounts["open-diff"] ?? 0) +
+        (snapshot.refreshCounts["open-diff-superseded"] ?? 0)
+      );
     };
 
     // The first open may legitimately fall back to the full refresh (the repo may have no model
@@ -515,7 +520,7 @@ suite("openDiff integration (activated extension)", () => {
     assert.strictEqual(
       await openDiffRefreshes(),
       before,
-      "openDiff must sync via the scoped per-file path, never refresh('open-diff'), once a model exists",
+      "openDiff must sync via the scoped per-file path, never a full refresh, once a model exists",
     );
   });
 });

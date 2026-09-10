@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 
 import { StateKeys } from "../config.js";
 import type { CompareTo, FileLayout } from "../types.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 
 const DEFAULT_COMPARE_TO: CompareTo = { kind: "head" };
 const MAX_RECENT_REFS = 3;
@@ -46,7 +46,7 @@ export class ReviewStore {
     repoRoot: string,
     reviewId: string,
     compareLabel: string,
-    comments: ReviewComment[],
+    comments: ReviewThread[],
   ): Promise<string> {
     const dir = path.join(repoRoot, ".vscode", "agent-reviews");
     await fs.mkdir(dir, { recursive: true });

@@ -27,6 +27,11 @@ import {
   GUIDED_REVIEW_TOOL_DESCRIPTION,
   GUIDED_REVIEW_TOOL_NAME,
 } from "../core/mcp/guidedReviewTool.js";
+import {
+  FEEDBACK_REPLY_TOOL_DESCRIPTION,
+  FEEDBACK_REPLY_TOOL_NAME,
+  FeedbackReplyArgs,
+} from "../core/mcp/feedbackTools.js";
 import { createBridge } from "./bridge.js";
 import { handleEvent, maybeRunStopGate, switchAgent } from "./dispatch.js";
 import {
@@ -256,6 +261,26 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
           } catch {
             return REVIEW_FAILED;
           }
+        },
+      },
+
+      [FEEDBACK_REPLY_TOOL_NAME]: {
+        description: FEEDBACK_REPLY_TOOL_DESCRIPTION,
+        args: FeedbackReplyArgs.shape,
+        execute: async (args: FeedbackReplyArgs, ctx: ToolContext) => {
+          const sessionID = typeof ctx?.sessionID === "string" ? ctx.sessionID : undefined;
+          const response = await bridge.gate({
+            t: "feedback.reply.request",
+            repoRoot: bridge.repoRoot,
+            harness: "opencode",
+            sessionId: sessionID,
+            feedbackId: args.feedbackId,
+            message: args.message,
+          });
+          if (!response) {
+            return REVIEW_UNAVAILABLE;
+          }
+          return response.message;
         },
       },
     },

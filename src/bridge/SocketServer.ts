@@ -276,6 +276,18 @@ export class SocketServer {
         }
         break;
       }
+      case "feedback.reply.request": {
+        const result = await this.handlers.onFeedbackReply(msg);
+        send({
+          t: "feedback.reply.response",
+          v: PLUGIN_VERSION,
+          id: msg.id,
+          ts: new Date().toISOString(),
+          ok: result.ok,
+          message: result.message,
+        });
+        break;
+      }
       case "stop.gate.request": {
         const ac = new AbortController();
         inflight.add(ac);

@@ -1,4 +1,6 @@
 import * as assert from "node:assert";
+
+import dedent from "dedent";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -25,8 +27,9 @@ import { buildSwitcherSections } from "../status/switcherRows.js";
 import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffService.js";
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderRejectedPlanFeedback } from "../plan/planFeedback.js";
-import { renderRejectedReviewFeedback } from "../review/reviewFeedback.js";
-import type { ReviewComment } from "../review/reviewTypes.js";
+import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
+import type { CommentKind } from "../comments/kinds.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
 import { PlanGateRegistry } from "../plan/PlanGateRegistry.js";
 import { GateCoordinator, type GateEntry } from "../gate/GateCoordinator.js";
@@ -155,7 +158,10 @@ suite("command manifest", () => {
     engines: { vscode: string };
     contributes: {
       commands: Array<{ command: string; title: string }>;
-      menus: { commandPalette: Array<{ command: string; when?: string }> };
+      menus: {
+        commandPalette: Array<{ command: string; when?: string }>;
+        "comments/commentThread/context": Array<{ command: string; when?: string }>;
+      };
     };
   };
 
@@ -182,6 +188,24 @@ suite("command manifest", () => {
     assert.ok(
       manifest.activationEvents.includes(`onFileSystem:${Schemes.review}`),
       `activationEvents must include onFileSystem:${Schemes.review}: ${manifest.activationEvents.join(", ")}`,
+    );
+  });
+
+  // Only package.json decides which action the reply box offers, so the split lives here or nowhere.
+  test("a new thread offers Comment and Question, an open one offers only Reply", () => {
+    const forCommand = (command: string): string =>
+      manifest.contributes.menus["comments/commentThread/context"].find(
+        (item) => item.command === command,
+      )?.when ?? "";
+
+    for (const command of ["paireto.review.addComment", "paireto.review.addQuestion"]) {
+      assert.match(forCommand(command), /!commentThread/, `${command} must need a fresh thread`);
+    }
+    assert.match(forCommand("paireto.review.addReply"), /&& commentThread/);
+    assert.doesNotMatch(
+      forCommand("paireto.review.addReply"),
+      /!commentThread/,
+      "a reply needs a thread to answer",
     );
   });
 
@@ -520,45 +544,144 @@ suite("renderRejectedPlanFeedback", () => {
   });
 });
 
-suite("renderRejectedReviewFeedback", () => {
-  const mk = (over: Partial<ReviewComment>): ReviewComment => ({
-    id: "x",
-    repoRoot: "/repo",
-    filePath: "src/a.ts",
-    side: "modified",
-    line: 0,
-    kind: "comment",
-    body: "fix",
-    quote: "line",
-    anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
-    ...over,
+suite("serialiseRejectedReviewFeedback", () => {
+  const at = "2026-08-12T20:00:00.000Z";
+  const mk = (
+    over: Partial<ReviewThread> & {
+      commentKind?: CommentKind;
+      body?: string;
+      quote?: string;
+      replies?: Array<{ who: "reviewer" | "agent"; body: string }>;
+    } = {},
+  ): ReviewThread => {
+    const { commentKind = "comment", body = "fix", quote = "line", replies = [], ...rest } = over;
+    const id = rest.id ?? "x";
+    return {
+      id,
+      repoRoot: "/repo",
+      filePath: "src/a.ts",
+      side: "modified",
+      line: 0,
+      delivery: "pending",
+      createdAt: at,
+      updatedAt: at,
+      items: [
+        { kind: "comment", commentKind, body, quote, at },
+        ...replies.map((reply, index) => ({
+          id: `${id}#${index + 1}`,
+          kind: "reply" as const,
+          author:
+            reply.who === "reviewer"
+              ? ({ kind: "reviewer" } as const)
+              : ({ kind: "agent", harness: "claudecode" } as const),
+          body: reply.body,
+          at,
+        })),
+      ],
+      anchor: { lineText: "line", contextBefore: [], contextAfter: [], lineHash: "h" },
+      ...rest,
+    };
+  };
+
+  test("one comment reads as the location, the quoted line, and the words", () => {
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([mk({ body: "Rename this helper.", quote: "const x = 1;" })]),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+
+        Feedback ID: x
+        src/a.ts:1  [COMMENT]
+        > const x = 1;
+        Rename this helper.
+      `,
+    );
   });
 
-  test("includes both kinds, questions first", () => {
-    const out = renderRejectedReviewFeedback([
-      mk({ kind: "comment", body: "a-comment", line: 41 }),
-      mk({ kind: "question", body: "a-question" }),
-    ]);
-    assert.ok(out.includes("a-comment"));
-    assert.ok(out.includes("a-question"));
-    assert.ok(out.indexOf("[QUESTION]") < out.indexOf("[COMMENT]"));
-    assert.ok(out.includes("src/a.ts:42"));
+  test("questions come before comments, each at its own line", () => {
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([
+        mk({ id: "c", commentKind: "comment", body: "a-comment", line: 41, quote: "later();" }),
+        mk({ id: "q", commentKind: "question", body: "a-question", quote: "first();" }),
+      ]),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+
+        Feedback ID: q
+        src/a.ts:1  [QUESTION]
+        > first();
+        a-question
+
+        Feedback ID: c
+        src/a.ts:42  [COMMENT]
+        > later();
+        a-comment
+      `,
+    );
+  });
+
+  test("a thread that has been talked over names who said what", () => {
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([
+        mk({
+          commentKind: "question",
+          body: "Why the cast here?",
+          quote: "const x = y as T;",
+          replies: [
+            { who: "agent", body: "It narrows the union." },
+            { who: "reviewer", body: "That is not what I meant — drop it entirely." },
+          ],
+        }),
+      ]),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+
+        Feedback ID: x
+        src/a.ts:1  [QUESTION]
+        > const x = y as T;
+        Reviewer: Why the cast here?
+
+        Agent: It narrows the union.
+
+        Reviewer: That is not what I meant — drop it entirely.
+      `,
+    );
   });
 
   test("returns empty when there are no comments", () => {
-    assert.strictEqual(renderRejectedReviewFeedback([]), "");
+    assert.strictEqual(serialiseRejectedReviewFeedback([]), "");
   });
 
   test("qualifies paths by absolute repo root in a multi-repository review", () => {
-    const out = renderRejectedReviewFeedback(
-      [
-        mk({ repoRoot: "/workspace/api", filePath: "src/a.ts", body: "api feedback" }),
-        mk({ repoRoot: "/workspace/web", filePath: "src/a.ts", body: "web feedback" }),
-      ],
-      true,
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback(
+        [
+          mk({ id: "a", repoRoot: "/workspace/api", body: "api feedback", quote: "a();" }),
+          mk({ id: "w", repoRoot: "/workspace/web", body: "web feedback", quote: "w();" }),
+        ],
+        true,
+      ),
+      dedent`
+        Code review feedback received from the user:
+
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+
+        Feedback ID: a
+        /workspace/api/src/a.ts:1  [COMMENT]
+        > a();
+        api feedback
+
+        Feedback ID: w
+        /workspace/web/src/a.ts:1  [COMMENT]
+        > w();
+        web feedback
+      `,
     );
-    assert.ok(out.includes("/workspace/api/src/a.ts:1"));
-    assert.ok(out.includes("/workspace/web/src/a.ts:1"));
   });
 });
 
@@ -2119,16 +2242,39 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
   const base = {
     reviewInProgress: false,
     changedThisTurn: false,
-    hasComments: false,
+    hasPendingFeedback: false,
+    agentRepliedOrResolvedComment: false,
     automatic: true,
     harnessSupported: true,
   };
+
+  test("an agent answer opens a review even though nothing changed", () => {
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, agentRepliedOrResolvedComment: true }),
+      true,
+    );
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, automatic: false, agentRepliedOrResolvedComment: true }),
+      true,
+      "the reviewer asked the question, so manual mode shows the answer too",
+    );
+  });
   test("opens a review when the agent's turn edited files", () => {
     assert.strictEqual(shouldOpenTurnEndReview({ ...base, changedThisTurn: true }), true);
   });
   test("opens a review when the user has comments to deliver", () => {
-    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasComments: true }), true);
+    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasPendingFeedback: true }), true);
   });
+  test("delivered feedback does not park the agent again", () => {
+    // The bucket keeps sent and resolved items as history. Counting them would open a gate at the
+    // end of every later turn over comments the agent has already answered.
+    assert.strictEqual(shouldOpenTurnEndReview({ ...base, hasPendingFeedback: false }), false);
+    assert.strictEqual(
+      shouldOpenTurnEndReview({ ...base, automatic: false, hasPendingFeedback: false }),
+      false,
+    );
+  });
+
   test("does NOT open a review for a turn that changed nothing (no uncommitted-changes fallback)", () => {
     assert.strictEqual(shouldOpenTurnEndReview(base), false);
   });
@@ -2146,7 +2292,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
   });
   test("manual mode: queued comments still open a review", () => {
     assert.strictEqual(
-      shouldOpenTurnEndReview({ ...base, automatic: false, hasComments: true }),
+      shouldOpenTurnEndReview({ ...base, automatic: false, hasPendingFeedback: true }),
       true,
     );
   });
@@ -2159,7 +2305,7 @@ suite("shouldOpenTurnEndReview (turn-end review gate)", () => {
       false,
     );
     assert.strictEqual(
-      shouldOpenTurnEndReview({ ...base, harnessSupported: false, hasComments: true }),
+      shouldOpenTurnEndReview({ ...base, harnessSupported: false, hasPendingFeedback: true }),
       false,
     );
   });

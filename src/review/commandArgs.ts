@@ -86,9 +86,12 @@ export const BulkTargetArg = z.union([
 ]);
 export type BulkTargetArg = z.infer<typeof BulkTargetArg>;
 
-/** A review comment, by id. Only the id travels: the live comment is looked up from it, so a stale
- *  copy carried on a tree node can never be acted on. */
-export const CommentIdArg = z.object({ id: z.string() }).transform((comment) => comment.id);
+export const CommentIdArg = z.union([
+  z
+    .object({ kind: z.literal("reviewComment"), comment: z.object({ id: z.string() }) })
+    .transform((node) => node.comment.id),
+  z.object({ id: z.string() }).transform((comment) => comment.id),
+]);
 export type CommentIdArg = z.infer<typeof CommentIdArg>;
 
 /** VS Code's own reply object, from the comment thread's Add buttons. Checked for the two fields we
@@ -104,6 +107,12 @@ export const CommentReplyArg = z.custom<vscode.CommentReply>(
 );
 export type CommentReplyArg = z.infer<typeof CommentReplyArg>;
 
+export const CommentThreadArg = z.custom<vscode.CommentThread>(
+  (value) => !!value && typeof value === "object" && "comments" in value && "uri" in value,
+  { message: "expected a comment thread" },
+);
+export type CommentThreadArg = z.infer<typeof CommentThreadArg>;
+
 /**
  * Wrap a command handler so it receives the argument it asks for, already typed. An argument that
  * does not match is a WIRING BUG — a menu pointed at the wrong node, or a caller passing the wrong
@@ -113,7 +122,7 @@ export type CommentReplyArg = z.infer<typeof CommentReplyArg>;
 export function withArg<S extends z.ZodTypeAny>(
   schema: S,
   run: (value: z.infer<S>) => unknown,
-): (arg: unknown) => void {
+): (arg: unknown) => unknown {
   return (arg: unknown) => {
     const parsed = schema.safeParse(arg);
     if (!parsed.success) {
@@ -121,7 +130,8 @@ export function withArg<S extends z.ZodTypeAny>(
       log.error(message);
       throw new Error(message);
     }
-    void run(parsed.data);
+
+    return run(parsed.data);
   };
 }
 
