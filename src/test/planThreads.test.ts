@@ -137,6 +137,11 @@ suite("plan comment threads", () => {
     assert.strictEqual(shown.length, 1, "one thread for the one conversation");
     assert.strictEqual(shown[0].label, "Sent question");
     assert.strictEqual(shown[0].canReply, false, "what was said has been said");
+    assert.strictEqual(
+      shown[0].collapsibleState,
+      vscode.CommentThreadCollapsibleState.Expanded,
+      "the reader came to read it",
+    );
     assert.deepStrictEqual(
       shown[0].comments.map((comment) => String(comment.body)),
       ["Split step two.", "Or drop it."],

@@ -176,11 +176,15 @@ export class CommentSession implements vscode.Disposable {
     range: vscode.Range;
     label: string;
     comments: vscode.Comment[];
+    /** Whether the words show themselves, or the reader has to open them. */
+    expanded: boolean;
   }): vscode.CommentThread {
     const thread = this.controller.createCommentThread(args.uri, args.range, args.comments);
     thread.label = args.label;
     thread.canReply = false;
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+    thread.collapsibleState = args.expanded
+      ? vscode.CommentThreadCollapsibleState.Expanded
+      : vscode.CommentThreadCollapsibleState.Collapsed;
     this.threadSet.add(thread);
     return thread;
   }
