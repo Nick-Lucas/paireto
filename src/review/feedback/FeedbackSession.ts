@@ -1,7 +1,3 @@
-// The feedback for one commenting context: its buckets on disk, and its comment threads in the
-// editor. Every change goes into a bucket first, then one render() makes the editor agree. Nothing
-// else creates, moves or removes a feedback comment thread.
-
 import * as vscode from "vscode";
 
 import type { GateComment, CommentSession } from "../../comments/CommentSession.js";
@@ -34,18 +30,16 @@ export function contextKey(context: FeedbackContext): string {
     .join("|");
 }
 
-/** What the session needs from its owner to put a comment on a document. */
 export interface FeedbackHost {
   readonly comments: CommentSession;
-  /** The document this model's thread belongs on now. */
+
   uriFor(model: ReviewThread): vscode.Uri;
   labelFor(model: ReviewThread): string;
-  /** A changeset description is a virtual document. Its content must exist before its thread does. */
+
   registerDoc(uri: vscode.Uri, markdown: string): void;
   changed(): void;
 }
 
-/** Where a comment moved to, after its file changed under it. */
 export interface RelocatePatch {
   line: number;
   sourceUri: string;
@@ -54,7 +48,6 @@ export interface RelocatePatch {
 }
 
 export class FeedbackSession {
-  /** Keyed by canonical repository root. */
   private readonly buckets = new Map<string, FeedbackBucket>();
   private readonly renderer: ThreadRenderer<ReviewThread>;
 
@@ -64,7 +57,6 @@ export class FeedbackSession {
       uriFor: (thread) => host.uriFor(thread),
       labelFor: (thread) => host.labelFor(thread),
       resolved: (thread) => thread.resolvedAt !== undefined,
-      // The provider is cleared when a review ends, so every saved description is registered again.
       prepare: (threads) => {
         for (const thread of threads) {
           if (thread.sourceDocument) {
@@ -77,11 +69,6 @@ export class FeedbackSession {
     });
   }
 
-  /**
-   * Open the buckets of a context. A bucket the outgoing session already holds for the same
-   * repository and ref is taken over, not opened again: two adapters on one file would share one
-   * temporary path, and the second would read the file before the first had written it.
-   */
   static async open(
     context: FeedbackContext,
     host: FeedbackHost,
@@ -101,7 +88,6 @@ export class FeedbackSession {
     return session;
   }
 
-  /** Give up the bucket for this repository and ref, so the next session can keep using it. */
   private take(repoRoot: string, ref: FeedbackRef): FeedbackBucket | undefined {
     const key = canonicalize(repoRoot);
     const bucket = this.buckets.get(key);
@@ -129,7 +115,6 @@ export class FeedbackSession {
     return (model ? getReviewerItems(model) : []).slice(1);
   }
 
-  /** Answers false when this session holds no bucket for the model's repository. */
   add(model: ReviewThread): boolean {
     return this.write(model.repoRoot, (draft) => {
       draft.threads.push(model);
@@ -273,17 +258,14 @@ export class FeedbackSession {
     this.renderer.render(this.allThreads());
   }
 
-  /** Answers when every waiting disk write has landed. Nothing in the UI waits on this. */
   async flush(): Promise<void> {
     await Promise.all(Array.from(this.buckets.values(), (bucket) => bucket.flush()));
   }
 
-  /** Write out and give up every bucket this session still holds. */
   async close(): Promise<void> {
     await Promise.all(Array.from(this.buckets.values(), (bucket) => bucket.close()));
   }
 
-  /** Take every thread this session put up out of the editor. */
   dispose(): void {
     this.renderer.dispose();
   }
@@ -297,7 +279,6 @@ export class FeedbackSession {
     return this.write(model.repoRoot, recipe);
   }
 
-  /** The one ordering rule: store, then editor, then tree. The disk write follows on its own. */
   private write(repoRoot: string, recipe: (draft: { threads: ReviewThread[] }) => void): boolean {
     const bucket = this.buckets.get(canonicalize(repoRoot));
     if (!bucket) {

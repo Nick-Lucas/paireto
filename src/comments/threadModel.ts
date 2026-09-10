@@ -1,7 +1,3 @@
-// One conversation held at one place. A plan comment and a review comment are the same shape: the
-// first item is the reviewer's comment and carries the kind, and everything after it is a reply
-// that adds context to that comment. Nothing here knows about diffs, plans or storage.
-
 import type { CommentKind } from "./kinds.js";
 import type { Harness } from "../protocol/types.js";
 
@@ -25,7 +21,6 @@ export type ThreadItem =
       at: string;
     };
 
-/** The least a thread needs to be read and drawn. Each side adds its own fields around this. */
 export interface ThreadItems {
   id: string;
   items: [Extract<ThreadItem, { kind: "comment" }>, ...ThreadItem[]];
@@ -41,10 +36,6 @@ export function getReviewerItems<T extends ThreadItems>(thread: T): ThreadItem[]
   return thread.items.filter((item) => item.kind === "comment" || item.author.kind === "reviewer");
 }
 
-/**
- * A name for one item in a thread, counted past the highest already used. A deleted reply must not
- * hand its name to the next one, or an edit would land on the wrong words.
- */
 export function nextThreadItemId<T extends ThreadItems>(thread: T): string {
   const used = thread.items.flatMap((item) =>
     item.kind === "comment" ? [] : [Number(item.id.split("#").at(-1))],
@@ -109,11 +100,6 @@ export function locateThreadItem<T extends ThreadItems>(
   return undefined;
 }
 
-/**
- * What was said on one thread. While one person is talking it is just their words, because naming
- * a lone speaker adds nothing. Once two are talking, every turn says who said it, or a reply reads
- * as a second paragraph of the message above it.
- */
 export function serialiseConversation<T extends ThreadItems>(thread: T): string {
   const turns = thread.items.flatMap((item) =>
     item.body.trim() ? [{ who: speaker(item), body: item.body.trim() }] : [],

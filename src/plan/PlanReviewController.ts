@@ -1,9 +1,3 @@
-// Owns the plan-review UX. Several plans can be PENDING at once (one paireto-plan:// doc each); the
-// GateCoordinator decides which is foreground (its tab open). Backgrounding a plan closes its tab
-// without resolving it, so it can be returned to. Resolution goes through the shared Approve /
-// Send-Feedback commands (dispatched to the foreground plan's GateSession). A dropped connection
-// (abort signal) abandons that plan and resets it.
-
 import * as vscode from "vscode";
 
 import type { PlanGateResult } from "../bridge/types.js";
@@ -35,7 +29,6 @@ interface PlanReview {
   id: string;
   key: string;
   sessionId: string;
-  /** The harness that proposed this plan — selects the per-harness approve mode + tool wording. */
   harness: Harness;
   uri: vscode.Uri;
   markdown: string;
@@ -48,14 +41,10 @@ export class PlanReviewController implements vscode.Disposable {
   private readonly threads: PlanThreads;
   private readonly disposables: vscode.Disposable[] = [];
   private readonly changeEmitter = new vscode.EventEmitter<void>();
-  /** Fires when the gathered plan comments change (drives the Plan Review panel). */
   readonly onDidChange = this.changeEmitter.event;
 
-  /** All pending plans, keyed by their gate-entry id. */
   private readonly plans = new Map<string, PlanReview>();
-  /** The plan whose tab is currently shown (drives the Plan Review section). */
   private foregroundReview?: PlanReview;
-  /** URIs we're closing programmatically, so the early-close prompt ignores our own closes. */
   private readonly closingTabs = new Set<string>();
 
   constructor(
@@ -334,7 +323,6 @@ export class PlanReviewController implements vscode.Disposable {
     return [...this.plans.values()].find((p) => p.uri.toString() === target);
   }
 
-  /** One plan's threads as serializable comment data. */
   private collect(review: PlanReview): PlanCommentData[] {
     return this.threads.commentsFor(review.uri);
   }

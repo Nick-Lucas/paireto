@@ -1,7 +1,3 @@
-// The comment threads on a plan. A plan lives only while its gate is up, so its threads are held in
-// memory here rather than on disk: the first comment carries the kind, and every reply after it adds
-// context to that comment. One thread goes to the agent as one piece of feedback.
-
 import * as vscode from "vscode";
 
 import { GateComment, type CommentSession } from "../comments/CommentSession.js";
@@ -38,14 +34,12 @@ export class PlanThreads {
       comments,
       uriFor: (thread) => thread.uri,
       labelFor: (thread) => kindLabel(getOpeningComment(thread).commentKind),
-      // A plan thread is answered by sending the plan back, so it never sits resolved.
       resolved: () => false,
       edited: (id, body) => this.edit(id, body),
       deleted: (id) => this.remove(id),
     });
   }
 
-  /** Open a thread on a line of a plan. */
   open(reply: vscode.CommentReply, kind: CommentKind, quote: string): void {
     const at = new Date().toISOString();
     const line = reply.thread.range?.start.line ?? 0;
@@ -60,10 +54,6 @@ export class PlanThreads {
     this.write();
   }
 
-  /**
-   * Add to a thread that is already open. A reply carries no kind of its own: the comment that opens
-   * the thread says whether it is a question or a comment, and a reply adds to that.
-   */
   addReply(reply: vscode.CommentReply): boolean {
     const id = this.threadAnsweredBy(reply);
     if (id === undefined) {
@@ -79,14 +69,12 @@ export class PlanThreads {
     return true;
   }
 
-  /** The id of the thread this reply lands on, when it is one of ours. */
   threadAnsweredBy(reply: vscode.CommentReply): string | undefined {
     const opener = reply.thread.comments[0];
     const id = opener instanceof GateComment ? opener.id : undefined;
     return id !== undefined && this.threads.some((thread) => thread.id === id) ? id : undefined;
   }
 
-  /** One plan's threads as feedback: a whole conversation reads as one comment. */
   commentsFor(uri: vscode.Uri): PlanCommentData[] {
     const target = uri.toString();
     return this.threads
@@ -101,7 +89,6 @@ export class PlanThreads {
       });
   }
 
-  /** Drop one plan's threads when its gate closes. */
   dropFor(uri: vscode.Uri): void {
     const target = uri.toString();
     this.threads = this.threads.filter((thread) => thread.uri.toString() !== target);
@@ -144,7 +131,6 @@ export class PlanThreads {
     this.write();
   }
 
-  /** The one ordering rule: model, then editor, then whoever is watching. */
   private write(): void {
     this.renderer.render(this.threads);
     this.changed();

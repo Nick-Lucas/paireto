@@ -40,7 +40,6 @@ export function serialiseRejectedReviewFeedback(
   `;
 }
 
-/** Where feedback was left: a file:line, or the changeset whose description it sits on. */
 function location(item: ReviewThread, multiRepository: boolean): string {
   const kind = `[${getOpeningComment(item).commentKind.toUpperCase()}]`;
   if (item.changeset) {
