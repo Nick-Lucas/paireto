@@ -125,6 +125,49 @@ suite("plan comment threads", () => {
     assert.strictEqual(changes, 3);
   });
 
+  test("the conversation already sent is drawn beside the plan it revises", () => {
+    const opening = widget(2, "Split step two.");
+    threads.open(opening, "question", "Step one.");
+    threads.addReply({ thread: opening.thread, text: "Or drop it." });
+
+    const previous = uri.with({ fragment: "previous" });
+    threads.showSent(previous, threads.threadsFor(uri));
+
+    const shown = session.threads().filter((thread) => thread.uri.fragment === "previous");
+    assert.strictEqual(shown.length, 1, "one thread for the one conversation");
+    assert.strictEqual(shown[0].label, "Sent question");
+    assert.strictEqual(shown[0].canReply, false, "what was said has been said");
+    assert.strictEqual(
+      shown[0].collapsibleState,
+      vscode.CommentThreadCollapsibleState.Expanded,
+      "the reader came to read it",
+    );
+    assert.deepStrictEqual(
+      shown[0].comments.map((comment) => String(comment.body)),
+      ["Split step two.", "Or drop it."],
+    );
+    assert.strictEqual(
+      shown[0].comments.some((comment) => comment instanceof GateComment),
+      false,
+      "none of it is the reviewer's to edit or delete",
+    );
+  });
+
+  test("dropping the plan it revises takes the sent conversation with it", () => {
+    const opening = widget(2, "Split step two.");
+    threads.open(opening, "comment", "Step one.");
+    const previous = uri.with({ fragment: "previous" });
+    threads.showSent(previous, threads.threadsFor(uri));
+
+    threads.dropFor(previous);
+
+    assert.strictEqual(
+      session.threads().some((thread) => thread.uri.fragment === "previous"),
+      false,
+    );
+    assert.strictEqual(threads.commentsFor(uri).length, 1, "the live plan is untouched");
+  });
+
   test("dropping a plan takes its threads out of the editor", () => {
     threads.open(widget(2, "Split step two."), "comment", "Step one.");
 

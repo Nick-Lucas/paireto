@@ -29,18 +29,18 @@ export class GateComment implements vscode.Comment {
   }
 }
 
-/** A reply, shown under the comment it answers. A resolution is carried by the thread's own state. */
 export function buildThreadItemComment(item: {
   body: string;
   at: string;
   author: string;
+  label: string;
 }): vscode.Comment {
   return {
     body: item.body,
     mode: vscode.CommentMode.Preview,
     author: { name: item.author },
     contextValue: "threadItem",
-    label: "Agent reply",
+    label: item.label,
     timestamp: new Date(item.at),
   };
 }
@@ -162,6 +162,23 @@ export class CommentSession implements vscode.Disposable {
       this.threadSet.delete(previous);
       previous.dispose();
     }
+    return thread;
+  }
+
+  placeSent(args: {
+    uri: vscode.Uri;
+    range: vscode.Range;
+    label: string;
+    comments: vscode.Comment[];
+    expanded: boolean;
+  }): vscode.CommentThread {
+    const thread = this.controller.createCommentThread(args.uri, args.range, args.comments);
+    thread.label = args.label;
+    thread.canReply = false;
+    thread.collapsibleState = args.expanded
+      ? vscode.CommentThreadCollapsibleState.Expanded
+      : vscode.CommentThreadCollapsibleState.Collapsed;
+    this.threadSet.add(thread);
     return thread;
   }
 

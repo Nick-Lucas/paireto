@@ -275,7 +275,7 @@ suite("command manifest", () => {
       path.join(__dirname, "../../src/review/ReviewController.ts"),
       "utf8",
     );
-    assert.match(planSource, /new CommentSession\("paireto\.plan", "Paireto: Add Comment"/);
+    assert.match(planSource, /"paireto\.plan",\s*"Paireto: Add Comment"/);
     assert.match(reviewSource, /"paireto\.review",\s*"Paireto: Add Comment"/);
   });
 });
