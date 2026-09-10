@@ -1,10 +1,3 @@
-// Env-gated E2E test control plane. Registered from activate() ONLY when process.env.PAIRETO_TEST
-// === "1", so it ships inert in production (the two commands simply never exist). It adds NO product
-// surface: activate() still returns void, and everything here is a read-only aggregation
-// (`paireto.test.inspect`) or a thin re-dispatch through the EXISTING add-comment commands
-// (`paireto.test.addComment`) — approve/feedback in the tests go through the real `paireto.gate.*`
-// commands, and waiting is polling inspect. Kept in one module with a one-line hook in extension.ts.
-
 import * as path from "node:path";
 import * as crypto from "node:crypto";
 
@@ -122,7 +115,6 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
     };
   };
 
-  // Threads this control plane has minted, so a reply can be typed into the one already on a line.
   const openedThreads = new Map<string, vscode.CommentThread>();
 
   const addComment = async (args: AddCommentArgs): Promise<boolean> => {
@@ -136,8 +128,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
     const range = new vscode.Range(line, 0, line, 0);
     const thread = existing ?? controller.createCommentThread(uri, range, []);
     openedThreads.set(key, thread);
-    // Route through the real add-comment command with a CommentReply-shaped payload ({ thread, text }).
-    // Answer what the command answered: a refused add must fail the caller, not time it out.
+
     return (
       (await vscode.commands.executeCommand<boolean>(ADD_COMMENT_COMMAND[args.surface][args.kind], {
         thread,
@@ -155,7 +146,6 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
   );
 }
 
-/** The doc a comment attaches to: the open plan tab (plan surface) or a repo file (review surface). */
 function resolveTargetUri(args: AddCommentArgs, repoService: RepoService): vscode.Uri | undefined {
   if (args.surface === "plan") {
     return findOpenPlanTabUri();
@@ -167,8 +157,6 @@ function resolveTargetUri(args: AddCommentArgs, repoService: RepoService): vscod
   return vscode.Uri.file(path.join(root, args.path));
 }
 
-/** The URI of the currently-open paireto-plan tab (the foreground plan doc), if any. A revised plan
- *  opens as a diff, and tabUri answers with its modified side — the plan waiting for feedback. */
 function findOpenPlanTabUri(): vscode.Uri | undefined {
   for (const group of vscode.window.tabGroups.all) {
     for (const tab of group.tabs) {

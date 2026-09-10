@@ -29,8 +29,6 @@ export class GateComment implements vscode.Comment {
   }
 }
 
-/** Words nobody can change: an agent's reply, or a comment already sent. The thread carries any
- *  resolution itself, and the label says which kind of read-only words these are. */
 export function buildThreadItemComment(item: {
   body: string;
   at: string;
@@ -167,16 +165,11 @@ export class CommentSession implements vscode.Disposable {
     return thread;
   }
 
-  /**
-   * Put a thread of read-only words on a document: a conversation that has already gone to the
-   * agent. Nobody can add to it or change it, so it needs no owner to point back to.
-   */
   placeSent(args: {
     uri: vscode.Uri;
     range: vscode.Range;
     label: string;
     comments: vscode.Comment[];
-    /** Whether the words show themselves, or the reader has to open them. */
     expanded: boolean;
   }): vscode.CommentThread {
     const thread = this.controller.createCommentThread(args.uri, args.range, args.comments);

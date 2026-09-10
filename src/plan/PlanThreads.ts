@@ -97,7 +97,6 @@ export class PlanThreads {
         range: new vscode.Range(line, 0, line, opening.quote.length),
         label: `Sent ${kindLabel(opening.commentKind).toLowerCase()}`,
         comments: thread.items.map(sentComment),
-        // What was said about this plan is why the reader is looking at the old side of the diff.
         expanded: true,
       });
     });

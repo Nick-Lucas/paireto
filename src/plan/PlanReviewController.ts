@@ -32,17 +32,14 @@ interface PlanReview {
   harness: Harness;
   uri: vscode.Uri;
   markdown: string;
-  /** The plan this one answers, shown as the left side of a diff. Unset for a first plan. */
   previousUri?: vscode.Uri;
 }
 
-/** A plan sent back for revision, with the conversation that went with it. */
 interface AnsweredPlan {
   markdown: string;
   threads: PlanThread[];
 }
 
-/** The left side of the plan diff: the plan the reviewer already answered. */
 function previousPlanUri(uri: vscode.Uri): vscode.Uri {
   return uri.with({ fragment: "previous" });
 }
@@ -59,8 +56,6 @@ export class PlanReviewController implements vscode.Disposable {
   private readonly plans = new Map<string, PlanReview>();
   private foregroundReview?: PlanReview;
   private readonly closingTabs = new Set<string>();
-  /** The plan each agent session was last sent feedback on, keyed by session id. The next plan from
-   *  that session is a revision of it, so it is shown as a diff. An approval ends the revising. */
   private readonly answeredPlans = new Map<string, AnsweredPlan>();
 
   constructor(
@@ -78,7 +73,6 @@ export class PlanReviewController implements vscode.Disposable {
         prompt: "Add plan feedback",
         placeHolder: "Comment on this line of the plan",
       },
-      // Feedback belongs on the plan waiting for it, not on the one it revises.
       (doc) => doc.uri.scheme === Schemes.plan && doc.uri.fragment !== "previous",
     );
     this.threads = new PlanThreads(this.comments, () => this.changeEmitter.fire());
@@ -99,7 +93,6 @@ export class PlanReviewController implements vscode.Disposable {
     );
   }
 
-  /** Open the plan (foregrounded only if no other gate is) and resolve with the user's decision. */
   async presentPlan(
     event: AppEvent,
     repoRoot: string,
@@ -108,8 +101,7 @@ export class PlanReviewController implements vscode.Disposable {
     const sessionId = event.sessionId;
     const plan = event.planText ?? "";
     const planId = `${new Date().toISOString().replace(/[:.]/g, "-")}-${planCounter++}`;
-    // The tab basename is the human label; planId rides in the query so the URI (and the content
-    // provider's map keyed by uri.toString()) stays unique without polluting the visible tab name.
+
     const uri = vscode.Uri.from({
       scheme: Schemes.plan,
       authority: sessionId,
@@ -150,12 +142,9 @@ export class PlanReviewController implements vscode.Disposable {
       foreground: () => this.foreground(review),
       background: () => this.background(review),
     };
-    // Take the pending slot BEFORE the UI goes up: registering foregrounds the gate, so Approve and
-    // Send Feedback reach this plan while that registration is still running, and fulfill() drops an
-    // answer for a key nothing is waiting on yet — leaving the agent blocked on an answered plan.
+
     const decision = this.registry.awaitDecision(key);
 
-    // A dropped connection abandons the plan (resolve the gate so this unblocks, then reset).
     const onAbort = (): void => {
       this.registry.fulfill(key, { decision: "deny", reason: "Plan review connection closed." });
     };
@@ -164,9 +153,6 @@ export class PlanReviewController implements vscode.Disposable {
     try {
       await this.coordinator.register(entry);
     } catch (err) {
-      // The pending slot was taken before the UI went up, so a failure here has to give it back.
-      // Nothing else can: the plan holds a pending answer, a document and a tab, and the agent waits
-      // until one of them gives it a decision.
       const detail = err instanceof Error ? err.message : String(err);
       log.error(`plan review failed to open for agent ${sessionId.slice(0, 8)}: ${detail}`);
       this.registry.fulfill(key, {
@@ -175,7 +161,7 @@ export class PlanReviewController implements vscode.Disposable {
       });
       signal.removeEventListener("abort", onAbort);
       await this.finish(review);
-      // Settled by the fulfill above, or by an answer that landed while the UI was going up.
+
       return decision;
     }
     this.updatePendingContext();
@@ -192,7 +178,6 @@ export class PlanReviewController implements vscode.Disposable {
     return result;
   }
 
-  /** Non-blocking toast announcing an auto-opened plan, with one-click View / Approve actions. */
   private notifyPlanOpened(review: PlanReview): void {
     const VIEW = "View Plan";
     const APPROVE = "Approve Immediately";
@@ -215,9 +200,7 @@ export class PlanReviewController implements vscode.Disposable {
       });
   }
 
-  // ── GateEntry foreground/background ──────────────────────────────────────────────────────────
   private async foreground(review: PlanReview): Promise<void> {
-    // Reveal the Paireto sidebar first, then open the plan tab so the editor ends up focused.
     try {
       await vscode.commands.executeCommand(`${Views.main}.focus`);
     } catch {
@@ -238,15 +221,11 @@ export class PlanReviewController implements vscode.Disposable {
     this.changeEmitter.fire();
   }
 
-  // ── GateSession outcomes (bound per-plan; invoked via the shared commands on the foreground) ──
   private async approve(review: PlanReview): Promise<void> {
     if (!this.plans.has(review.id)) {
       return;
     }
-    // Approving a plan otherwise restores the pre-plan permission mode; default to the harness's own
-    // plan-approve mode (Claude: auto) so the agent proceeds without re-prompting. The setting is a
-    // per-harness key `planApprove.mode.<harness>` (an explicit value wins over the strategy default);
-    // "off" — or a harness with no key/settable mode (Codex) — leaves the mode unchanged.
+
     const configured = vscode.workspace
       .getConfiguration("paireto")
       .get<string>(`planApprove.mode.${review.harness}`);
@@ -258,7 +237,6 @@ export class PlanReviewController implements vscode.Disposable {
       `plan review approved for agent ${review.sessionId.slice(0, 8)}` +
         (nextMode ? ` (mode -> ${nextMode})` : ""),
     );
-    // The revising is over. A plan this session proposes later is new work, not a revision.
     this.answeredPlans.delete(review.sessionId);
     this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
@@ -420,7 +398,6 @@ export class PlanReviewController implements vscode.Disposable {
     await this.show(review);
   }
 
-  /** Put the plan on screen: against the plan it revises when there is one, otherwise on its own. */
   private async show(review: PlanReview): Promise<void> {
     const doc = await vscode.workspace.openTextDocument(review.uri);
     await vscode.languages.setTextDocumentLanguage(doc, "markdown");
@@ -439,7 +416,6 @@ export class PlanReviewController implements vscode.Disposable {
     );
   }
 
-  /** Resolve cleanup: dispose this plan's comments + tab, then unregister (promotes the next gate). */
   private async finish(review: PlanReview): Promise<void> {
     if (!this.plans.has(review.id)) {
       return;
@@ -477,9 +453,6 @@ export class PlanReviewController implements vscode.Disposable {
   }
 }
 
-/** The permission mode to enter on plan approval: an explicit per-harness config value wins over the
- *  harness strategy's default; "off" — or a harness with no settable mode (undefined default) —
- *  leaves the mode unchanged (undefined). */
 export function resolvePlanApproveMode(
   configuredMode: string | undefined,
   defaultMode: string | undefined,
