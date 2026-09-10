@@ -120,5 +120,5 @@ export class ThreadRenderer<T extends RenderableThread> {
 
 function agentComment(item: Extract<ThreadItem, { kind: "reply" }>): vscode.Comment {
   const author = item.author.kind === "agent" ? `${item.author.harness} agent` : "You";
-  return buildThreadItemComment({ body: item.body, at: item.at, author });
+  return buildThreadItemComment({ body: item.body, at: item.at, author, label: "Agent reply" });
 }

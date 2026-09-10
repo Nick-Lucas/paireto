@@ -12,7 +12,7 @@ import { closeTabsForUri, tabUri } from "../gate/tabs.js";
 import { log } from "../log.js";
 import type { PlanContentProvider } from "./PlanContentProvider.js";
 import { type PlanCommentData } from "./planFeedback.js";
-import { PlanThreads } from "./PlanThreads.js";
+import { PlanThreads, type PlanThread } from "./PlanThreads.js";
 import {
   codeFeedbackPromptText,
   composeRejectedPlanFeedback,
@@ -36,6 +36,12 @@ interface PlanReview {
   previousUri?: vscode.Uri;
 }
 
+/** A plan sent back for revision, with the conversation that went with it. */
+interface AnsweredPlan {
+  markdown: string;
+  threads: PlanThread[];
+}
+
 /** The left side of the plan diff: the plan the reviewer already answered. */
 function previousPlanUri(uri: vscode.Uri): vscode.Uri {
   return uri.with({ fragment: "previous" });
@@ -55,7 +61,7 @@ export class PlanReviewController implements vscode.Disposable {
   private readonly closingTabs = new Set<string>();
   /** The plan each agent session was last sent feedback on, keyed by session id. The next plan from
    *  that session is a revision of it, so it is shown as a diff. An approval ends the revising. */
-  private readonly answeredPlans = new Map<string, string>();
+  private readonly answeredPlans = new Map<string, AnsweredPlan>();
 
   constructor(
     private readonly provider: PlanContentProvider,
@@ -125,7 +131,8 @@ export class PlanReviewController implements vscode.Disposable {
 
     this.provider.set(uri, plan);
     if (previousUri !== undefined && answered !== undefined) {
-      this.provider.set(previousUri, answered);
+      this.provider.set(previousUri, answered.markdown);
+      this.threads.showSent(previousUri, answered.threads);
     }
     this.plans.set(review.id, review);
 
@@ -309,7 +316,10 @@ export class PlanReviewController implements vscode.Disposable {
       multiRepository: this.codeFeedback.isMultiRepository(),
     });
 
-    this.answeredPlans.set(review.sessionId, review.markdown);
+    this.answeredPlans.set(review.sessionId, {
+      markdown: review.markdown,
+      threads: this.threads.threadsFor(review.uri),
+    });
     this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
@@ -439,6 +449,9 @@ export class PlanReviewController implements vscode.Disposable {
       this.foregroundReview = undefined;
     }
     this.threads.dropFor(review.uri);
+    if (review.previousUri) {
+      this.threads.dropFor(review.previousUri);
+    }
     this.closingTabs.add(review.uri.toString());
     await closeTabsForUri(review.uri);
     this.provider.clear(review.uri);

@@ -29,18 +29,20 @@ export class GateComment implements vscode.Comment {
   }
 }
 
-/** A reply, shown under the comment it answers. A resolution is carried by the thread's own state. */
+/** Words nobody can change: an agent's reply, or a comment already sent. The thread carries any
+ *  resolution itself, and the label says which kind of read-only words these are. */
 export function buildThreadItemComment(item: {
   body: string;
   at: string;
   author: string;
+  label: string;
 }): vscode.Comment {
   return {
     body: item.body,
     mode: vscode.CommentMode.Preview,
     author: { name: item.author },
     contextValue: "threadItem",
-    label: "Agent reply",
+    label: item.label,
     timestamp: new Date(item.at),
   };
 }
@@ -162,6 +164,24 @@ export class CommentSession implements vscode.Disposable {
       this.threadSet.delete(previous);
       previous.dispose();
     }
+    return thread;
+  }
+
+  /**
+   * Put a thread of read-only words on a document: a conversation that has already gone to the
+   * agent. Nobody can add to it or change it, so it needs no owner to point back to.
+   */
+  placeSent(args: {
+    uri: vscode.Uri;
+    range: vscode.Range;
+    label: string;
+    comments: vscode.Comment[];
+  }): vscode.CommentThread {
+    const thread = this.controller.createCommentThread(args.uri, args.range, args.comments);
+    thread.label = args.label;
+    thread.canReply = false;
+    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
+    this.threadSet.add(thread);
     return thread;
   }
 

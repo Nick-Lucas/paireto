@@ -261,6 +261,7 @@ suite("review controller feedback", () => {
     const c = Object.assign(Object.create(PlanReviewController.prototype), {
       plans: new Map([[review.id, review]]),
       answeredPlans: new Map(),
+      threads: { threadsFor: () => [] },
       collect: () => [{ line: 0, quote: "plan", body: "plan-note", kind: "comment" }],
       codeFeedback: {
         getPendingComments: () => [ready, waiting],

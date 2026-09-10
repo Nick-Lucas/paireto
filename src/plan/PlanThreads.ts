@@ -1,6 +1,11 @@
 import * as vscode from "vscode";
 
-import { GateComment, type CommentSession } from "../comments/CommentSession.js";
+import { commentAuthorName } from "../comments/author.js";
+import {
+  buildThreadItemComment,
+  GateComment,
+  type CommentSession,
+} from "../comments/CommentSession.js";
 import { kindLabel, type CommentKind } from "../comments/kinds.js";
 import { ThreadRenderer } from "../comments/ThreadRenderer.js";
 import {
@@ -11,6 +16,7 @@ import {
   locateThreadItem,
   removeReply,
   serialiseConversation,
+  type ThreadItem,
   type ThreadItems,
 } from "../comments/threadModel.js";
 import type { PlanCommentData } from "./planFeedback.js";
@@ -24,10 +30,11 @@ let planThreadCounter = 0;
 
 export class PlanThreads {
   private threads: PlanThread[] = [];
+  private readonly sent = new Map<string, vscode.CommentThread[]>();
   private readonly renderer: ThreadRenderer<PlanThread>;
 
   constructor(
-    comments: CommentSession,
+    private readonly comments: CommentSession,
     private readonly changed: () => void,
   ) {
     this.renderer = new ThreadRenderer({
@@ -75,6 +82,26 @@ export class PlanThreads {
     return id !== undefined && this.threads.some((thread) => thread.id === id) ? id : undefined;
   }
 
+  threadsFor(uri: vscode.Uri): PlanThread[] {
+    const target = uri.toString();
+    return this.threads.filter((thread) => thread.uri.toString() === target);
+  }
+
+  showSent(uri: vscode.Uri, sent: readonly PlanThread[]): void {
+    this.dropSent(uri.toString());
+    const placed = sent.map((thread) => {
+      const opening = getOpeningComment(thread);
+      const line = Math.max(0, thread.line);
+      return this.comments.placeSent({
+        uri,
+        range: new vscode.Range(line, 0, line, opening.quote.length),
+        label: `Sent ${kindLabel(opening.commentKind).toLowerCase()}`,
+        comments: thread.items.map(sentComment),
+      });
+    });
+    this.sent.set(uri.toString(), placed);
+  }
+
   commentsFor(uri: vscode.Uri): PlanCommentData[] {
     const target = uri.toString();
     return this.threads
@@ -91,13 +118,25 @@ export class PlanThreads {
 
   dropFor(uri: vscode.Uri): void {
     const target = uri.toString();
+    this.dropSent(target);
     this.threads = this.threads.filter((thread) => thread.uri.toString() !== target);
     this.write();
   }
 
   dispose(): void {
+    for (const target of Array.from(this.sent.keys())) {
+      this.dropSent(target);
+    }
     this.threads = [];
     this.renderer.dispose();
+  }
+
+  private dropSent(target: string): void {
+    const placed = new Set(this.sent.get(target) ?? []);
+    this.sent.delete(target);
+    if (placed.size > 0) {
+      this.comments.disposeThreads((thread) => placed.has(thread));
+    }
   }
 
   private edit(id: string, body: string): void {
@@ -135,4 +174,12 @@ export class PlanThreads {
     this.renderer.render(this.threads);
     this.changed();
   }
+}
+
+function sentComment(item: ThreadItem): vscode.Comment {
+  const author =
+    item.kind === "comment" || item.author.kind === "reviewer"
+      ? commentAuthorName()
+      : `${item.author.harness} agent`;
+  return buildThreadItemComment({ body: item.body, at: item.at, author, label: "Sent" });
 }
