@@ -1,24 +1,22 @@
-import type { ReviewThread, ThreadItem, ThreadItemAuthor } from "./reviewTypes.js";
+import {
+  appendReply,
+  editComment,
+  editReply,
+  removeReply,
+  type ThreadItemAuthor,
+} from "../comments/threadModel.js";
+import type { ReviewThread } from "./reviewTypes.js";
 
 export function pendingFeedback(threads: ReviewThread[]): ReviewThread[] {
   return threads.filter((thread) => thread.delivery === "pending");
 }
 
-function nextThreadItemId(thread: ReviewThread): string {
-  const used = thread.items.flatMap((item) =>
-    item.kind === "comment" ? [] : [Number(item.id.split("#").at(-1))],
-  );
-  return `${thread.id}#${Math.max(0, ...used.filter(Number.isFinite)) + 1}`;
-}
-
 export function editFeedback(thread: ReviewThread, body: string, at: string): ReviewThread {
-  const [comment, ...rest] = thread.items;
   return {
-    ...thread,
+    ...editComment(thread, body, at),
     delivery: "pending",
     resolvedAt: undefined,
     updatedAt: at,
-    items: [{ ...comment, body, at }, ...rest],
   };
 }
 
@@ -26,12 +24,10 @@ export function appendFeedbackReply(
   thread: ReviewThread,
   reply: { body: string; at: string; author: ThreadItemAuthor },
 ): ReviewThread {
-  const item: ThreadItem = { id: nextThreadItemId(thread), kind: "reply", ...reply };
   return {
-    ...thread,
+    ...appendReply(thread, reply),
     delivery: reply.author.kind === "reviewer" ? "pending" : thread.delivery,
     updatedAt: reply.at,
-    items: [...thread.items, item],
   };
 }
 
@@ -41,18 +37,7 @@ export function editFeedbackReply(
   body: string,
   at: string,
 ): ReviewThread {
-  const [comment, ...rest] = thread.items;
-  return {
-    ...thread,
-    delivery: "pending",
-    updatedAt: at,
-    items: [
-      comment,
-      ...rest.map((item) =>
-        item.kind === "reply" && item.id === itemId ? { ...item, body, at } : item,
-      ),
-    ],
-  };
+  return { ...editReply(thread, itemId, body, at), delivery: "pending", updatedAt: at };
 }
 
 export function removeFeedbackReply(
@@ -60,14 +45,7 @@ export function removeFeedbackReply(
   itemId: string,
   at: string,
 ): ReviewThread {
-  return {
-    ...thread,
-    updatedAt: at,
-    items: [
-      thread.items[0],
-      ...thread.items.slice(1).filter((item) => item.kind === "comment" || item.id !== itemId),
-    ],
-  };
+  return { ...removeReply(thread, itemId), updatedAt: at };
 }
 
 export function resolveThread(thread: ReviewThread, at: string): ReviewThread {

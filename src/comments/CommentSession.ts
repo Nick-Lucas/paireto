@@ -89,14 +89,7 @@ export function registerCommentEditingCommands(): vscode.Disposable {
   );
 }
 
-export interface CommentCallbacks {
-  onSaved?: (newBody: string) => void;
-  onDelete?: () => void;
-  id?: string;
-  label?: string;
-}
-
-/** Wraps a CommentController for one scheme: ranges, options, comment creation, and reset. */
+/** Wraps a CommentController for one scheme: ranges, options, thread placement, and reset. */
 export class CommentSession implements vscode.Disposable {
   readonly controller: vscode.CommentController;
   private readonly threadSet = new Set<vscode.CommentThread>();
@@ -115,23 +108,6 @@ export class CommentSession implements vscode.Disposable {
     this.controller.commentingRangeProvider = {
       provideCommentingRanges: (doc) => (matches(doc) ? wholeDocumentRange(doc) : undefined),
     };
-  }
-
-  add(reply: vscode.CommentReply, kind: CommentKind, cb?: CommentCallbacks): GateComment {
-    const comment = new GateComment(reply.text, kind);
-    comment.onSaved = cb?.onSaved;
-    comment.onDelete = cb?.onDelete;
-    comment.id = cb?.id;
-    comment.session = this;
-    const thread = reply.thread;
-    comment.thread = thread;
-    if (thread.comments.length === 0 && cb?.label !== undefined) {
-      thread.label = cb.label;
-    }
-    thread.comments = [...thread.comments, comment];
-    thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
-    this.threadSet.add(thread);
-    return comment;
   }
 
   /**

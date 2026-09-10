@@ -1,17 +1,10 @@
-// The feedback for one commenting context: its buckets on disk, and its comment threads in the
-// editor. Every change goes into a bucket first, then one render() makes the editor agree. Nothing
-// else creates, moves or removes a feedback comment thread.
-
 import * as vscode from "vscode";
 
-import {
-  buildThreadItemComment,
-  GateComment,
-  type CommentSession,
-} from "../../comments/CommentSession.js";
-import { kindLabel, type CommentKind } from "../../comments/kinds.js";
+import type { GateComment, CommentSession } from "../../comments/CommentSession.js";
+import { ThreadRenderer } from "../../comments/ThreadRenderer.js";
 import type { FeedbackRef } from "../../git/gitCli.js";
 import { log } from "../../log.js";
+import { locateThreadItem } from "../../comments/threadModel.js";
 import { canonicalize } from "../../protocol/paths.js";
 import { openFeedbackBucket, type FeedbackBucket } from "../../storage/FeedbackStore.js";
 import {
@@ -21,8 +14,8 @@ import {
   removeFeedbackReply,
 } from "../feedbackState.js";
 import {
-  getReviewerItems,
   getOpeningComment,
+  getReviewerItems,
   type ThreadItem,
   type ReviewThread,
 } from "../reviewTypes.js";
@@ -37,18 +30,16 @@ export function contextKey(context: FeedbackContext): string {
     .join("|");
 }
 
-/** What the session needs from its owner to put a comment on a document. */
 export interface FeedbackHost {
   readonly comments: CommentSession;
-  /** The document this model's thread belongs on now. */
+
   uriFor(model: ReviewThread): vscode.Uri;
   labelFor(model: ReviewThread): string;
-  /** A changeset description is a virtual document. Its content must exist before its thread does. */
+
   registerDoc(uri: vscode.Uri, markdown: string): void;
   changed(): void;
 }
 
-/** Where a comment moved to, after its file changed under it. */
 export interface RelocatePatch {
   line: number;
   sourceUri: string;
@@ -57,18 +48,27 @@ export interface RelocatePatch {
 }
 
 export class FeedbackSession {
-  /** Keyed by canonical repository root. */
   private readonly buckets = new Map<string, FeedbackBucket>();
-  /** Keyed by feedback id. The only index; thread grouping is recomputed on every render. */
-  private readonly live = new Map<string, GateComment>();
+  private readonly renderer: ThreadRenderer<ReviewThread>;
 
-  private constructor(private readonly host: FeedbackHost) {}
+  private constructor(private readonly host: FeedbackHost) {
+    this.renderer = new ThreadRenderer({
+      comments: host.comments,
+      uriFor: (thread) => host.uriFor(thread),
+      labelFor: (thread) => host.labelFor(thread),
+      resolved: (thread) => thread.resolvedAt !== undefined,
+      prepare: (threads) => {
+        for (const thread of threads) {
+          if (thread.sourceDocument) {
+            host.registerDoc(host.uriFor(thread), thread.sourceDocument.markdown);
+          }
+        }
+      },
+      edited: (id, body) => void this.edit(id, body),
+      deleted: (id) => void this.removeCommentOrThread(id),
+    });
+  }
 
-  /**
-   * Open the buckets of a context. A bucket the outgoing session already holds for the same
-   * repository and ref is taken over, not opened again: two adapters on one file would share one
-   * temporary path, and the second would read the file before the first had written it.
-   */
   static async open(
     context: FeedbackContext,
     host: FeedbackHost,
@@ -88,7 +88,6 @@ export class FeedbackSession {
     return session;
   }
 
-  /** Give up the bucket for this repository and ref, so the next session can keep using it. */
   private take(repoRoot: string, ref: FeedbackRef): FeedbackBucket | undefined {
     const key = canonicalize(repoRoot);
     const bucket = this.buckets.get(key);
@@ -108,7 +107,7 @@ export class FeedbackSession {
   }
 
   commentFor(id: string): GateComment | undefined {
-    return this.live.get(id);
+    return this.renderer.commentFor(id);
   }
 
   repliesFor(id: string): ThreadItem[] {
@@ -116,7 +115,6 @@ export class FeedbackSession {
     return (model ? getReviewerItems(model) : []).slice(1);
   }
 
-  /** Answers false when this session holds no bucket for the model's repository. */
   add(model: ReviewThread): boolean {
     return this.write(model.repoRoot, (draft) => {
       draft.threads.push(model);
@@ -125,7 +123,7 @@ export class FeedbackSession {
 
   edit(id: string, body: string): boolean {
     const at = new Date().toISOString();
-    const target = this.locate(id);
+    const target = locateThreadItem(this.allThreads(), id);
     if (!target) {
       log.error(`feedback ${id} is not held by this session`);
       return false;
@@ -144,7 +142,7 @@ export class FeedbackSession {
 
   removeCommentOrThread(id: string): boolean {
     const at = new Date().toISOString();
-    const target = this.locate(id);
+    const target = locateThreadItem(this.allThreads(), id);
     if (!target) {
       log.error(`feedback ${id} is not held by this session`);
       return false;
@@ -192,18 +190,6 @@ export class FeedbackSession {
         );
       }
     });
-  }
-
-  private locate(id: string): { thread: ReviewThread; itemId?: string } | undefined {
-    for (const thread of this.allThreads()) {
-      if (thread.id === id) {
-        return { thread };
-      }
-      if (thread.items.some((a) => a.kind !== "comment" && a.id === id)) {
-        return { thread, itemId: id };
-      }
-    }
-    return undefined;
   }
 
   amend(repoRoot: string, id: string, change: (item: ReviewThread) => ReviewThread): boolean {
@@ -269,101 +255,19 @@ export class FeedbackSession {
   }
 
   render(): void {
-    try {
-      const models = this.allThreads();
-      const ids = new Set(models.map((model) => model.id));
-      for (const [id, comment] of this.live) {
-        if (!ids.has(id)) {
-          this.host.comments.remove(comment);
-          this.live.delete(id);
-        }
-      }
-
-      // The provider is cleared when a review ends, so every saved description is registered again.
-      for (const model of models) {
-        if (model.sourceDocument) {
-          this.host.registerDoc(this.host.uriFor(model), model.sourceDocument.markdown);
-        }
-      }
-
-      for (const model of models) {
-        const feedback = getOpeningComment(model);
-        this.host.comments.place({
-          uri: this.host.uriFor(model),
-          range: new vscode.Range(
-            Math.max(0, model.line),
-            0,
-            Math.max(0, model.line),
-            Math.max(0, feedback.quote.length),
-          ),
-          label: this.host.labelFor(model),
-          comments: this.getConversation(model),
-          previous: this.live.get(model.id)?.thread,
-          resolved: model.resolvedAt !== undefined,
-        });
-      }
-    } catch (error) {
-      // The write is already scheduled, so a drawing fault cannot lose the user's change.
-      log.error(`feedback rendering failed: ${String(error)}`);
-    }
+    this.renderer.render(this.allThreads());
   }
 
-  /** Answers when every waiting disk write has landed. Nothing in the UI waits on this. */
   async flush(): Promise<void> {
     await Promise.all(Array.from(this.buckets.values(), (bucket) => bucket.flush()));
   }
 
-  /** Write out and give up every bucket this session still holds. */
   async close(): Promise<void> {
     await Promise.all(Array.from(this.buckets.values(), (bucket) => bucket.close()));
   }
 
-  /** Take every thread this session put up out of the editor. */
   dispose(): void {
-    const mine = new Set([...this.live.values()].map((comment) => comment.thread));
-    // Only this session's threads. The CommentSession is shared and outlives the session.
-    this.host.comments.disposeThreads((thread) => mine.has(thread));
-    this.live.clear();
-  }
-
-  private getConversation(
-    model: ReviewThread,
-  ): Array<{ comment: GateComment; replies?: vscode.Comment[] }> {
-    const feedback = getOpeningComment(model);
-    const out: Array<{ comment: GateComment; replies?: vscode.Comment[] }> = [
-      { comment: this.draw(model.id, feedback.body, feedback.commentKind) },
-    ];
-    for (const item of model.items.slice(1)) {
-      if (item.kind === "comment") {
-        continue;
-      }
-      if (item.author.kind === "reviewer") {
-        out.push({ comment: this.draw(item.id, item.body, feedback.commentKind) });
-        continue;
-      }
-      const last = out.at(-1)!;
-      last.replies = [...(last.replies ?? []), agentComment(item)];
-    }
-    return out;
-  }
-
-  private draw(id: string, body: string, kind: CommentKind): GateComment {
-    let comment = this.live.get(id);
-    if (!comment) {
-      comment = new GateComment(body, kind);
-      // A reply reads the id of the comment it answers to find its thread.
-      comment.id = id;
-      comment.session = this.host.comments;
-      comment.onSaved = (next) => this.edit(id, next);
-      comment.onDelete = () => this.removeCommentOrThread(id);
-      this.live.set(id, comment);
-    } else if (comment.mode !== vscode.CommentMode.Editing) {
-      // Text the user is still typing is theirs until they save it.
-      comment.body = body;
-    }
-    comment.kind = kind;
-    comment.label = kindLabel(kind);
-    return comment;
+    this.renderer.dispose();
   }
 
   private writeTo(id: string, recipe: (draft: { threads: ReviewThread[] }) => void): boolean {
@@ -375,7 +279,6 @@ export class FeedbackSession {
     return this.write(model.repoRoot, recipe);
   }
 
-  /** The one ordering rule: store, then editor, then tree. The disk write follows on its own. */
   private write(repoRoot: string, recipe: (draft: { threads: ReviewThread[] }) => void): boolean {
     const bucket = this.buckets.get(canonicalize(repoRoot));
     if (!bucket) {
@@ -387,9 +290,4 @@ export class FeedbackSession {
     this.host.changed();
     return true;
   }
-}
-
-function agentComment(item: Extract<ThreadItem, { kind: "reply" }>): vscode.Comment {
-  const author = item.author.kind === "agent" ? `${item.author.harness} agent` : "You";
-  return buildThreadItemComment({ body: item.body, at: item.at, author });
 }

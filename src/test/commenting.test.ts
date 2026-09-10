@@ -106,41 +106,22 @@ suite("commenting integration", () => {
     return thread.comments.map((c) => String((c as GateComment).body));
   }
 
-  /** A CommentReply as VS Code hands one over: the widget's own empty thread plus the typed text. */
-  function replyOn(
+  /** Put a thread up the way the renderer does: the comment that opens it, then its replies. */
+  function draw(
     session: CommentSession,
     doc: vscode.TextDocument,
     line: number,
-    text: string,
-  ): vscode.CommentReply {
-    const thread = session.controller.createCommentThread(
-      doc.uri,
-      new vscode.Range(line, 0, line, 0),
-      [],
-    );
-    return { thread, text };
-  }
-
-  test("a reply joins the thread it was typed into", async () => {
-    // VS Code routes a reply typed into an existing thread's box back to THAT thread. The reply
-    // belongs to the comment it answers, so it joins that thread instead of starting another one.
-    const session = new CommentSession("paireto-test-reply", "Test", SCHEME, {
-      prompt: "Test",
-      placeHolder: "Test",
+    bodies: [string, ...string[]],
+  ): GateComment[] {
+    const comments = bodies.map((body) => new GateComment(body, "comment"));
+    session.place({
+      uri: doc.uri,
+      range: new vscode.Range(line, 0, line, 0),
+      label: "Comment",
+      comments: comments.map((comment) => ({ comment })),
     });
-    try {
-      const doc = await openDoc(4);
-      const first = session.add(replyOn(session, doc, 1, "first"), "comment");
-      // The user types into the first comment's reply box rather than the gutter widget.
-      const reply = session.add({ thread: first.thread!, text: "reply" }, "question");
-
-      assert.strictEqual(reply.thread, first.thread, "the reply stays on the thread it answers");
-      assert.deepStrictEqual(bodies(first.thread!), ["first", "reply"], "in the order made");
-      assert.strictEqual(session.threads().length, 1);
-    } finally {
-      session.dispose();
-    }
-  });
+    return comments;
+  }
 
   test("a second top-level comment on one line gets its own thread", async () => {
     // The gutter "+" opens an empty widget thread of its own, so two top-level comments can sit on
@@ -151,8 +132,8 @@ suite("commenting integration", () => {
     });
     try {
       const doc = await openDoc(4);
-      const first = session.add(replyOn(session, doc, 1, "first"), "comment");
-      const second = session.add(replyOn(session, doc, 1, "second"), "question");
+      const [first] = draw(session, doc, 1, ["first"]);
+      const [second] = draw(session, doc, 1, ["second"]);
 
       assert.notStrictEqual(second.thread, first.thread, "the second comment needs its own thread");
       assert.deepStrictEqual(bodies(first.thread!), ["first"]);
@@ -165,22 +146,6 @@ suite("commenting integration", () => {
     }
   });
 
-  test("a thread label is set by the comment that opens it, not by a reply", async () => {
-    const session = new CommentSession("paireto-test-label", "Test", SCHEME, {
-      prompt: "Test",
-      placeHolder: "Test",
-    });
-    try {
-      const doc = await openDoc(4);
-      const first = session.add(replyOn(session, doc, 1, "first"), "comment", { label: "Comment" });
-      session.add({ thread: first.thread!, text: "reply" }, "question", { label: "Question" });
-
-      assert.strictEqual(first.thread!.label, "Comment");
-    } finally {
-      session.dispose();
-    }
-  });
-
   test("remove takes the thread with it and leaves a line-mate alone", async () => {
     const session = new CommentSession("paireto-test-del", "Test", SCHEME, {
       prompt: "Test",
@@ -188,8 +153,8 @@ suite("commenting integration", () => {
     });
     try {
       const doc = await openDoc(4);
-      const keep = session.add(replyOn(session, doc, 1, "keep"), "comment");
-      const drop = session.add(replyOn(session, doc, 1, "drop"), "question");
+      const [keep] = draw(session, doc, 1, ["keep"]);
+      const [drop] = draw(session, doc, 1, ["drop"]);
 
       session.remove(drop);
 
@@ -209,8 +174,7 @@ suite("commenting integration", () => {
     });
     try {
       const doc = await openDoc(4);
-      const keep = session.add(replyOn(session, doc, 1, "keep"), "comment");
-      const drop = session.add({ thread: keep.thread!, text: "drop" }, "question");
+      const [keep, drop] = draw(session, doc, 1, ["keep", "drop"]);
 
       session.remove(drop);
 
@@ -230,8 +194,7 @@ suite("commenting integration", () => {
     });
     try {
       const doc = await openDoc(4);
-      const opener = session.add(replyOn(session, doc, 1, "opener"), "comment");
-      const reply = session.add({ thread: opener.thread!, text: "reply" }, "question");
+      const [opener, reply] = draw(session, doc, 1, ["opener", "reply"]);
 
       assert.deepStrictEqual(
         session.remove(reply).map((c) => String(c.body)),
@@ -255,7 +218,7 @@ suite("commenting integration", () => {
     });
     try {
       const doc = await openDoc(4);
-      const comment = session.add(replyOn(session, doc, 1, "mine"), "comment");
+      const [comment] = draw(session, doc, 1, ["mine"]);
       let asked = 0;
       comment.onDelete = () => asked++;
 
@@ -278,8 +241,7 @@ suite("commenting integration", () => {
     });
     try {
       const doc = await openDoc(4);
-      const opener = session.add(replyOn(session, doc, 1, "opener"), "comment");
-      const reply = session.add({ thread: opener.thread!, text: "reply" }, "question");
+      const [opener, reply] = draw(session, doc, 1, ["opener", "reply"]);
 
       const removed = session.remove(opener);
 
@@ -297,15 +259,15 @@ suite("commenting integration", () => {
   });
 
   test("a removed comment's thread stops being collected", async () => {
-    // The plan gate gathers its feedback by walking session.threads(), so a thread left tracked
-    // after its comment was deleted would put the deleted text back into what the agent receives.
+    // A thread left tracked after its last comment went would be taken down twice, and would still
+    // answer disposeThreads long after there was nothing on it to take down.
     const session = new CommentSession("paireto-test-collect", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
     try {
       const doc = await openDoc(4);
-      const only = session.add(replyOn(session, doc, 2, "only"), "comment");
+      const [only] = draw(session, doc, 2, ["only"]);
 
       session.remove(only);
 
@@ -323,9 +285,9 @@ suite("commenting integration", () => {
     try {
       const doomed = await openDoc(3);
       const kept = await openDoc(5);
-      session.add(replyOn(session, doomed, 0, "a"), "comment");
-      session.add(replyOn(session, doomed, 1, "b"), "comment");
-      const survivor = session.add(replyOn(session, kept, 0, "c"), "comment");
+      draw(session, doomed, 0, ["a"]);
+      draw(session, doomed, 1, ["b"]);
+      const [survivor] = draw(session, kept, 0, ["c"]);
 
       session.disposeThreads((thread) => thread.uri.toString() === doomed.uri.toString());
 
@@ -344,8 +306,7 @@ suite("commenting integration", () => {
     try {
       const oldDoc = await openDoc(3);
       const newDoc = await openDoc(6);
-      const opener = session.add(replyOn(session, oldDoc, 1, "opener"), "comment");
-      const reply = session.add({ thread: opener.thread!, text: "reply" }, "question");
+      const [opener, reply] = draw(session, oldDoc, 1, ["opener", "reply"]);
       const original = opener.thread!;
 
       const replacement = session.place({
@@ -377,7 +338,7 @@ suite("commenting integration", () => {
     });
     try {
       const doc = await openDoc(6);
-      const comment = session.add(replyOn(session, doc, 1, "stay"), "comment");
+      const [comment] = draw(session, doc, 1, ["stay"]);
       const original = comment.thread!;
       original.collapsibleState = vscode.CommentThreadCollapsibleState.Collapsed;
 

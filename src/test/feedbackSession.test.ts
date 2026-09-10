@@ -298,13 +298,9 @@ suite("feedback session", () => {
 
   test("adding feedback creates its comment from store state", async () => {
     const session = await openSession();
-    const add = mock.method(comments, "add", (): GateComment => {
-      throw new Error("direct UI creation");
-    });
 
     await session.add(comment("added"));
 
-    assert.strictEqual(add.mock.callCount(), 0, "the comment comes from the render, not from add");
     const drawn = session.commentFor("added")!;
     assert.strictEqual(String(drawn.body), "added");
     assert.strictEqual(drawn.thread!.uri.toString(), docA.uri.toString());
@@ -670,7 +666,14 @@ suite("feedback session", () => {
       new vscode.Range(0, 0, 0, 0),
       [],
     );
-    const foreign = comments.add({ thread: widget, text: "foreign" }, "comment");
+    const foreign = new GateComment("foreign", "comment");
+    comments.place({
+      uri: docB.uri,
+      range: new vscode.Range(0, 0, 0, 0),
+      label: "Comment",
+      comments: [{ comment: foreign }],
+      previous: widget,
+    });
     assert.strictEqual(comments.threads().length, 2);
 
     session.dispose();

@@ -19,6 +19,7 @@ export const Commands = {
   commentDelete: "paireto.comment.delete",
   planAddQuestion: "paireto.plan.addQuestion",
   planAddComment: "paireto.plan.addComment",
+  planAddReply: "paireto.plan.addReply",
   reviewPickCompareTo: "paireto.review.pickCompareTo",
   reviewPickDiffCompareTo: "paireto.review.pickDiffCompareTo",
   reviewToggleLayout: "paireto.review.toggleLayout",
