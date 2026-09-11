@@ -45,11 +45,11 @@ const GUIDED_FIXTURE: Record<string, string> = {
 const SEEDED = Object.keys(GUIDED_FIXTURE);
 
 const REVIEWED_FILE = "src/ui/button.ts";
-const FEEDBACK_FILE = "src/ui/renderButton.ts";
+const FEEDBACK_FILE = "src/ui/button.test.ts";
 const FEEDBACK_MARKER = "renderButton";
 const REVIEW_FEEDBACK =
-  `Please move ${FEEDBACK_MARKER} out of this file into ${FEEDBACK_FILE}, and import it back ` +
-  `into ${REVIEWED_FILE}.`;
+  `This has no test coverage. Please add a test for ${FEEDBACK_MARKER} at ${FEEDBACK_FILE}. ` +
+  `Do not change ${REVIEWED_FILE} itself.`;
 
 /** One long model turn: reading a whole diff and grouping it takes far longer than a normal step. */
 const PLAN_TIMEOUT_MS = 300_000;
@@ -94,10 +94,12 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       await requireDriver(driver, harness);
       // The case owns the changes it reviews, so the shared sandbox stays identical for every case.
       // Seeded before the agent starts, and left uncommitted — see GUIDED_FIXTURE.
-      for (const [relPath, contents] of Object.entries(GUIDED_FIXTURE)) {
+      for (const [index, [relPath, contents]] of Object.entries(GUIDED_FIXTURE).entries()) {
         const file = path.join(repoRoot, relPath);
         fs.mkdirSync(path.dirname(file), { recursive: true });
         fs.writeFileSync(file, contents);
+        const stamped = new Date(Date.UTC(2026, 0, 1) + index * 60_000);
+        fs.utimesSync(file, stamped, stamped);
       }
       const sessionId = `${harness}-${crypto.randomBytes(4).toString("hex")}`;
       // Ordinary work, not plan mode — and the bundled MCP server loaded so its tool is callable.

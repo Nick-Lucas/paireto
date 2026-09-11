@@ -389,8 +389,19 @@ function keyOf(entry: unknown): string {
  *  property of the machine, not of the tree, so two hosts holding identical files disagree — while
  *  the set of paths, which is what the model reasons about, is the same on both. */
 const DIRECTORY_LISTING = /^\s*(find|ls)\s/;
-const LONG_LISTING_TIMESTAMP =
-  /^([bcdlps-][rwxStTs-]{9}\s+\d+\s+\S+\s+\S+\s+\d+\s+)[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})(\s+.*)$/;
+const LONG_LISTING_ENTRY =
+  /^([bcdlps-])[rwxStTs-]{9}\s+\d+\s+\S+\s+\S+\s+\d+\s+(?:[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})|TIMESTAMP)\s+(.*)$/;
+const LONG_LISTING_TOTAL = /^(\s*total\s+)\d+$/;
+const ABSOLUTE_PATH_LINE = /^\/\S*$/;
+
+function sortPathListOutput(content: string): string {
+  const lines = content.split("\n");
+  const paths = lines.filter((line) => line.length > 0);
+  if (paths.length < 2 || !paths.every((line) => ABSOLUTE_PATH_LINE.test(line))) {
+    return content;
+  }
+  return [...paths].sort().join("\n");
+}
 
 /**
  * What a shell tool result contributes to the match key.
@@ -404,7 +415,9 @@ const LONG_LISTING_TIMESTAMP =
 function normalizeShellOutput(command: string, content: string): string {
   const lines = content
     .split("\n")
-    .map((line) => line.replace(LONG_LISTING_TIMESTAMP, "$1TIMESTAMP$2"));
+    .map((line) =>
+      line.replace(LONG_LISTING_ENTRY, "$1 ENTRY $2").replace(LONG_LISTING_TOTAL, "$1TOTAL"),
+    );
   return (DIRECTORY_LISTING.test(command) ? lines.sort() : lines).join("\n");
 }
 
@@ -584,11 +597,14 @@ function normalizeCodexWorkflowToolResults(body: Record<string, unknown>): void 
       continue;
     }
     const command = shellCommands.get(output.call_id);
-    if (command === undefined) {
+    if (output.type === "function_call_output" && typeof output.output === "string") {
+      output.output =
+        command === undefined
+          ? sortPathListOutput(output.output)
+          : normalizeShellOutput(command, output.output);
       continue;
     }
-    if (output.type === "function_call_output" && typeof output.output === "string") {
-      output.output = normalizeShellOutput(command, output.output);
+    if (command === undefined) {
       continue;
     }
     // `exec` answers in parts rather than one string, so each part is normalized in place.
