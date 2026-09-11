@@ -44,11 +44,12 @@ const GUIDED_FIXTURE: Record<string, string> = {
 
 const SEEDED = Object.keys(GUIDED_FIXTURE);
 
-/** The file the agent writes to prove the review feedback reached it, and so also the marker that
- *  this case's agent turn carried the flow through. */
-const FEEDBACK_FILE = "guided-feedback.txt";
-const FEEDBACK_MARKER = "reviewed";
-const REVIEW_FEEDBACK = `Write ${FEEDBACK_FILE} containing exactly: ${FEEDBACK_MARKER}`;
+const REVIEWED_FILE = "src/ui/button.ts";
+const FEEDBACK_FILE = "src/ui/renderButton.ts";
+const FEEDBACK_MARKER = "renderButton";
+const REVIEW_FEEDBACK =
+  `Please move ${FEEDBACK_MARKER} out of this file into ${FEEDBACK_FILE}, and import it back ` +
+  `into ${REVIEWED_FILE}.`;
 
 /** One long model turn: reading a whole diff and grouping it takes far longer than a normal step. */
 const PLAN_TIMEOUT_MS = 300_000;
@@ -209,7 +210,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         {
           surface: "review",
           kind: "comment",
-          path: plan.changesets[0].files[0].path,
+          path: REVIEWED_FILE,
           text: REVIEW_FEEDBACK,
         },
         (snap) => snap.commentBucketCount > 0,

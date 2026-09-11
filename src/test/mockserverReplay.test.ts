@@ -12,6 +12,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { extractJsonRpc } from "../e2e/mockserver/mcpClient.js";
+import { RECORDED_FEEDBACK_ID } from "../review/feedbackId.js";
 import {
   isSuccessfulRecording,
   localBootstrapFor,
@@ -324,7 +325,7 @@ suite("provider-replay: fixture normalization", () => {
     for (const driver of ["claudecode", "codex", "opencode"]) {
       const normalized = normalizeRequestBody(driver, first);
       assert.strictEqual(normalized, normalizeRequestBody(driver, second));
-      assert.ok(normalized.includes("PAIRETO_E2E_FEEDBACK_ID"), "the ID is replaced, not dropped");
+      assert.ok(normalized.includes(RECORDED_FEEDBACK_ID), "the ID is replaced, not dropped");
       assert.ok(!normalized.includes("V1StGXR8"), `${driver} left a volatile ID in the match key`);
       assert.strictEqual(
         normalizeRequestBody(driver, normalized),

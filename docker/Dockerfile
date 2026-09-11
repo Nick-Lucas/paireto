@@ -17,6 +17,7 @@ RUN sed -i 's|URIs: http://|URIs: https://|' /etc/apt/sources.list.d/debian.sour
       xauth \
       dbus-x11 \
       tmux \
+      ripgrep \
       git \
       ca-certificates \
       openssl \
@@ -81,6 +82,9 @@ WORKDIR /workspace
 # The headless display the entrypoint's Xvfb serves. Set as an image ENV (not just an entrypoint
 # export) so `docker compose exec`-ed commands — which don't pass through the entrypoint — inherit it.
 ENV DISPLAY=:99
+
+RUN echo '--sort=path' > /etc/ripgreprc
+ENV RIPGREP_CONFIG_PATH=/etc/ripgreprc
 
 COPY entrypoint.sh /usr/local/bin/paireto-entrypoint.sh
 RUN chmod +x /usr/local/bin/paireto-entrypoint.sh
