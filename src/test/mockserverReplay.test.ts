@@ -10,6 +10,7 @@ import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import * as zlib from "node:zlib";
 
 import { extractJsonRpc } from "../e2e/mockserver/mcpClient.js";
 import { RECORDED_FEEDBACK_ID } from "../review/feedbackId.js";
@@ -38,7 +39,7 @@ import {
   normalizeCodexBody,
   normalizeKiroBody,
 } from "../e2e/proxy/normalize.js";
-import { isEventStreamContentType } from "../e2e/proxy/normalizingProxy.js";
+import { decodeRequestBody, isEventStreamContentType } from "../e2e/proxy/normalizingProxy.js";
 
 import { readPlanTurn as readPlanTurnFrom } from "../plugins/agent-plugin/com.openai.codex/planTurn.js";
 
@@ -87,7 +88,7 @@ suite("provider-replay: matrix selection", () => {
   const labels = (pairs: { label: string }[]): string[] => pairs.map((pair) => pair.label);
 
   test("includes every supported terminal harness", () => {
-    assert.deepStrictEqual(E2E_DRIVERS, ["claudecode", "codex", "kiro", "opencode"]);
+    assert.deepStrictEqual(E2E_DRIVERS, ["claudecode", "codex", "kiro", "opencode", "pi"]);
   });
 
   test("a pair is labelled with its case and a driver tag, which is its suite title", () => {
@@ -95,7 +96,7 @@ suite("provider-replay: matrix selection", () => {
   });
 
   test("no filter selects the whole matrix", () => {
-    assert.strictEqual(filterPairs(matrix, {}).length, 8);
+    assert.strictEqual(filterPairs(matrix, {}).length, 2 * E2E_DRIVERS.length);
   });
 
   test("a driver tag selects that driver across every case", () => {
@@ -111,6 +112,7 @@ suite("provider-replay: matrix selection", () => {
       "fullflow @codex",
       "fullflow @kiro",
       "fullflow @opencode",
+      "fullflow @pi",
     ]);
   });
 
@@ -128,7 +130,7 @@ suite("provider-replay: matrix selection", () => {
 
 suite("provider-replay: recorded endpoints", () => {
   test("only conversation endpoints are recorded", () => {
-    for (const driver of ["claudecode", "codex", "opencode"] as const) {
+    for (const driver of ["claudecode", "codex", "opencode", "pi"] as const) {
       assert.strictEqual(
         recordsRequest(driver, { path: "/backend-api/wham/usage" }),
         false,
@@ -1266,7 +1268,7 @@ suite("provider-replay: transparent proxy env", () => {
 
 suite("provider-replay: normalizing proxy plan", () => {
   test("routes every driver through the shim and normalizes only replay requests", () => {
-    for (const driver of ["claudecode", "codex", "opencode"] as const) {
+    for (const driver of ["claudecode", "codex", "opencode", "pi"] as const) {
       assert.deepStrictEqual(normalizingProxyPlan("record", driver), {
         normalizeDriver: undefined,
         fatalMissPaths: undefined,
@@ -1294,6 +1296,43 @@ suite("provider-replay: SSE response detection", () => {
       true,
     );
     assert.strictEqual(isEventStreamContentType("application/json"), false);
+  });
+});
+
+suite("provider-replay: compressed request bodies", () => {
+  const body = Buffer.from('{"model":"gpt-5.6-luna"}', "utf8");
+
+  test("an uncompressed body is passed through untouched", () => {
+    assert.strictEqual(decodeRequestBody(body, undefined).toString("utf8"), body.toString("utf8"));
+    assert.strictEqual(decodeRequestBody(body, "identity").toString("utf8"), body.toString("utf8"));
+  });
+
+  test("zstd is decoded, so Pi's compressed request has a match key a cassette can hold", () => {
+    const compressed = zlib.zstdCompressSync(body);
+    assert.notStrictEqual(compressed.toString("utf8"), body.toString("utf8"));
+    assert.strictEqual(
+      decodeRequestBody(compressed, "zstd").toString("utf8"),
+      body.toString("utf8"),
+    );
+  });
+
+  test("gzip, deflate and brotli are decoded too", () => {
+    assert.strictEqual(
+      decodeRequestBody(zlib.gzipSync(body), "gzip").toString("utf8"),
+      body.toString("utf8"),
+    );
+    assert.strictEqual(
+      decodeRequestBody(zlib.deflateSync(body), "deflate").toString("utf8"),
+      body.toString("utf8"),
+    );
+    assert.strictEqual(
+      decodeRequestBody(zlib.brotliCompressSync(body), "br").toString("utf8"),
+      body.toString("utf8"),
+    );
+  });
+
+  test("an unknown encoding fails loudly rather than recording an opaque body", () => {
+    assert.throws(() => decodeRequestBody(body, "snappy"), /Content-Encoding/);
   });
 });
 
