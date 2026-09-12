@@ -19,6 +19,7 @@ import {
   kiroInstalledProbe,
   readAgentPluginVersion,
 } from "../bridge/KiroInstaller.js";
+import { installPi, piInstalledProbe, readPiPackageVersion } from "../bridge/PiInstaller.js";
 import {
   claudeInstalledVersion,
   installClaude,
@@ -151,10 +152,21 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
   {
     id: "pi",
     name: "Pi TUI",
-    available: false,
-    // Planned: there is nothing to install, so there is never anything installed.
-    installedProbe: () => ({ state: "not-installed" }),
+    available: true,
+    // Stages the package tree in a durable dir and registers that path in Pi's settings, because a
+    // local Pi package is referenced by absolute path rather than copied.
+    install: async (ctx) => {
+      const result = await installPi(ctx);
+      if (result.ok) {
+        writeInstalledStamp(ctx.stableDir, readPiPackageVersion(ctx.pluginsRoot));
+      }
+      return result;
+    },
+    installedProbe: (ctx) => piInstalledProbe(ctx),
     profile: { name: "pi", command: "pi" },
+    note:
+      "Plan review is opt-in per session: start the turn with `/paireto-plan <what you want>`. " +
+      "Ask for a review yourself with `/skill:paireto-review`.",
   },
 ];
 

@@ -11,6 +11,7 @@ import { ClaudeCodeStrategy } from "./ClaudeCodeStrategy.js";
 import { CodexStrategy } from "./CodexStrategy.js";
 import { KiroStrategy } from "./KiroStrategy.js";
 import { OpenCodeStrategy } from "./OpenCodeStrategy.js";
+import { PiStrategy } from "./PiStrategy.js";
 
 export class AgentServiceLocator {
   // One entry per Harness — the literal map is the single point that knows the full set of harnesses.
@@ -20,6 +21,7 @@ export class AgentServiceLocator {
       ["codex", new CodexStrategy()],
       ["kiro", new KiroStrategy()],
       ["opencode", new OpenCodeStrategy()],
+      ["pi", new PiStrategy()],
     ],
   );
 

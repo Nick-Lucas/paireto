@@ -21,9 +21,14 @@ const HOOK_BUNDLE_MAX_BYTES = 80 * 1024;
 /** Each plugin's static asset tree and where the build copies it. `skip` names entries of the output
  *  directory that belong to another tree — the root manifest's output is the whole plugin tree. */
 const ASSET_TREES = [
-  { src: "src/plugins/assets", out: PLUGINS, skip: ["agent-plugin", "claude-code", "opencode"] },
+  {
+    src: "src/plugins/assets",
+    out: PLUGINS,
+    skip: ["agent-plugin", "claude-code", "opencode", "pi"],
+  },
   { src: "src/plugins/claude-code/assets", out: `${PLUGINS}/claude-code`, skip: [] },
   { src: "src/plugins/opencode/assets", out: `${PLUGINS}/opencode`, skip: [] },
+  { src: "src/plugins/pi/assets", out: `${PLUGINS}/pi`, skip: ["extensions"] },
 ];
 
 interface HookCommand {
