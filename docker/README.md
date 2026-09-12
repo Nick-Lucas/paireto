@@ -48,7 +48,7 @@ so a test exec never races the install.
 ## How it works
 
 - `Dockerfile` — node + Electron/Chromium runtime libs + `xvfb`, `tmux`, `git`, OpenSSL,
-  and the `claude` / `codex` / `kiro-cli` / `opencode` CLIs. OpenSSL creates the long-lived, machine-local proxy
+  and the `claude` / `codex` / `kiro-cli` / `opencode` / `pi` CLIs. OpenSSL creates the long-lived, machine-local proxy
   identity under the ignored bind-mounted cert directory; no test private keys live in the image or
   Git. pnpm is pinned to the host's version. `DISPLAY=:99` is an image ENV so exec'd commands (which
   skip the entrypoint) inherit it.
@@ -61,7 +61,8 @@ so a test exec never races the install.
   once, then execs the run with the per-run variables attached. `ANTHROPIC_API_KEY` is forwarded only
   in record mode, so a check run cannot reach a real provider even if the key is exported.
 - `docker-compose.e2e.yml` — E2E-only overlay: mounts the staged Claude secret (`./.secrets`, read-only
-  at `/paireto-secrets`) plus `~/.codex`, `~/.local/share/opencode`, `~/.config/opencode`.
+  at `/paireto-secrets`) plus `~/.codex` (which Pi also records against — it reads the same ChatGPT
+  subscription through its own provider), `~/.local/share/opencode`, `~/.config/opencode`.
 - `docker-compose.mockserver.yml` — adds MockServer for every E2E run. Record combines this with
   the credential overlay; check deliberately does not, seeds fake auth, installs a strict 599 catch-all,
   and runs with MockServer in `SIMULATE` mode so a fixture miss cannot reach a provider.

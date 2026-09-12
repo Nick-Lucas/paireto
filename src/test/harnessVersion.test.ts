@@ -41,7 +41,7 @@ suite("cassette platform", () => {
   });
 
   test("every committed cassette records the platform it was captured on", () => {
-    for (const driver of ["claudecode", "codex", "opencode"]) {
+    for (const driver of ["claudecode", "codex", "opencode", "pi"]) {
       const file = path.resolve(
         __dirname,
         `../../src/e2e/fixtures/${fixtureFileName("fullflow", driver)}`,
@@ -91,7 +91,7 @@ suite("cassette envelope", () => {
   });
 
   test("every committed cassette is stamped for its own driver", () => {
-    for (const driver of ["claudecode", "codex", "opencode"]) {
+    for (const driver of ["claudecode", "codex", "opencode", "pi"]) {
       const file = path.resolve(
         __dirname,
         `../../src/e2e/fixtures/${fixtureFileName("fullflow", driver)}`,

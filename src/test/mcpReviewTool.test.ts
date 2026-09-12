@@ -211,7 +211,7 @@ suite("MCP paireto_plan_review tool exposure", () => {
     );
   });
 
-  for (const harness of ["claudecode", "codex", "opencode"] as const) {
+  for (const harness of ["claudecode", "codex", "opencode", "pi"] as const) {
     test(`${harness} does not get the plan-review tool`, async () => {
       assert.deepStrictEqual(
         await toolNames(harness),

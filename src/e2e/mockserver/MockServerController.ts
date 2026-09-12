@@ -144,6 +144,11 @@ const PROFILES: Record<string, HarnessProfile> = {
   opencode: {
     fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
   },
+  // Pi reaches the ChatGPT backend through its own `openai-codex` provider, so it records the same
+  // endpoints Codex does. Its startup version/package checks are switched off with PI_OFFLINE.
+  pi: {
+    fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
+  },
 };
 
 /** Whether a recorded exchange is committed to the cassette. */

@@ -10,6 +10,7 @@ import { assetOnlyBundle, PLUGIN_OUT_ROOT } from "./buildConfig.mts";
 import { claudeCodeConfigs } from "./claude-code/esbuild.mts";
 import { agentPluginConfigs } from "./agent-plugin/esbuild.mts";
 import { openCodeConfigs } from "./opencode/esbuild.mts";
+import { piConfigs } from "./pi/esbuild.mts";
 
 /** Dev-only: a requireable build of the shared bridge client for scripts/emulator.ts, which runs
  *  under Node's type stripping and so cannot import the TypeScript sources itself. dist/ is not in
@@ -33,6 +34,7 @@ export function pluginConfigs(ctx: PluginBuildContext): BuildOptions[] {
     ...claudeCodeConfigs(ctx),
     ...agentPluginConfigs(ctx),
     ...openCodeConfigs(ctx),
+    ...piConfigs(ctx),
     // The marketplace manifest sits at the root of the plugin tree, above any single plugin — it is
     // what `claude plugin marketplace add <dir>` points at.
     assetOnlyBundle(ctx, "src/plugins/assets", "."),

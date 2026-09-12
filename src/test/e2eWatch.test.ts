@@ -4,6 +4,7 @@
 import * as assert from "node:assert";
 
 import { openCodeRunArgs, openCodeRunFatal } from "../e2e/drivers/opencode.js";
+import { keepRpcLine, piPromptLine, piRpcFatal } from "../e2e/drivers/pi.js";
 import {
   attachCommand,
   createPaneWatch,
@@ -83,6 +84,22 @@ suite("OpenCode run agent", () => {
   });
 });
 
+suite("Pi RPC session", () => {
+  test("plan mode rides on the package's own command", () => {
+    assert.strictEqual(piPromptLine("add hello.txt", true), "/paireto-plan add hello.txt");
+  });
+
+  test("ordinary work is sent as the user typed it", () => {
+    assert.strictEqual(piPromptLine("/skill:paireto-review go", false), "/skill:paireto-review go");
+  });
+
+  test("token-delta events are kept out of the failure log, which the reporter would drop", () => {
+    assert.strictEqual(keepRpcLine(JSON.stringify({ type: "message_update" })), false);
+    assert.strictEqual(keepRpcLine(JSON.stringify({ type: "tool_execution_end" })), true);
+    assert.strictEqual(keepRpcLine("not json at all"), true);
+  });
+});
+
 suite("E2E fail-fast signals", () => {
   test("an auto-rejected permission ends the run, naming the request", () => {
     const fatal = openCodeRunFatal(
@@ -98,6 +115,25 @@ suite("E2E fail-fast signals", () => {
     assert.ok(
       openCodeRunFatal("Error: The user rejected permission to use this specific tool call."),
     );
+  });
+
+  test("a rejected Pi RPC command ends the run, quoting what Pi said", () => {
+    const fatal = piRpcFatal(
+      JSON.stringify({ type: "response", command: "prompt", success: false, error: "busy" }),
+    );
+
+    assert.ok(fatal);
+    assert.match(fatal, /busy/);
+  });
+
+  test("an accepted Pi RPC command and a plain event are not fatal", () => {
+    for (const line of [
+      JSON.stringify({ id: "pai-1", type: "response", command: "prompt", success: true }),
+      JSON.stringify({ type: "agent_settled" }),
+      "not json at all",
+    ]) {
+      assert.strictEqual(piRpcFatal(line), undefined, line);
+    }
   });
 
   test("ordinary progress is not fatal", () => {

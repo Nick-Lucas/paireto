@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as http from "node:http";
 import * as https from "node:https";
 import type { Socket } from "node:net";
+import * as zlib from "node:zlib";
 
 import type { E2EDriver } from "../mockserver/mode.js";
 import { recordReplayMiss } from "../replayMiss.js";
@@ -96,7 +97,9 @@ async function handleRequest(
   opts: NormalizingProxyOptions,
 ): Promise<void> {
   const host = (req.headers.host ?? "api.anthropic.com").split(":")[0];
-  const raw = await readBody(req);
+  const raw = decodeRequestBody(await readBody(req), req.headers["content-encoding"]).toString(
+    "utf8",
+  );
   const isJson = (req.headers["content-type"] ?? "").includes("json");
   const body =
     opts.normalizeDriver && req.method === "POST" && raw.length && isJson
@@ -129,6 +132,8 @@ async function handleRequest(
       headers[k] = v;
     }
   }
+  // The body was decoded above, so the request that leaves here is plain JSON.
+  delete headers["content-encoding"];
   headers.host = host;
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
   await forwardThroughMockServer({
@@ -282,13 +287,47 @@ function noteStrictMiss(
   });
 }
 
-function readBody(req: http.IncomingMessage): Promise<string> {
+function readBody(req: http.IncomingMessage): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     req.on("data", (c: Buffer) => chunks.push(c));
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+/**
+ * Decode a compressed request body, or return it unchanged.
+ *
+ * Pi's ChatGPT transport zstd-compresses the SSE request body unconditionally (Codex offers
+ * `enable_request_compression = false`; Pi has no such switch). A compressed body has no match key a
+ * cassette can hold and nothing a normalizer can reach, so the shim decodes it here and forwards the
+ * plain JSON — the same bytes Codex sends with compression off — to MockServer, dropping the encoding
+ * header with it. Record therefore captures plain JSON and replay presents the same plain JSON.
+ */
+export function decodeRequestBody(
+  body: Buffer,
+  contentEncoding: string | string[] | undefined,
+): Buffer {
+  const encoding = (Array.isArray(contentEncoding) ? contentEncoding[0] : contentEncoding)
+    ?.trim()
+    .toLowerCase();
+  if (!encoding || encoding === "identity" || body.length === 0) {
+    return body;
+  }
+  if (encoding === "zstd") {
+    return zlib.zstdDecompressSync(body);
+  }
+  if (encoding === "gzip" || encoding === "x-gzip") {
+    return zlib.gunzipSync(body);
+  }
+  if (encoding === "deflate") {
+    return zlib.inflateSync(body);
+  }
+  if (encoding === "br") {
+    return zlib.brotliDecompressSync(body);
+  }
+  throw new Error(`normalizing proxy cannot decode request Content-Encoding: ${encoding}`);
 }
 
 /** `close()` alone waits for in-flight connections, and a harness killed mid-request leaves some that
