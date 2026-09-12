@@ -63,7 +63,9 @@ runs `pnpm compile` + `pnpm compile-tests` + `PAIRETO_E2E_MODE=record node out/e
 
 Cassettes are recorded in the Docker container. `pnpm e2e:check:docker` is authoritative and covers
 every driver; a native `pnpm e2e:check` works for **claudecode and opencode** and warns up front when
-the cassette's platform differs.
+the cassette's platform differs. Native **pi** replay misses for a second reason of its own: Pi writes
+the absolute path of its own installation into the system prompt, and a global npm install is not
+spelled the same on the host as in the container.
 
 Mock runs use `/private/tmp` (`mockTmpRoot`) — canonical on macOS and in the container alike — so the
 sandbox and harness homes are spelled identically wherever the run happens. What remains platform-
@@ -115,7 +117,7 @@ Each recording run **uses the selected subscription** and takes ~1–3 min. You 
 binary/auth is missing the run **FAILs** with the reason (`E2E: FAIL — driver "<x>" cannot run:
 <reason>`) — never a silent skip.
 
-The other three drivers must complete the full flow. Codex uses native Plan mode. Plan feedback
+The other four drivers must complete the full flow. Codex uses native Plan mode. Plan feedback
 returns a supported Stop `decision:"block"`, which Codex turns into a new continuation prompt using the hook's
 reason. Plan approval emits no hook output and finishes the turn. Codex Stop hooks receive
 `permission_mode` but cannot output a collaboration-mode change; `PermissionRequest` approval applies
@@ -150,8 +152,8 @@ How it works:
   subscription OAuth while forcing replayable SSE instead of WebSocket attempts.
 - **record** = `CAPTURE` (proxy forwards each request to its real host and records it), then
   `promote_recordings` → retrieve the expectations → strip volatile matchers → commit the fixture.
-  The shim passes request bodies through unchanged. This works against the OAuth subscription for
-  **all three** harnesses.
+  The shim passes request bodies through unchanged, apart from decoding a compressed one (see below).
+  This works against the OAuth subscription for **every** harness.
 - **check** = load `fixtures/<case>.<driver>.json` plus local startup responses, add a lowest-priority
   599 catch-all, then enable `SIMULATE`. The check compose overlay mounts no user credentials; each
   harness gets syntactically valid, far-future fake OAuth state. Drift fails loud and cannot hit a
@@ -159,6 +161,12 @@ How it works:
   harness homes use fixed `/tmp` paths so request bodies reproduce, and the sandbox's initial commit
   is dated from a fixed point so its commit id does too — an agent that runs `git log` puts that id
   straight into its next request.
+- **A compressed request body is decoded by the shim before MockServer sees it.** Pi zstd-compresses
+  its ChatGPT request bodies unconditionally (Codex offers `enable_request_compression = false`; Pi
+  has no such switch), and a compressed body has no match key a cassette can hold and nothing a
+  normalizer can reach. The shim decodes it and drops the encoding header, so record captures plain
+  JSON and replay presents the same plain JSON. An encoding it cannot decode fails loudly rather than
+  committing an opaque body.
 - Request matchers discard provider headers and narrowly canonicalize account/environment metadata,
   prompt-cache controls, deterministic workflow tool-result wording, and the order (never the
   contents) of a directory listing. User prompts, model messages, tool names/calls/arguments, and
@@ -167,7 +175,7 @@ How it works:
   advertised order varies between runs), and **Paireto's own tools are kept whole — description and
   schema** — so a regression that stopped offering them, or shipped a broken `paireto_submit_plan`
   schema, fails replay instead of quietly matching. Every other tool is reduced to its name, since
-  provider descriptions and built-in schemas churn each CLI release. One normalizer serves all three
+  provider descriptions and built-in schemas churn each CLI release. One normalizer serves every
   harnesses, so none of them can drift from this.
 - Stored response headers use a whitelist: only canonical `Content-Type` is retained. All cookie
   headers and any future provider-specific headers are discarded before a fixture is written.
@@ -197,6 +205,7 @@ are never written.
 | `codex`      | `codex` + `tmux`    | `~/.codex/auth.json`                                                              |
 | `kiro`       | `kiro-cli` + `tmux` | keychain `kirocli:*` (or `auth_kv` in `kiro-cli/data.sqlite3`), or `KIRO_API_KEY` |
 | `opencode`   | `opencode`          | `~/.local/share/opencode/auth.json` (built-in OpenAI OAuth provider)              |
+| `pi`         | `pi`                | `~/.codex/auth.json`, restated in Pi's own credential shape                       |
 
 - `claudecode` / `codex` / `kiro` need **tmux** on PATH for startup keystrokes and failure-screen capture.
 - `kiro` keeps its sign-in in a per-platform secret store rather than a file, so recording stages it
@@ -208,6 +217,16 @@ are never written.
   once to refresh your own copy, then record again. Back-to-back Kiro recordings hit this most.
 - `opencode` runs a persistent `opencode serve` + one `opencode run --attach` turn with
   `openai/gpt-5.6-luna`. Both modes use an empty temporary config plus only the bundled Paireto plugin.
+- `pi` runs one persistent `pi --mode rpc` session and feeds each turn in as a JSON line, for the same
+  reason OpenCode uses `serve` + `run`: the post-hoc turn-end gate needs a process that outlives the
+  turn. It reaches the ChatGPT backend through Pi's own `openai-codex` provider, so recording spends
+  the SAME subscription the Codex driver does. Pi keeps that OAuth under its own provider id and in a
+  different shape, so `buildPiHome` RESTATES the machine's Codex token rather than copying the file,
+  taking `expires` from the access token's own `exp` claim — that keeps Pi on the token Codex already
+  holds, because a refresh rotates the refresh token and would leave your real `codex` sign-in stale.
+  The run pins `transport: "sse"` (Pi defaults to a WebSocket no HTTP proxy can record) and
+  `PI_OFFLINE=1` (no version or package update checks), and installs the package through the real
+  `installPi`.
 
 ## Running headless in Docker
 

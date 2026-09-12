@@ -12,6 +12,7 @@ const VERSION_COMMAND: Record<string, [string, string[]]> = {
   codex: ["codex", ["--version"]],
   kiro: ["kiro-cli", ["--version"]],
   opencode: ["opencode", ["--version"]],
+  pi: ["pi", ["--version"]],
 };
 
 /** The installed CLI's version line, or undefined when the binary is absent/unreadable. */

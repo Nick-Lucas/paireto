@@ -47,14 +47,19 @@ RUN sed -i 's|URIs: http://|URIs: https://|' /etc/apt/sources.list.d/debian.sour
 RUN npm install -g pnpm@11.21.0
 
 # --- Harness CLIs for the E2E suite (full e2e support baked in). ---
-# claude:   @anthropic-ai/claude-code  -> `claude`
-# codex:    @openai/codex              -> `codex`   (TODO: if a future release changes its distribution
-#                                                    away from npm, swap this for its documented installer)
-# opencode: opencode-ai                -> `opencode`
+# claude:   @anthropic-ai/claude-code       -> `claude`
+# codex:    @openai/codex                   -> `codex`   (TODO: if a future release changes its
+#                                                         distribution away from npm, swap this for its
+#                                                         documented installer)
+# opencode: opencode-ai                     -> `opencode`
+# pi:       @earendil-works/pi-coding-agent -> `pi`      (--ignore-scripts is what pi's own npm install
+#                                                         instructions use)
 RUN npm install -g \
       @anthropic-ai/claude-code \
       @openai/codex \
-      opencode-ai
+      opencode-ai \
+    && npm install -g --ignore-scripts @earendil-works/pi-coding-agent \
+    && pi --version
 
 # Every kiro-cli* binary is linked, not just the entry point: `kiro-cli chat` re-execs its sibling
 # `kiro-cli-chat` BY NAME through PATH (2.18.1 split chat and term out of the single binary), so

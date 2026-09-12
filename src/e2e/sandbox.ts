@@ -78,11 +78,13 @@ const FIXED_MOCK_NAMES = new Set([
   "paireto-e2e-codex",
   "paireto-e2e-opencode",
   "paireto-e2e-kiro",
+  "paireto-e2e-pi",
   "paireto-e2e-sandbox-root-test",
   "pai-e2e-claude-home",
   "pai-e2e-codex-home",
   "pai-e2e-opencode-home",
   "pai-e2e-kiro-home",
+  "pai-e2e-pi-home",
 ]);
 
 /** A fixed, cross-platform-stable path for a mock run's sandbox or harness home. */
@@ -322,6 +324,18 @@ export function probeOpenCode(mode: E2EMode = "record"): Availability {
   return fs.existsSync(dataAuth) ? true : "no opencode auth.json";
 }
 
+export function probePi(mode: E2EMode = "record"): Availability {
+  if (!onPath("pi")) {
+    return "pi binary not on PATH";
+  }
+  if (mode === "check") {
+    return true;
+  }
+  return fs.existsSync(path.join(os.homedir(), ".codex", "auth.json"))
+    ? true
+    : "no ~/.codex/auth.json — Pi records against the same ChatGPT subscription as Codex";
+}
+
 export function probeKiro(mode: E2EMode = "record"): Availability {
   if (!onPath("kiro-cli")) {
     return "kiro-cli binary not on PATH";
@@ -497,6 +511,101 @@ export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = 
     },
     cleanup: () => rm(dir, Boolean(opts.homeDir)),
   };
+}
+
+/**
+ * The Pi credential for the `openai-codex` provider, derived from the machine's Codex sign-in.
+ *
+ * Pi keeps ChatGPT OAuth under its own provider id in `auth.json` and takes the SAME client id as the
+ * Codex CLI, so one subscription serves both — but the shape differs, so the token has to be
+ * restated rather than copied. `expires` comes from the access token's own `exp` claim, which keeps
+ * Pi on the token Codex already holds instead of refreshing: a refresh rotates the refresh token and
+ * would leave the machine's real `codex` sign-in stale.
+ *
+ * Contents are never logged.
+ */
+export function piCredentialFromCodex(codexAuthJson: string): Record<string, unknown> | undefined {
+  let tokens: { access_token?: unknown; refresh_token?: unknown } | undefined;
+  try {
+    tokens = (JSON.parse(codexAuthJson) as { tokens?: typeof tokens }).tokens;
+  } catch {
+    return undefined;
+  }
+  const access = tokens?.access_token;
+  const refresh = tokens?.refresh_token;
+  if (typeof access !== "string" || typeof refresh !== "string") {
+    return undefined;
+  }
+  const claims = decodeJwtClaims(access);
+  const accountId = (claims["https://api.openai.com/auth"] as { chatgpt_account_id?: unknown })
+    ?.chatgpt_account_id;
+  const exp = claims.exp;
+  if (typeof accountId !== "string" || typeof exp !== "number") {
+    return undefined;
+  }
+  return { "openai-codex": { type: "oauth", access, refresh, expires: exp * 1000, accountId } };
+}
+
+/** The payload claims of an unverified JWT, or an empty object when it cannot be read. */
+function decodeJwtClaims(token: string): Record<string, unknown> {
+  try {
+    const payload = token.split(".")[1];
+    return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<
+      string,
+      unknown
+    >;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Build an isolated pi home: a temp HOME plus PI_CODING_AGENT_DIR holding the auth.json Pi reads.
+ * Package staging and settings.json are the driver's job.
+ */
+export function buildPiHome(opts: { checkMode?: boolean; homeDir?: string } = {}): HarnessHome {
+  const dir = opts.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-pi-"));
+  if (opts.homeDir) {
+    prepareFixedMockDir(opts.homeDir);
+  }
+  const agentDir = path.join(dir, "agent");
+  fs.mkdirSync(agentDir, { recursive: true });
+  const authPath = path.join(agentDir, "auth.json");
+  const credential = opts.checkMode
+    ? {
+        "openai-codex": {
+          type: "oauth",
+          access: fakeJwt({
+            sub: "paireto-e2e-check",
+            exp: 4102444800,
+            "https://api.openai.com/auth": {
+              chatgpt_account_id: "00000000-0000-4000-8000-0000000000c6",
+              chatgpt_plan_type: "pro",
+            },
+          }),
+          refresh: "paireto-e2e-check-fake-refresh",
+          expires: 4102444800000,
+          accountId: "00000000-0000-4000-8000-0000000000c6",
+        },
+      }
+    : piCredentialFromCodex(readFileOrEmpty(path.join(os.homedir(), ".codex", "auth.json")));
+  if (credential) {
+    fs.writeFileSync(authPath, JSON.stringify(credential));
+    fs.chmodSync(authPath, 0o600);
+  }
+  return {
+    env: { HOME: dir, PI_CODING_AGENT_DIR: agentDir },
+    cleanup: () => rm(dir, Boolean(opts.homeDir)),
+  };
+}
+
+/** Read a file, or an empty string when it is missing. Contents are never logged. */
+function readFileOrEmpty(file: string): string {
+  try {
+    return fs.readFileSync(file, "utf8");
+  } catch {
+    return "";
+  }
 }
 
 /** Syntactically valid, unsigned test JWT. Replay never sends it beyond strict MockServer SIMULATE. */

@@ -76,12 +76,14 @@ suite("E2E spec routing", () => {
       "claudecode",
       "codex",
       "opencode",
+      "pi",
     ]);
     assert.deepStrictEqual(driversForSharedSpec(dir, "guidedreview"), [
       "claudecode",
       "codex",
       "kiro",
       "opencode",
+      "pi",
     ]);
   });
 
