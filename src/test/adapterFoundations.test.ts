@@ -230,7 +230,7 @@ suite("onboarding install stamp + installedProbe", () => {
   });
 
   test("every available agent has an installer", () => {
-    for (const id of ["claude-code", "codex", "kiro", "opencode"]) {
+    for (const id of ["claude-code", "codex", "kiro", "opencode", "pi"]) {
       const agent = findAgent(id);
       assert.strictEqual(agent?.available, true, `${id} available`);
       assert.ok(agent?.install, `${id} has an installer`);

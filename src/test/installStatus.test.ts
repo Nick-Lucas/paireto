@@ -33,7 +33,7 @@ suite("agent setup prompt", () => {
       row("claude-code", "not-installed"),
       row("codex", "not-installed"),
       row("opencode", "not-installed"),
-      row("pi", "not-installed", false),
+      row("planned-agent", "not-installed", false),
     ];
     assert.deepStrictEqual(setupPrompt(rows), { kind: "install" });
   });
@@ -57,7 +57,7 @@ suite("agent setup prompt", () => {
   });
 
   test("unavailable agents never raise a prompt", () => {
-    assert.strictEqual(setupPrompt([row("pi", "not-installed", false)]), undefined);
+    assert.strictEqual(setupPrompt([row("planned-agent", "not-installed", false)]), undefined);
   });
 });
 
@@ -121,8 +121,8 @@ suite("one agent's probe", () => {
     let asked = false;
     const probe = await agentInstallProbe(
       {
-        id: "pi",
-        name: "Pi TUI",
+        id: "planned-agent",
+        name: "Planned Agent",
         available: false,
         installedProbe: () => {
           asked = true;

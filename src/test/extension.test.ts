@@ -2643,6 +2643,7 @@ suite("AgentStrategy agnosticism (a second, non-Claude harness)", () => {
     assert.strictEqual(locator.strategyFor("claudecode").displayName, "Claude");
     assert.strictEqual(locator.strategyFor("codex").displayName, "Codex");
     assert.strictEqual(locator.strategyFor("opencode").displayName, "OpenCode");
+    assert.strictEqual(locator.strategyFor("pi").displayName, "Pi");
     assert.strictEqual(locator.strategyForWire("codex")?.displayName, "Codex");
     assert.strictEqual(locator.strategyForWire("nope"), undefined);
     // The agent-row label reflects the resolved harness's own display name.
