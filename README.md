@@ -76,7 +76,7 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 | **Codex TUI** | ✅ Supported |
 | **Kiro CLI v3** | ✅ Supported (V3+ only) |
 | **OpenCode TUI** | ✅ Supported |
-| Pi TUI | 🔜 Planned |
+| **Pi** | ✅ Supported |
 | Others? | ＃ Open an Issue |
 
 # Workflows
@@ -86,9 +86,14 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 When your agent finishes planning, the plan opens in VS Code and the agent waits. You may leave inline
 comments from the VS Code editor, then click **Approve** or **Send Feedback** to instruct the agent
 
+**Pi has no plan mode of its own, so Paireto adds one.** Start the turn with
+`/paireto-plan <what you want>`: while it is on, Pi's `write` and `edit` tools are blocked and the
+agent submits its plan for review instead. Approving the plan lifts the block, and Pi implements it
+in the same turn.
+
 ## Review Mode
 
-When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill.
+When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill (`/skill:paireto-review` in Pi).
 
 **Kiro is the exception: it has no automatic review.** Kiro runs its Stop hooks once per agent run,
 so the one pass is usually spent before the work is finished and a review gated on it opens late or
@@ -99,8 +104,8 @@ Diffs are fully functional editors with LSPs and linters working as normal. Add 
 
 ## Guided Review
 
-Ask your agent for a guided review (`/paireto:guided-review`, `$paireto-guided-review`, or
-`/paireto-guided-review`) and it studies the changes, then hands VS Code a **review plan**: the changed
+Ask your agent for a guided review (`/paireto:guided-review`, `$paireto-guided-review`,
+`/paireto-guided-review`, or `/skill:paireto-guided-review` in Pi) and it studies the changes, then hands VS Code a **review plan**: the changed
 files grouped into named changesets, each with a description and its files in the order you should read
 them.
 
