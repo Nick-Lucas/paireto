@@ -69,7 +69,11 @@ import {
 } from "../review/ReviewController.js";
 import { dirtyTargetDocs } from "../review/stageSaves.js";
 import { relocateReviewAnchor } from "../review/commentAnchors.js";
-import { compareToEqual, currentFileCompareKind } from "../review/reviewSelectors.js";
+import {
+  compareToEqual,
+  currentFileCompareKind,
+  filterRefItems,
+} from "../review/reviewSelectors.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
@@ -1843,6 +1847,7 @@ suite("Compare To picker", () => {
         comparePicker: vscode.QuickPick<vscode.QuickPickItem>,
         refPicker: vscode.QuickPick<vscode.QuickPickItem>,
       ) => void,
+      inspectFiltered?: (refPicker: vscode.QuickPick<vscode.QuickPickItem>) => void,
     ): Promise<void> => {
       const { command, compareDriver, driver: refDriver } = await openRefPicker();
       inspectInitial?.(compareDriver.picker, refDriver.picker);
@@ -1873,6 +1878,7 @@ suite("Compare To picker", () => {
           `${input} must not be selectable because it is not a ref`,
         );
       }
+      inspectFiltered?.(refDriver.picker);
       assert.ok(refDriver.accept, "the ref picker must register an accept listener");
       refDriver.accept();
       const completed = await Promise.race([
@@ -1944,11 +1950,59 @@ suite("Compare To picker", () => {
       await expectComparison(searchedBranch);
       await enterRef(baseSha);
       await expectComparison(baseSha);
+      const baseSubject = execFileSync("git", ["log", "-1", "--format=%s", "HEAD~1"], {
+        cwd: root,
+        encoding: "utf8",
+      }).trim();
+      await enterRef(
+        "HEAD~1",
+        "HEAD~1",
+        (_comparePicker, refPicker) => {
+          const commitItem = refPicker.items.find(
+            (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === "HEAD~1",
+          );
+          assert.ok(commitItem, "the ref picker must list the commits under HEAD");
+          assert.ok(
+            commitItem.label.includes("HEAD~1") && commitItem.label.includes(baseSubject),
+            `the commit row must name the commit: ${commitItem.label}`,
+          );
+        },
+        (refPicker) => {
+          const commitItem = refPicker.items.find(
+            (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === "HEAD~1",
+          );
+          assert.ok(
+            commitItem?.label.includes(baseSubject),
+            "a typed revision must keep its commit message in the filtered list",
+          );
+        },
+      );
+      await expectComparison("HEAD~1");
       await rejectRef("not-a-real-ref");
-      await expectComparison(baseSha);
+      await expectComparison("HEAD~1");
     } finally {
       Reflect.set(vscode.window, "createQuickPick", createQuickPick);
     }
+  });
+
+  test("filters the listed refs on ref name and commit message", () => {
+    const items = [
+      { label: "$(history) main", ref: "main" },
+      { label: "$(git-commit) HEAD~1 - fix the parser", ref: "HEAD~1", subject: "fix the parser" },
+      { label: "$(git-commit) HEAD~2 - add the picker", ref: "HEAD~2", subject: "add the picker" },
+    ];
+    assert.deepStrictEqual(
+      filterRefItems(items, "head~2").map((item) => item.ref),
+      ["HEAD~2"],
+    );
+    assert.deepStrictEqual(
+      filterRefItems(items, "parser").map((item) => item.ref),
+      ["HEAD~1"],
+    );
+    assert.deepStrictEqual(
+      filterRefItems(items, "  ").map((item) => item.ref),
+      ["main", "HEAD~1", "HEAD~2"],
+    );
   });
 
   test("matches the persisted global comparison by kind and ref", () => {

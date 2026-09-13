@@ -8,6 +8,8 @@ import type { CompareTo } from "../types.js";
 
 export type FileCompareTo = CompareTo | { kind: "index" } | { kind: "empty" };
 
+const BRANCH_COMMIT_ROWS = 20;
+
 interface CompareItem<T = CompareTo> extends vscode.QuickPickItem {
   value?: T;
   pickRef?: boolean;
@@ -201,11 +203,50 @@ async function pickRef(
   recentRefs: string[],
   currentRef?: string,
 ): Promise<CompareTo | undefined> {
-  const items = recentRefs.map((ref) => ({ label: `$(history) ${ref}`, ref }));
-  const picked = await showRefPicker(items, currentRef, (query) =>
-    Promise.all([diff.searchRefs(repoRoot, query), diff.refExists(repoRoot, query)]),
-  );
+  const commits = await diff.commitsBelowHead(repoRoot, BRANCH_COMMIT_ROWS);
+  const items: RefItem[] = [
+    ...recentRefs.map((ref) => ({ label: `$(history) ${ref}`, ref })),
+    ...commits.map((commit) => commitItem(`HEAD~${commit.depth}`, commit.subject)),
+  ];
+  const picked = await showRefPicker(items, currentRef, async (query) => {
+    const [matches, described] = await Promise.all([
+      diff.searchRefs(repoRoot, query),
+      diff.describeCommit(repoRoot, query),
+    ]);
+    const listed = filterRefItems(items, query);
+    const known = new Set(listed.map((item) => item.ref));
+    const found = [
+      ...listed,
+      ...matches
+        .filter((match) => !known.has(match))
+        .map((match) => ({ label: match, ref: match })),
+    ];
+    if (!described || known.has(query) || matches.includes(query)) {
+      return found;
+    }
+    return [commitItem(query, described.subject), ...found];
+  });
   return picked ? { kind: "ref", ref: picked.ref } : undefined;
+}
+
+function commitItem(ref: string, subject: string): RefItem {
+  return {
+    label: subject ? `$(git-commit) ${ref} - ${subject}` : `$(git-commit) ${ref}`,
+    ref,
+    subject,
+  };
+}
+
+export function filterRefItems(items: RefItem[], query: string): RefItem[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return items;
+  }
+  return items.filter(
+    (item) =>
+      item.ref.toLowerCase().includes(needle) ||
+      (item.subject ?? "").toLowerCase().includes(needle),
+  );
 }
 
 export function compareToEqual(a: CompareTo, b: CompareTo): boolean {
@@ -281,14 +322,15 @@ async function showComparePicker<T extends vscode.QuickPickItem>(
   });
 }
 
-interface RefItem extends vscode.QuickPickItem {
+export interface RefItem extends vscode.QuickPickItem {
   ref: string;
+  subject?: string;
 }
 
 async function showRefPicker(
   items: RefItem[],
   currentRef: string | undefined,
-  search: (query: string) => Promise<[matches: string[], exact: boolean]>,
+  search: (query: string) => Promise<RefItem[]>,
 ): Promise<RefItem | undefined> {
   const picker = vscode.window.createQuickPick<RefItem>();
   picker.title = "Compare To: branch / ref";
@@ -335,13 +377,9 @@ async function showRefPicker(
       }
       const sequence = ++searchSequence;
       picker.busy = true;
-      const [matches, exact] = await search(ref);
+      const found = await search(ref);
       if (settled || sequence !== searchSequence) {
         return;
-      }
-      const found = matches.map((match) => ({ label: match, ref: match }));
-      if (exact && !matches.includes(ref)) {
-        found.unshift({ label: ref, ref });
       }
       visibleItems = found;
       picker.items = found;

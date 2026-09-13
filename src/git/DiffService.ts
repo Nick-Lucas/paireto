@@ -41,6 +41,16 @@ export interface FileSides {
   modified: ContentRef;
 }
 
+export interface CommitSummary {
+  sha: string;
+  subject: string;
+}
+
+export interface BranchCommit {
+  depth: number;
+  subject: string;
+}
+
 /** Replace a tab's comparison point without changing the content shown on its modified side. */
 export function withBaseComparison(sides: FileSides, base: ContentRef): FileSides {
   return { base, modified: sides.modified };
@@ -215,6 +225,31 @@ export class DiffService {
   async refExists(repoRoot: string, ref: string): Promise<boolean> {
     const out = await gitSafe(repoRoot, ["rev-parse", "--verify", "--quiet", `${ref}^{commit}`]);
     return out.trim().length > 0;
+  }
+
+  async describeCommit(repoRoot: string, ref: string): Promise<CommitSummary | undefined> {
+    const out = await gitSafe(repoRoot, [
+      "log",
+      "-1",
+      "-z",
+      "--format=%H%x00%s",
+      `${ref}^{commit}`,
+    ]);
+    const [sha, subject] = splitNul(out);
+    return sha ? { sha, subject: subject ?? "" } : undefined;
+  }
+
+  async commitsBelowHead(repoRoot: string, limit: number): Promise<BranchCommit[]> {
+    const out = await gitSafe(repoRoot, [
+      "log",
+      "-z",
+      "--first-parent",
+      "--skip=1",
+      `--max-count=${limit}`,
+      "--format=%s",
+      "HEAD",
+    ]);
+    return splitNul(out).map((subject, index) => ({ depth: index + 1, subject }));
   }
 
   /** The branch below this one in a stack: the nearest ancestor commit another local branch points
