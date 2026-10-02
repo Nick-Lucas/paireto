@@ -1262,6 +1262,8 @@ export class ReviewController implements vscode.Disposable {
    * Editing the working-tree side of an editable staged/committed diff puts the change at the
    * unstaged level. Update only its tree location: the base URI and comparison remain unchanged, so
    * the tab, dirty buffer, caret, focus, and—most importantly—the user's chosen baseline are stable.
+   * The Changes list is left where it is: the edit is not a request to select the new Working Tree
+   * row, and scrolling to it interrupts the review in progress.
    */
   private maybeMarkAsUnstaged(uri: vscode.Uri): void {
     const open = this.openDiffFile;
@@ -1285,7 +1287,6 @@ export class ReviewController implements vscode.Disposable {
     const edited = markOpenDiffEdited(open);
     this.openDiffFile = edited; // flip synchronously: no re-entry
     this.openDiffs.set(input.original.toString(), edited);
-    this.activeDiffEmitter.fire({ repoRoot: open.repoRoot, group: "unstaged", path: open.path });
     this.debug(
       `edit: ${open.path} ${open.group} -> unstaged; comparison remains ${open.baseLabel ?? open.baseRef}`,
     );
