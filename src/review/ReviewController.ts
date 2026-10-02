@@ -283,7 +283,7 @@ export class ReviewController implements vscode.Disposable {
       ),
       reg(
         Commands.reviewCopyPath,
-        withArg(FileArg, (file) => vscode.env.clipboard.writeText(join(file.repoRoot, file.path))),
+        withArg(FileArg, (file) => vscode.env.clipboard.writeText(file.path)),
       ),
       reg(
         Commands.reviewRevealInExplorer,

@@ -41,13 +41,13 @@ suite("changed file context menu", () => {
     }
   });
 
-  test("Copy Path puts the absolute file path on the clipboard", async function () {
+  test("Copy Path puts the repo relative file path on the clipboard", async function () {
     this.timeout(30_000);
     await vscode.extensions.getExtension("Paireto.paireto")?.activate();
     const file = changedFile();
     await vscode.env.clipboard.writeText("");
     await vscode.commands.executeCommand("paireto.review.copyPath", { kind: "file", file });
-    assert.strictEqual(await vscode.env.clipboard.readText(), path.join(file.repoRoot, file.path));
+    assert.strictEqual(await vscode.env.clipboard.readText(), file.path);
   });
 
   test("Focus in Explorer reveals the file in the explorer", async function () {
