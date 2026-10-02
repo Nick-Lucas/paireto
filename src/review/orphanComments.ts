@@ -1,0 +1,43 @@
+import type { ReviewThread } from "./reviewTypes.js";
+
+export interface CommentFile {
+  repoRoot: string;
+  filePath: string;
+}
+
+export function fileKey(repoRoot: string, filePath: string): string {
+  return `${repoRoot}\0${filePath}`;
+}
+
+export function orphanCandidates(
+  threads: readonly ReviewThread[],
+  scanned: (repoRoot: string) => boolean,
+  changed: (repoRoot: string, filePath: string) => boolean,
+): ReviewThread[] {
+  return threads.filter(
+    (thread) =>
+      thread.filePath !== "" &&
+      thread.changeset === undefined &&
+      thread.sourceDocument === undefined &&
+      scanned(thread.repoRoot) &&
+      !changed(thread.repoRoot, thread.filePath),
+  );
+}
+
+export function orphanedFiles(candidates: readonly ReviewThread[]): CommentFile[] {
+  const files = new Map<string, CommentFile>();
+  for (const thread of candidates) {
+    files.set(fileKey(thread.repoRoot, thread.filePath), {
+      repoRoot: thread.repoRoot,
+      filePath: thread.filePath,
+    });
+  }
+  return [...files.values()];
+}
+
+export function orphanedComments(
+  candidates: readonly ReviewThread[],
+  present: ReadonlySet<string>,
+): ReviewThread[] {
+  return candidates.filter((thread) => !present.has(fileKey(thread.repoRoot, thread.filePath)));
+}

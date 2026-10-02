@@ -37,6 +37,7 @@ import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewPath } from "./ReviewPath.js";
 import { ReviewGateRegistry } from "./ReviewGateRegistry.js";
 import { relocateReviewAnchor } from "./commentAnchors.js";
+import { fileKey, orphanCandidates, orphanedComments, orphanedFiles } from "./orphanComments.js";
 import {
   BulkTargetArg,
   ChangesetIdArg,
@@ -116,6 +117,7 @@ export type RefreshReason =
   | "review-foreground"
   | "review-ended"
   | "save"
+  | "delete"
   | "write-op"
   | "add-comment"
   | "reveal-comment"
@@ -233,6 +235,8 @@ export class ReviewController implements vscode.Disposable {
   };
   /** Per-reason refresh() tally, read by the env-gated test control plane (nothing else). */
   private readonly refreshCounts = new Map<string, number>();
+
+  private readonly prunedComments = new Map<string, string>();
 
   constructor(
     private readonly roots: WorkspaceRootCatalog,
@@ -354,6 +358,11 @@ export class ReviewController implements vscode.Disposable {
       vscode.workspace.onDidSaveTextDocument((doc) => {
         if (doc.uri.scheme === "file" && this.roots.gitRootForPath(doc.uri.fsPath)) {
           void this.refresh("save");
+        }
+      }),
+      vscode.workspace.onDidDeleteFiles((e) => {
+        if (e.files.some((uri) => this.roots.gitRootForPath(uri.fsPath))) {
+          void this.refresh("delete");
         }
       }),
       // Keep the open-tab index and editor-title context in sync with tab lifecycle changes.
@@ -851,6 +860,39 @@ export class ReviewController implements vscode.Disposable {
       this.changeEmitter.fire();
     }
     this.reportFeedbackContext(roots);
+    await this.pruneOrphanedComments();
+  }
+
+  private async pruneOrphanedComments(): Promise<void> {
+    const feedback = this.feedback;
+    if (!feedback) {
+      return;
+    }
+    const candidates = orphanCandidates(
+      feedback.allThreads(),
+      (repoRoot) => this.repositoryStates.has(repoRoot),
+      (repoRoot, filePath) => this.allFiles(repoRoot).some((file) => file.path === filePath),
+    );
+    if (candidates.length === 0) {
+      return;
+    }
+    const probed = await Promise.all(
+      orphanedFiles(candidates).map(async (file) => ({
+        file,
+        onDisk: await fileExists(join(file.repoRoot, file.filePath)),
+      })),
+    );
+    if (this.feedback !== feedback) {
+      return;
+    }
+    const present = new Set(
+      probed.flatMap(({ file, onDisk }) => (onDisk ? [fileKey(file.repoRoot, file.filePath)] : [])),
+    );
+    for (const gone of orphanedComments(candidates, present)) {
+      log.info(`feedback ${gone.id} dropped: ${gone.filePath} no longer exists`);
+      this.prunedComments.set(gone.id, gone.filePath);
+      feedback.removeCommentOrThread(gone.id);
+    }
   }
 
   /**
@@ -1766,6 +1808,13 @@ export class ReviewController implements vscode.Disposable {
       return;
     }
     await this.refresh("reveal-comment");
+    const dropped = this.prunedComments.get(id);
+    if (dropped) {
+      void vscode.window.showInformationMessage(
+        `Paireto: ${dropped} no longer exists, so the comment on it was removed.`,
+      );
+      return;
+    }
     const c = this.getComments().find((model) => model.id === id);
     // A rebuild during the refresh replaces the comment; the new one is not this one.
     if (!c || this.feedback?.commentFor(id) !== entry || !entry.thread) {
@@ -2076,6 +2125,7 @@ export class ReviewController implements vscode.Disposable {
   useFeedback(session: FeedbackSession): void {
     this.feedback = session;
     this.changeEmitter.fire();
+    void this.pruneOrphanedComments();
   }
 
   private feedbackLabel(model: ReviewThread): string {
@@ -2210,6 +2260,15 @@ export class ReviewController implements vscode.Disposable {
 /** A changeset's live files sitting in one git layer — what its bulk Stage/Unstage acts on. */
 function filesInGroup(changeset: GuidedChangesetState, group: FileGroup): RepoChangedFile[] {
   return changeset.files.flatMap((row) => (row.file?.group === group ? [row.file] : []));
+}
+
+async function fileExists(target: string): Promise<boolean> {
+  try {
+    await fs.stat(target);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function filesByRoot(files: RepoChangedFile[]): Map<string, RepoChangedFile[]> {
