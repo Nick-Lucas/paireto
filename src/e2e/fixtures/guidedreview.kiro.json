@@ -13,7 +13,7 @@
             "KiroControlPlaneBearerService.ListAvailableModels"
           ]
         },
-        "body": "{\"origin\":\"AI_EDITOR\"}"
+        "body": "{\"origin\":\"KIRO_CLI\"}"
       },
       "httpResponse": {
         "statusCode": 200,
@@ -73,7 +73,7 @@
             "KiroRuntimeService.GetFeatureConfiguration"
           ]
         },
-        "body": "{\"origin\":\"KIRO_CLI\",\"version\":\"NORMALIZED\"}"
+        "body": "{\"origin\":\"KIRO_CLI\"}"
       },
       "httpResponse": {
         "statusCode": 200,
@@ -103,7 +103,7 @@
             "KiroRuntimeService.GenerateAssistantResponse"
           ]
         },
-        "body": "{\"conversationState\":{\"currentMessage\":{\"userInputMessage\":{\"content\":\"Continue\",\"userInputMessageContext\":{},\"origin\":\"KIRO_CLI\",\"modelId\":\"simple-task\"}},\"chatTriggerType\":\"MANUAL\",\"conversationId\":\"paireto-kiro-id-0\",\"history\":[{\"userInputMessage\":{\"content\":\"You generate a short, specific title for a coding assistant session, based on the user's first message.\\n\\nRules:\\n- 3 to 6 words. Never more than 8.\\n- Capture the concrete task or topic, not a generic restatement. Two messages that both start \\\"can you...\\\" must produce clearly different titles.\\n- Use Title Case. No surrounding quotes, no trailing punctuation, no \\\"Title:\\\" prefix, no code fences.\\n- Prefer an imperative phrase (\\\"Add Retry To S3 Upload\\\", \\\"Debug Flaky Login Test\\\") over a sentence.\\n- Output ONLY the title on a single line, nothing else.\\n\\nUser's first message:\\n/paireto-guided-review Group the uncommitted changes in this repository for review. Compare against the working tree, not a branch. Do not ask clarifying questions.\",\"origin\":\"KIRO_CLI\",\"modelId\":\"simple-task\"}},{\"assistantResponseMessage\":{\"content\":\"Title:\",\"toolUses\":[]}}],\"agentContinuationId\":\"paireto-kiro-id-1\",\"agentTaskType\":\"vibe\",\"rootConversationId\":\"paireto-kiro-id-2\"},\"agentMode\":\"vibe\"}"
+        "body": "{\"agentMode\":\"session-title\"}"
       },
       "httpResponse": {
         "statusCode": 200,

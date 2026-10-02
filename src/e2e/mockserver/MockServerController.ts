@@ -23,6 +23,7 @@ import { harnessVersion, platformDriftNote, versionDriftNote } from "../harnessV
 import { loadReplayMiss, type ReplayMiss } from "../replayMiss.js";
 import { normalizeRequestBody, scrubIdentity } from "../proxy/normalize.js";
 import { startNormalizingProxy } from "../proxy/normalizingProxy.js";
+import { CODEX_CHECK_ACCOUNT_ID } from "../sandbox.js";
 import { McpClient } from "./mcpClient.js";
 import { fixtureFileName, MOCK_URL_ENV, type E2EDriver, type E2EMode } from "./mode.js";
 
@@ -105,6 +106,21 @@ const LOCAL_BOOTSTRAP: Record<string, BootstrapExpectation[]> = {
         rate_limit_reached_type: null,
         promo: null,
         rate_limit_reset_credits: { available_count: 0, applicable_available_count: 0 },
+      }),
+    },
+    {
+      httpRequest: { method: "GET", path: "/backend-api/wham/accounts/check" },
+      httpResponse: jsonResponse({
+        accounts: [
+          {
+            id: CODEX_CHECK_ACCOUNT_ID,
+            plan_type: "free",
+            workspace_backend_origin: "NO_CONSTRAINT",
+            account_routing_override: "NO_CONSTRAINT",
+          },
+        ],
+        account_ordering: [CODEX_CHECK_ACCOUNT_ID],
+        default_account_id: CODEX_CHECK_ACCOUNT_ID,
       }),
     },
     {
