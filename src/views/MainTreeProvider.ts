@@ -184,8 +184,6 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   readonly onDidChangeTreeData = this.emitter.event;
   private readonly subs: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
-  /** A diff whose row isn't in the tree yet (e.g. the unstaged row before save) — select on arrival. */
-  private pendingReveal?: { repoRoot: string; group: FileGroup; path: string };
 
   constructor(
     private readonly agents: AgentSessionService,
@@ -202,11 +200,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     };
     this.subs.push(
       this.agents.onDidChange(fire),
-      this.review.onDidChangeState(() => {
-        this.emitter.fire();
-        this.updateBadge();
-        this.maybeRevealPending();
-      }),
+      this.review.onDidChangeState(() => this.onStateChanged()),
       this.plan.onDidChange(fire),
       this.installStatus.onDidChange(() => this.emitter.fire()),
       this.review.onDidChangeActiveDiff((t) => this.syncSelection(t)),
@@ -222,6 +216,14 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         this.agents.setMuted(commandSession(arg).sessionId, false),
       ),
     );
+  }
+
+  /** The changes model changed: redraw the rows and the badge. A row that arrives here — an edited
+   *  file saved into the Working Tree, an agent's write — is never selected: only a diff the user
+   *  opens or focuses moves the list, so the list holds still during a review. */
+  private onStateChanged(): void {
+    this.emitter.fire();
+    this.updateBadge();
   }
 
   /** Click an agent: switch the foreground gate to that agent's pending plan/review, else focus terminal. */
@@ -263,21 +265,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     // A review plan replaces the Changed Files list, so there is no `file` row to reveal — and
     // revealing one would drag the selection off the changeset row the user just clicked.
     if (this.review.getState().guided) {
-      this.pendingReveal = undefined;
       return;
     }
     if (this.rowFor(target)) {
       void this.revealRow(target);
-      this.pendingReveal = undefined;
-    } else {
-      this.pendingReveal = target; // row not in the tree yet (e.g. unstaged before save)
-    }
-  }
-
-  private maybeRevealPending(): void {
-    if (this.pendingReveal && this.rowFor(this.pendingReveal)) {
-      void this.revealRow(this.pendingReveal);
-      this.pendingReveal = undefined;
     }
   }
 
