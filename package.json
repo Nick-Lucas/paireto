@@ -158,6 +158,14 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "paireto.review.copyPath",
+        "title": "Copy Path"
+      },
+      {
+        "command": "paireto.review.revealInExplorer",
+        "title": "Focus in Explorer"
+      },
+      {
         "command": "paireto.review.stage",
         "title": "Stage Changes",
         "icon": "$(add)"
@@ -338,6 +346,14 @@
         },
         {
           "command": "paireto.review.openFile",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.revealInExplorer",
           "when": "false"
         },
         {
@@ -574,6 +590,16 @@
           "command": "paireto.review.openDiff",
           "when": "view == paireto.main && viewItem =~ /^changedFile:/",
           "group": "1_open@2"
+        },
+        {
+          "command": "paireto.review.copyPath",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
+          "group": "3_copy@1"
+        },
+        {
+          "command": "paireto.review.revealInExplorer",
+          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
+          "group": "4_reveal@1"
         },
         {
           "command": "paireto.review.stage",
