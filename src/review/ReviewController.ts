@@ -286,6 +286,19 @@ export class ReviewController implements vscode.Disposable {
         withArg(FileArg, (file) => this.openFile(file)),
       ),
       reg(
+        Commands.reviewCopyPath,
+        withArg(FileArg, (file) => vscode.env.clipboard.writeText(file.path)),
+      ),
+      reg(
+        Commands.reviewRevealInExplorer,
+        withArg(FileArg, (file) =>
+          vscode.commands.executeCommand(
+            "revealInExplorer",
+            vscode.Uri.file(join(file.repoRoot, file.path)),
+          ),
+        ),
+      ),
+      reg(
         Commands.reviewStage,
         withArg(FilesArg, (files) => this.stageFiles(files)),
       ),

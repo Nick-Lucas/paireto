@@ -26,6 +26,8 @@ export const Commands = {
   reviewRefresh: "paireto.review.refresh",
   reviewOpenDiff: "paireto.review.openDiff",
   reviewOpenFile: "paireto.review.openFile",
+  reviewCopyPath: "paireto.review.copyPath",
+  reviewRevealInExplorer: "paireto.review.revealInExplorer",
   reviewStage: "paireto.review.stage",
   reviewUnstage: "paireto.review.unstage",
   reviewDiscard: "paireto.review.discard",

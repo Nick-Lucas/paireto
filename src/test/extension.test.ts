@@ -234,6 +234,8 @@ suite("command manifest", () => {
       "paireto.plan.addQuestion",
       "paireto.review.openDiff",
       "paireto.review.openFile",
+      "paireto.review.copyPath",
+      "paireto.review.revealInExplorer",
       "paireto.review.stage",
       "paireto.review.unstage",
       "paireto.review.discard",
