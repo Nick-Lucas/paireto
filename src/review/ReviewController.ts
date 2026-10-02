@@ -1340,7 +1340,6 @@ export class ReviewController implements vscode.Disposable {
     const edited = markOpenDiffEdited(open);
     this.openDiffFile = edited; // flip synchronously: no re-entry
     this.openDiffs.set(input.original.toString(), edited);
-    this.activeDiffEmitter.fire({ repoRoot: open.repoRoot, group: "unstaged", path: open.path });
     this.debug(
       `edit: ${open.path} ${open.group} -> unstaged; comparison remains ${open.baseLabel ?? open.baseRef}`,
     );
