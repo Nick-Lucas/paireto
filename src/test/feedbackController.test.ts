@@ -92,6 +92,7 @@ function build(overrides: Record<string, unknown> = {}): Controller {
       commentSession: fakeComments(),
       repositoryStates: new Map(),
       lastFeedbackRef: new Map(),
+      prunedComments: new Map(),
       roots: { gitRoots: [] },
     },
     overrides,
@@ -298,7 +299,10 @@ suite("review controller feedback", () => {
       coordinator: { unregister: async () => {} },
       releaseReviewSlot: () => order.push("release"),
     });
-    c.useFeedback({ render: () => order.push("render") } as unknown as FeedbackSession);
+    c.useFeedback({
+      render: () => order.push("render"),
+      allThreads: () => [],
+    } as unknown as FeedbackSession);
     c.refresh = async (reason) => {
       assert.strictEqual(reason, "review-ended");
       assert.strictEqual(c.activeRequestId, undefined, "the slot is already given up");
