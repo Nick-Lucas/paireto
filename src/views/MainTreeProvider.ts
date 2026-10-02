@@ -218,9 +218,6 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     );
   }
 
-  /** The changes model changed: redraw the rows and the badge. A row that arrives here — an edited
-   *  file saved into the Working Tree, an agent's write — is never selected: only a diff the user
-   *  opens or focuses moves the list, so the list holds still during a review. */
   private onStateChanged(): void {
     this.emitter.fire();
     this.updateBadge();

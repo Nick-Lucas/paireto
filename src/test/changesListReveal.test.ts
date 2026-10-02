@@ -1,9 +1,3 @@
-// The Changes list must not scroll to a row that arrives after the user acted. Editing the
-// working-tree side of a staged or committed diff moves that file to the Working Tree group, and
-// the new row lands in the list only when the file is saved — long after the edit. Pulling the
-// list to it interrupts a review: the user is reading the diff they opened, not asking the tree to
-// follow the file.
-
 import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
@@ -25,14 +19,11 @@ import { MainTreeProvider } from "../views/MainTreeProvider.js";
 const REPO = "/repo";
 const NAME = "notes.txt";
 
-/** The part of the controller this test drives. Object.create skips the constructor, so the test
- *  supplies only the fields the edit path reads. */
 interface EditTracker {
   maybeMarkAsUnstaged(uri: vscode.Uri): void;
   openDiffFile?: OpenDiffState;
 }
 
-/** The part of the tree provider this test drives: the two paths that can reveal a row. */
 interface Tree {
   syncSelection(target: { repoRoot: string; group: FileGroup; path: string }): void;
   onStateChanged(): void;
