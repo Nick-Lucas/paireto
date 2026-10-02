@@ -73,6 +73,7 @@ import {
   compareToEqual,
   currentFileCompareKind,
   filterRefItems,
+  refSearchResults,
 } from "../review/reviewSelectors.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
 import type { ChangesModel } from "../git/DiffService.js";
@@ -1962,6 +1963,11 @@ suite("Compare To picker", () => {
             (item) => (item as vscode.QuickPickItem & { ref?: string }).ref === "HEAD~1",
           );
           assert.ok(commitItem, "the ref picker must list the commits under HEAD");
+          assert.strictEqual(
+            Reflect.get(refPicker, "sortByLabel"),
+            false,
+            "the ref picker must keep its own order instead of the VS Code match sort",
+          );
           assert.ok(
             commitItem.label.includes("HEAD~1") && commitItem.label.includes(baseSubject),
             `the commit row must name the commit: ${commitItem.label}`,
@@ -2002,6 +2008,27 @@ suite("Compare To picker", () => {
     assert.deepStrictEqual(
       filterRefItems(items, "  ").map((item) => item.ref),
       ["main", "HEAD~1", "HEAD~2"],
+    );
+  });
+
+  test("sorts the typed ref search results alphabetically with the typed revision first", () => {
+    const items = [
+      { label: "$(history) zeta", ref: "zeta" },
+      { label: "$(git-commit) HEAD~10 - fix", ref: "HEAD~10", subject: "fix" },
+      { label: "$(git-commit) HEAD~2 - fix", ref: "HEAD~2", subject: "fix" },
+    ];
+    assert.deepStrictEqual(
+      refSearchResults(items, "fix", ["feature/b", "Fix-a", "origin/fix"], undefined).map(
+        (item) => item.ref,
+      ),
+      ["feature/b", "Fix-a", "HEAD~2", "HEAD~10", "origin/fix"],
+    );
+    assert.deepStrictEqual(
+      refSearchResults(items, "abc123", ["zz-abc123", "abc123-branch"], {
+        sha: "abc123",
+        subject: "message",
+      }).map((item) => item.ref),
+      ["abc123", "abc123-branch", "zz-abc123"],
     );
   });
 

@@ -3,7 +3,7 @@
 
 import * as vscode from "vscode";
 
-import type { DiffService } from "../git/DiffService.js";
+import type { CommitSummary, DiffService } from "../git/DiffService.js";
 import type { CompareTo } from "../types.js";
 
 export type FileCompareTo = CompareTo | { kind: "index" } | { kind: "empty" };
@@ -213,20 +213,29 @@ async function pickRef(
       diff.searchRefs(repoRoot, query),
       diff.describeCommit(repoRoot, query),
     ]);
-    const listed = filterRefItems(items, query);
-    const known = new Set(listed.map((item) => item.ref));
-    const found = [
-      ...listed,
-      ...matches
-        .filter((match) => !known.has(match))
-        .map((match) => ({ label: match, ref: match })),
-    ];
-    if (!described || known.has(query) || matches.includes(query)) {
-      return found;
-    }
-    return [commitItem(query, described.subject), ...found];
+    return refSearchResults(items, query, matches, described);
   });
   return picked ? { kind: "ref", ref: picked.ref } : undefined;
+}
+
+const refCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+export function refSearchResults(
+  items: RefItem[],
+  query: string,
+  matches: string[],
+  described: CommitSummary | undefined,
+): RefItem[] {
+  const listed = filterRefItems(items, query);
+  const known = new Set(listed.map((item) => item.ref));
+  const found = [
+    ...listed,
+    ...matches.filter((match) => !known.has(match)).map((match) => ({ label: match, ref: match })),
+  ].sort((a, b) => refCollator.compare(a.ref, b.ref));
+  if (!described || known.has(query) || matches.includes(query)) {
+    return found;
+  }
+  return [commitItem(query, described.subject), ...found];
 }
 
 function commitItem(ref: string, subject: string): RefItem {
@@ -334,6 +343,7 @@ async function showRefPicker(
 ): Promise<RefItem | undefined> {
   const picker = vscode.window.createQuickPick<RefItem>();
   picker.title = "Compare To: branch / ref";
+  Reflect.set(picker, "sortByLabel", false);
   picker.items = items;
   const current = items.find((item) => item.ref === currentRef);
   if (current) {
