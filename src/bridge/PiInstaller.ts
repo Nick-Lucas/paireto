@@ -19,9 +19,7 @@ export function parsePiPackageVersion(json: string): string | undefined {
       const version = (parsed as { version?: unknown }).version;
       return typeof version === "string" ? version : undefined;
     }
-  } catch {
-    // malformed — treat as no version
-  }
+  } catch {}
   return undefined;
 }
 
@@ -60,8 +58,6 @@ export function withPackageRegistered(
   return { settings, changed: true };
 }
 
-/** Pi's settings as an object. An absent or empty file starts one; anything present but unreadable
- *  throws, because the alternative is writing our one key over settings we could not understand. */
 function parseSettings(settingsJson: string): Record<string, unknown> {
   if (settingsJson.trim() === "") {
     return {};

@@ -95,9 +95,7 @@ export default function paireto(pi: PiExtensionAPI): void {
         return;
       }
       connected.forward(type, { sessionId: id, ...extra });
-    } catch {
-      // fail open — telemetry must never break a turn
-    }
+    } catch {}
   }
 
   pi.on("session_start", (_event, ctx) => {
@@ -109,9 +107,7 @@ export default function paireto(pi: PiExtensionAPI): void {
       if (id && connected) {
         connected.attachLiveness(id);
       }
-    } catch {
-      // fail open
-    }
+    } catch {}
     forward(ctx, "session_start");
   });
 
@@ -120,9 +116,7 @@ export default function paireto(pi: PiExtensionAPI): void {
     mutatedPaths.clear();
     try {
       await bridge?.closeAll();
-    } catch {
-      // fail open
-    }
+    } catch {}
   });
 
   pi.on("before_agent_start", (event, ctx) => {

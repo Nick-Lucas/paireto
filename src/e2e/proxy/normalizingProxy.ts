@@ -132,7 +132,6 @@ async function handleRequest(
       headers[k] = v;
     }
   }
-  // The body was decoded above, so the request that leaves here is plain JSON.
   delete headers["content-encoding"];
   headers.host = host;
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
@@ -296,15 +295,6 @@ function readBody(req: http.IncomingMessage): Promise<Buffer> {
   });
 }
 
-/**
- * Decode a compressed request body, or return it unchanged.
- *
- * Pi's ChatGPT transport zstd-compresses the SSE request body unconditionally (Codex offers
- * `enable_request_compression = false`; Pi has no such switch). A compressed body has no match key a
- * cassette can hold and nothing a normalizer can reach, so the shim decodes it here and forwards the
- * plain JSON — the same bytes Codex sends with compression off — to MockServer, dropping the encoding
- * header with it. Record therefore captures plain JSON and replay presents the same plain JSON.
- */
 export function decodeRequestBody(
   body: Buffer,
   contentEncoding: string | string[] | undefined,

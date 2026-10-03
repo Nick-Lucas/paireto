@@ -153,8 +153,6 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     id: "pi",
     name: "Pi TUI",
     available: true,
-    // Stages the package tree in a durable dir and registers that path in Pi's settings, because a
-    // local Pi package is referenced by absolute path rather than copied.
     install: async (ctx) => {
       const result = await installPi(ctx);
       if (result.ok) {

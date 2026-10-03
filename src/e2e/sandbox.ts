@@ -515,17 +515,6 @@ export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = 
   };
 }
 
-/**
- * The Pi credential for the `openai-codex` provider, derived from the machine's Codex sign-in.
- *
- * Pi keeps ChatGPT OAuth under its own provider id in `auth.json` and takes the SAME client id as the
- * Codex CLI, so one subscription serves both — but the shape differs, so the token has to be
- * restated rather than copied. `expires` comes from the access token's own `exp` claim, which keeps
- * Pi on the token Codex already holds instead of refreshing: a refresh rotates the refresh token and
- * would leave the machine's real `codex` sign-in stale.
- *
- * Contents are never logged.
- */
 export function piCredentialFromCodex(codexAuthJson: string): Record<string, unknown> | undefined {
   let tokens: { access_token?: unknown; refresh_token?: unknown } | undefined;
   try {
@@ -548,7 +537,6 @@ export function piCredentialFromCodex(codexAuthJson: string): Record<string, unk
   return { "openai-codex": { type: "oauth", access, refresh, expires: exp * 1000, accountId } };
 }
 
-/** The payload claims of an unverified JWT, or an empty object when it cannot be read. */
 function decodeJwtClaims(token: string): Record<string, unknown> {
   try {
     const payload = token.split(".")[1];
@@ -561,10 +549,6 @@ function decodeJwtClaims(token: string): Record<string, unknown> {
   }
 }
 
-/**
- * Build an isolated pi home: a temp HOME plus PI_CODING_AGENT_DIR holding the auth.json Pi reads.
- * Package staging and settings.json are the driver's job.
- */
 export function buildPiHome(opts: { checkMode?: boolean; homeDir?: string } = {}): HarnessHome {
   const dir = opts.homeDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "pai-e2e-pi-"));
   if (opts.homeDir) {
@@ -601,7 +585,6 @@ export function buildPiHome(opts: { checkMode?: boolean; homeDir?: string } = {}
   };
 }
 
-/** Read a file, or an empty string when it is missing. Contents are never logged. */
 function readFileOrEmpty(file: string): string {
   try {
     return fs.readFileSync(file, "utf8");

@@ -9,8 +9,6 @@ const GATE_TIMEOUT_MS = 345600 * 1000;
 export interface PiBridge {
   readonly repoRoot: string;
   attachLiveness(sessionId: string): void;
-  /** Flush the queued telemetry, then drop every held connection. Resolves once both are done, so a
-   *  shutdown event cannot be lost to the close that follows it. */
   closeAll(): Promise<void>;
   forward(type: PiForwardedEvent["type"], properties: PiEventProperties): void;
   gate<B extends RequestBody>(

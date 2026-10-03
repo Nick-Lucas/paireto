@@ -1,8 +1,3 @@
-// The Pi adapter's policy, exercised without a live Pi host: which tools plan mode blocks, which tool
-// arguments name a mutated file, what a stop-gate answer injects, the tool schemas the extension
-// advertises (derived from the same zod contract every other harness advertises), and the output
-// ceiling Pi asks every tool to respect.
-
 import * as assert from "node:assert";
 
 import { z } from "zod";

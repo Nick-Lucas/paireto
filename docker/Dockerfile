@@ -46,14 +46,7 @@ RUN sed -i 's|URIs: http://|URIs: https://|' /etc/apt/sources.list.d/debian.sour
 # Keep the container on the version declared in package.json and used by CI.
 RUN npm install -g pnpm@11.21.0
 
-# --- Harness CLIs for the E2E suite (full e2e support baked in). ---
-# claude:   @anthropic-ai/claude-code       -> `claude`
-# codex:    @openai/codex                   -> `codex`   (TODO: if a future release changes its
-#                                                         distribution away from npm, swap this for its
-#                                                         documented installer)
-# opencode: opencode-ai                     -> `opencode`
-# pi:       @earendil-works/pi-coding-agent -> `pi`      (--ignore-scripts is what pi's own npm install
-#                                                         instructions use)
+# --- Harness CLIs for the E2E suite, pinned here and bumped by `pnpm bump-harnesses`. ---
 ARG CLAUDE_CODE_VERSION=2.1.288
 ARG CODEX_VERSION=0.160.0
 ARG OPENCODE_VERSION=1.18.34

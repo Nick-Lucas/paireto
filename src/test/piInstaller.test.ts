@@ -1,7 +1,3 @@
-// Coverage for the Pi installer's decision logic: the settings merge that registers the staged local
-// package (Pi references a local package by absolute path, so the registration is what "installed"
-// means), the version parsing behind the probe, and a real staged install against a temp agent dir.
-
 import * as assert from "node:assert";
 import * as fs from "node:fs";
 import * as os from "node:os";
