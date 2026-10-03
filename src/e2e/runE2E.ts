@@ -188,7 +188,7 @@ async function runPair({
       await mock.snapshotFixture(testCase, driver);
     }
   } catch (err: unknown) {
-    // A strict-replay miss surfaces as an ordinary step timeout, and an unpinned harness upgrade is
+    // A strict-replay miss surfaces as an ordinary step timeout, and a harness version bump is
     // by far the likeliest cause — say so instead of leaving the operator to guess.
     // Prefer the miss diff: it names the field that changed, where the drift hint only guesses.
     const hint = mock?.explainMiss(testCase, driver, missFilePath) ?? mock?.failureHint();

@@ -1042,8 +1042,8 @@ suite("provider-replay: fixture normalization", () => {
 
   // Codex advertises its built-ins in an `additional_tools` developer item, not the top-level
   // `tools` field, and rewrites their prose on its own release schedule — 0.152.0 reworded `exec`
-  // and expired every Codex cassette. The CLI is installed unpinned, so that prose cannot be part
-  // of the match key.
+  // and expired every Codex cassette. Each version bump can do the same, so that prose cannot be
+  // part of the match key.
   test("drops Codex additional_tools prose but keeps the advertised names", () => {
     const body = (execProse: string): string =>
       JSON.stringify({
@@ -1428,7 +1428,7 @@ suite("provider-replay: Kiro wall-clock date", () => {
 });
 
 // Kiro stamps its own build into every request, so pinning it would expire each cassette on the
-// harness's next release — and the Dockerfile installs the CLI unpinned.
+// harness's next version bump in the Dockerfile.
 suite("provider-replay: Kiro CLI version", () => {
   const body = (version: string): string =>
     JSON.stringify({

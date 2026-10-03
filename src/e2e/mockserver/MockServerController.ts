@@ -499,7 +499,7 @@ export interface Fixture {
 
 /**
  * Parse a committed cassette. Both stamps are required: they are what turns a replay miss caused by
- * an unpinned CLI upgrade, or by replaying on another platform, into a named cause instead of an
+ * a CLI version bump, or by replaying on another platform, into a named cause instead of an
  * opaque step timeout. The current normalizer is applied at load time so fixture and live request
  * match keys use the same rules. writeNormalizedFixture always writes both stamps.
  */

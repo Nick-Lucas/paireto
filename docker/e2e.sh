@@ -26,12 +26,13 @@ env_args=()
 # Only the recording path gets credentials, so a check run cannot reach a real provider even by
 # accident — that is the property that makes `check` safe to run anywhere.
 if [ "$mode" = "record" ]; then
+  node scripts/bumpHarnessVersions.mts
   bash docker/prepare-e2e.sh
   files+=(-f docker/docker-compose.e2e.yml)
   env_args+=(-e ANTHROPIC_API_KEY)
   env_args+=(-e KIRO_API_KEY)
 fi
 
-docker compose "${files[@]}" up -d --wait
+docker compose "${files[@]}" up -d --wait --build
 # `${a[@]+"${a[@]}"}` because an empty array is an unbound variable under `set -u` on bash 3.2 (macOS).
 exec docker compose "${files[@]}" exec -T ${env_args[@]+"${env_args[@]}"} tests pnpm "e2e:$mode" "$@"

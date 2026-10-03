@@ -1,8 +1,8 @@
 // The agent CLI versions a cassette was recorded against.
 //
-// The Docker image installs the harness CLIs unpinned so the suite runs against the latest release. A
-// harness update can then change the request bodies the replay matches on, so cassettes carry the
-// version they were captured with and a miss can be reported as "recorded with X, running Y".
+// The Docker image pins the harness CLI versions, but a bump, or a native run on another install, can
+// change the request bodies the replay matches on, so cassettes carry the version they were captured
+// with and a miss can be reported as "recorded with X, running Y".
 
 import { execFileSync } from "node:child_process";
 

@@ -51,15 +51,33 @@ RUN npm install -g pnpm@11.21.0
 # codex:    @openai/codex              -> `codex`   (TODO: if a future release changes its distribution
 #                                                    away from npm, swap this for its documented installer)
 # opencode: opencode-ai                -> `opencode`
+ARG CLAUDE_CODE_VERSION=2.1.288
+ARG CODEX_VERSION=0.160.0
+ARG OPENCODE_VERSION=1.18.34
+ARG KIRO_VERSION=2.27.0
+ARG KIRO_SHA256_ARM64=fd55b9b3e626262a36bbaa7857e666e0f15bb06d906a22a50cae7338ffeb64e1
+ARG KIRO_SHA256_AMD64=0c08099c718ade0cb0d8648e18706d9002eadb8ca0158049c0313433b8a4eb51
+ARG TARGETARCH
+
 RUN npm install -g \
-      @anthropic-ai/claude-code \
-      @openai/codex \
-      opencode-ai
+      "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
+      "@openai/codex@${CODEX_VERSION}" \
+      "opencode-ai@${OPENCODE_VERSION}"
 
 # Every kiro-cli* binary is linked, not just the entry point: `kiro-cli chat` re-execs its sibling
 # `kiro-cli-chat` BY NAME through PATH (2.18.1 split chat and term out of the single binary), so
 # linking the entry point alone leaves every chat session dying with "os error 2" before it starts.
-RUN curl -fsSL https://cli.kiro.dev/install | bash \
+RUN case "$TARGETARCH" in \
+      arm64) kiro_zip=kirocli-aarch64-linux-musl.zip; kiro_sha256="$KIRO_SHA256_ARM64" ;; \
+      amd64) kiro_zip=kirocli-x86_64-linux.zip; kiro_sha256="$KIRO_SHA256_AMD64" ;; \
+      *) echo "no pinned Kiro archive for $TARGETARCH" >&2; exit 1 ;; \
+    esac \
+    && kiro_tmp="$(mktemp -d)" \
+    && curl -fsSL -o "$kiro_tmp/$kiro_zip" "https://prod.download.cli.kiro.dev/stable/${KIRO_VERSION}/$kiro_zip" \
+    && echo "$kiro_sha256  $kiro_tmp/$kiro_zip" | sha256sum -c - \
+    && unzip -q "$kiro_tmp/$kiro_zip" -d "$kiro_tmp" \
+    && KIRO_CLI_SKIP_SETUP=1 "$kiro_tmp/kirocli/install.sh" \
+    && rm -rf "$kiro_tmp" \
     && test -x /root/.local/bin/kiro-cli \
     && for bin in /root/.local/bin/kiro-cli*; do \
          ln -sf "$bin" "/usr/local/bin/$(basename "$bin")"; \
@@ -75,7 +93,7 @@ ENV PAIRETO_OPENCODE_SDK=/opt/opencode-sdk
 RUN mkdir -p "$PAIRETO_OPENCODE_SDK" \
     && cd "$PAIRETO_OPENCODE_SDK" \
     && npm init -y > /dev/null \
-    && npm install @opencode-ai/plugin
+    && npm install "@opencode-ai/plugin@${OPENCODE_VERSION}"
 
 WORKDIR /workspace
 

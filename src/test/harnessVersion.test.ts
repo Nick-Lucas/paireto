@@ -1,5 +1,5 @@
-// The Docker image installs the harness CLIs unpinned so the suite runs against the latest release,
-// so a cassette carries the version it was recorded against and the runner names a mismatch.
+// A harness version bump can change what the replay matches on, so a cassette carries the version it
+// was recorded against and the runner names a mismatch.
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
