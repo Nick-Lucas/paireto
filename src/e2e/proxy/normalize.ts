@@ -518,8 +518,8 @@ export function normalizeCodexBody(raw: string): string {
  * Codex advertises its built-in tools in a `developer` input item rather than the top-level `tools`
  * field: an `additional_tools` item holds namespaces, and each namespace holds the tools. Their
  * prose is harness-owned and rewritten on the CLI's own release schedule — `exec` alone carries
- * several kB — while the Dockerfile installs that CLI unpinned. Left in the match key, one Codex
- * release expires every Codex cassette. Names and namespaces survive, so a built-in that stops
+ * several kB. Left in the match key, each Codex version bump in the Dockerfile expires every Codex
+ * cassette. Names and namespaces survive, so a built-in that stops
  * being offered still breaks replay, and {@link normalizeToolInventory} keeps any Paireto tool
  * whole should Codex ever advertise one here.
  */
@@ -692,9 +692,8 @@ const KIRO_CURRENT_DATE = /Date: [A-Z][a-z]+ \d{1,2}, \d{4}\nDay of Week: [A-Z][
 /**
  * Kiro stamps its OWN build into a request: `{"origin":"KIRO_CLI","version":"2.18.0"}`, and some
  * releases send the origin without the version. Pinning either would expire each cassette on the
- * harness's next release — the Dockerfile installs the CLI unpinned, so CI picks up new builds on
- * its own. The version a cassette was recorded against is still reported: it is stamped in
- * `recordedWith`, and a mismatch already warns before any miss.
+ * harness's next version bump in the Dockerfile. The version a cassette was recorded against is
+ * still reported: it is stamped in `recordedWith`, and a mismatch already warns before any miss.
  */
 function normalizeKiroOrigin(object: Record<string, unknown>): void {
   if (object.origin === "KIRO_CLI") {

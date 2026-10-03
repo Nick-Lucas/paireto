@@ -3,8 +3,7 @@
 #
 # The two suites run in the same Docker image the repo uses locally (docker/README.md), so a CI
 # failure reproduces with one command on a developer machine. The image is built fresh on every run
-# and never restored from a layer cache — it installs the claude/codex/opencode CLIs unpinned, and
-# caching those layers would quietly freeze CI on an old release.
+# and never restored from a layer cache. The harness CLI versions are pinned in docker/Dockerfile.
 
 name: CI
 
