@@ -160,6 +160,9 @@ const PROFILES: Record<string, HarnessProfile> = {
   opencode: {
     fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
   },
+  pi: {
+    fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
+  },
 };
 
 /** Whether a recorded exchange is committed to the cassette. */

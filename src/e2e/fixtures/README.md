@@ -17,7 +17,7 @@ pnpm e2e:record:docker --grep @claudecode
 ```
 
 Record routes the harness's traffic through MockServer as a transparent MITM proxy — the harness keeps
-its real provider host + real OAuth token, so all three harnesses record against the subscription with
+its real provider host + real OAuth token, so every harness records against the subscription with
 no config change. After the run the captured traffic is promoted to expectations, **normalized**
 (volatile request headers, capture-only streaming metadata, and narrowly scoped body fields stripped),
 and written here.

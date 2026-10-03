@@ -9,6 +9,7 @@ import { ClaudeDriver } from "../drivers/claude.js";
 import { CodexDriver } from "../drivers/codex.js";
 import { KiroDriver } from "../drivers/kiro.js";
 import { OpenCodeDriver } from "../drivers/opencode.js";
+import { PiDriver } from "../drivers/pi.js";
 import type { HarnessDriver } from "../drivers/types.js";
 import type { AddCommentArgs, InspectSnapshot } from "../inspectTypes.js";
 import { readReplayMiss } from "../replayMiss.js";
@@ -117,6 +118,8 @@ export function makeDriver(harness: string): HarnessDriver {
       return new KiroDriver();
     case "opencode":
       return new OpenCodeDriver();
+    case "pi":
+      return new PiDriver();
     default:
       throw new Error(`unknown E2E driver "${harness}"`);
   }

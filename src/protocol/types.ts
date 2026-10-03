@@ -11,6 +11,7 @@ import type { ClaudeCodeHookEvent } from "../harness/ClaudeCodeStrategy.js";
 import type { CodexHookEvent } from "../harness/CodexStrategy.js";
 import type { KiroHookEvent } from "../harness/KiroStrategy.js";
 import type { OpenCodeForwardedEvent } from "../harness/OpenCodeStrategy.js";
+import type { PiForwardedEvent } from "../harness/PiStrategy.js";
 
 /**
  * Single version for the whole plugin bundle, imported directly from the plugin manifest (the one
@@ -27,7 +28,7 @@ export const PLUGIN_VERSION: string = pluginManifest.version;
  *  `src/harness/AgentStrategy.ts` (and the per-harness strategies) for the mapping into a common
  *  internal representation.
  *  A new harness extends this union and gets its own strategy; nothing else needs to change. */
-export type Harness = "claudecode" | "codex" | "kiro" | "opencode";
+export type Harness = "claudecode" | "codex" | "kiro" | "opencode" | "pi";
 
 /** The raw hook/event payload carried on the wire, in whichever harness's dialect the `harness`
  *  field names. Each strategy consumes only its own member (narrowed at the boundary by the runtime
@@ -36,7 +37,8 @@ export type HarnessHookEvent =
   | ClaudeCodeHookEvent
   | CodexHookEvent
   | KiroHookEvent
-  | OpenCodeForwardedEvent;
+  | OpenCodeForwardedEvent
+  | PiForwardedEvent;
 
 /** Adapter-injected enrichment travelling ALONGSIDE the raw `event`, never merged into it: `event`
  *  is BY DEFINITION the harness's own untouched payload (the self-describing-events invariant), so

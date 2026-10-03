@@ -19,6 +19,7 @@ const manifests = [
   "agent-plugin/com.openai.codex/.codex-plugin/plugin.json",
   "claude-code/assets/.claude-plugin/plugin.json",
   "opencode/assets/adapter.json",
+  "pi/assets/package.json",
 ];
 
 suite("adapter version lockstep", () => {
