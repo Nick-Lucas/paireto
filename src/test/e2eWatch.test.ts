@@ -81,6 +81,20 @@ suite("OpenCode run agent", () => {
     assert.strictEqual(args.at(-1), "go", "the prompt stays last");
     assert.ok(args.includes("--model"));
   });
+
+  test("a slash command runs as the command, with the rest of the prompt as its arguments", () => {
+    const args = openCodeRunArgs({
+      ...turn,
+      prompt: "/paireto-review Review the changes.",
+      planMode: false,
+    });
+    assert.strictEqual(args[args.indexOf("--command") + 1], "paireto-review");
+    assert.strictEqual(args.at(-1), "Review the changes.");
+    assert.ok(
+      !args.some((arg) => arg.startsWith("/paireto-review")),
+      "the command name is never sent as plain text",
+    );
+  });
 });
 
 suite("E2E fail-fast signals", () => {

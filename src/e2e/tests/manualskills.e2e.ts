@@ -39,9 +39,9 @@ const REVIEW_FIXTURE: Record<string, string> = {
 const REVIEWED_PATH = Object.keys(REVIEW_FIXTURE)[0];
 
 /** The file the agent writes to prove the review feedback reached it through the tool's result. */
-const FEEDBACK_FILE = "manual-feedback.txt";
-const FEEDBACK_MARKER = "reviewed";
-const REVIEW_FEEDBACK = `Write ${FEEDBACK_FILE} containing exactly: ${FEEDBACK_MARKER}`;
+const FEEDBACK_FILE = "todos.md";
+const FEEDBACK_MARKER = "revisit unit tests";
+const REVIEW_FEEDBACK = `Please add "${FEEDBACK_FILE}" with the content "- ${FEEDBACK_MARKER}" as a reminder to me`;
 
 /** Reading a diff and deciding to call the tool is a full model turn, not a step. */
 const AGENT_TURN_TIMEOUT_MS = 300_000;

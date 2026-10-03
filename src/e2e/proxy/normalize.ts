@@ -393,6 +393,10 @@ const LONG_LISTING_ENTRY =
   /^([bcdlps-])[rwxStTs-]{9}\s+\d+\s+\S+\s+\S+\s+\d+\s+(?:[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})|TIMESTAMP)\s+(.*)$/;
 const LONG_LISTING_TOTAL = /^(\s*total\s+)\d+$/;
 const ABSOLUTE_PATH_LINE = /^\/\S*$/;
+/** A listing of the temp root itself. The E2E harness homes, sandboxes and state folders all live
+ *  there, and which of them exist depends on what ran before on the machine, not on this run. */
+const TMP_ROOT_LISTING = /\bls\b[^&|;]*\s(?:\/private)?\/tmp\/?(?=\s|$|[&|;])/;
+const E2E_SCRATCH_ENTRY = /^(?:[bcdlps-] ENTRY )?(?:pai-|paireto-e2e-)\S*$/;
 
 function sortPathListOutput(content: string): string {
   const lines = content.split("\n");
@@ -413,11 +417,13 @@ function sortPathListOutput(content: string): string {
  * shuffle lines the model reasons about.
  */
 function normalizeShellOutput(command: string, content: string): string {
+  const listsTmpRoot = TMP_ROOT_LISTING.test(command);
   const lines = content
     .split("\n")
     .map((line) =>
       line.replace(LONG_LISTING_ENTRY, "$1 ENTRY $2").replace(LONG_LISTING_TOTAL, "$1TOTAL"),
-    );
+    )
+    .filter((line) => !listsTmpRoot || !E2E_SCRATCH_ENTRY.test(line));
   return (DIRECTORY_LISTING.test(command) ? lines.sort() : lines).join("\n");
 }
 
@@ -684,14 +690,15 @@ const KIRO_SCOPED_ID_KEYS = new Set([
 const KIRO_CURRENT_DATE = /Date: [A-Z][a-z]+ \d{1,2}, \d{4}\nDay of Week: [A-Z][a-z]+/g;
 
 /**
- * Kiro stamps its OWN build into every request: `{"origin":"KIRO_CLI","version":"2.18.0"}`. Pinning
- * that would expire each cassette on the harness's next release — the Dockerfile installs the CLI
- * unpinned, so CI picks up new builds on its own. The version a cassette was recorded against is
- * still reported: it is stamped in `recordedWith`, and a mismatch already warns before any miss.
+ * Kiro stamps its OWN build into a request: `{"origin":"KIRO_CLI","version":"2.18.0"}`, and some
+ * releases send the origin without the version. Pinning either would expire each cassette on the
+ * harness's next release — the Dockerfile installs the CLI unpinned, so CI picks up new builds on
+ * its own. The version a cassette was recorded against is still reported: it is stamped in
+ * `recordedWith`, and a mismatch already warns before any miss.
  */
 function normalizeKiroOrigin(object: Record<string, unknown>): void {
-  if (object.origin === "KIRO_CLI" && typeof object.version === "string") {
-    object.version = "NORMALIZED";
+  if (object.origin === "KIRO_CLI") {
+    delete object.version;
   }
 }
 
@@ -699,12 +706,22 @@ function normalizeKiroDates(value: string): string {
   return value.replace(KIRO_CURRENT_DATE, "Date: NORMALIZED\nDay of Week: NORMALIZED");
 }
 
+/**
+ * Kiro asks the model for a session title in a request of its own. The prompt is harness-owned and
+ * rewritten between releases, and the title it gets back never reaches Paireto, so the request is
+ * keyed by its mode alone.
+ */
+const KIRO_SESSION_TITLE = "session-title";
+
 export function normalizeKiroBody(raw: string): string {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
   } catch {
     return raw;
+  }
+  if ((parsed as { agentMode?: unknown } | null)?.agentMode === KIRO_SESSION_TITLE) {
+    return JSON.stringify({ agentMode: KIRO_SESSION_TITLE });
   }
   const renamed = new Map<string, string>();
   walk(parsed, (object) => {

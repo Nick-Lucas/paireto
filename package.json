@@ -39,7 +39,9 @@
     "docker:down": "docker compose -f docker/docker-compose.yml down --remove-orphans",
     "docker:shell": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec tests bash",
     "test:docker": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec -T tests pnpm test",
-    "emulator": "node esbuild.mts --emulator-bridge && node scripts/emulator.ts"
+    "emulator": "node esbuild.mts --emulator-bridge && node scripts/emulator.ts",
+    "postinstall": "node scripts/refreshSchemas.mts",
+    "refresh-schemas": "node scripts/refreshSchemas.mts"
   },
   "dependencies": {
     "dedent": "^1.7.2",

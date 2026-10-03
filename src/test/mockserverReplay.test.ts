@@ -39,6 +39,7 @@ import {
   normalizeKiroBody,
 } from "../e2e/proxy/normalize.js";
 import { isEventStreamContentType } from "../e2e/proxy/normalizingProxy.js";
+import { CODEX_CHECK_ACCOUNT_ID } from "../e2e/sandbox.js";
 
 import { readPlanTurn as readPlanTurnFrom } from "../plugins/agent-plugin/com.openai.codex/planTurn.js";
 
@@ -175,6 +176,7 @@ suite("provider-replay: recorded endpoints", () => {
       .map((entry) => entry.httpRequest.path)
       .sort();
     assert.deepStrictEqual(paths, [
+      "/backend-api/wham/accounts/check",
       "/backend-api/wham/rate-limit-reset-credits",
       "/backend-api/wham/usage",
     ]);
@@ -188,6 +190,27 @@ suite("provider-replay: recorded endpoints", () => {
     };
     assert.strictEqual(body.rate_limit.allowed, true, "the run must not be rate-limited");
     assert.ok(!/pro|plus|team|enterprise/i.test(body.plan_type), "states no real subscription");
+  });
+
+  test("Codex's workspace routing discovery finds the check-mode account without a constraint", () => {
+    const check = localBootstrapFor("codex").find(
+      (entry) => entry.httpRequest.path === "/backend-api/wham/accounts/check",
+    );
+    const body = JSON.parse(String(check?.httpResponse.body)) as {
+      accounts: Array<{
+        id: string;
+        workspace_backend_origin: string;
+        account_routing_override: string;
+      }>;
+    };
+    assert.deepStrictEqual(
+      body.accounts.map((account) => [
+        account.id,
+        account.workspace_backend_origin,
+        account.account_routing_override,
+      ]),
+      [[CODEX_CHECK_ACCOUNT_ID, "NO_CONSTRAINT", "NO_CONSTRAINT"]],
+    );
   });
 });
 
@@ -798,6 +821,54 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(normalizeCodexBody(body("13:43")), normalizeCodexBody(body("14:00")));
   });
 
+  test("a listing of the temp root ignores the scratch folders other E2E runs leave there", () => {
+    const body = (siblings: string[]): string =>
+      JSON.stringify({
+        input: [
+          {
+            type: "custom_tool_call",
+            call_id: "call_1",
+            name: "exec",
+            input: 'await tools.exec_command({cmd:"ls -la /private/tmp && ls -la skills"});',
+          },
+          {
+            type: "custom_tool_call_output",
+            call_id: "call_1",
+            output: [
+              { type: "input_text", text: "NORMALIZED" },
+              {
+                type: "input_text",
+                text: [
+                  "total 12",
+                  ...siblings.map((name) => `drwxr-xr-x 2 root root 4096 Aug 31 13:43 ${name}`),
+                  "-rw-r--r-- 1 root root 5 Aug 31 13:43 SKILL.md",
+                  "",
+                ].join("\n"),
+              },
+            ],
+          },
+        ],
+      });
+
+    assert.strictEqual(
+      normalizeCodexBody(body(["pai-e2e-claude-home", "pai-e2e-codex-home", "paireto-e2e-codex"])),
+      normalizeCodexBody(
+        body([
+          "pai-e2e-claude-home",
+          "pai-e2e-codex-home",
+          "pai-e2e-kiro-home",
+          "pai-state-SFGf8l",
+          "paireto-e2e-codex",
+        ]),
+      ),
+    );
+    assert.notStrictEqual(
+      normalizeCodexBody(body(["notes"])),
+      normalizeCodexBody(body(["other"])),
+      "folders outside the E2E scratch namespace still count",
+    );
+  });
+
   test("orders parallel tool results by id, so a race between two commands cannot change the key", () => {
     const body = (first: string, second: string): string =>
       JSON.stringify({
@@ -1368,6 +1439,36 @@ suite("provider-replay: Kiro CLI version", () => {
 
   test("a cassette survives a CLI upgrade", () => {
     assert.strictEqual(normalizeKiroBody(body("2.18.0")), normalizeKiroBody(body("2.18.1")));
+  });
+
+  test("a cassette survives the CLI no longer sending its version", () => {
+    const withoutVersion = JSON.stringify({
+      origin: "KIRO_CLI",
+      conversationState: { currentMessage: { userInputMessage: { content: "hello" } } },
+    });
+    assert.strictEqual(normalizeKiroBody(body("2.21.2")), normalizeKiroBody(withoutVersion));
+  });
+
+  test("a session-title request matches whatever prompt the CLI writes for it", () => {
+    const title = (prompt: string): string =>
+      JSON.stringify({
+        conversationState: {
+          currentMessage: { userInputMessage: { content: prompt, origin: "KIRO_CLI" } },
+          chatTriggerType: "MANUAL",
+          conversationId: "conversation-a",
+          history: [],
+        },
+        agentMode: "session-title",
+      });
+    assert.strictEqual(
+      normalizeKiroBody(title("You write a short title for a coding assistant session.")),
+      normalizeKiroBody(title("You generate a short, specific title for a session.")),
+    );
+    assert.notStrictEqual(
+      normalizeKiroBody(title("same prompt")),
+      normalizeKiroBody(title("same prompt").replace("session-title", "vibe")),
+      "a conversation turn keeps its content in the key",
+    );
   });
 
   test("a version that is not Kiro's own is left alone", () => {

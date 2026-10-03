@@ -1,4 +1,4 @@
 {
   "$schema": "./node_modules/oxfmt/configuration_schema.json",
-  "ignorePatterns": ["src/e2e/fixtures/*.json"]
+  "ignorePatterns": ["src/e2e/fixtures/*.json", "src/test/schemas/**"]
 }

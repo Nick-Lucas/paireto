@@ -18,5 +18,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["**/*.ts", "../esbuild.mts", "../src/plugins/**/*.mts"]
+  "include": ["**/*.ts", "**/*.mts", "../esbuild.mts", "../src/plugins/**/*.mts"]
 }

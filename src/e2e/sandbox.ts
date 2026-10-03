@@ -386,6 +386,8 @@ export function buildClaudeHome(opts: { checkMode?: boolean; homeDir?: string } 
   return { env, cleanup: () => rm(dir, Boolean(opts.homeDir)) };
 }
 
+export const CODEX_CHECK_ACCOUNT_ID = "00000000-0000-4000-8000-0000000000c2";
+
 /**
  * Build an isolated codex home: temp CODEX_HOME with ~/.codex/auth.json copied in, hooks enabled,
  * and the project trusted. The hooks.json + trust-hash + trust-level wiring is the driver's job (it
@@ -398,7 +400,7 @@ export function buildCodexHome(opts: { checkMode?: boolean; homeDir?: string } =
   }
   const authPath = path.join(dir, "auth.json");
   if (opts.checkMode) {
-    const accountId = "00000000-0000-4000-8000-0000000000c2";
+    const accountId = CODEX_CHECK_ACCOUNT_ID;
     const token = fakeJwt({
       sub: "paireto-e2e-check",
       exp: 4102444800, // 2100-01-01
