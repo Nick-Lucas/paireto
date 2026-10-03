@@ -6,9 +6,21 @@ import type { AnySchemaObject } from "ajv";
 
 const bundle = path.resolve(__dirname, "../../dist/plugins/agent-plugin");
 const source = path.resolve(__dirname, "../../src/plugins/agent-plugin");
+const schemaCache = path.resolve(__dirname, "../../src/test/schemas");
 
 function readJson(file: string): unknown {
   return JSON.parse(fs.readFileSync(file, "utf8"));
+}
+
+function cachedSchema(uri: string): AnySchemaObject {
+  const url = new URL(uri);
+  const file = path.join(schemaCache, url.host, url.pathname);
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `schema ${uri} is not cached; download it to ${path.relative(process.cwd(), file)}`,
+    );
+  }
+  return readJson(file) as AnySchemaObject;
 }
 
 async function assertReferencedSchemaValid(documentFile: string): Promise<void> {
@@ -19,13 +31,7 @@ async function assertReferencedSchemaValid(documentFile: string): Promise<void> 
   const ajv = new Ajv2020({
     allErrors: true,
     strict: true,
-    loadSchema: async (uri) => {
-      const response = await fetch(uri);
-      if (!response.ok) {
-        throw new Error(`could not load schema ${uri}: HTTP ${response.status}`);
-      }
-      return (await response.json()) as AnySchemaObject;
-    },
+    loadSchema: async (uri) => cachedSchema(uri),
   });
   const validate = await ajv.compileAsync({ $ref: document.$schema });
   const valid = validate(document);

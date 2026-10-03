@@ -64,6 +64,7 @@ export function openCodeRunArgs(turn: {
   prompt: string;
   planMode: boolean;
 }): string[] {
+  const command = /^\/(\S+)\s*([\s\S]*)$/.exec(turn.prompt);
   return [
     "run",
     "--attach",
@@ -73,7 +74,7 @@ export function openCodeRunArgs(turn: {
     ...(turn.planMode ? ["--agent", PLAN_AGENT] : []),
     "--model",
     MODEL,
-    turn.prompt,
+    ...(command ? ["--command", command[1], command[2]] : [turn.prompt]),
   ];
 }
 
