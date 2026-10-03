@@ -1,5 +1,5 @@
 // Pi mapper fixture suite, built from the forwarded-event shapes the bundled Pi extension produces
-// from Pi's own extension events (pi 0.85.1). The mapper is the one compile-time-unsound seam
+// from Pi's own extension events (pi 1.0.1). The mapper is the one compile-time-unsound seam
 // (method bivariance narrows the wire union to Pi's dialect), so these fixtures are the safety net:
 // the lifecycle edges, the plan-proposal edges (the paireto_submit_plan tool_execution_start
 // telemetry and the blocking paireto.plan.submitted gate event), the synthetic file_changed event,
