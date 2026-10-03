@@ -32,6 +32,11 @@ pnpm e2e:check:docker --grep 'fullflow @codex'
 pnpm e2e:record:docker --grep @claudecode
 ```
 
+The harness CLIs are pinned by the `ARG`s in `Dockerfile`. `e2e:check:docker` replays against those
+pins. `e2e:record:docker` first bumps every pin to the latest release (`pnpm bump-harnesses`), so the
+new cassettes are recorded with the current harnesses — commit the `Dockerfile` change with them. Both
+commands build the image before they boot it, so a changed pin recreates the container.
+
 Replay fails a pair with no committed cassette — a driver that never launched must not be able to
 report a pass. Recording that pair is how you add it.
 
@@ -48,7 +53,7 @@ so a test exec never races the install.
 ## How it works
 
 - `Dockerfile` — node + Electron/Chromium runtime libs + `xvfb`, `tmux`, `git`, OpenSSL,
-  and the `claude` / `codex` / `kiro-cli` / `opencode` CLIs. OpenSSL creates the long-lived, machine-local proxy
+  and the `claude` / `codex` / `kiro-cli` / `opencode` CLIs at their pinned versions. OpenSSL creates the long-lived, machine-local proxy
   identity under the ignored bind-mounted cert directory; no test private keys live in the image or
   Git. pnpm is pinned to the host's version. `DISPLAY=:99` is an image ENV so exec'd commands (which
   skip the entrypoint) inherit it.
@@ -57,8 +62,9 @@ so a test exec never races the install.
 - `docker-compose.yml` — the persistent `tests` service: bind-mounts the repo at `/workspace`, shadows
   `node_modules` + `.vscode-test` with container-local named volumes, sets `shm_size: 2gb` (Chromium
   needs more than Docker's default 64MB `/dev/shm`), `PAIRETO_DOCKER=1`, and a readiness healthcheck.
-- `e2e.sh` — the one entry point for both E2E flows: picks the compose overlays for the mode, boots
-  once, then execs the run with the per-run variables attached. `ANTHROPIC_API_KEY` is forwarded only
+- `e2e.sh` — the one entry point for both E2E flows: picks the compose overlays for the mode, bumps
+  the harness pins in record mode, builds and boots once, then execs the run with the per-run variables
+  attached. `ANTHROPIC_API_KEY` is forwarded only
   in record mode, so a check run cannot reach a real provider even if the key is exported.
 - `docker-compose.e2e.yml` — E2E-only overlay: mounts the staged Claude secret (`./.secrets`, read-only
   at `/paireto-secrets`) plus `~/.codex`, `~/.local/share/opencode`, `~/.config/opencode`.

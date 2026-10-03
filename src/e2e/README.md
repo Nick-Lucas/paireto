@@ -176,8 +176,8 @@ How it works:
   response bodies are scrubbed at write time. The guarantee isn't the denylist — `fixturePrivacy.test.ts`
   scans every committed cassette for anything email- or account-id-shaped and fails the build.
 - **Cassettes record the harness version they were captured with.** The Docker image pins the agent
-  CLI versions (`ARG`s in `docker/Dockerfile`), so a bump is a deliberate change that needs a
-  re-record. On a check failure the runner reports `recorded with X, running Y — re-record` rather
+  CLI versions (`ARG`s in `docker/Dockerfile`). `e2e:check:docker` replays against those pins, and
+  `e2e:record:docker` bumps them to the latest releases before it records. On a check failure the runner reports `recorded with X, running Y — re-record` rather
   than leaving a strict-VCR miss as a bare timeout.
 - Captured Responses streams are saved with only the essential endpoint traffic. Replay strips
   MockServer capture-only chunk metadata, restores `text/event-stream`, and closes after the complete
