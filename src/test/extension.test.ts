@@ -733,7 +733,12 @@ suite("GateCoordinator (foreground registry)", () => {
     sessionId: id,
     kind,
     repoRoot: "/repo",
-    session: { kind, approve() {}, sendFeedback() {}, hasFeedback: () => hasFeedback },
+    session: {
+      kind,
+      approve: () => true,
+      sendFeedback: () => true,
+      hasFeedback: () => hasFeedback,
+    },
     foreground: () => {
       log.push(`fg:${id}`);
     },

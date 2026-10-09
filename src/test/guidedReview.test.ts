@@ -836,7 +836,7 @@ suite("guided review — gate panel policy", () => {
     sessionId: id,
     kind,
     repoRoot: REPO,
-    session: { kind, approve() {}, sendFeedback() {}, hasFeedback: () => false },
+    session: { kind, approve: () => true, sendFeedback: () => true, hasFeedback: () => false },
     foreground: () => {},
     background: () => {},
   });

@@ -125,6 +125,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const refreshGateFeedback = (): void => {
     void vscode.commands.executeCommand(
       "setContext",
+      ContextKeys.gateAnswered,
+      coordinator.isAnswered(),
+    );
+    void vscode.commands.executeCommand(
+      "setContext",
       ContextKeys.gateHasFeedback,
       coordinator.current?.hasFeedback() ?? false,
     );
@@ -158,26 +163,25 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       WelcomePanel.show(context, installStatus),
     ),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
-    vscode.commands.registerCommand(Commands.gateApprove, () => coordinator.current?.approve()),
+    vscode.commands.registerCommand(Commands.gateApprove, () =>
+      coordinator.answer((gate) => gate.approve()),
+    ),
     vscode.commands.registerCommand(Commands.gateSendFeedback, () =>
-      coordinator.current?.sendFeedback(),
+      coordinator.answer((gate) => gate.sendFeedback()),
     ),
     // Palette entry point: one action that submits queued feedback, or approves when there is none.
     // Awaited because a plan's Send Feedback can raise a modal, and the command must not report done
     // while the user still has that modal in front of them.
     vscode.commands.registerCommand(Commands.gateSubmit, async () => {
-      const gate = coordinator.current;
-      if (!gate) {
+      if (!coordinator.current) {
         void vscode.window.showWarningMessage(
           "Paireto: nothing to submit — this command only works while an agent is awaiting your feedback on a Plan or Code Review.",
         );
         return;
       }
-      if (gate.hasFeedback()) {
-        await gate.sendFeedback();
-      } else {
-        await gate.approve();
-      }
+      await coordinator.answer((gate) =>
+        gate.hasFeedback() ? gate.sendFeedback() : gate.approve(),
+      );
     }),
     registerCommentEditingCommands(),
     vscode.workspace.registerTextDocumentContentProvider(Schemes.plan, planProvider),
