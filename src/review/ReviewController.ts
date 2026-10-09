@@ -1476,7 +1476,7 @@ export class ReviewController implements vscode.Disposable {
     const baseUri = ReviewPath.create({
       reviewId: this.reviewId,
       side: "base",
-      relPath: file.path,
+      relPath: file.oldPath ?? file.path,
       ref: baseRef,
       repoRoot,
     }).toUri();
