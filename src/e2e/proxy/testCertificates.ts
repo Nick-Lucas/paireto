@@ -55,7 +55,7 @@ export function ensureTestCertificates(directory: string): TestCertificates {
     return { directory, caPath, certPath, keyPath, created: false };
   }
 
-  const stagingDirectory = fs.mkdtempSync(path.join(path.dirname(directory), ".paireto-certs-"));
+  const stagingDirectory = fs.mkdtempSync(path.join(path.dirname(directory), ".crafty-certs-"));
 
   try {
     generateIdentity(stagingDirectory);
@@ -112,7 +112,7 @@ function generateIdentity(directory: string): void {
       "-days",
       String(CERTIFICATE_DAYS),
       "-subj",
-      "/CN=Paireto-E2E-Test-CA",
+      "/CN=Crafty-E2E-Test-CA",
       "-keyout",
       caKeyPath,
       "-out",

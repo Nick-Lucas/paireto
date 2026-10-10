@@ -1,4 +1,4 @@
-// Shape of the `paireto.test.inspect` snapshot, shared between the env-gated test control plane
+// Shape of the `crafty.test.inspect` snapshot, shared between the env-gated test control plane
 // (src/testControlPlane.ts, which produces it) and the E2E test (src/e2e/tests/fullflow.e2e.ts,
 // which polls it). Type-only, no runtime deps, so both the host and pure-node sides can import it.
 
@@ -92,7 +92,7 @@ export interface InspectSnapshot {
   guided?: InspectGuided;
 }
 
-/** Argument to the `paireto.test.addComment` command. */
+/** Argument to the `crafty.test.addComment` command. */
 export interface AddCommentArgs {
   surface: "plan" | "review";
   /** Repo-relative file path (review surface only). */

@@ -1,6 +1,6 @@
 # Provider-replay flow: run the full E2E suite against recorded provider fixtures. Compose adds a
 # `mockserver` service (the tests container has no Docker, so it can't spin one up itself — the runner
-# connects via the preset PAIRETO_MOCK_URL and starts its normalizing shim in front of it). This overlay
+# connects via the preset CRAFTY_MOCK_URL and starts its normalizing shim in front of it). This overlay
 # defaults to credential-free strict check mode. The record script combines the credential overlay and
 # explicitly selects record mode.
 # Overlay onto the base compose file: `-f docker-compose.yml -f docker-compose.mockserver.yml`.
@@ -11,7 +11,7 @@ services:
       # switching any of them never recreates this container. Only the network topology belongs here:
       # the controller reaches the sibling service by name, drives its MCP endpoint, and starts the
       # harness-facing shim. Readiness is polled by the controller.
-      PAIRETO_MOCK_URL: "http://mockserver:1080"
+      CRAFTY_MOCK_URL: "http://mockserver:1080"
     depends_on:
       - mockserver
 

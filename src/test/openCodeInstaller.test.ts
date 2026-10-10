@@ -25,7 +25,7 @@ suite("openCodeInstallPlan", () => {
       .readdirSync(path.join(pluginsRoot, "opencode"), { withFileTypes: true })
       .filter((e) => e.isFile())
       .map((e) => e.name);
-    assert.ok(shipped.includes("paireto.js"), "the plugin itself is shipped");
+    assert.ok(shipped.includes("crafty.js"), "the plugin itself is shipped");
     for (const name of shipped) {
       assert.ok(
         targets.includes(`/home/.config/opencode/plugin/${name}`),

@@ -63,7 +63,7 @@ export class KiroStrategy implements AgentStrategy {
   ];
   /** Kiro's agent server runs Stop hooks once per graph run (`onAgentStopHooksExecuted`), so the one
    *  pass is routinely spent on the plan and the implementing turn ends with no signal at all. A
-   *  review opens on request instead — `/paireto-review` or `/paireto-guided-review`. */
+   *  review opens on request instead — `/crafty-review` or `/crafty-guided-review`. */
   readonly supportsTurnEndReview = false;
   readonly defaultPlanApproveMode: string | undefined = undefined;
   readonly supportsLiveness = false;

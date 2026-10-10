@@ -124,7 +124,7 @@ export interface SessionAttachMessage extends Envelope {
 
 /** Blocking plan-gate request. Carries an `id`; the hook blocks until the matching response. `event`
  *  is the raw harness payload carrying the plan (see {@link HarnessHookEvent}): Claude's ExitPlanMode
- *  PermissionRequest (`event.tool_input.plan`), or an OpenCode synthetic `paireto.plan.submitted`
+ *  PermissionRequest (`event.tool_input.plan`), or an OpenCode synthetic `crafty.plan.submitted`
  *  event (the plugin's own dialect). A plan the adapter had to RECOVER rides in `meta.planMarkdown`,
  *  alongside the raw `event`: Codex reads its rollout transcript, and Claude reads its own plan FILE
  *  for the common case where ExitPlanMode omits the optional `plan` argument. */
@@ -139,7 +139,7 @@ export interface PlanReviewHookRequest extends Envelope {
 }
 
 /**
- * A plan submitted for review through the `paireto_plan_review` MCP tool.
+ * A plan submitted for review through the `crafty_plan_review` MCP tool.
  *
  * Distinct from {@link PlanReviewHookRequest}, which is hook-shaped: a hook reports what the harness
  * did and the strategy recovers the plan from it, whereas a tool call already holds the plan and
@@ -171,7 +171,7 @@ export interface PlanReviewOutcome {
   /** On allow: a per-harness "what next" hint. HARNESS-DEPENDENT meaning: for claudecode it's the
    *  permission MODE to enter (e.g. "auto"), applied via the PermissionRequest
    *  `decision.updatedPermissions` setMode; for opencode it's the TARGET AGENT to switch to (e.g.
-   *  "build"), which the plugin's paireto_submit_plan tool prompts into action. Omitted = leave
+   *  "build"), which the plugin's crafty_submit_plan tool prompts into action. Omitted = leave
    *  things unchanged ("off"). */
   nextMode?: string;
 }
@@ -189,7 +189,7 @@ export interface PlanReviewToolResponse extends Envelope, PlanReviewOutcome {
 }
 
 /**
- * Blocking code-review session. Sent by the MCP `paireto_review` tool when the agent starts a review;
+ * Blocking code-review session. Sent by the MCP `crafty_review` tool when the agent starts a review;
  * the extension reveals the review panels and holds this open until the user submits or cancels.
  */
 export interface ReviewAwaitRequest extends Envelope {
@@ -227,7 +227,7 @@ export type {
 } from "./guidedReview.js";
 
 /**
- * Blocking guided-review session. Sent by the `paireto_start_guided_review` tool when the agent has
+ * Blocking guided-review session. Sent by the `crafty_start_guided_review` tool when the agent has
  * grouped the changes for a human reviewer; the extension shows the plan and holds this open until
  * the user approves or sends feedback. Flat like {@link ReviewAwaitRequest} — it comes from a tool,
  * not a hook, so it carries no raw harness `event`.

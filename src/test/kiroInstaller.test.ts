@@ -17,9 +17,9 @@ suite("Kiro install plan", () => {
   test("installs the common Power in the CLI registry", () => {
     assert.deepStrictEqual(kiroInstallPlan("/extension/plugins", "/user/.kiro"), {
       sourcePlugin: "/extension/plugins/agent-plugin",
-      installedPower: "/user/.kiro/powers/installed/paireto",
+      installedPower: "/user/.kiro/powers/installed/crafty",
       registryFile: "/user/.kiro/powers/installed.json",
-      hookFile: "/user/.kiro/hooks/paireto.json",
+      hookFile: "/user/.kiro/hooks/crafty.json",
       skillsDir: "/user/.kiro/skills",
     });
   });
@@ -80,18 +80,18 @@ suite("Kiro file install state", () => {
   });
 
   test("reads only a Power that is present in the installed registry", () => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-powers-"));
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-kiro-powers-"));
     try {
-      const power = path.join(home, "powers", "installed", "paireto");
+      const power = path.join(home, "powers", "installed", "crafty");
       fs.mkdirSync(power, { recursive: true });
       fs.writeFileSync(
         path.join(power, "plugin.json"),
-        JSON.stringify({ name: "paireto", version: "0.7.0" }),
+        JSON.stringify({ name: "crafty", version: "0.7.0" }),
       );
       assert.strictEqual(readInstalledKiroPowerVersion(home), undefined);
       fs.writeFileSync(
         path.join(home, "powers", "installed.json"),
-        JSON.stringify({ installedPowers: [{ name: "paireto" }] }),
+        JSON.stringify({ installedPowers: [{ name: "crafty" }] }),
       );
       assert.strictEqual(readInstalledKiroPowerVersion(home), "0.7.0");
     } finally {
@@ -102,7 +102,7 @@ suite("Kiro file install state", () => {
 
 suite("Kiro installer", () => {
   test("installs the global CLI configuration without a follow-up action", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-install-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-kiro-install-"));
     try {
       const pluginsRoot = path.join(root, "plugins");
       const source = path.join(pluginsRoot, "agent-plugin");
@@ -111,9 +111,9 @@ suite("Kiro installer", () => {
       fs.mkdirSync(source, { recursive: true });
       fs.writeFileSync(
         path.join(source, "plugin.json"),
-        JSON.stringify({ name: "paireto", version: "0.7.0" }),
+        JSON.stringify({ name: "crafty", version: "0.7.0" }),
       );
-      for (const skill of ["paireto-review", "paireto-guided-review"]) {
+      for (const skill of ["crafty-review", "crafty-guided-review"]) {
         const skillRoot = path.join(source, "skills", skill);
         fs.mkdirSync(skillRoot, { recursive: true });
         fs.writeFileSync(path.join(skillRoot, "SKILL.md"), `# ${skill}\n`);
@@ -140,19 +140,19 @@ suite("Kiro installer", () => {
       const result = await installKiro({ pluginsRoot, stableDir }, { kiroHome });
 
       assert.strictEqual(result.ok, true);
-      const installedPower = path.join(kiroHome, "powers", "installed", "paireto");
+      const installedPower = path.join(kiroHome, "powers", "installed", "crafty");
       assert.ok(fs.existsSync(path.join(installedPower, "plugin.json")));
       // Both surfaces: the Power carries its skills for the `kiro_powers` tool, and the same skills
       // are installed user-level, which is the only feed Kiro builds `/slash` commands from.
-      for (const skill of ["paireto-review", "paireto-guided-review"]) {
+      for (const skill of ["crafty-review", "crafty-guided-review"]) {
         assert.ok(fs.existsSync(path.join(installedPower, "skills", skill, "SKILL.md")));
         assert.ok(fs.existsSync(path.join(kiroHome, "skills", skill, "SKILL.md")));
       }
       assert.ok(!fs.existsSync(path.join(stableDir, "power")));
-      assert.ok(fs.existsSync(path.join(kiroHome, "hooks", "paireto.json")));
+      assert.ok(fs.existsSync(path.join(kiroHome, "hooks", "crafty.json")));
       assert.ok(
         fs
-          .readFileSync(path.join(kiroHome, "hooks", "paireto.json"), "utf8")
+          .readFileSync(path.join(kiroHome, "hooks", "crafty.json"), "utf8")
           .includes(installedPower),
       );
       assert.deepStrictEqual(
@@ -167,7 +167,7 @@ suite("Kiro installer", () => {
         {
           installedPowers: [
             { name: "foreign", source: "https://example.com/foreign" },
-            { name: "paireto" },
+            { name: "crafty" },
           ],
           userSetting: true,
         },
@@ -199,21 +199,21 @@ suite("Kiro installer", () => {
     }
   });
 
-  test("updates an existing Paireto Power in place", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-update-"));
+  test("updates an existing Crafty Power in place", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-kiro-update-"));
     try {
       const pluginsRoot = path.join(root, "plugins");
       const source = path.join(pluginsRoot, "agent-plugin");
       const stableDir = path.join(root, "stable");
       const kiroHome = path.join(root, ".kiro");
-      const existing = path.join(kiroHome, "powers", "installed", "paireto");
+      const existing = path.join(kiroHome, "powers", "installed", "crafty");
       fs.mkdirSync(source, { recursive: true });
       fs.writeFileSync(
         path.join(source, "plugin.json"),
-        JSON.stringify({ name: "paireto", version: "0.7.0" }),
+        JSON.stringify({ name: "crafty", version: "0.7.0" }),
       );
       fs.writeFileSync(path.join(source, "current.txt"), "current");
-      for (const skill of ["paireto-review", "paireto-guided-review"]) {
+      for (const skill of ["crafty-review", "crafty-guided-review"]) {
         const skillRoot = path.join(source, "skills", skill);
         fs.mkdirSync(skillRoot, { recursive: true });
         fs.writeFileSync(path.join(skillRoot, "SKILL.md"), `# ${skill}\n`);
@@ -221,12 +221,12 @@ suite("Kiro installer", () => {
       fs.mkdirSync(existing, { recursive: true });
       fs.writeFileSync(
         path.join(existing, "plugin.json"),
-        JSON.stringify({ name: "paireto", version: "0.6.0" }),
+        JSON.stringify({ name: "crafty", version: "0.6.0" }),
       );
       fs.writeFileSync(path.join(existing, "stale.txt"), "stale");
       fs.writeFileSync(
         path.join(kiroHome, "powers", "installed.json"),
-        JSON.stringify({ installedPowers: [{ name: "paireto", source: "local" }] }),
+        JSON.stringify({ installedPowers: [{ name: "crafty", source: "local" }] }),
       );
 
       const result = await installKiro({ pluginsRoot, stableDir }, { kiroHome });
@@ -235,7 +235,7 @@ suite("Kiro installer", () => {
       assert.ok(fs.existsSync(path.join(existing, "current.txt")));
       assert.ok(!fs.existsSync(path.join(existing, "stale.txt")));
       assert.ok(
-        fs.readFileSync(path.join(kiroHome, "hooks", "paireto.json"), "utf8").includes(existing),
+        fs.readFileSync(path.join(kiroHome, "hooks", "crafty.json"), "utf8").includes(existing),
       );
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
@@ -243,7 +243,7 @@ suite("Kiro installer", () => {
   });
 
   test("does not overwrite a malformed Power registry", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-invalid-registry-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-kiro-invalid-registry-"));
     try {
       const pluginsRoot = path.join(root, "plugins");
       const source = path.join(pluginsRoot, "agent-plugin");
@@ -252,9 +252,9 @@ suite("Kiro installer", () => {
       fs.mkdirSync(source, { recursive: true });
       fs.writeFileSync(
         path.join(source, "plugin.json"),
-        JSON.stringify({ name: "paireto", version: "0.7.0" }),
+        JSON.stringify({ name: "crafty", version: "0.7.0" }),
       );
-      for (const skill of ["paireto-review", "paireto-guided-review"]) {
+      for (const skill of ["crafty-review", "crafty-guided-review"]) {
         const skillRoot = path.join(source, "skills", skill);
         fs.mkdirSync(skillRoot, { recursive: true });
         fs.writeFileSync(path.join(skillRoot, "SKILL.md"), `# ${skill}\n`);
@@ -277,7 +277,7 @@ suite("Kiro installer", () => {
 // stamp is stale there is no single version that explains the state, so the card must name none.
 suite("Kiro probe versions explain the state they sit beside", () => {
   test("a stale stamp with a current Power reports no installed version", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-stamp-"));
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-kiro-stamp-"));
     try {
       const pluginsRoot = path.join(root, "plugins");
       const source = path.join(pluginsRoot, "agent-plugin");
@@ -286,9 +286,9 @@ suite("Kiro probe versions explain the state they sit beside", () => {
       fs.mkdirSync(source, { recursive: true });
       fs.writeFileSync(
         path.join(source, "plugin.json"),
-        JSON.stringify({ name: "paireto", version: "0.8.0" }),
+        JSON.stringify({ name: "crafty", version: "0.8.0" }),
       );
-      for (const skill of ["paireto-review", "paireto-guided-review"]) {
+      for (const skill of ["crafty-review", "crafty-guided-review"]) {
         const skillRoot = path.join(source, "skills", skill);
         fs.mkdirSync(skillRoot, { recursive: true });
         fs.writeFileSync(path.join(skillRoot, "SKILL.md"), "# skill");

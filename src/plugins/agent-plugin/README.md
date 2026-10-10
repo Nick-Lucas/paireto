@@ -1,6 +1,6 @@
 Agent Plugins v1 package for [compatible clients](https://agent-plugins.org/compatible-clients).
 
-For Paireto this is currently:
+For Crafty this is currently:
 
 - Codex
 - Kiro CLI

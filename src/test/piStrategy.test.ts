@@ -38,8 +38,8 @@ suite("PiStrategy mapper fixtures", () => {
     },
     {
       name: "tool_execution_start for the plan tool → planProposal (the awaiting-plan edge)",
-      raw: ev("tool_execution_start", { tool: "paireto_submit_plan", toolCallId: "call_2" }),
-      expect: { kind: "planProposal", toolName: "paireto_submit_plan", planText: undefined },
+      raw: ev("tool_execution_start", { tool: "crafty_submit_plan", toolCallId: "call_2" }),
+      expect: { kind: "planProposal", toolName: "crafty_submit_plan", planText: undefined },
     },
     {
       name: "tool_execution_end → postToolUse",
@@ -57,8 +57,8 @@ suite("PiStrategy mapper fixtures", () => {
       expect: { kind: "stop", sessionId: SESSION },
     },
     {
-      name: "paireto.plan.submitted → planProposal carrying the plan markdown",
-      raw: ev("paireto.plan.submitted", {}, { plan_markdown: "do the thing" }),
+      name: "crafty.plan.submitted → planProposal carrying the plan markdown",
+      raw: ev("crafty.plan.submitted", {}, { plan_markdown: "do the thing" }),
       expect: { kind: "planProposal", planText: "do the thing" },
     },
     {

@@ -15,7 +15,7 @@ compile step). Run it from inside a repo you've opened in VS Code:
 pnpm emulator doctor                       # resolve the socket + handshake — start here
 pnpm emulator event PreToolUse --tool Bash # one fire-and-forget telemetry event
 pnpm emulator plan                         # ExitPlanMode gate; blocks for Approve/Send Feedback
-pnpm emulator review                       # paireto_review session; blocks for Send Feedback/Cancel
+pnpm emulator review                       # crafty_review session; blocks for Send Feedback/Cancel
 pnpm emulator flow                         # a full simulated session lifecycle of events
 pnpm emulator help                         # all commands + options
 ```

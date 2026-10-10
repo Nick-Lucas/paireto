@@ -50,7 +50,7 @@ suite("repository feedback buckets", () => {
   const other = branch("feature/other");
 
   setup(async () => {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-"));
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-feedback-"));
     bucket = await openFeedbackBucket("/repo", main, root);
   });
 
@@ -265,7 +265,7 @@ suite("repository feedback buckets", () => {
   });
 
   test("closing a bucket writes its pending change before it resolves", async () => {
-    const closingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-close-"));
+    const closingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-feedback-close-"));
     try {
       const closing = await openFeedbackBucket("/closing", main, closingRoot);
       closing.update((draft) => {
@@ -280,7 +280,7 @@ suite("repository feedback buckets", () => {
   });
 
   test("closing a bucket with nothing pending writes nothing", async () => {
-    const quietRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-quiet-"));
+    const quietRoot = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-feedback-quiet-"));
     const rename = mock.method(fs.promises, "rename");
     try {
       const quiet = await openFeedbackBucket("/quiet", main, quietRoot);
@@ -293,7 +293,7 @@ suite("repository feedback buckets", () => {
   });
 
   test("a bucket opened after a close reads what the closed one wrote", async () => {
-    const reopenRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-reopen-"));
+    const reopenRoot = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-feedback-reopen-"));
     try {
       const first = await openFeedbackBucket("/reopen", main, reopenRoot);
       first.update((draft) => {
@@ -327,8 +327,8 @@ suite("feedback identity over a real repository", () => {
   };
 
   setup(async () => {
-    stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-repo-"));
-    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-git-"));
+    stateRoot = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-feedback-repo-"));
+    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-feedback-git-"));
     git(["init", "-q", "-b", "main"]);
     git(["config", "user.email", "test@example.com"]);
     git(["config", "user.name", "Test"]);

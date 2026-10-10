@@ -1,4 +1,4 @@
-// The `paireto_plan_review` tool, registered for Kiro only (see runtime.ts).
+// The `crafty_plan_review` tool, registered for Kiro only (see runtime.ts).
 //
 // A harness whose turn-end hooks cannot raise a second plan gate has no way to put a REVISED plan
 // back in front of the reviewer — the first proposal arrives by hook, and after that the loop is
@@ -15,7 +15,7 @@ import type { Harness } from "../../../protocol/types.js";
 import { connect } from "../bridgeClient.js";
 import { NO_WINDOW_MESSAGE, textResult, type ReviewTarget, type ToolResult } from "./reviewTool.js";
 
-export const PLAN_REVIEW_TOOL_NAME = "paireto_plan_review";
+export const PLAN_REVIEW_TOOL_NAME = "crafty_plan_review";
 
 export const PLAN_REVIEW_TOOL_DESCRIPTION =
   "Submit a plan to the human reviewer in the connected VS Code window and wait for their answer. " +
@@ -42,14 +42,14 @@ export async function runPlanReview(
     return textResult(noTargetMessage, true);
   }
   if (!plan.trim()) {
-    return textResult("Call paireto_plan_review with the plan to review.", true);
+    return textResult("Call crafty_plan_review with the plan to review.", true);
   }
 
   const result = await connect(reviewTarget.target, { timeoutMs: CONNECT_TIMEOUT_MS });
   if (!result.ok) {
     return result.reason === "no-socket"
       ? textResult(NO_WINDOW_MESSAGE, true)
-      : textResult(`Could not connect to the VS Code Paireto bridge (${result.reason}).`, true);
+      : textResult(`Could not connect to the VS Code Crafty bridge (${result.reason}).`, true);
   }
 
   const response = await result.connection.request({

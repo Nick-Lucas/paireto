@@ -56,7 +56,7 @@ function text(value: string): PiToolResult {
   return { content: [{ type: "text", text: truncateToolText(value) }], details: {} };
 }
 
-export default function paireto(pi: PiExtensionAPI): void {
+export default function crafty(pi: PiExtensionAPI): void {
   let bridge: PiBridge | undefined;
   let planMode = false;
   const mutatedPaths = new Map<string, string>();
@@ -195,7 +195,7 @@ export default function paireto(pi: PiExtensionAPI): void {
 
   pi.registerTool<SubmitPlanArgs>({
     name: SUBMIT_PLAN_TOOL,
-    label: "Paireto Plan Review",
+    label: "Crafty Plan Review",
     description: SUBMIT_PLAN_DESCRIPTION,
     promptSnippet: SUBMIT_PLAN_SNIPPET,
     promptGuidelines: SUBMIT_PLAN_GUIDELINES,
@@ -212,7 +212,7 @@ export default function paireto(pi: PiExtensionAPI): void {
             harness: "pi",
             repoRoot: connected.repoRoot,
             event: {
-              type: "paireto.plan.submitted",
+              type: "crafty.plan.submitted",
               properties: { sessionId: sessionId(ctx) ?? "" },
               plan_markdown: params?.plan ?? "",
             } as never,
@@ -235,7 +235,7 @@ export default function paireto(pi: PiExtensionAPI): void {
 
   pi.registerTool<Record<string, never>>({
     name: REVIEW_TOOL_NAME,
-    label: "Paireto Review",
+    label: "Crafty Review",
     description: REVIEW_TOOL_DESCRIPTION,
     promptSnippet: REVIEW_SNIPPET,
     promptGuidelines: REVIEW_GUIDELINES,
@@ -272,7 +272,7 @@ export default function paireto(pi: PiExtensionAPI): void {
 
   pi.registerTool<GuidedReviewArgs>({
     name: GUIDED_REVIEW_TOOL_NAME,
-    label: "Paireto Guided Review",
+    label: "Crafty Guided Review",
     description: GUIDED_REVIEW_TOOL_DESCRIPTION,
     promptSnippet: GUIDED_REVIEW_SNIPPET,
     promptGuidelines: GUIDED_REVIEW_GUIDELINES,
@@ -312,7 +312,7 @@ export default function paireto(pi: PiExtensionAPI): void {
 
   pi.registerTool<FeedbackReplyArgs>({
     name: FEEDBACK_REPLY_TOOL_NAME,
-    label: "Paireto Feedback Reply",
+    label: "Crafty Feedback Reply",
     description: FEEDBACK_REPLY_TOOL_DESCRIPTION,
     promptSnippet: FEEDBACK_REPLY_SNIPPET,
     promptGuidelines: FEEDBACK_REPLY_GUIDELINES,

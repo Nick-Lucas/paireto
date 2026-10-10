@@ -48,11 +48,11 @@ suite("E2E sandbox root", () => {
 
   test("resolves a fixed mock-mode root too", () => {
     const sandbox = createSandbox({
-      fixedRepoRoot: mockPath("paireto-e2e-sandbox-root-test"),
+      fixedRepoRoot: mockPath("crafty-e2e-sandbox-root-test"),
     });
     try {
       assert.strictEqual(sandbox.repoRoot, fs.realpathSync(sandbox.repoRoot));
-      assert.ok(sandbox.repoRoot.endsWith("paireto-e2e-sandbox-root-test"));
+      assert.ok(sandbox.repoRoot.endsWith("crafty-e2e-sandbox-root-test"));
     } finally {
       sandbox.cleanup();
     }
@@ -79,7 +79,7 @@ suite("mock-run tmp root", () => {
     assert.throws(() => mockPath("x/../../../Users/example"), /mock-run namespace/i);
     assert.throws(() => mockPath("../outside"), /mock-run namespace/i);
     assert.throws(() => mockPath("/tmp/outside"), /mock-run namespace/i);
-    assert.throws(() => mockPath("paireto-e2e-unknown"), /mock-run namespace/i);
+    assert.throws(() => mockPath("crafty-e2e-unknown"), /mock-run namespace/i);
   });
 
   test("refuses every fixed deletion target outside the owned mock-run namespace", () => {

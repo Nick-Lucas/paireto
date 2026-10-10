@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "paireto": {
+    "crafty": {
       "command": "node",
       "args": ["./runtime/mcp.js"],
       "cwd": ".",

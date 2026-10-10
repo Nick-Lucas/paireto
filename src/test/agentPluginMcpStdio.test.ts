@@ -10,7 +10,7 @@ const bundle = path.resolve(__dirname, "../../dist/plugins/agent-plugin");
 
 suite("built Agent Plugin MCP stdio server", () => {
   test("initializes, lists tools, calls a tool, and shuts down with a sanitized environment", async () => {
-    const pluginData = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-plugin-data-"));
+    const pluginData = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-plugin-data-"));
     const server = path.join(bundle, "runtime", "mcp.js");
     const wrapper = [
       'const { spawn } = require("node:child_process");',
@@ -34,13 +34,13 @@ suite("built Agent Plugin MCP stdio server", () => {
       await client.connect(transport);
       const tools = await client.request({ method: "tools/list" }, ListToolsResultSchema);
       assert.deepStrictEqual(tools.tools.map((tool) => tool.name).sort(), [
-        "paireto_plan_review",
-        "paireto_reply_to_feedback",
-        "paireto_review",
-        "paireto_start_guided_review",
+        "crafty_plan_review",
+        "crafty_reply_to_feedback",
+        "crafty_review",
+        "crafty_start_guided_review",
       ]);
       const result = await client.request(
-        { method: "tools/call", params: { name: "paireto_review" } },
+        { method: "tools/call", params: { name: "crafty_review" } },
         CallToolResultSchema,
       );
       assert.strictEqual(result.isError, true);

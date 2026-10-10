@@ -1,17 +1,17 @@
-# Paireto E2E suite
+# Crafty E2E suite
 
 ## Architecture
 
-Drives a whole Paireto loop inside a real VS Code window, over the per-repo Unix socket — the same
+Drives a whole Crafty loop inside a real VS Code window, over the per-repo Unix socket — the same
 substrate the product uses.
 
 - The specs (`tests/*.e2e.ts`, shared step helpers in `tests/steps.ts`) run under **Mocha** inside the
   extension host, so each step is reported by name and a case scaffolds itself in
   `suiteSetup`/`suiteTeardown` (launching and disposing its driver). Steps share one agent session, so
   they run in order and the run uses `bail` — once a step fails the rest are noise. They play the
-  **user** side via the real `paireto.gate.*` commands and an env-gated test control plane
-  (`src/testControlPlane.ts`, active only when `PAIRETO_TEST=1`): `paireto.test.inspect` (state
-  snapshot) + `paireto.test.addComment`.
+  **user** side via the real `crafty.gate.*` commands and an env-gated test control plane
+  (`src/testControlPlane.ts`, active only when `CRAFTY_TEST=1`): `crafty.test.inspect` (state
+  snapshot) + `crafty.test.addComment`.
 - **A case is a spec file; the drivers are a matrix.** Each suite is titled `<case> @<driver>`, so
   one Mocha pattern selects pairs out here and tests inside the window. There is no selection env
   var. One pair runs per window, because each needs its own sandbox repo and its own cassette, both
@@ -23,7 +23,7 @@ substrate the product uses.
   cannot start a run that has no proxy to talk to.
 - A **`HarnessDriver`** (`drivers/`) plays the agent side — it launches the real TUI/server for its
   harness and performs only pre-flow setup such as activating its reviewed-plan workflow. Steps branch on `DriverCaps`
-  (e.g. blocking vs post-hoc turn-end review). Drivers never act after a Paireto approval.
+  (e.g. blocking vs post-hoc turn-end review). Drivers never act after a Crafty approval.
 - Assertions read only the socket-observed state (`inspect`) and the sandbox filesystem — **nothing
   is scraped from a terminal.**
 - A throwaway git repo (`sandbox.ts`) is the workspace; `XDG_STATE_HOME` is a **short `/tmp` dir**
@@ -56,7 +56,7 @@ The filter travels as arguments to the `docker compose exec` (see `docker/e2e.sh
 configuration, so narrowing a run never recreates the container.
 
 `e2e:record` records the provider traffic and replaces that driver's cassette after a passing run. It
-runs `pnpm compile` + `pnpm compile-tests` + `PAIRETO_E2E_MODE=record node out/e2e/runE2E.js`. The default unit suite
+runs `pnpm compile` + `pnpm compile-tests` + `CRAFTY_E2E_MODE=record node out/e2e/runE2E.js`. The default unit suite
 (`pnpm test`) globs `out/test/**` and never picks up `out/e2e/**`, so the two stay independent.
 
 ## Where check runs
@@ -93,14 +93,14 @@ closest cassette entry: #4
 +      "id": "msg_019fdc7a-…"
 ```
 
-Either normalize the field (if it varies per run) or re-record. `PAIRETO_SHIM_DUMP=<dir>` writes every
+Either normalize the field (if it varies per run) or re-record. `CRAFTY_SHIM_DUMP=<dir>` writes every
 normalized match key to a file for a fuller comparison. Only the harness's own inference endpoints end
 the run; offline 599s on incidental traffic (a model catalogue, a package registry) are expected.
 
 ## Watching the agent
 
 Every run streams the agent's screen to stdout as it changes, prefixed with the driver name, so a
-passing run shows the work and a stall shows where it stopped. `PAIRETO_E2E_WATCH=0` silences it.
+passing run shows the work and a stall shows where it stopped. `CRAFTY_E2E_WATCH=0` silences it.
 
 The tmux drivers (claudecode/codex) also print an attach command at launch, for watching the TUI live:
 
@@ -129,7 +129,7 @@ PermissionRequest input/output contracts.
 
 ## Provider replay: record once, check forever (no creds)
 
-`PAIRETO_E2E_MODE` supports `record` (the default) and `check`. Every run routes the harness through a
+`CRAFTY_E2E_MODE` supports `record` (the default) and `check`. Every run routes the harness through a
 native Node.js **normalizing shim**, then a **MockServer** container acting as a transparent MITM
 forward proxy (`src/e2e/mockserver/`). The harness keeps talking to its real provider host. Recording
 uses your real credentials and **local subscription**; replay uses no credentials and no network:
@@ -172,8 +172,8 @@ How it works:
   contents) of a directory listing. User prompts, model messages, tool names/calls/arguments, and
   file contents remain strict.
 - The tool inventory is **reduced, not erased**: every tool keeps its name (sorted, because the
-  advertised order varies between runs), and **Paireto's own tools are kept whole — description and
-  schema** — so a regression that stopped offering them, or shipped a broken `paireto_submit_plan`
+  advertised order varies between runs), and **Crafty's own tools are kept whole — description and
+  schema** — so a regression that stopped offering them, or shipped a broken `crafty_submit_plan`
   schema, fails replay instead of quietly matching. Every other tool is reduced to its name, since
   provider descriptions and built-in schemas churn each CLI release. One normalizer serves every
   harnesses, so none of them can drift from this.
@@ -217,7 +217,7 @@ are never written.
   spends it — so a run can report `You are not logged in` even though you are. Run `kiro-cli whoami`
   once to refresh your own copy, then record again. Back-to-back Kiro recordings hit this most.
 - `opencode` runs a persistent `opencode serve` + one `opencode run --attach` turn with
-  `openai/gpt-5.6-luna`. Both modes use an empty temporary config plus only the bundled Paireto plugin.
+  `openai/gpt-5.6-luna`. Both modes use an empty temporary config plus only the bundled Crafty plugin.
 - `pi` runs one persistent `pi --mode rpc` session and feeds each turn in as a JSON line, for the same
   reason OpenCode uses `serve` + `run`: the post-hoc turn-end gate needs a process that outlives the
   turn. It reaches the ChatGPT backend through Pi's own `openai-codex` provider, so recording spends

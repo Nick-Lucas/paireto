@@ -51,7 +51,7 @@ export interface CodexTimings {
    *  servers are still starting, and that startup draws nothing, so a settled screen does not mean
    *  the handshake is done — under load it routinely is not. */
   mcpStartupMs: number;
-  /** How long to wait for Paireto's MCP server to appear before giving up on the positive signal. */
+  /** How long to wait for Crafty's MCP server to appear before giving up on the positive signal. */
   mcpReadyTimeoutMs: number;
 }
 
@@ -70,8 +70,8 @@ export class CodexDriver implements HarnessDriver {
   readonly harness = "codex";
   readonly caps: DriverCaps = {
     turnEndReview: "blocking",
-    guidedReviewInvocation: "$paireto-guided-review",
-    reviewInvocation: "$paireto-review",
+    guidedReviewInvocation: "$crafty-guided-review",
+    reviewInvocation: "$crafty-review",
     opensTurnEndReview: true,
   };
 
@@ -107,7 +107,7 @@ export class CodexDriver implements HarnessDriver {
     const result = await installCodex(
       {
         pluginsRoot: path.join(repoRoot(), "dist", "plugins"),
-        stableDir: path.join(codexHome, "paireto-installer"),
+        stableDir: path.join(codexHome, "crafty-installer"),
       },
       { codexHome },
     );
@@ -120,7 +120,7 @@ export class CodexDriver implements HarnessDriver {
     Object.assign(env, proxy.env);
     env.CODEX_CA_CERTIFICATE = proxy.caPath;
     this.log(`mode=${mode}: HTTPS_PROXY=${proxy.url} (+CA trust)`);
-    const command = codexLaunchCommand(ctx.repoRoot, process.env.PAIRETO_DOCKER === "1");
+    const command = codexLaunchCommand(ctx.repoRoot, process.env.CRAFTY_DOCKER === "1");
     this.log(`launch: ${command} (CODEX_HOME=${codexHome})`);
     this.tmux.launch({ cwd: ctx.repoRoot, env, command });
     this.launchedAt = Date.now();
@@ -130,7 +130,7 @@ export class CodexDriver implements HarnessDriver {
     this.watchForInterruptedMcp();
   }
 
-  /** An abandoned MCP startup leaves the session without Paireto's tools, so no gate can ever open.
+  /** An abandoned MCP startup leaves the session without Crafty's tools, so no gate can ever open.
    *  Report it as the cause the moment Codex says so, rather than at the next step's timeout. */
   private watchForInterruptedMcp(): void {
     this.mcpWatch = setInterval(() => {
@@ -169,8 +169,8 @@ export class CodexDriver implements HarnessDriver {
   }
 
   /**
-   * Settled composer AND Paireto's MCP server actually running — both, because a key that lands
-   * during the invisible MCP startup abandons it and leaves the session with none of Paireto's
+   * Settled composer AND Crafty's MCP server actually running — both, because a key that lands
+   * during the invisible MCP startup abandons it and leaves the session with none of Crafty's
    * tools, and Codex prints nothing while that startup is in flight.
    *
    * The server being up is a POSITIVE signal (Codex spawns it as a child process), so it replaces
@@ -181,8 +181,8 @@ export class CodexDriver implements HarnessDriver {
     await waitForCodexReady(this.tmux, (line) => this.log(line));
     const deadline = Date.now() + DEFAULT_TIMINGS.mcpReadyTimeoutMs;
     while (Date.now() < deadline) {
-      if (pairetoMcpRunning()) {
-        this.log("readyToType: Paireto's MCP server is up — ready to type");
+      if (craftyMcpRunning()) {
+        this.log("readyToType: Crafty's MCP server is up — ready to type");
         return;
       }
       await delay(DEFAULT_TIMINGS.readyPollMs);
@@ -191,7 +191,7 @@ export class CodexDriver implements HarnessDriver {
     if (remaining > 0) {
       await delay(remaining);
     }
-    this.log("readyToType: never saw Paireto's MCP server start (typing anyway)");
+    this.log("readyToType: never saw Crafty's MCP server start (typing anyway)");
   }
 
   async afterPlanApprove(): Promise<void> {
@@ -244,12 +244,12 @@ export function renderCodexRuntimeConfig(existing: string, project: string): str
   const rootSettings = [
     `model = "${CODEX_MODEL}"`,
     'model_reasoning_effort = "low"',
-    'model_provider = "paireto_openai"',
+    'model_provider = "crafty_openai"',
     'approval_policy = "never"',
     'sandbox_mode = "danger-full-access"',
   ].join("\n");
   const providerTable =
-    `\n[model_providers.paireto_openai]\nname = "OpenAI"\n` +
+    `\n[model_providers.crafty_openai]\nname = "OpenAI"\n` +
     `base_url = "https://chatgpt.com/backend-api/codex"\nwire_api = "responses"\n` +
     `requires_openai_auth = true\nsupports_websockets = false\n`;
   // Request compression would make recorded bodies opaque to matching.
@@ -266,21 +266,21 @@ export function renderCodexRuntimeConfig(existing: string, project: string): str
 
 /**
  * A screen where Codex has abandoned its MCP startup, as a failure reason — otherwise undefined.
- * The session then holds none of Paireto's tools, so no gate can ever open and every later step
+ * The session then holds none of Crafty's tools, so no gate can ever open and every later step
  * would wait out its budget with the cause buried in the pane.
  */
 export function interruptedMcpReason(screen: string): string | undefined {
   const interrupted = MCP_INTERRUPTED.exec(screen);
   return interrupted
     ? `Codex abandoned its MCP startup (${interrupted[1].trim()}), so this session has none of ` +
-        "Paireto's tools and no gate can open. A keystroke arrived while it was still starting."
+        "Crafty's tools and no gate can open. A keystroke arrived while it was still starting."
     : undefined;
 }
 
 /**
  * Hold every keystroke until the TUI has finished starting. Codex draws its banner, then starts its
  * MCP servers, and a key pressed in that window BOTH abandons that startup and is swallowed — so an
- * early prompt leaves a session with no Paireto tools and an empty composer. Codex prints nothing
+ * early prompt leaves a session with no Crafty tools and an empty composer. Codex prints nothing
  * when the handshake succeeds, so readiness is the interactive composer plus a settled screen: a run
  * of identical frames means the boot burst of redraws is over.
  */
@@ -344,7 +344,7 @@ export async function typeCodexPrompt(
 }
 
 /** Wait for Codex's native Plan-mode transition UI and select its pre-highlighted implement option.
- *  Paireto approval only releases the Stop hook; no supported hook response can perform this mode
+ *  Crafty approval only releases the Stop hook; no supported hook response can perform this mode
  *  switch. Throwing on timeout makes transport/UI drift fail the E2E instead of faking progress. */
 export async function completeNativePlanApproval(
   tmux: PlanApprovalTmux,
@@ -367,9 +367,9 @@ export async function completeNativePlanApproval(
 }
 
 /** The extension repo root (where the shipped plugins/ live). */
-/** Whether Codex has Paireto's MCP server running as a child. `pgrep` exits non-zero when nothing
+/** Whether Codex has Crafty's MCP server running as a child. `pgrep` exits non-zero when nothing
  *  matches, which is the "not yet" answer rather than an error. */
-function pairetoMcpRunning(): boolean {
+function craftyMcpRunning(): boolean {
   try {
     return (
       execFileSync("pgrep", ["-f", "com.openai.codex/runtime/mcp.js"], { encoding: "utf8" }).trim()
@@ -381,7 +381,7 @@ function pairetoMcpRunning(): boolean {
 }
 
 function repoRoot(): string {
-  return process.env.PAIRETO_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
+  return process.env.CRAFTY_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
 }
 
 /** TOML basic (double-quoted) key — escape `\` and `"` so any path stays valid TOML. */

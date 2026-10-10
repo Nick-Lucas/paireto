@@ -1,9 +1,9 @@
 {
-  "name": "paireto",
-  "description": "Bridges Claude Code to the VS Code Paireto extension",
+  "name": "crafty",
+  "description": "Bridges Claude Code to the VS Code Crafty extension",
   "version": "0.10.0",
   "author": {
-    "name": "paireto"
+    "name": "crafty"
   },
   "keywords": ["vscode", "plan-review", "hooks", "ExitPlanMode"]
 }

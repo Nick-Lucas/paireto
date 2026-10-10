@@ -1,8 +1,8 @@
 {
-  "name": "paireto-pi",
+  "name": "crafty-pi",
   "version": "0.10.0",
   "private": true,
-  "description": "Bridges Pi to the VS Code Paireto extension",
+  "description": "Bridges Pi to the VS Code Crafty extension",
   "keywords": [
     "pi-package"
   ],

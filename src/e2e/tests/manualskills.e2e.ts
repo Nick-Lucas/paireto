@@ -46,7 +46,7 @@ const REVIEW_FEEDBACK = `Please add "${FEEDBACK_FILE}" with the content "- ${FEE
 /** Reading a diff and deciding to call the tool is a full model turn, not a step. */
 const AGENT_TURN_TIMEOUT_MS = 300_000;
 
-const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
+const repoRoot = requireEnv("CRAFTY_E2E_SANDBOX");
 
 driversForSharedSpec(__dirname, CASE).forEach((harness) => {
   suite(pairLabel(CASE, harness), () => {
@@ -109,7 +109,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         "the review comment to register",
       );
       await driveUntil(
-        "paireto.gate.sendFeedback",
+        "crafty.gate.sendFeedback",
         gate.id,
         async () => !reviewGates(await inspect()).some((g) => g.id === gate.id),
         "the review gate to resolve on send-feedback",
@@ -136,7 +136,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         async () => {
           const snap = await inspect();
           if (snap.gates.some((g) => g.foreground)) {
-            await vscode.commands.executeCommand("paireto.gate.approve");
+            await vscode.commands.executeCommand("crafty.gate.approve");
             return false;
           }
           const settled = snap.sessions.some((s) => s.state === "stopped" || s.state === "idle");

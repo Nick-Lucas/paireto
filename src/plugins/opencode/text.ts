@@ -2,11 +2,11 @@
 //
 // EVERY string in this file is inside the e2e replay match key: OpenCode sends its tool definitions
 // and system prompt to the provider, and the recorded fixture matches on the exact bytes. Changing
-// so much as a space here fails `PAIRETO_E2E_DRIVER=opencode pnpm e2e:check:docker` until the
+// so much as a space here fails `CRAFTY_E2E_DRIVER=opencode pnpm e2e:check:docker` until the
 // fixture is re-recorded. Treat it as fixed text.
 
 /** The tool the planning workflow steers the agent onto. */
-export const SUBMIT_PLAN_TOOL = "paireto_submit_plan";
+export const SUBMIT_PLAN_TOOL = "crafty_submit_plan";
 
 /** The agents allowed to call the plan tool. Default = OpenCode's built-in `plan`. */
 export const PLANNING_AGENTS = ["plan"];
@@ -21,7 +21,7 @@ export const PLAN_ARG_DESCRIPTION = "The full implementation plan, as markdown."
 
 // LEAN planning instruction appended to a planning session's system prompt — the WHY is deliberately
 // terse; the model is capable, and the tool description carries the mechanics.
-export const PLANNING_PROMPT = `## Paireto — Plan Review
+export const PLANNING_PROMPT = `## Crafty — Plan Review
 
 You have a \`${SUBMIT_PLAN_TOOL}\` tool. When your plan is complete, call it with the full plan as
 markdown (the \`plan\` argument) to open it for review in the user's connected VS Code window. The
@@ -37,7 +37,7 @@ export const PLAN_EXIT_REDIRECT =
   "in the user's connected VS Code window and waits for approval.";
 
 export const REVIEW_UNAVAILABLE =
-  "No VS Code Paireto is listening for this repository — skipping the review.";
+  "No VS Code Crafty is listening for this repository — skipping the review.";
 export const REVIEW_FAILED = "Review unavailable — proceeding with no changes.";
 export const REVIEW_APPROVED = "Review approved — proceeding with no changes.";
 

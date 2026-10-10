@@ -63,7 +63,7 @@ suite("pi package version", () => {
   });
 
   test("a manifest without a version reads as absent", () => {
-    assert.strictEqual(parsePiPackageVersion(JSON.stringify({ name: "paireto-pi" })), undefined);
+    assert.strictEqual(parsePiPackageVersion(JSON.stringify({ name: "crafty-pi" })), undefined);
     assert.strictEqual(parsePiPackageVersion("{not json"), undefined);
   });
 });
@@ -99,11 +99,11 @@ suite("pi install", () => {
     const staged = stagedPackagePath(stableDir);
     assert.ok(fs.existsSync(path.join(staged, "package.json")), "the manifest is staged");
     assert.ok(
-      fs.existsSync(path.join(staged, "extensions", "paireto.js")),
+      fs.existsSync(path.join(staged, "extensions", "crafty.js")),
       "the extension is staged",
     );
     assert.ok(
-      fs.existsSync(path.join(staged, "skills", "paireto-review", "SKILL.md")),
+      fs.existsSync(path.join(staged, "skills", "crafty-review", "SKILL.md")),
       "the skills are staged",
     );
     const settings = fs.readFileSync(path.join(agentDir, "settings.json"), "utf8");

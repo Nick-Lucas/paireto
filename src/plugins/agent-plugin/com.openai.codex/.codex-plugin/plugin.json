@@ -1,19 +1,19 @@
 {
-  "name": "paireto",
+  "name": "crafty",
   "version": "0.10.0",
-  "description": "Pair-programming with Paireto in VS Code.",
+  "description": "Pair-programming with Crafty in VS Code.",
   "author": {
-    "name": "Paireto"
+    "name": "Crafty"
   },
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
   "interface": {
-    "displayName": "Paireto",
+    "displayName": "Crafty",
     "shortDescription": "Pair-programming for Codex in VS Code",
-    "longDescription": "Paireto brings pair-programming to Codex in VS Code in one engineer-grade workflow.",
-    "developerName": "Paireto",
+    "longDescription": "Crafty brings pair-programming to Codex in VS Code in one engineer-grade workflow.",
+    "developerName": "Crafty",
     "category": "Developer Tools",
     "capabilities": [],
-    "defaultPrompt": ["Use $paireto-review to review my current changes in VS Code."]
+    "defaultPrompt": ["Use $crafty-review to review my current changes in VS Code."]
   }
 }

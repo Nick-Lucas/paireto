@@ -68,7 +68,7 @@ function parseSettings(settingsJson: string): Record<string, unknown> {
   } catch {
     throw new Error(
       "Pi's settings.json could not be read as JSON. Fix or move it, then run setup again — " +
-        "Paireto will not overwrite settings it cannot parse.",
+        "Crafty will not overwrite settings it cannot parse.",
     );
   }
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {

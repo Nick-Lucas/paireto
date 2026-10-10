@@ -71,6 +71,6 @@ export function versionDriftNote(
   }
   return (
     `cassette for "${driver}" was recorded with "${recorded}" but "${running}" is installed — ` +
-    `a replay miss here is almost certainly harness drift; re-record with PAIRETO_E2E_MODE=record`
+    `a replay miss here is almost certainly harness drift; re-record with CRAFTY_E2E_MODE=record`
   );
 }

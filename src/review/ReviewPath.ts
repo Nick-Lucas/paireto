@@ -1,9 +1,9 @@
-// One class owns the paireto-review:// URI shape: serializing a diff side's file identity into a
+// One class owns the crafty-review:// URI shape: serializing a diff side's file identity into a
 // URI and parsing it back. The URI *path* is purely presentational — VS Code renders breadcrumbs
 // and tab paths from its segments, so it holds the workspace-relative path of the real file, never
 // a side marker. Identity rides in the query; `side` keeps a diff's two URIs distinct.
 //
-//   paireto-review://<reviewId>/<displayPath>?side=<base|modified>&path=<relPath>&ref=<EMPTY|WORKING|INDEX|gitref>&repo=<encodedRoot>
+//   crafty-review://<reviewId>/<displayPath>?side=<base|modified>&path=<relPath>&ref=<EMPTY|WORKING|INDEX|gitref>&repo=<encodedRoot>
 
 import * as path from "node:path";
 

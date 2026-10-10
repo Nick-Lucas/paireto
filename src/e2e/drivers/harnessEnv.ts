@@ -11,11 +11,11 @@
 
 import * as path from "node:path";
 
-/** The dir holding the runner's `node` (passed by runE2E via PAIRETO_NODE_DIR; falls back to the
+/** The dir holding the runner's `node` (passed by runE2E via CRAFTY_NODE_DIR; falls back to the
  *  extension host's own execPath dir, which is Electron — only correct when node happens to be a
  *  sibling, so the explicit var is strongly preferred). */
 function nodeBinDir(): string {
-  return process.env.PAIRETO_NODE_DIR ?? path.dirname(process.execPath);
+  return process.env.CRAFTY_NODE_DIR ?? path.dirname(process.execPath);
 }
 
 /**

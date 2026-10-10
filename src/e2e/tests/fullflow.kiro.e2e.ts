@@ -3,7 +3,7 @@
 // The same journey as the shared case — plan → feedback → approve → implement → review feedback →
 // review approve — but every review is USER-OPENED. Kiro's agent server runs Stop hooks once per
 // graph run (`onAgentStopHooksExecuted`), so the single pass is spent on the plan proposal and no
-// turn-end signal follows. The user asks for each review with `/paireto-review`, and for the same
+// turn-end signal follows. The user asks for each review with `/crafty-review`, and for the same
 // reason the session stays mid-turn after the last gate resolves.
 //
 // The plan half needs no such help: feedback on a plan blocks the plan tool, which the agent retries
@@ -33,7 +33,7 @@ const REVIEW_PROMPT =
 /** Kiro reports no turn end here, so the last turn is given a fixed budget to run itself out. */
 const TRAILING_TURN_MS = 15_000;
 
-const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
+const repoRoot = requireEnv("CRAFTY_E2E_SANDBOX");
 
 suite(pairLabel(CASE, HARNESS), () => {
   const driver = makeDriver(HARNESS);
@@ -100,7 +100,7 @@ suite(pairLabel(CASE, HARNESS), () => {
     // CONSUMED (gateHasFeedback flips false) so we never re-fire onto the fresh revised gate.
     await wait("the plan feedback to be delivered (deny sent)", async () => {
       if ((await inspect()).gateHasFeedback) {
-        await vscode.commands.executeCommand("paireto.gate.sendFeedback");
+        await vscode.commands.executeCommand("crafty.gate.sendFeedback");
         return false;
       }
       return true;
@@ -118,7 +118,7 @@ suite(pairLabel(CASE, HARNESS), () => {
 
   test("approving the plan implements it", async () => {
     await driveUntil(
-      "paireto.gate.approve",
+      "crafty.gate.approve",
       secondPlan.id,
       async () => !planGates(await inspect()).some((g) => g.id === secondPlan.id),
       "the revised plan gate to resolve on approve",
@@ -142,7 +142,7 @@ suite(pairLabel(CASE, HARNESS), () => {
       "the review feedback comment to register",
     );
     await driveUntil(
-      "paireto.gate.sendFeedback",
+      "crafty.gate.sendFeedback",
       firstReview.id,
       async () => !reviewGates(await inspect()).some((g) => g.id === firstReview.id),
       "the review gate to resolve on send-feedback",
@@ -154,7 +154,7 @@ suite(pairLabel(CASE, HARNESS), () => {
   test("approving a second requested review settles the session", async () => {
     const secondReview = await openReview(firstReview.id);
     await driveUntil(
-      "paireto.gate.approve",
+      "crafty.gate.approve",
       secondReview.id,
       async () => !reviewGates(await inspect()).some((g) => g.id === secondReview.id),
       "the second review gate to resolve on approve",

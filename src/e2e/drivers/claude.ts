@@ -49,10 +49,10 @@ const PERMISSION_POLL_MS = 500;
  * per project; the driver just answers them up front.
  */
 const PRE_APPROVED_TOOLS = [
-  "mcp__bridge__paireto_review",
-  "mcp__bridge__paireto_start_guided_review",
-  "mcp__bridge__paireto_reply_to_feedback",
-  "mcp__bridge__paireto_resolve_feedback",
+  "mcp__bridge__crafty_review",
+  "mcp__bridge__crafty_start_guided_review",
+  "mcp__bridge__crafty_reply_to_feedback",
+  "mcp__bridge__crafty_resolve_feedback",
   "Write",
   "Edit",
 ];
@@ -66,8 +66,8 @@ export class ClaudeDriver implements HarnessDriver {
   readonly harness = "claudecode";
   readonly caps: DriverCaps = {
     turnEndReview: "blocking",
-    guidedReviewInvocation: "/paireto:guided-review",
-    reviewInvocation: "/paireto:review",
+    guidedReviewInvocation: "/crafty:guided-review",
+    reviewInvocation: "/crafty:review",
     opensTurnEndReview: true,
   };
 
@@ -113,7 +113,7 @@ export class ClaudeDriver implements HarnessDriver {
       "--model",
       MODEL,
       "--permission-mode",
-      // Outside plan mode the agent has to read the repo unattended; `auto` is the mode Paireto
+      // Outside plan mode the agent has to read the repo unattended; `auto` is the mode Crafty
       // itself puts an agent into after a plan approval, so it is a state a user's session reaches.
       planMode ? "plan" : "auto",
       // Load NO external (account/user/project) MCP servers: their tool set varies run-to-run and
@@ -331,7 +331,7 @@ function selectOptions(screen: string): SelectOption[] {
 
 /** The extension repo root (where the shipped plugins/ live) — NOT the sandbox repo. */
 function repoRoot(): string {
-  return process.env.PAIRETO_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
+  return process.env.CRAFTY_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
 }
 
 /** Wrap a path in double quotes for the /bin/sh -c command line (handles spaces in the repo path). */

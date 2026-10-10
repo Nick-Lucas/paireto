@@ -1,4 +1,4 @@
-// Shared "Paireto" output-channel logger, gated on the `paireto.logLevel` setting (default `info`).
+// Shared "Crafty" output-channel logger, gated on the `crafty.logLevel` setting (default `info`).
 // One channel for the whole extension, created lazily on the first written line so a quiet, healthy
 // session never spawns an empty channel. `logLevel` only controls whether lines are *written*, never
 // whether the Output panel is revealed — the panel opens only when the user asks for it (see show()).
@@ -26,13 +26,13 @@ class Logger {
 
   private verbosity(): number {
     const configured = vscode.workspace
-      .getConfiguration("paireto")
+      .getConfiguration("crafty")
       .get<LogLevel>("logLevel", "info");
     return SEVERITY[configured] ?? SEVERITY.info;
   }
 
   private ensureChannel(): vscode.OutputChannel {
-    this.channel ??= vscode.window.createOutputChannel("Paireto");
+    this.channel ??= vscode.window.createOutputChannel("Crafty");
     return this.channel;
   }
 

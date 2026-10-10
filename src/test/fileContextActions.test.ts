@@ -33,26 +33,26 @@ function changedFile(): RepoChangedFile {
 suite("changed file context menu", () => {
   test("offers Copy Path and Focus in Explorer on every changed file row", () => {
     const context = manifest.contributes.menus["view/item/context"];
-    for (const command of ["paireto.review.copyPath", "paireto.review.revealInExplorer"]) {
+    for (const command of ["crafty.review.copyPath", "crafty.review.revealInExplorer"]) {
       const entry = context.find((item) => item.command === command);
       assert.ok(entry, `${command} must be in the tree item context menu`);
-      assert.strictEqual(entry.when, "view == paireto.main && viewItem =~ /^changedFile:/");
+      assert.strictEqual(entry.when, "view == crafty.main && viewItem =~ /^changedFile:/");
       assert.ok(!entry.group?.startsWith("inline"), `${command} must not be an inline button`);
     }
   });
 
   test("Copy Path puts the repo relative file path on the clipboard", async function () {
     this.timeout(30_000);
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     const file = changedFile();
     await vscode.env.clipboard.writeText("");
-    await vscode.commands.executeCommand("paireto.review.copyPath", { kind: "file", file });
+    await vscode.commands.executeCommand("crafty.review.copyPath", { kind: "file", file });
     assert.strictEqual(await vscode.env.clipboard.readText(), file.path);
   });
 
   test("Focus in Explorer reveals the file in the explorer", async function () {
     this.timeout(30_000);
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     const file = changedFile();
     const calls: unknown[][] = [];
     const original = vscode.commands.executeCommand;
@@ -64,7 +64,7 @@ suite("changed file context menu", () => {
       return original(command, ...rest);
     }) as typeof vscode.commands.executeCommand;
     try {
-      await original("paireto.review.revealInExplorer", { kind: "file", file });
+      await original("crafty.review.revealInExplorer", { kind: "file", file });
     } finally {
       vscode.commands.executeCommand = original;
     }

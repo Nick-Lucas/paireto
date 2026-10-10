@@ -27,14 +27,14 @@ suite("Claude Code plugin installer", () => {
       marketplaceNamesToRemove(
         [
           {
-            name: "paireto",
+            name: "crafty",
             source: "directory",
             path: "/old-extension/plugins",
           },
         ],
         "/extension/plugins",
       ),
-      ["paireto"],
+      ["crafty"],
     );
   });
 
@@ -42,9 +42,9 @@ suite("Claude Code plugin installer", () => {
     assert.deepStrictEqual(
       marketplaceNamesToRemove(
         [
-          { name: "paireto", source: "directory", path: "/extension/plugins" },
+          { name: "crafty", source: "directory", path: "/extension/plugins" },
           { name: "other", source: "directory", path: "/other/plugins" },
-          { name: "paireto", source: "github" },
+          { name: "crafty", source: "github" },
         ],
         "/extension/plugins",
       ),
@@ -59,12 +59,12 @@ suite("Claude Code plugin installer", () => {
 suite("Claude Code installed-plugin version", () => {
   const list = (rows: unknown[]): string => JSON.stringify(rows);
 
-  test("reads the version of the paireto plugin", () => {
+  test("reads the version of the crafty plugin", () => {
     assert.strictEqual(
       claudeInstalledPluginVersion(
         list([
           { id: "codex@openai-codex", version: "1.0.6", enabled: true },
-          { id: "paireto@paireto", version: "0.6.0", enabled: true },
+          { id: "crafty@crafty", version: "0.6.0", enabled: true },
         ]),
       ),
       "0.6.0",
@@ -74,7 +74,7 @@ suite("Claude Code installed-plugin version", () => {
   test("ignores a disabled entry — a disabled plugin reaches nothing", () => {
     assert.strictEqual(
       claudeInstalledPluginVersion(
-        list([{ id: "paireto@paireto", version: "0.6.0", enabled: false }]),
+        list([{ id: "crafty@crafty", version: "0.6.0", enabled: false }]),
       ),
       undefined,
     );
@@ -85,7 +85,7 @@ suite("Claude Code installed-plugin version", () => {
     assert.strictEqual(claudeInstalledPluginVersion("not json"), undefined);
     assert.strictEqual(claudeInstalledPluginVersion("{}"), undefined);
     assert.strictEqual(
-      claudeInstalledPluginVersion(list([{ id: "paireto@paireto", enabled: true }])),
+      claudeInstalledPluginVersion(list([{ id: "crafty@crafty", enabled: true }])),
       undefined,
     );
   });

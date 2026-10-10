@@ -11,7 +11,7 @@ import type { DriverCaps, DriverContext, HarnessDriver } from "./types.js";
 import { watchChildOutput } from "./watch.js";
 
 const MODEL = "openai-codex/gpt-5.6-luna";
-const PLAN_COMMAND = "/paireto-plan";
+const PLAN_COMMAND = "/crafty-plan";
 const IMPLEMENT_MARKER = "hello.txt";
 const mockHomeDir = (): string => mockPath("pai-e2e-pi-home");
 
@@ -63,8 +63,8 @@ export class PiDriver implements HarnessDriver {
   readonly harness = "pi";
   readonly caps: DriverCaps = {
     turnEndReview: "post-hoc",
-    guidedReviewInvocation: "/skill:paireto-guided-review",
-    reviewInvocation: "/skill:paireto-review",
+    guidedReviewInvocation: "/skill:crafty-guided-review",
+    reviewInvocation: "/skill:crafty-review",
     opensTurnEndReview: true,
   };
 
@@ -212,7 +212,7 @@ export class PiDriver implements HarnessDriver {
 }
 
 function repoRoot(): string {
-  return process.env.PAIRETO_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
+  return process.env.CRAFTY_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
 }
 
 function redactSecrets(value: string): string {

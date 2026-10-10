@@ -75,7 +75,7 @@ function tabsOnScheme(scheme: string): Array<{ scheme: string; path: string }> {
   return openTabs().filter((tab) => tab.scheme === scheme);
 }
 
-const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
+const repoRoot = requireEnv("CRAFTY_E2E_SANDBOX");
 
 driversForSharedSpec(__dirname, CASE).forEach((harness) => {
   suite(pairLabel(CASE, harness), () => {
@@ -176,13 +176,13 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
 
     test("a changeset opens its description and its files", async () => {
       const first = plan.changesets[0];
-      await vscode.commands.executeCommand("paireto.guidedReview.openChangeset", {
+      await vscode.commands.executeCommand("crafty.guidedReview.openChangeset", {
         changesetId: first.id,
       });
       await wait("the changeset description tab to open", () =>
-        Promise.resolve(tabsOnScheme("paireto-changeset").length > 0),
+        Promise.resolve(tabsOnScheme("crafty-changeset").length > 0),
       );
-      await vscode.commands.executeCommand("paireto.guidedReview.openFile", {
+      await vscode.commands.executeCommand("crafty.guidedReview.openFile", {
         changesetId: first.id,
         path: first.files[0].path,
       });
@@ -196,7 +196,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
 
     test("Stage All stages every file in the changeset", async () => {
       const first = plan.changesets[0];
-      await vscode.commands.executeCommand("paireto.review.stageAll", {
+      await vscode.commands.executeCommand("crafty.review.stageAll", {
         kind: "changeset",
         repoRoot,
         changesetId: first.id,
@@ -222,7 +222,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         throw new Error(`the E2E feedback ID was not retained\n${await dump()}`);
       }
       await driveUntil(
-        "paireto.gate.sendFeedback",
+        "crafty.gate.sendFeedback",
         gate.id,
         async () => !guidedGates(await inspect()).some((g) => g.id === gate.id),
         "the guided gate to resolve on send-feedback",
@@ -253,7 +253,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
           return snap.gates.find((g) => g.id !== gate.id);
         });
         await driveUntil(
-          "paireto.gate.approve",
+          "crafty.gate.approve",
           followUp.id,
           async () => !(await inspect()).gates.some((g) => g.id === followUp.id),
           "the follow-up gate to resolve on approve",
@@ -272,7 +272,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
           settled
         );
       });
-      if (tabsOnScheme("paireto-changeset").length > 0) {
+      if (tabsOnScheme("crafty-changeset").length > 0) {
         throw new Error("the changeset description tabs must close when the review plan clears");
       }
       const screen = await driver.screen();

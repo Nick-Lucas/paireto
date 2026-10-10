@@ -38,7 +38,7 @@ suite("review URI shape (breadcrumbs)", () => {
   });
 
   test("provider resolves content from the query, not the URI path", async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paireto-uri-"));
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "crafty-uri-"));
     const provider = new ReviewContentProvider();
     try {
       await fs.writeFile(path.join(dir, "file.txt"), "hello breadcrumbs");
@@ -145,7 +145,7 @@ suite("ReviewPath.displayPath (breadcrumb labeling)", () => {
     // macOS /var vs /private/var: the folder is the user-opened (possibly symlinked) path while
     // repoRoot is git-canonicalized — the two must still pair up or the folder prefix silently
     // drops and two repos' same-named files get indistinguishable breadcrumbs.
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "paireto-display-"));
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "crafty-display-"));
     try {
       await fs.mkdir(path.join(dir, "real", "src"), { recursive: true });
       await fs.writeFile(path.join(dir, "real", "src", "x.ts"), "");

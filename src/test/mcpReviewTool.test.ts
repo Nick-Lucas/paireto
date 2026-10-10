@@ -1,4 +1,4 @@
-// The `paireto_review` tool is agent-facing contract: the model decides whether to call it from the
+// The `crafty_review` tool is agent-facing contract: the model decides whether to call it from the
 // name and description alone, and the e2e replay fixtures match on that text. Pin both so a reword
 // is a deliberate change with a fixture re-record, not an accident.
 
@@ -23,9 +23,9 @@ import { type Harness, PLUGIN_VERSION } from "../protocol/types.js";
 import { FEEDBACK_REPLY_TOOL_NAME, runFeedbackReply } from "../plugins/core/mcp/feedbackTools.js";
 import { ackWith, startServer } from "./fakeBridgeServer.js";
 
-suite("MCP paireto_review tool", () => {
+suite("MCP crafty_review tool", () => {
   test("the tool name is the one the skills and commands invoke", () => {
-    assert.strictEqual(REVIEW_TOOL_NAME, "paireto_review");
+    assert.strictEqual(REVIEW_TOOL_NAME, "crafty_review");
   });
 
   test("the description says feedback includes stable IDs", () => {
@@ -39,7 +39,7 @@ suite("MCP paireto_review tool", () => {
 
   test("registers a reply tool with a strict schema, and no resolve tool", async () => {
     const server = createMcpServer({
-      serverName: "paireto-test",
+      serverName: "crafty-test",
       harness: "codex" as const,
       resolveReviewTarget: () => undefined,
       startLiveness: () => () => {},
@@ -55,7 +55,7 @@ suite("MCP paireto_review tool", () => {
         "message",
       ]);
       assert.strictEqual(
-        tools.has("paireto_resolve_feedback"),
+        tools.has("crafty_resolve_feedback"),
         false,
         "only the reviewer resolves a thread",
       );
@@ -87,7 +87,7 @@ suite("MCP paireto_review tool", () => {
   // for it makes the SDK validate that missing field and reject the call before the tool ever runs.
   test("a call that omits arguments reaches the tool", async () => {
     const server = createMcpServer({
-      serverName: "paireto-test",
+      serverName: "crafty-test",
       harness: "claudecode" as const,
       resolveReviewTarget: () => undefined,
       startLiveness: () => () => {},
@@ -104,7 +104,7 @@ suite("MCP paireto_review tool", () => {
         { method: "tools/call", params: { name: REVIEW_TOOL_NAME } },
         CallToolResultSchema,
       );
-      assert.match((result.content[0] as { text: string }).text, /No VS Code Paireto is listening/);
+      assert.match((result.content[0] as { text: string }).text, /No VS Code Crafty is listening/);
     } finally {
       await client.close();
     }
@@ -123,7 +123,7 @@ suite("MCP paireto_review tool", () => {
   test("with no window listening the tool reports an error rather than hanging", async () => {
     const result = await runReview(undefined, "kiro");
     assert.strictEqual(result.isError, true);
-    assert.match(result.content[0].text, /No VS Code Paireto is listening/);
+    assert.match(result.content[0].text, /No VS Code Crafty is listening/);
   });
 
   test("a socket that is not there reports no window rather than a connection failure", async () => {
@@ -135,7 +135,7 @@ suite("MCP paireto_review tool", () => {
       "kiro",
     );
     assert.strictEqual(result.isError, true);
-    assert.match(result.content[0].text, /No VS Code Paireto is listening/);
+    assert.match(result.content[0].text, /No VS Code Crafty is listening/);
   });
 
   // The window is right there and answering — it just refuses this build. Reporting that as a
@@ -152,7 +152,7 @@ suite("MCP paireto_review tool", () => {
       const text = result.content[0].text;
       assert.match(text, /9\.9\.9/, `expected the window's version in: ${text}`);
       assert.ok(text.includes(PLUGIN_VERSION), `expected the plugin's version in: ${text}`);
-      assert.match(text, /Update the Paireto plugin/, `expected the way out in: ${text}`);
+      assert.match(text, /Update the Crafty plugin/, `expected the way out in: ${text}`);
       assert.doesNotMatch(text, /Could not connect/, "a refusal is not a transport failure");
     } finally {
       await server.dispose();
@@ -160,7 +160,7 @@ suite("MCP paireto_review tool", () => {
   });
 
   test("a path that exists but is not a listening socket reports a connection failure", async () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-review-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-review-"));
     const notASocket = path.join(dir, "not.sock");
     fs.writeFileSync(notASocket, "");
     try {
@@ -179,13 +179,13 @@ suite("MCP paireto_review tool", () => {
   });
 });
 
-// `paireto_plan_review` exists for the one harness that cannot raise a second plan gate from a hook.
+// `crafty_plan_review` exists for the one harness that cannot raise a second plan gate from a hook.
 // Advertising it anywhere else gives the model a way to "approve" a plan without the harness-native
 // mode transition an approval has to carry, so the inventory is checked per harness.
-suite("MCP paireto_plan_review tool exposure", () => {
+suite("MCP crafty_plan_review tool exposure", () => {
   const toolNames = async (harness: Harness): Promise<string[]> => {
     const server = createMcpServer({
-      serverName: "paireto-test",
+      serverName: "crafty-test",
       harness,
       resolveReviewTarget: () => undefined,
       startLiveness: () => () => {},

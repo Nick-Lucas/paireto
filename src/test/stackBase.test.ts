@@ -38,14 +38,14 @@ function makeRepo(prefix: string): TestRepo {
 suite("stack base — pickStackBase", () => {
   test("picks the nearest ancestor branch and skips the checked-out branch on the same commit", () => {
     const log = [
-      "4c72661\tpaireto/stack-base-compare, paireto/changes-enter-rename",
-      "a7c5145\tpaireto/stage-saves-unsaved-changes",
-      "8dbd7d4\tpaireto/plan-review-file-feedback",
-      "a27377b\tpaireto/sidebar-plugin-versions",
+      "4c72661\tcrafty/stack-base-compare, crafty/changes-enter-rename",
+      "a7c5145\tcrafty/stage-saves-unsaved-changes",
+      "8dbd7d4\tcrafty/plan-review-file-feedback",
+      "a27377b\tcrafty/sidebar-plugin-versions",
     ].join("\n");
-    assert.deepStrictEqual(pickStackBase(log, "paireto/stack-base-compare"), {
+    assert.deepStrictEqual(pickStackBase(log, "crafty/stack-base-compare"), {
       commit: "4c72661",
-      branch: "paireto/changes-enter-rename",
+      branch: "crafty/changes-enter-rename",
     });
   });
 
@@ -95,7 +95,7 @@ suite("stack base — DiffService.resolveCompareTo", () => {
   let featATip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-");
+    repo = makeRepo("crafty-stackbase-");
     mainTip = repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/a"]);
     featATip = repo.commit("a.txt");
@@ -145,7 +145,7 @@ suite("stack base — a side branch merged into the layer", () => {
   let featATip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-merge-");
+    repo = makeRepo("crafty-stackbase-merge-");
     repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/a"]);
     featATip = repo.commit("a.txt");
@@ -182,7 +182,7 @@ suite("stack base — a layer that merges its parent in", () => {
   let mainTip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-parentmerge-");
+    repo = makeRepo("crafty-stackbase-parentmerge-");
     mainTip = repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/a"]);
     repo.commit("a1.txt");
@@ -216,7 +216,7 @@ suite("stack base — with log.decorate set to full", () => {
   let featATip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-decorate-");
+    repo = makeRepo("crafty-stackbase-decorate-");
     repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/a"]);
     featATip = repo.commit("a.txt");
@@ -245,7 +245,7 @@ suite("stack base — a detached HEAD", () => {
   let featATip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-detached-");
+    repo = makeRepo("crafty-stackbase-detached-");
     repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/a"]);
     featATip = repo.commit("a.txt");
@@ -282,7 +282,7 @@ suite("stack base — a layer with no commits of its own", () => {
   let featBTip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-newlayer-");
+    repo = makeRepo("crafty-stackbase-newlayer-");
     repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/a"]);
     repo.commit("a.txt");
@@ -315,7 +315,7 @@ suite("stack base — after the stack is rebased", () => {
   let rebasedATip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-rebase-");
+    repo = makeRepo("crafty-stackbase-rebase-");
     repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/a"]);
     createdFrom = repo.commit("a.txt");
@@ -355,7 +355,7 @@ suite("stack base — a branch with nothing under it", () => {
   let mainTip: string;
 
   suiteSetup(() => {
-    repo = makeRepo("paireto-stackbase-solo-");
+    repo = makeRepo("crafty-stackbase-solo-");
     mainTip = repo.commit("base.txt");
     repo.git(["checkout", "-q", "-b", "feat/solo"]);
     repo.commit("solo.txt");

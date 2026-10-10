@@ -76,8 +76,8 @@ export function startCodexLiveness(pid: number = codexPid()): CodexLiveness {
       loggedFailure = reason;
       console.error(
         isTerminalFailure(reason)
-          ? `paireto: ${refusedMessage(extVersion)}. Liveness and reviews stay unavailable until then.`
-          : `paireto: liveness could not attach (${reason}); the next poll retries.`,
+          ? `crafty: ${refusedMessage(extVersion)}. Liveness and reviews stay unavailable until then.`
+          : `crafty: liveness could not attach (${reason}); the next poll retries.`,
       );
     }
   };

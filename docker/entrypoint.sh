@@ -6,7 +6,7 @@ set -euo pipefail
 # unusable here because esbuild/oxlint/oxfmt ship per-platform native binaries. A named volume shadows
 # it (see docker-compose.yml); we populate it once (cached across runs) when it's empty.
 if [ ! -d node_modules/.pnpm ]; then
-  echo "paireto-docker: installing dependencies (Linux) ..."
+  echo "crafty-docker: installing dependencies (Linux) ..."
   pnpm install --frozen-lockfile
 fi
 
@@ -24,6 +24,6 @@ done
 
 # Readiness marker for the compose healthcheck — `up --wait` blocks on this, so a test exec never
 # races the first-boot install/display setup above.
-touch /tmp/paireto-ready
+touch /tmp/crafty-ready
 
 exec "$@"

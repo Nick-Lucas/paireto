@@ -17,7 +17,7 @@ const DEBOUNCE_MS = 150;
 
 /**
  * Deterministically pick the repo this window is "in". Anchoring on the workspace folder (not
- * repos[0]) is the actual blank-list fix: a mid-review refresh with a virtual `paireto-review:` doc
+ * repos[0]) is the actual blank-list fix: a mid-review refresh with a virtual `crafty-review:` doc
  * active must not retarget a different discovered repo. Active editor is consulted ONLY for
  * `file:`-scheme docs; both sides are canonicalized (macOS /var skew) and the longest containing
  * root wins.

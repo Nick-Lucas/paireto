@@ -29,5 +29,5 @@
   "[jsonc]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
-  "paireto.logLevel": "debug"
+  "crafty.logLevel": "debug"
 }

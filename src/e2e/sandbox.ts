@@ -1,5 +1,5 @@
 // E2E sandbox factory (runs in the HOST node process — NO vscode import). Builds a throwaway git
-// repo with Paireto settings seeded, a SHORT /tmp XDG_STATE_HOME (macOS sun_path ~104B limit — a
+// repo with Crafty settings seeded, a SHORT /tmp XDG_STATE_HOME (macOS sun_path ~104B limit — a
 // scratchpad-length socket dir EINVALs), and a fresh --user-data-dir. Also builds the per-harness
 // home factory (claude/codex/opencode) + availability probes.
 //
@@ -43,13 +43,13 @@ const HERMETIC_GIT_ENV: NodeJS.ProcessEnv = {
   GIT_COMMITTER_DATE: SANDBOX_COMMIT_DATE,
 };
 
-/** Paireto settings seeded into the sandbox .vscode/settings.json. */
+/** Crafty settings seeded into the sandbox .vscode/settings.json. */
 const SANDBOX_SETTINGS: Record<string, unknown> = {
-  "paireto.notify.type": "disabled",
-  "paireto.review.mode": "automatic",
-  "paireto.planApprove.mode.claudecode": "acceptEdits",
-  "paireto.planApprove.mode.opencode": "build",
-  "paireto.logLevel": "debug",
+  "crafty.notify.type": "disabled",
+  "crafty.review.mode": "automatic",
+  "crafty.planApprove.mode.claudecode": "acceptEdits",
+  "crafty.planApprove.mode.opencode": "build",
+  "crafty.logLevel": "debug",
   // Keep VS Code quiet + deterministic during the run.
   "workbench.startupEditor": "none",
   "git.openRepositoryInParentFolders": "always",
@@ -74,12 +74,12 @@ export function mockTmpRoot(): string {
 }
 
 const FIXED_MOCK_NAMES = new Set([
-  "paireto-e2e-claudecode",
-  "paireto-e2e-codex",
-  "paireto-e2e-opencode",
-  "paireto-e2e-kiro",
-  "paireto-e2e-pi",
-  "paireto-e2e-sandbox-root-test",
+  "crafty-e2e-claudecode",
+  "crafty-e2e-codex",
+  "crafty-e2e-opencode",
+  "crafty-e2e-kiro",
+  "crafty-e2e-pi",
+  "crafty-e2e-sandbox-root-test",
   "pai-e2e-claude-home",
   "pai-e2e-codex-home",
   "pai-e2e-opencode-home",
@@ -139,8 +139,8 @@ export function createSandbox(opts: SandboxOptions = {}): Sandbox {
     execFileSync("git", args, { cwd: repoRoot, env: HERMETIC_GIT_ENV, stdio: "ignore" });
   };
   git(["init", "-q"]);
-  git(["config", "user.email", "e2e@paireto.test"]);
-  git(["config", "user.name", "Paireto E2E"]);
+  git(["config", "user.email", "e2e@crafty.test"]);
+  git(["config", "user.name", "Crafty E2E"]);
   git(["config", "commit.gpgsign", "false"]);
   git(["config", "core.hooksPath", "/dev/null"]);
 
@@ -202,7 +202,7 @@ function copySecret(src: string, dest: string): void {
 /** The Claude config file — overridable so a container can point at a host-staged copy (the macOS
  *  keychain is unavailable in Linux; see docker/prepare-e2e.sh). Defaults to the real ~/.claude.json. */
 function claudeConfigPath(): string {
-  return process.env.PAIRETO_CLAUDE_CONFIG ?? path.join(os.homedir(), ".claude.json");
+  return process.env.CRAFTY_CLAUDE_CONFIG ?? path.join(os.homedir(), ".claude.json");
 }
 
 /** True iff the path is a non-empty file (an empty placeholder mount counts as absent). */
@@ -247,8 +247,8 @@ function seedClaudeConfig(destDir: string): void {
 function seedFakeClaudeCredentials(destDir: string): void {
   const cred = {
     claudeAiOauth: {
-      accessToken: "sk-ant-oat01-paireto-e2e-check-fake-access",
-      refreshToken: "sk-ant-ort01-paireto-e2e-check-fake-refresh",
+      accessToken: "sk-ant-oat01-crafty-e2e-check-fake-access",
+      refreshToken: "sk-ant-ort01-crafty-e2e-check-fake-refresh",
       expiresAt: 4102444800000, // 2100-01-01
       scopes: ["user:inference", "user:profile"],
       subscriptionType: "max",
@@ -272,7 +272,7 @@ function seedFakeClaudeConfig(destDir: string): void {
     lastOnboardingVersion: "2.1.220",
     oauthAccount: {
       accountUuid: "00000000-0000-4000-8000-0000000000c4",
-      emailAddress: "paireto-e2e@example.invalid",
+      emailAddress: "crafty-e2e@example.invalid",
       organizationUuid: "00000000-0000-4000-8000-0000000000c5",
       hasExtraUsageEnabled: false,
       billingType: "subscription",
@@ -296,7 +296,7 @@ export function probeClaude(mode: E2EMode = "record"): Availability {
     return true;
   }
   if (!hasContent(claudeConfigPath())) {
-    return "no Claude config (ANTHROPIC_API_KEY, ~/.claude.json, or staged PAIRETO_CLAUDE_CONFIG)";
+    return "no Claude config (ANTHROPIC_API_KEY, ~/.claude.json, or staged CRAFTY_CLAUDE_CONFIG)";
   }
   return true;
 }
@@ -354,7 +354,7 @@ export function probeKiro(mode: E2EMode = "record"): Availability {
 /**
  * Build an isolated claude home: temp CLAUDE_CONFIG_DIR seeded from the Claude config + the OAuth
  * credential (or ANTHROPIC_API_KEY when present, for CI). The credential comes from a host-staged
- * file when PAIRETO_CLAUDE_CREDENTIALS points at one (Docker — no keychain in Linux; see
+ * file when CRAFTY_CLAUDE_CREDENTIALS points at one (Docker — no keychain in Linux; see
  * docker/prepare-e2e.sh), else from the macOS keychain. Plugin is wired at launch via
  * `--plugin-dir <repo>/dist/plugins/claude-code`.
  */
@@ -377,7 +377,7 @@ export function buildClaudeHome(opts: { checkMode?: boolean; homeDir?: string } 
   }
   if (!process.env.ANTHROPIC_API_KEY) {
     seedClaudeConfig(dir);
-    const credOverride = process.env.PAIRETO_CLAUDE_CREDENTIALS;
+    const credOverride = process.env.CRAFTY_CLAUDE_CREDENTIALS;
     if (credOverride && hasContent(credOverride)) {
       // Host-staged OAuth credential (contents never printed).
       copySecret(credOverride, path.join(dir, ".credentials.json"));
@@ -416,9 +416,9 @@ export function buildCodexHome(opts: { checkMode?: boolean; homeDir?: string } =
   if (opts.checkMode) {
     const accountId = CODEX_CHECK_ACCOUNT_ID;
     const token = fakeJwt({
-      sub: "paireto-e2e-check",
+      sub: "crafty-e2e-check",
       exp: 4102444800, // 2100-01-01
-      email: "paireto-e2e@example.invalid",
+      email: "crafty-e2e@example.invalid",
       "https://api.openai.com/auth": {
         chatgpt_account_id: accountId,
         chatgpt_plan_type: "pro",
@@ -432,7 +432,7 @@ export function buildCodexHome(opts: { checkMode?: boolean; homeDir?: string } =
         tokens: {
           id_token: token,
           access_token: token,
-          refresh_token: "paireto-e2e-check-fake-refresh",
+          refresh_token: "crafty-e2e-check-fake-refresh",
           account_id: accountId,
         },
         last_refresh: new Date().toISOString(),
@@ -471,8 +471,8 @@ export function buildOpenCodeHome(
       JSON.stringify({
         openai: {
           type: "oauth",
-          refresh: "paireto-e2e-check-fake-refresh",
-          access: fakeJwt({ sub: "paireto-e2e-check", exp: 4102444800 }),
+          refresh: "crafty-e2e-check-fake-refresh",
+          access: fakeJwt({ sub: "crafty-e2e-check", exp: 4102444800 }),
           expires: 4102444800000,
           accountId: "00000000-0000-4000-8000-0000000000c3",
         },
@@ -501,7 +501,7 @@ export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = 
   // check mode: a syntactically valid fake API key so Kiro is "logged in" and sends the requests the
   // fixture answers, while the proxy + MockServer SIMULATE keep it fully offline. Recording instead
   // copies the machine's real sign-in into this throwaway home, the way the other harnesses do.
-  const apiKey = opts.checkMode ? "ksk_paireto_e2e_check_fake" : process.env.KIRO_API_KEY;
+  const apiKey = opts.checkMode ? "ksk_crafty_e2e_check_fake" : process.env.KIRO_API_KEY;
   if (!opts.checkMode && !apiKey) {
     seedKiroSecrets(dir, resolveKiroSecrets());
   }
@@ -562,14 +562,14 @@ export function buildPiHome(opts: { checkMode?: boolean; homeDir?: string } = {}
         "openai-codex": {
           type: "oauth",
           access: fakeJwt({
-            sub: "paireto-e2e-check",
+            sub: "crafty-e2e-check",
             exp: 4102444800,
             "https://api.openai.com/auth": {
               chatgpt_account_id: "00000000-0000-4000-8000-0000000000c6",
               chatgpt_plan_type: "pro",
             },
           }),
-          refresh: "paireto-e2e-check-fake-refresh",
+          refresh: "crafty-e2e-check-fake-refresh",
           expires: 4102444800000,
           accountId: "00000000-0000-4000-8000-0000000000c6",
         },
@@ -597,7 +597,7 @@ function readFileOrEmpty(file: string): string {
 function fakeJwt(payload: Record<string, unknown>): string {
   const encode = (value: unknown): string =>
     Buffer.from(JSON.stringify(value), "utf8").toString("base64url");
-  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.paireto-e2e`;
+  return `${encode({ alg: "none", typ: "JWT" })}.${encode(payload)}.crafty-e2e`;
 }
 
 function rm(dir: string, fixed = false): void {

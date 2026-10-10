@@ -12,7 +12,7 @@ import { defineConfig } from '@vscode/test-cli';
 // fixed path's rm-rf at config load would destroy a concurrent run's live workspace (two worktrees
 // running `pnpm test` at once), and both runs would contend for one per-repo socket.
 function prepareFixtureWorkspace() {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'paireto-test-workspace-'));
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'crafty-test-workspace-'));
 	const git = (...args) => execFileSync('git', args, { cwd: dir });
 	git('init', '-q');
 	git('config', 'user.email', 'test@example.com');
@@ -38,9 +38,9 @@ export default defineConfig({
 	files: 'out/test/**/*.test.js',
 	workspaceFolder: prepareFixtureWorkspace(),
 	// In Docker (see docker/README.md) VS Code runs as root under xvfb, so Electron needs --no-sandbox;
-	// inert on a native macOS run where PAIRETO_DOCKER is unset.
-	launchArgs: process.env.PAIRETO_DOCKER ? ['--no-sandbox', '--disable-gpu'] : [],
-	// Registers the read-only `paireto.test.inspect` control plane so extension-host tests can
+	// inert on a native macOS run where CRAFTY_DOCKER is unset.
+	launchArgs: process.env.CRAFTY_DOCKER ? ['--no-sandbox', '--disable-gpu'] : [],
+	// Registers the read-only `crafty.test.inspect` control plane so extension-host tests can
 	// assert on internal counters (e.g. that openDiff never runs the full refresh).
-	env: { PAIRETO_TEST: '1', XDG_STATE_HOME: prepareStateHome() },
+	env: { CRAFTY_TEST: '1', XDG_STATE_HOME: prepareStateHome() },
 });

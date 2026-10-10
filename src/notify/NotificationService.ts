@@ -1,6 +1,6 @@
 // Plays a sound when one of THIS window's agents enters a "needs you" state. Each AgentSession
 // holds one of these and calls `notify()` directly from its single ping path (fireNeedsYou) — there
-// is no event plumbing in between. Gated on `paireto.notify.type` (`sound` | `disabled`).
+// is no event plumbing in between. Gated on `crafty.notify.type` (`sound` | `disabled`).
 // We shell out to the platform sound player (like the rest of the repo shells out to git); it's
 // best-effort and non-blocking — failures are logged via the shared logger.
 // (The visible "needs you" cue lives in the sidebar, status bar, and repo switcher.)
@@ -17,7 +17,7 @@ type NotifyType = "sound" | "disabled";
 
 export class NotificationService {
   private config<T>(key: string, fallback: T): T {
-    return vscode.workspace.getConfiguration("paireto").get<T>(key, fallback);
+    return vscode.workspace.getConfiguration("crafty").get<T>(key, fallback);
   }
 
   /** Called by an AgentSession when it fires a needs-you ping (already past mute/focus suppression). */

@@ -9,7 +9,7 @@
 //
 // A run that exits without writing its case's completion marker never carried the flow through (in
 // the full-flow case, a plan-tool miss: the model answered as plain text instead of calling
-// paireto_submit_plan). That is a test failure: silently retrying a fresh session would not match
+// crafty_submit_plan). That is a test failure: silently retrying a fresh session would not match
 // what happens to a user and could hide an unreliable integration.
 
 import { spawn, type ChildProcess } from "node:child_process";
@@ -82,8 +82,8 @@ export class OpenCodeDriver implements HarnessDriver {
   readonly harness = "opencode";
   readonly caps: DriverCaps = {
     turnEndReview: "post-hoc", // session.idle is fire-and-forget; the agent is already idle
-    guidedReviewInvocation: "/paireto-guided-review",
-    reviewInvocation: "/paireto-review",
+    guidedReviewInvocation: "/crafty-guided-review",
+    reviewInvocation: "/crafty-review",
     opensTurnEndReview: true,
   };
 
@@ -154,13 +154,13 @@ export class OpenCodeDriver implements HarnessDriver {
 
   // --- config staging -----------------------------------------------------------------------------
 
-  /** Start empty so replay never installs a network plugin, then install the bundled Paireto plugin. */
+  /** Start empty so replay never installs a network plugin, then install the bundled Crafty plugin. */
   private stageConfig(): void {
     const configDir = path.join(this.home!.env.XDG_CONFIG_HOME as string, "opencode");
     fs.mkdirSync(configDir, { recursive: true });
     fs.writeFileSync(path.join(configDir, "opencode.json"), "{}\n");
     this.stagePluginSdk(configDir);
-    // Install our plugin (paireto.js + adapter.json + the review command) into the temp config dir.
+    // Install our plugin (crafty.js + adapter.json + the review command) into the temp config dir.
     for (const copy of openCodeInstallPlan(path.join(repoRoot(), "dist", "plugins"), configDir)) {
       fs.mkdirSync(path.dirname(copy.to), { recursive: true });
       fs.copyFileSync(copy.from, copy.to);
@@ -173,7 +173,7 @@ export class OpenCodeDriver implements HarnessDriver {
    *
    * OpenCode npm-installs the plugin SDK into its config dir at runtime, which a credential-free
    * `check` run cannot do. Without the SDK our plugin's `planToolArgs()` falls back to an empty
-   * schema, advertising paireto_submit_plan with no `plan` parameter, and the model can never submit
+   * schema, advertising crafty_submit_plan with no `plan` parameter, and the model can never submit
    * a plan. Staging it keeps record on the same plugin surface as check.
    */
   private stagePluginSdk(configDir: string): void {
@@ -181,9 +181,9 @@ export class OpenCodeDriver implements HarnessDriver {
     if (!source) {
       // Loud, because the symptom downstream is only a plan-gate timeout.
       this.log(
-        "WARNING: no OpenCode plugin SDK to stage (set PAIRETO_OPENCODE_SDK, or install opencode " +
+        "WARNING: no OpenCode plugin SDK to stage (set CRAFTY_OPENCODE_SDK, or install opencode " +
           "locally) — OpenCode will try to npm-install it, which fails offline and leaves " +
-          "paireto_submit_plan without its `plan` parameter",
+          "crafty_submit_plan without its `plan` parameter",
       );
       return;
     }
@@ -294,13 +294,13 @@ export class OpenCodeDriver implements HarnessDriver {
 
 /**
  * A `node_modules` holding `@opencode-ai/plugin`, for mock runs to resolve offline. The Docker image
- * pre-installs one at PAIRETO_OPENCODE_SDK; natively the user's own opencode config already has it,
+ * pre-installs one at CRAFTY_OPENCODE_SDK; natively the user's own opencode config already has it,
  * from OpenCode's own runtime install.
  */
 function pluginSdkSource(): string | undefined {
   const candidates = [
-    process.env.PAIRETO_OPENCODE_SDK
-      ? path.join(process.env.PAIRETO_OPENCODE_SDK, "node_modules")
+    process.env.CRAFTY_OPENCODE_SDK
+      ? path.join(process.env.CRAFTY_OPENCODE_SDK, "node_modules")
       : undefined,
     path.join(realOpenCodeConfigDir(), "node_modules"),
   ];
@@ -318,7 +318,7 @@ function realOpenCodeConfigDir(): string {
 
 /** The extension repo root (where the shipped plugins/ live). */
 function repoRoot(): string {
-  return process.env.PAIRETO_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
+  return process.env.CRAFTY_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
 }
 
 function kill(child: ChildProcess | undefined): void {

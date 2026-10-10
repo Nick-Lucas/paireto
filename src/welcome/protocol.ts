@@ -35,7 +35,7 @@ export interface ShortcutState {
 
 /** What this window is, for reading against the per-agent plugin versions. A plugin only talks to
  *  the extension when its version equals {@link VersionState.plugin} exactly, so the two numbers
- *  together are the whole diagnosis when an agent stops reaching Paireto. */
+ *  together are the whole diagnosis when an agent stops reaching Crafty. */
 export interface VersionState {
   /** The VS Code extension's own release version. */
   extension: string;

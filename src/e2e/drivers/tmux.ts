@@ -73,7 +73,7 @@ export class TmuxSession {
     // reach the marker; dispose kills the dedicated server while the TUI is still active.
     const command =
       `${launch.command}; pai_e2e_status=$?; ` +
-      `echo "[paireto tmux command exited $pai_e2e_status]"; exec sleep ${PANE_KEEPALIVE_SECONDS}`;
+      `echo "[crafty tmux command exited $pai_e2e_status]"; exec sleep ${PANE_KEEPALIVE_SECONDS}`;
     sweepStaleServers();
     // new-session runs `command` via /bin/sh -c; the fresh server inherits this client's env.
     this.tmux(
@@ -121,7 +121,7 @@ export class TmuxSession {
 
   /** Exit status retained by the wrapper, or undefined while the TUI is still running. */
   exitStatus(): number | undefined {
-    const match = /\[paireto tmux command exited (\d+)\]/.exec(this.capture());
+    const match = /\[crafty tmux command exited (\d+)\]/.exec(this.capture());
     return match ? Number(match[1]) : undefined;
   }
 

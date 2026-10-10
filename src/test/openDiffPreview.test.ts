@@ -29,7 +29,7 @@ suite("openDiff preview behaviour", () => {
     this.timeout(30_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     // Leftover/session-restored diff tabs (which VS Code restores as KEPT tabs) would satisfy the
     // active-tab poll below before our own open lands.
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
@@ -50,7 +50,7 @@ suite("openDiff preview behaviour", () => {
       deletions: 0,
       repoRoot: canonicalize(folder.uri.fsPath),
     };
-    await vscode.commands.executeCommand("paireto.review.openDiff", file);
+    await vscode.commands.executeCommand("crafty.review.openDiff", file);
 
     // The command handler fires openDiff without awaiting it — poll for the diff tab.
     const tab = await waitFor(() => {
@@ -69,7 +69,7 @@ suite("openDiff preview behaviour", () => {
     this.timeout(30_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     // An add has no base side, so openDiff takes the single-pane vscode.open path instead of
@@ -85,7 +85,7 @@ suite("openDiff preview behaviour", () => {
       deletions: 0,
       repoRoot: canonicalize(folder.uri.fsPath),
     };
-    await vscode.commands.executeCommand("paireto.review.openDiff", file);
+    await vscode.commands.executeCommand("crafty.review.openDiff", file);
 
     const tab = await waitFor(() => {
       const active = vscode.window.tabGroups.activeTabGroup.activeTab;

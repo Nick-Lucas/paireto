@@ -3,7 +3,7 @@
 // mapper is the one compile-time-unsound seam (method bivariance narrows the wire union to OpenCode's
 // dialect), so these fixtures are the safety net: top-level vs child (parentID) session flows, the
 // child→parent routing that carries the child id as agentId, the plan-proposal edges (the opt-in
-// paireto_submit_plan tool.execute.before + the blocking paireto.plan.submitted gate event), and the
+// crafty_submit_plan tool.execute.before + the blocking crafty.plan.submitted gate event), and the
 // dropped-event cases.
 
 import { OpenCodeStrategy } from "../harness/OpenCodeStrategy.js";
@@ -78,17 +78,17 @@ suite("OpenCodeStrategy mapper fixtures", () => {
       expect: { kind: "postToolUse" },
     },
     {
-      name: "tool.execute.before (paireto_submit_plan) → planProposal (opt-in plan edge)",
+      name: "tool.execute.before (crafty_submit_plan) → planProposal (opt-in plan edge)",
       raw: ev("tool.execute.before", {
         sessionID: TOP,
-        tool: "paireto_submit_plan",
+        tool: "crafty_submit_plan",
         callID: "call_4",
       }),
       expect: { kind: "planProposal", sessionId: TOP },
     },
     {
-      name: "paireto.plan.submitted → planProposal with adapter-injected plan markdown",
-      raw: ev("paireto.plan.submitted", { sessionID: TOP }, { plan_markdown: "# Plan\n- do it" }),
+      name: "crafty.plan.submitted → planProposal with adapter-injected plan markdown",
+      raw: ev("crafty.plan.submitted", { sessionID: TOP }, { plan_markdown: "# Plan\n- do it" }),
       expect: { kind: "planProposal", sessionId: TOP, planText: "# Plan\n- do it" },
     },
     {

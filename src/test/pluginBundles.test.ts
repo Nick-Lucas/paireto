@@ -141,14 +141,14 @@ suite("plugin bundles match their manifests", () => {
       `${PLUGINS}/agent-plugin/com.openai.codex`,
       ".mcp.json",
     );
-    const codexArg = codex.mcpServers.paireto.args[0];
+    const codexArg = codex.mcpServers.crafty.args[0];
     assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/agent-plugin`, codexArg)), codexArg);
 
     const standard = readJson<{ mcpServers: Record<string, { args: string[] }> }>(
       `${PLUGINS}/agent-plugin`,
       "mcp.json",
     );
-    const standardArg = standard.mcpServers.paireto.args[0].replace("${PLUGIN_ROOT}/", "");
+    const standardArg = standard.mcpServers.crafty.args[0].replace("${PLUGIN_ROOT}/", "");
     assert.ok(fs.existsSync(path.join(repoRoot, `${PLUGINS}/agent-plugin`, standardArg)));
   });
 
@@ -157,12 +157,12 @@ suite("plugin bundles match their manifests", () => {
   // load plugin ... evaluating 'planningAgents'"), and a NON-function export is a hard load error
   // too ("Plugin export is not a function", also seen live).
   test("the OpenCode adapter the installer copies exports only loader-safe functions", async () => {
-    const adapter = path.join(repoRoot, `${PLUGINS}/opencode/paireto.js`);
+    const adapter = path.join(repoRoot, `${PLUGINS}/opencode/crafty.js`);
     assert.ok(fs.existsSync(adapter));
 
     const loaded = (await import(pathToFileURL(adapter).href)) as Record<string, unknown>;
     const exportNames = Object.keys(loaded).sort();
-    assert.deepStrictEqual(exportNames, ["PairetoOpenCode"]);
+    assert.deepStrictEqual(exportNames, ["CraftyOpenCode"]);
     for (const name of exportNames) {
       assert.strictEqual(typeof loaded[name], "function", name);
     }
@@ -175,7 +175,7 @@ suite("plugin bundles match their manifests", () => {
     ]) {
       const text = fs.readFileSync(path.join(repoRoot, server), "utf8");
       assert.ok(text.includes("modelcontextprotocol"), `${server} does not bundle the MCP SDK`);
-      assert.ok(text.includes("paireto_review"), `${server} does not register the review tool`);
+      assert.ok(text.includes("crafty_review"), `${server} does not register the review tool`);
     }
   });
 

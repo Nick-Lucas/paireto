@@ -1,4 +1,4 @@
-// Reading + writing the user's keybindings.json for the Welcome screen's "Paireto way" section.
+// Reading + writing the user's keybindings.json for the Welcome screen's "Crafty way" section.
 // The keybindings we manage are all built-in VS Code commands; "set recommended" appends/updates an
 // entry in the user file (user bindings win over defaults). VS Code exposes no API to read effective
 // keybindings, so we read user *overrides* from the file and fall back to a small known-defaults table
@@ -16,7 +16,7 @@ export interface RemoveDefault {
   when?: string;
 }
 
-/** One row in the "Paireto way" list — a built-in command we offer to (re)bind. */
+/** One row in the "Crafty way" list — a built-in command we offer to (re)bind. */
 export interface ManagedShortcut {
   /** Stable row id used in webview messages. */
   id: string;
@@ -119,10 +119,10 @@ export const MANAGED_SHORTCUTS: ManagedShortcut[] = [
     ],
   },
   {
-    id: "open-paireto-tab",
-    label: "Open Paireto tab",
-    // The auto-generated focus command for the Paireto activity-bar view container.
-    command: "workbench.view.extension.paireto",
+    id: "open-crafty-tab",
+    label: "Open Crafty tab",
+    // The auto-generated focus command for the Crafty activity-bar view container.
+    command: "workbench.view.extension.crafty",
     macKey: "cmd+shift+c",
     otherKey: "ctrl+shift+c",
     // cmd+shift+c / ctrl+shift+c is "Open New External Terminal" by default — clear it.
@@ -237,7 +237,7 @@ export function isApplied(
   return (s.removeDefaults ?? []).every((rd) => removalApplied(entries, recNorm, rd));
 }
 
-/** A snapshot of how one shortcut resolves — for the shared "Paireto" log channel. */
+/** A snapshot of how one shortcut resolves — for the shared "Crafty" log channel. */
 export interface ShortcutDebug {
   command: string;
   recommended: string;

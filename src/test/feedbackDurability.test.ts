@@ -21,7 +21,7 @@ import {
 } from "./planGateHarness.js";
 
 /** A branch made only by this suite. The window is shared, so teardown must put the repo back. */
-const SWITCH_BRANCH = "paireto-feedback-switch";
+const SWITCH_BRANCH = "crafty-feedback-switch";
 
 suite("feedback durability", () => {
   let repoRoot: string;
@@ -89,13 +89,13 @@ suite("feedback durability", () => {
 
     git(["checkout", "-q", "-b", SWITCH_BRANCH]);
     // Drive the refresh rather than wait on the git extension, which is slow under a headless run.
-    await vscode.commands.executeCommand("paireto.review.refresh");
+    await vscode.commands.executeCommand("crafty.review.refresh");
     await waitFor("the other branch's empty bucket to take over", async () =>
       (await inspect()).feedback.some((model) => model.id === id) ? undefined : true,
     );
 
     git(["checkout", "-q", original]);
-    await vscode.commands.executeCommand("paireto.review.refresh");
+    await vscode.commands.executeCommand("crafty.review.refresh");
     await waitFor("the first branch's feedback to come back from disk", async () =>
       (await inspect()).feedback.some((model) => model.id === id) ? true : undefined,
     );
@@ -113,7 +113,7 @@ suite("feedback durability", () => {
 
     const target = (await inspect()).feedback.find((item) => item.id === id);
     assert.ok(target, "the comment is live in the window");
-    await vscode.commands.executeCommand("paireto.review.deleteComment", { id });
+    await vscode.commands.executeCommand("crafty.review.deleteComment", { id });
 
     await waitFor("the comment to leave the bucket file", async () =>
       (await storedFeedback()).includes(id) ? undefined : true,

@@ -52,7 +52,7 @@ export function codexPid(): number {
  *  process may not see the hook process's custom XDG state root. The hook records the exact socket
  *  path in this file, which lets the MCP process connect without reconstructing that state root. */
 export function handoffPath(pid: number): string {
-  return path.join(os.homedir(), ".local", "state", "paireto", "handoff", `codex-${pid}.json`);
+  return path.join(os.homedir(), ".local", "state", "crafty", "handoff", `codex-${pid}.json`);
 }
 
 export function readHandoff(pid: number): CodexHandoff | undefined {

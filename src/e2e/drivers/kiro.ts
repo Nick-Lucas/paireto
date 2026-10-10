@@ -28,8 +28,8 @@ export class KiroDriver implements HarnessDriver {
   readonly harness = "kiro";
   readonly caps: DriverCaps = {
     turnEndReview: "blocking",
-    guidedReviewInvocation: "/paireto-guided-review",
-    reviewInvocation: "/paireto-review",
+    guidedReviewInvocation: "/crafty-guided-review",
+    reviewInvocation: "/crafty-review",
     opensTurnEndReview: false,
   };
 
@@ -59,7 +59,7 @@ export class KiroDriver implements HarnessDriver {
     const result = await installKiro(
       {
         pluginsRoot: path.join(repoRoot(), "dist", "plugins"),
-        stableDir: path.join(kiroHome, "paireto-installer"),
+        stableDir: path.join(kiroHome, "crafty-installer"),
       },
       { kiroHome },
     );
@@ -159,7 +159,7 @@ export async function acceptKiroTrustPrompt(tmux: Pick<DriverTmux, "sendKeys">):
 }
 
 function repoRoot(): string {
-  return process.env.PAIRETO_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
+  return process.env.CRAFTY_REPO_ROOT ?? path.resolve(__dirname, "..", "..", "..");
 }
 
 function delay(ms: number): Promise<void> {

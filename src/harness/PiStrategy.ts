@@ -11,7 +11,7 @@ export type PiEventType =
   | "tool_execution_end"
   | "file_changed"
   | "agent_settled"
-  | "paireto.plan.submitted";
+  | "crafty.plan.submitted";
 
 export interface PiEventProperties {
   sessionId: string;
@@ -26,7 +26,7 @@ export interface PiForwardedEvent {
   plan_markdown?: string;
 }
 
-const PLAN_TOOL = "paireto_submit_plan";
+const PLAN_TOOL = "crafty_submit_plan";
 
 const PI_KIND: Record<PiEventType, AppEventKind> = {
   session_start: "sessionStart",
@@ -36,7 +36,7 @@ const PI_KIND: Record<PiEventType, AppEventKind> = {
   tool_execution_end: "postToolUse",
   file_changed: "fileChanged",
   agent_settled: "stop",
-  "paireto.plan.submitted": "planProposal",
+  "crafty.plan.submitted": "planProposal",
 };
 
 export class PiStrategy implements AgentStrategy {

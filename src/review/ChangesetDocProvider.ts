@@ -1,5 +1,5 @@
 // Serves one changeset's description as a read-only virtual markdown document under the
-// paireto-changeset:// scheme, so a reviewer can read what a group of changes is for and comment on
+// crafty-changeset:// scheme, so a reviewer can read what a group of changes is for and comment on
 // it at that level rather than on a line of code.
 //
 // A read-only FileSystemProvider, not a TextDocumentContentProvider: the latter leaves the document

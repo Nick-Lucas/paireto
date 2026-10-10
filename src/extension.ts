@@ -43,7 +43,7 @@ import { exposeTestControlPlane } from "./testControlPlane.js";
 let feedbackRebuilder: FeedbackRebuilder | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  // Which agents carry the shipped Paireto plugin — read by the Welcome screen and the sidebar nudge.
+  // Which agents carry the shipped Crafty plugin — read by the Welcome screen and the sidebar nudge.
   const installStatus = new AgentInstallStatus(context);
 
   // Warm the comment-author cache (signed-in account → OS user → "Developer"); fire-and-forget.
@@ -51,9 +51,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // Show the Welcome / onboarding webview once, on first install — the user sets up their agent
   // (installs the bundled plugin) from there. A version string lets a future bump re-show it as a
-  // "what's new". Reopenable any time via paireto.openWelcome.
+  // "what's new". Reopenable any time via crafty.openWelcome.
   const WELCOME_VERSION = "2";
-  const welcomeMarker = "paireto.welcomeShownVersion";
+  const welcomeMarker = "crafty.welcomeShownVersion";
   if (context.globalState.get<string>(welcomeMarker) !== WELCOME_VERSION) {
     void context.globalState.update(welcomeMarker, WELCOME_VERSION);
     WelcomePanel.show(context, installStatus);
@@ -169,7 +169,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const gate = coordinator.current;
       if (!gate) {
         void vscode.window.showWarningMessage(
-          "Paireto: nothing to submit — this command only works while an agent is awaiting your feedback on a Plan or Code Review.",
+          "Crafty: nothing to submit — this command only works while an agent is awaiting your feedback on a Plan or Code Review.",
         );
         return;
       }
@@ -192,9 +192,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // it. The sidebar renders from the cache and redraws when the answer lands.
   installStatus.scheduleRefresh();
 
-  // Env-gated E2E test control plane (inert unless PAIRETO_TEST === "1"): read-only inspect + a
+  // Env-gated E2E test control plane (inert unless CRAFTY_TEST === "1"): read-only inspect + a
   // comment injector that re-dispatches through the real add-comment commands. Never in production.
-  if (process.env.PAIRETO_TEST === "1") {
+  if (process.env.CRAFTY_TEST === "1") {
     context.subscriptions.push(
       exposeTestControlPlane({
         agents,
@@ -221,7 +221,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     void vscode.window
       .showWarningMessage(
-        `An agent is running the Paireto plugin ${rejection.pluginVersion}, but this window ` +
+        `An agent is running the Crafty plugin ${rejection.pluginVersion}, but this window ` +
           `speaks ${rejection.extVersion}. Its hooks, reviews and plan gates are being refused. ` +
           `Update the plugin, then reload plugins in the agent.`,
         "Set Up Agents",
@@ -283,7 +283,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       });
       return planReview.presentPlan(event, msg.repoRoot, signal);
     },
-    // A plan the agent submitted through `paireto_plan_review` but triggered manually or by the agent
+    // A plan the agent submitted through `crafty_plan_review` but triggered manually or by the agent
     onPlanReviewTool: (msg, signal) => {
       warnForeignRepo(msg.repoRoot);
       const sessionId = msg.sessionId ?? agents.mostRecentSessionForRepo(msg.repoRoot) ?? "unknown";
@@ -435,7 +435,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   // (The repo switcher registers its own commands; see RepoSwitcher.)
 
-  console.log("paireto active:", path.basename(context.extensionUri.fsPath));
+  console.log("crafty active:", path.basename(context.extensionUri.fsPath));
 }
 
 export function deactivate(): Promise<void> {

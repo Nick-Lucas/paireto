@@ -48,7 +48,7 @@ suite("reconcile after a git write preserves re-pointed diff tabs", () => {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
@@ -74,7 +74,7 @@ suite("reconcile after a git write preserves re-pointed diff tabs", () => {
 
     // Open both diffs and KEEP them (a user's pinned/kept tabs — e.g. VS Code auto-keeps on edit).
     for (const name of names) {
-      await vscode.commands.executeCommand("paireto.review.openDiff", fileFor(name));
+      await vscode.commands.executeCommand("crafty.review.openDiff", fileFor(name));
       const tab = await waitFor(() => {
         const active = vscode.window.tabGroups.activeTabGroup.activeTab;
         const input = active?.input;
@@ -88,7 +88,7 @@ suite("reconcile after a git write preserves re-pointed diff tabs", () => {
     assert.strictEqual(reviewDiffTabs().length, 2, "both kept diff tabs open before staging");
 
     for (const name of names) {
-      await vscode.commands.executeCommand("paireto.review.stage", fileFor(name));
+      await vscode.commands.executeCommand("crafty.review.stage", fileFor(name));
     }
 
     const survived = await waitFor(() => {

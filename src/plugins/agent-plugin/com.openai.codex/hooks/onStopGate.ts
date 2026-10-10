@@ -1,4 +1,4 @@
-// The Codex turn-end fork for Paireto, registered on Stop alongside the passive onEvent hook. Codex
+// The Codex turn-end fork for Crafty, registered on Stop alongside the passive onEvent hook. Codex
 // has no ExitPlanMode/PermissionRequest plan event and no separate review gate, so ONE script serves
 // both surfaces off the Stop payload. Fails OPEN everywhere (any socket / timeout / malformed error
 // lets the agent stop) so a normal turn-end is never stalled.

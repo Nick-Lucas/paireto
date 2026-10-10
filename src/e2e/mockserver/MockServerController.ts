@@ -3,7 +3,7 @@
 // the subscription/OAuth flow is untouched; MockServer records, then replays). There is no host JVM,
 // so MockServer always runs as its official Docker image — this class `docker run`s one for a native
 // run, OR (under docker-compose) connects to an already-running `mockserver` service when
-// PAIRETO_MOCK_URL is preset. All control (mode switch, promote, retrieve, load) goes through the MCP
+// CRAFTY_MOCK_URL is preset. All control (mode switch, promote, retrieve, load) goes through the MCP
 // client (mcpClient.ts) since 7.4's VCR/record ops are MCP-only. Replay expectations are loaded
 // through MockServer's REST API because its MCP file loader does not preserve recorded SSE bodies.
 //
@@ -77,7 +77,7 @@ const LOCAL_BOOTSTRAP: Record<string, BootstrapExpectation[]> = {
       httpResponse: jsonResponse({
         account: {
           uuid: "00000000-0000-4000-8000-0000000000c4",
-          email: "paireto-e2e@example.invalid",
+          email: "crafty-e2e@example.invalid",
         },
         organization: { uuid: "00000000-0000-4000-8000-0000000000c5" },
       }),
@@ -87,9 +87,9 @@ const LOCAL_BOOTSTRAP: Record<string, BootstrapExpectation[]> = {
     {
       httpRequest: { method: "GET", path: "/backend-api/wham/usage" },
       httpResponse: jsonResponse({
-        user_id: "PAIRETO_E2E_ID",
-        account_id: "PAIRETO_E2E_ID",
-        email: "paireto-e2e@example.invalid",
+        user_id: "CRAFTY_E2E_ID",
+        account_id: "CRAFTY_E2E_ID",
+        email: "crafty-e2e@example.invalid",
         plan_type: "e2e",
         rate_limit: OPEN_WINDOW,
         code_review_rate_limit: null,
@@ -145,7 +145,7 @@ const PROFILES: Record<string, HarnessProfile> = {
   // `ListAvailableModels` supplies the model's display name, which Kiro writes into its system
   // prompt ("The current model is Claude Haiku 4.5" against the raw id when unanswered), and
   // `InvokeMCP` is how Kiro proxies MCP JSON-RPC — `tools/list` rides on it, so a replay that cannot
-  // answer it never learns Paireto's tools exist and diverges from the run that was recorded.
+  // answer it never learns Crafty's tools exist and diverges from the run that was recorded.
   // Left out, a replay misses on its own preamble rather than on anything the model said. The
   // account-state operations (GetProfile, GetUsageLimits) are deliberately NOT recorded.
   kiro: {
@@ -517,7 +517,7 @@ export function readFixture(raw: unknown, driver: string): Fixture {
   if (!recordedWith?.[driver] || !recordedOn || !wrapped?.expectations) {
     throw new Error(
       `cassette for "${driver}" is not a stamped {recordedWith, recordedOn, expectations} fixture — ` +
-        `re-record it with PAIRETO_E2E_MODE=record ... --grep @${driver}`,
+        `re-record it with CRAFTY_E2E_MODE=record ... --grep @${driver}`,
     );
   }
   return {
@@ -651,7 +651,7 @@ async function connectMockServer(
     return { baseUrl: preset, mcp, containerName: undefined };
   }
   const port = await freePort();
-  const name = `paireto-mockserver-${port}`;
+  const name = `crafty-mockserver-${port}`;
   const args = nativeMockServerDockerArgs(port, name);
   opts.log(`MockServer: docker ${args.join(" ")}`);
   execFileSync("docker", args, { stdio: "ignore" });

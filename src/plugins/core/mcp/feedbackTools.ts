@@ -5,10 +5,10 @@ import { connect } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
 import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
 
-export const FEEDBACK_REPLY_TOOL_NAME = "paireto_reply_to_feedback";
+export const FEEDBACK_REPLY_TOOL_NAME = "crafty_reply_to_feedback";
 
 export const FEEDBACK_REPLY_TOOL_DESCRIPTION =
-  "Add an agent reply to one Paireto feedback item. Use the feedback ID returned by a review.";
+  "Add an agent reply to one Crafty feedback item. Use the feedback ID returned by a review.";
 
 export const FeedbackReplyArgs = z.object({
   feedbackId: z.string().trim().min(1).describe("The stable feedback ID."),
@@ -60,7 +60,7 @@ async function runMutation(
   const response = await connected.connection.request(body, { timeoutMs });
   connected.connection.close();
   if (!response) {
-    return textResult("The Paireto feedback request did not complete.", true);
+    return textResult("The Crafty feedback request did not complete.", true);
   }
   return textResult(response.message, !response.ok);
 }

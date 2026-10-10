@@ -10,9 +10,9 @@
 // so attaching from a smaller terminal cannot reflow the pane the driver reads.
 
 /** Env var toggling the live pane/log stream. */
-export const WATCH_ENV = "PAIRETO_E2E_WATCH";
+export const WATCH_ENV = "CRAFTY_E2E_WATCH";
 
-/** Stream by default; `PAIRETO_E2E_WATCH=0` silences it for an unattended run. */
+/** Stream by default; `CRAFTY_E2E_WATCH=0` silences it for an unattended run. */
 export function watchEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   const raw = (env[WATCH_ENV] ?? "").trim().toLowerCase();
   return raw !== "0" && raw !== "off" && raw !== "false";
@@ -143,7 +143,7 @@ export function watchChildOutput(harness: string, chunk: string): void {
 }
 
 function isDocker(): boolean {
-  return process.env.PAIRETO_DOCKER === "1";
+  return process.env.CRAFTY_DOCKER === "1";
 }
 
 function emit(harness: string, line: string): void {

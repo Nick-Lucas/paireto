@@ -16,7 +16,7 @@ suite("plugin bridge client", () => {
   test("path derivation matches the extension's, including through a symlink", () => {
     // The plugin and the extension must agree on the socket for a repo, or hooks silently talk to
     // the wrong window. Both sides now call the same functions; this pins that they stay canonical.
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-key-"));
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-key-"));
     const real = path.join(dir, "repo");
     const link = path.join(dir, "link");
     fs.mkdirSync(real);

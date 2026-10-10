@@ -28,7 +28,7 @@ const KIRO_SECRET_KEYS = [
 export type KiroSecrets = Record<string, string>;
 
 /** Env var carrying a host-staged copy of the store, for the container (see docker/prepare-e2e.sh). */
-const KIRO_AUTH_ENV = "PAIRETO_KIRO_AUTH";
+const KIRO_AUTH_ENV = "CRAFTY_KIRO_AUTH";
 
 /** The `auth_kv`-bearing database Kiro keeps under a home's data directory. */
 export function kiroDatabaseFile(home: string): string {

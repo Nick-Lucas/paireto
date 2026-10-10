@@ -1,13 +1,13 @@
 {
-  "name": "paireto",
+  "name": "crafty",
   "owner": {
-    "name": "paireto"
+    "name": "crafty"
   },
   "plugins": [
     {
-      "name": "paireto",
+      "name": "crafty",
       "source": "./claude-code",
-      "description": "Bridges Claude Code to the VS Code Paireto extension"
+      "description": "Bridges Claude Code to the VS Code Crafty extension"
     }
   ]
 }

@@ -2,7 +2,7 @@
 
 Committed MockServer cassettes `<case>.<driver>.json`
 
-Each records the provider HTTP/SSE traffic of that case so `PAIRETO_E2E_MODE=check` can replay it with
+Each records the provider HTTP/SSE traffic of that case so `CRAFTY_E2E_MODE=check` can replay it with
 **no credentials and no network** (see `src/e2e/README.md` and `src/e2e/mockserver/`). `fullflow` is
 the plan → feedback → approve → implement → review run; `guidedreview` is the agent grouping the
 seeded changes into changesets, the user working through them, and the feedback returning.

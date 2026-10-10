@@ -18,11 +18,11 @@ export class StatusBarController implements vscode.Disposable {
     private readonly agents: AgentSessionService,
   ) {
     this.item = vscode.window.createStatusBarItem(
-      "paireto.repo",
+      "crafty.repo",
       vscode.StatusBarAlignment.Left,
       100,
     );
-    this.item.name = "Paireto";
+    this.item.name = "Crafty";
     this.item.command = Commands.openSwitcher;
     this.disposables.push(
       this.item,

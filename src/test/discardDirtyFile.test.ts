@@ -86,7 +86,7 @@ async function openDirtyDiff(
     deletions: 0,
     repoRoot: canonicalize(root),
   };
-  await vscode.commands.executeCommand("paireto.review.openDiff", file);
+  await vscode.commands.executeCommand("crafty.review.openDiff", file);
   const tab = await waitFor(() => {
     const active = vscode.window.tabGroups.activeTabGroup.activeTab;
     const input = active?.input;
@@ -114,7 +114,7 @@ async function openDirtyDiff(
 async function activateForFixture(): Promise<string> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   assert.ok(folder, "the test harness must open the fixture git workspace");
-  await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+  await vscode.extensions.getExtension("Crafty.crafty")?.activate();
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   return folder.uri.fsPath;
 }
@@ -136,7 +136,7 @@ suite("discarding a file with unsaved changes", () => {
     const { file, doc } = await openDirtyDiff(root, name);
     warnings = stubWarnings(undefined);
 
-    await vscode.commands.executeCommand("paireto.review.discard", file);
+    await vscode.commands.executeCommand("crafty.review.discard", file);
 
     const restored = await waitFor(
       () => (fs.readFileSync(path.join(root, name), "utf8") === "one\n" ? "yes" : undefined),
@@ -160,7 +160,7 @@ suite("discarding a file with unsaved changes", () => {
     const { file } = await openDirtyDiff(root, name);
     warnings = stubWarnings(undefined);
 
-    await vscode.commands.executeCommand("paireto.review.discard", file);
+    await vscode.commands.executeCommand("crafty.review.discard", file);
 
     const restored = await waitFor(
       () => (fs.readFileSync(path.join(root, name), "utf8") === "one\n" ? "yes" : undefined),

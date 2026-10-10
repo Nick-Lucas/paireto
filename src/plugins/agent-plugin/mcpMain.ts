@@ -3,7 +3,7 @@ import { createAgentPluginMcpAdapter, detectAgentPluginHarness } from "./mcpAdap
 
 const harness = detectAgentPluginHarness();
 if (!harness) {
-  process.stderr.write("Paireto could not identify the Agent Plugins client process.\n");
+  process.stderr.write("Crafty could not identify the Agent Plugins client process.\n");
   process.exitCode = 1;
 } else {
   void runMcpServer(createAgentPluginMcpAdapter(harness));

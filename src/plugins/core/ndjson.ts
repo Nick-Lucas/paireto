@@ -49,8 +49,8 @@ export function isTerminalFailure(reason: HandshakeFailure): boolean {
 export function refusedMessage(extVersion?: string): string {
   const wanted = extVersion ? `wire version ${extVersion}` : "a different wire version";
   return (
-    `The VS Code Paireto window refused this plugin: it requires ${wanted}, this plugin is ` +
-    `${PLUGIN_VERSION}. Update the Paireto plugin from the extension's Welcome view, then restart your agent`
+    `The VS Code Crafty window refused this plugin: it requires ${wanted}, this plugin is ` +
+    `${PLUGIN_VERSION}. Update the Crafty plugin from the extension's Welcome view, then restart your agent`
   );
 }
 

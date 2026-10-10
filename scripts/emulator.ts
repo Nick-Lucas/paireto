@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 "use strict";
 
-// Paireto bridge emulator — a manual stand-in for Claude Code's hooks + MCP tool.
+// Crafty bridge emulator — a manual stand-in for Claude Code's hooks + MCP tool.
 //
 // It speaks the exact same wire protocol as the real plugin (it reuses bridge.js for socket
 // resolution + handshake), so you can drive every VS Code flow — telemetry, the plan gate, the
@@ -11,7 +11,7 @@
 //   node scripts/emulator.ts doctor            # resolve + handshake; is the extension listening?
 //   node scripts/emulator.ts event <Name>      # fire one telemetry hook.event (fire-and-forget)
 //   node scripts/emulator.ts plan [--file p]   # ExitPlanMode plan gate; blocks for Approve/Send Feedback
-//   node scripts/emulator.ts review            # /paireto-review session; blocks for Send Feedback/Cancel
+//   node scripts/emulator.ts review            # /crafty-review session; blocks for Send Feedback/Cancel
 //   node scripts/emulator.ts flow              # simulate a whole agent session lifecycle
 //   node scripts/emulator.ts help
 //
@@ -424,7 +424,7 @@ async function withBridge(
 function noTargetError(opts: Opts): void {
   banner("NO BRIDGE FOUND", red);
   console.log("");
-  console.log("  No VS Code Paireto socket resolved for this directory.");
+  console.log("  No VS Code Crafty socket resolved for this directory.");
   console.log("  Make sure the repo is open in VS Code with the extension active, then retry.");
   console.log("");
   const cwdOpt = strOpt(opts, "cwd");
@@ -701,7 +701,7 @@ async function cmdReviewStop(opts: Opts): Promise<void> {
   );
 }
 
-/** The manual `/paireto-review` (MCP `paireto_review`) path. Does NOT raise the auto-review toast. */
+/** The manual `/crafty-review` (MCP `crafty_review`) path. Does NOT raise the auto-review toast. */
 async function cmdReviewManual(opts: Opts): Promise<void> {
   const timeoutMs = Number(strOpt(opts, "timeout") || 600) * 1000;
   const id = crypto.randomUUID();
@@ -710,7 +710,7 @@ async function cmdReviewManual(opts: Opts): Promise<void> {
   await withBridge(
     opts,
     {
-      heading: "Code review · paireto_review (MCP)",
+      heading: "Code review · crafty_review (MCP)",
       live: { sessionId, lifecycle: [{ event: "SessionStart" }, { event: "UserPromptSubmit" }] },
     },
     async ({ conn, target }) => {
@@ -852,7 +852,7 @@ function errMessage(err: unknown): string {
 // ---------------------------------------------------------------------------
 
 function usage(): void {
-  console.log(`${bold("Paireto bridge emulator")}
+  console.log(`${bold("Crafty bridge emulator")}
 
 Drives the VS Code extension's flows over the per-repo socket — no agent TUI needed.
 Run from inside the repo you've opened in VS Code.
@@ -865,7 +865,7 @@ ${bold("Commands")}
   ${cyan("plan")}                    Send an ExitPlanMode plan gate; blocks for the decision.
   ${cyan("review")}                  Finish a turn that edited files → turn-end Stop gate auto-opens a
                           review (raises the auto-review toast). --manual uses the MCP
-                          paireto_review path instead. Blocks for Send Feedback / Approve.
+                          crafty_review path instead. Blocks for Send Feedback / Approve.
   ${cyan("flow")}                    Fire a full simulated session lifecycle of events.
   ${cyan("agent")}                   Hold a live session open (liveness connection). Ctrl+C to
                           simulate the agent process being killed → the extension drops it.
@@ -881,7 +881,7 @@ ${bold("Options")}
   --mode <mode>           permissionMode (e.g. plan, acceptEdits).
   --plan <text>           Inline plan markdown for ${cyan("plan")}.
   --file <path>           Read plan markdown from a file for ${cyan("plan")}.
-  --manual                Use the MCP paireto_review path for ${cyan("review")} (no auto-review toast).
+  --manual                Use the MCP crafty_review path for ${cyan("review")} (no auto-review toast).
   --timeout <seconds>     Block timeout for plan/review (default 600).
 
 ${bold("Examples")}

@@ -66,8 +66,8 @@ export class PlanReviewController implements vscode.Disposable {
     private readonly codeFeedback: CodeFeedbackSource,
   ) {
     this.comments = new CommentSession(
-      "paireto.plan",
-      "Paireto: Add Comment",
+      "crafty.plan",
+      "Crafty: Add Comment",
       Schemes.plan,
       {
         prompt: "Add plan feedback",
@@ -157,7 +157,7 @@ export class PlanReviewController implements vscode.Disposable {
       log.error(`plan review failed to open for agent ${sessionId.slice(0, 8)}: ${detail}`);
       this.registry.fulfill(key, {
         decision: "deny",
-        reason: `Paireto could not open the plan for review (${detail}). Ask the user how to continue.`,
+        reason: `Crafty could not open the plan for review (${detail}). Ask the user how to continue.`,
       });
       signal.removeEventListener("abort", onAbort);
       await this.finish(review);
@@ -227,7 +227,7 @@ export class PlanReviewController implements vscode.Disposable {
     }
 
     const configured = vscode.workspace
-      .getConfiguration("paireto")
+      .getConfiguration("crafty")
       .get<string>(`planApprove.mode.${review.harness}`);
     const nextMode = resolvePlanApproveMode(
       configured,

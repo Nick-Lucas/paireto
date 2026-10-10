@@ -1,4 +1,4 @@
-# Headless test image for Paireto — runs the VS Code unit suite (`pnpm test`) and the E2E suite
+# Headless test image for Crafty — runs the VS Code unit suite (`pnpm test`) and the E2E suite
 # (`pnpm test:e2e`) inside a Linux container with a virtual X display (xvfb), so no VS Code window
 # ever pops up on the macOS host. See docker/README.md.
 #
@@ -85,12 +85,12 @@ RUN case "$TARGETARCH" in \
     && command -v kiro-cli-chat >/dev/null
 
 # OpenCode installs the plugin SDK (@opencode-ai/plugin) from npm at runtime, which credential-free
-# `check` runs cannot do. Without it our plugin advertises paireto_submit_plan with no `plan`
+# `check` runs cannot do. Without it our plugin advertises crafty_submit_plan with no `plan`
 # parameter and the model can never submit a plan. Pre-staging the SDK here lets mock-mode runs
 # resolve it offline. See OpenCodeDriver.stagePluginSdk.
-ENV PAIRETO_OPENCODE_SDK=/opt/opencode-sdk
-RUN mkdir -p "$PAIRETO_OPENCODE_SDK" \
-    && cd "$PAIRETO_OPENCODE_SDK" \
+ENV CRAFTY_OPENCODE_SDK=/opt/opencode-sdk
+RUN mkdir -p "$CRAFTY_OPENCODE_SDK" \
+    && cd "$CRAFTY_OPENCODE_SDK" \
     && npm init -y > /dev/null \
     && npm install "@opencode-ai/plugin@${OPENCODE_VERSION}"
 
@@ -103,7 +103,7 @@ ENV DISPLAY=:99
 RUN echo '--sort=path' > /etc/ripgreprc
 ENV RIPGREP_CONFIG_PATH=/etc/ripgreprc
 
-COPY entrypoint.sh /usr/local/bin/paireto-entrypoint.sh
-RUN chmod +x /usr/local/bin/paireto-entrypoint.sh
+COPY entrypoint.sh /usr/local/bin/crafty-entrypoint.sh
+RUN chmod +x /usr/local/bin/crafty-entrypoint.sh
 
-ENTRYPOINT ["/usr/local/bin/paireto-entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/crafty-entrypoint.sh"]

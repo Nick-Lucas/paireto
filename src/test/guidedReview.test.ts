@@ -478,7 +478,7 @@ suite("guided review — sidebar rows", () => {
     const item = changesetItem(REPO, state.changesets[0]);
     assert.strictEqual(item.label, "Auth");
     assert.strictEqual(item.description, "1 file");
-    assert.strictEqual(item.command?.command, "paireto.guidedReview.openChangeset");
+    assert.strictEqual(item.command?.command, "crafty.guidedReview.openChangeset");
     assert.ok(item.id?.startsWith("changeset:"));
     assert.ok(item.id?.endsWith(":cs0"));
   });
@@ -585,7 +585,7 @@ suite("guided review — a planned row follows the file through the layers", () 
   const write = (content: string): void => fs.writeFileSync(path.join(repo, "a.ts"), content);
 
   suiteSetup(() => {
-    repo = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-guided-"));
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-guided-"));
     git(["init", "-q"]);
     git(["config", "user.email", "test@example.com"]);
     git(["config", "user.name", "Test"]);
@@ -759,7 +759,7 @@ suite("guided review — changeset description document", () => {
 
   test("the URI is titled for the tab and keyed by changeset id", () => {
     const uri = changesetDocUri({ id: "cs0", title: "Auth" });
-    assert.strictEqual(uri.scheme, "paireto-changeset");
+    assert.strictEqual(uri.scheme, "crafty-changeset");
     assert.strictEqual(uri.path, "/Auth.md");
     assert.strictEqual(changesetIdFromDocUri(uri), "cs0");
   });

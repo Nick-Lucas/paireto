@@ -1,7 +1,7 @@
 // Whether the turn Kiro just ended was the planner presenting a plan.
 //
 // Kiro's planner does not call `switch_to_execution` on its own: it writes the plan, ends the turn,
-// and waits to be told to go ahead. So the Stop hook is where Paireto has to recognise a plan, and
+// and waits to be told to go ahead. So the Stop hook is where Crafty has to recognise a plan, and
 // the only record of what the planner said is the session Kiro persists.
 //
 // Kiro CLI v3 stores that as `<kiroHome>/sessions/<workspace>/<sessionId>/`, holding `session.json`

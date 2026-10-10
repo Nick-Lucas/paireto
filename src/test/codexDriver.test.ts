@@ -13,7 +13,7 @@ import {
 import { readFixture } from "../e2e/mockserver/MockServerController.js";
 
 /** The composer footer Codex only draws once its TUI is interactive. */
-const READY_FRAME = "  gpt-5.6-luna low · /private/tmp/paireto-e2e-codex";
+const READY_FRAME = "  gpt-5.6-luna low · /private/tmp/crafty-e2e-codex";
 const FAST = { readyPollMs: 0, acceptPollMs: 0, submitGapMs: 0, readyTimeoutMs: 50 };
 
 suite("Codex E2E launch permissions", () => {
@@ -39,7 +39,7 @@ suite("Codex E2E runtime config", () => {
     const config = renderCodexRuntimeConfig(existing, "/tmp/repo");
 
     assert.ok(config.indexOf('model = "gpt-5.6-luna"') < config.indexOf("[plugins]"));
-    assert.ok(config.indexOf('model_provider = "paireto_openai"') < config.indexOf("[plugins]"));
+    assert.ok(config.indexOf('model_provider = "crafty_openai"') < config.indexOf("[plugins]"));
     assert.match(config, /supports_websockets = false/);
     assert.match(config, /\[projects\."\/tmp\/repo"\]\ntrust_level = "trusted"/);
   });
@@ -48,7 +48,7 @@ suite("Codex E2E runtime config", () => {
     const config = renderCodexRuntimeConfig("", "/tmp/repo");
     assert.match(config, /approval_policy = "never"/);
     assert.match(config, /sandbox_mode = "danger-full-access"/);
-    assert.match(config, /model_provider = "paireto_openai"/);
+    assert.match(config, /model_provider = "crafty_openai"/);
     assert.match(config, /supports_websockets = false/);
     assert.match(config, /enable_request_compression = false/);
   });
@@ -94,7 +94,7 @@ suite("Codex E2E runtime config", () => {
 });
 
 // Codex draws its TUI before its MCP servers have finished starting, and a keystroke in that window
-// both abandons the startup and is swallowed: the session then has none of Paireto's tools and an
+// both abandons the startup and is swallowed: the session then has none of Crafty's tools and an
 // empty composer, which used to surface only as a 5-minute wait for a gate that could never open.
 suite("Codex E2E startup readiness", () => {
   test("holds keystrokes until the composer has settled", async () => {
@@ -121,16 +121,16 @@ suite("Codex E2E startup readiness", () => {
 
   test("an abandoned MCP startup is a failure reason, naming the server", () => {
     const reason = interruptedMcpReason(
-      "⚠ MCP startup interrupted. The following servers were not initialized: paireto",
+      "⚠ MCP startup interrupted. The following servers were not initialized: crafty",
     );
-    assert.match(reason ?? "", /paireto/);
+    assert.match(reason ?? "", /crafty/);
     assert.match(reason ?? "", /no gate can open/);
     assert.strictEqual(interruptedMcpReason(READY_FRAME), undefined);
   });
 });
 
 suite("Codex E2E prompt submission", () => {
-  const PROMPT = "$paireto-guided-review Group the uncommitted changes for review.";
+  const PROMPT = "$crafty-guided-review Group the uncommitted changes for review.";
 
   test("submits only once the composer is holding the text", async () => {
     const typed: string[] = [];
@@ -196,7 +196,7 @@ suite("Codex E2E prompt submission", () => {
 });
 
 suite("Codex native plan transition", () => {
-  test("selects the native approve-and-switch option after Paireto approval", async () => {
+  test("selects the native approve-and-switch option after Crafty approval", async () => {
     const keys: string[] = [];
 
     await completeNativePlanApproval(

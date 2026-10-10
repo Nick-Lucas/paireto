@@ -53,7 +53,7 @@ export function Welcome() {
   return (
     <>
       <header className="hero">
-        {!!state?.logoUri && <img className="logo" src={state.logoUri} alt="Paireto" />}
+        {!!state?.logoUri && <img className="logo" src={state.logoUri} alt="Crafty" />}
       </header>
 
       <section className="card">
@@ -62,8 +62,8 @@ export function Welcome() {
           {!!state?.versions && <Versions versions={state.versions} />}
         </div>
         <p className="muted">
-          Install the bridge plugin so your agent can talk to Paireto, and configure a terminal
-          profile so you create sessions instantly. An agent only reaches Paireto while its plugin
+          Install the bridge plugin so your agent can talk to Crafty, and configure a terminal
+          profile so you create sessions instantly. An agent only reaches Crafty while its plugin
           version matches this window&apos;s bridge version exactly.
         </p>
         <div className="rows">
@@ -81,7 +81,7 @@ export function Welcome() {
 
       <section className="card">
         <div className="card-head">
-          <h2>The Paireto way</h2>
+          <h2>The Crafty way</h2>
           <div className="head-actions">
             <button
               type="button"
@@ -202,7 +202,7 @@ function Versions({ versions }: { versions: VersionState }) {
       className="versions"
       title="This window's extension version and the bridge version its plugins must match"
     >
-      Paireto <code>{versions.extension}</code> · bridge <code>{versions.plugin}</code>
+      Crafty <code>{versions.extension}</code> · bridge <code>{versions.plugin}</code>
     </span>
   );
 }

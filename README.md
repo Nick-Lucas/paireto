@@ -1,15 +1,14 @@
-<p align="center">
-  <img src="media/PairetoHeader2x.png" alt="Paireto" width="420" />
-</p>
+<h1 align="center">Crafty</h1>
 
-> "When agents write 80% of your code in 20% of the time, engineering is 80% judgment" - Paireto (the Parrot)
+<p align="center"><em>Agents bring the clay. You bring the craft.</em></p>
 
-Paireto brings pair-programming to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
+Crafty keeps your hands on the work while TUI coding agents do the heavy lifting in VS Code: plan review, code review, in-editor edits, and worktree management, in one workflow built for engineers who care how the code turns out.
 
 # Contents
 
 - [Contents](#contents)
-- [Why I Built Paireto](#why-i-built-paireto)
+- [From bricks to clay](#from-bricks-to-clay)
+- [Why I built Crafty](#why-i-built-crafty)
 - [Features at a glance](#features-at-a-glance)
 - [Installation](#installation)
     - [Agent harness setup](#agent-harness-setup)
@@ -22,53 +21,70 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
   - [Switch repo or worktree](#switch-repo-or-worktree)
 - [Troubleshooting](#troubleshooting)
 
-# Why I Built Paireto
+# From bricks to clay
 
-Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening.
+We used to build software like a bricklayer builds a wall. One brick at a time: pick it up, butter it, set it, check the line, then the next. Every function, every test, every edge case passed through our hands on the way into the codebase. The craft lived in the placing, and quality came from care at each step.
 
-I’m an engineer working with engineers. My code still has to meet a human standard. I don’t need a vibe-coding tool.
+Agents changed the material. Now a whole wall arrives at once, but it is not fired yet. It is a lump of wet clay: the right amount of stuff, roughly the right shape, and nothing like the finished piece.
 
-I tried the Conductor immitators, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of features my editor already had.
+Clay and bricks are the same material. The craft is different. With clay you do not place, you mould. You push back on the form before it sets. You turn it, look at it from every side, smooth what is rough, cut away what does not belong, and press in the detail that makes it yours. The work moves from making each piece to shaping the whole.
+
+That is the job now. The agent throws the clay; the engineer shapes it. Great engineering did not go away when the typing did. It moved to judgment, taste, and the many small corrections that turn "it works" into "it is right".
+
+Crafty is the potter's wheel for that work. It puts the clay in front of you, inside the editor you already know, and gives you the tools to shape it before it sets:
+
+- **Shape the plan** before a line is written, while the form is still soft.
+- **Read the diff** in a real editor, with your LSP, linters, and go-to-definition intact.
+- **Press in your changes** by hand, or leave comments for the agent to act on.
+- **Send it back to the wheel** with feedback, or approve it when it is right.
+
+# Why I built Crafty
+
+Agentic coding changed software overnight. But for high-craft engineering, the gap between the tools and the reality of engineering work keeps widening.
+
+I’m an engineer working with engineers. My code still has to meet a human standard. I don’t need a vibe-coding tool. I need a tool for shaping what the agent makes.
+
+I tried the Conductor imitators, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of features my editor already had.
 
 I tried GUI agents, but they pulled me toward more mouse-driven workflows or a new editor ecosystem.
 
-I tried TUI agents, and loved the ease they integrated with my editor workflows, but they struggle with structured planning, review, editor integration, and human reading comprehension.
+I tried TUI agents, and loved how easily they fit into my editor workflows, but they struggle with structured planning, review, editor integration, and human reading comprehension.
 
-I increasingly found myself editing code from Git Diff tabs, so I could track what the agent had changed and refine. But had no way to prepare agent feedback easily.
+I found myself editing code from Git Diff tabs more and more, so I could track what the agent had changed and refine it. But I had no easy way to prepare feedback for the agent.
 
-I tried Plannotator, and it clicked: planning and review are two missing pieces in my workflow. But I still had to jump between apps, and work outside my editor during code review, losing LSP features which I depend on to understand code.
+I tried Plannotator, and it clicked: planning and review are the two missing pieces. But I still had to jump between apps, and work outside my editor during code review, losing the LSP features I depend on to understand code.
 
-I didn't need a second app, I needed a tighter integration between my TUI and editor. So I built this...
+I didn't need a second app. I needed my hands on the clay, in the editor I already use. So I built this...
 
 # Features at a glance
 
 | Feature | What it does |
 | --- | --- |
 | 🤖 **Agent status** | Live status and notifications from your agent |
-| 👩🏽‍💻 **Changed Filers** | Edit from git diffs and compare to any git ref |
+| 👩🏽‍💻 **Changed Files** | Edit from git diffs and compare to any git ref |
 | 📋 **Plan review** | Feed back on agent plans before implementation |
 | 🔍 **Code review** | Review completed agent code before accepting it |
 | 🧭 **Guided review** | Your agent groups a branch's changes into described changesets to read in order |
-| 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visiblity |
+| 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visibility |
 | 🚀 **More to come** | See [TODO.md](./TODO.md) |
 
 # Installation
 
-Paireto comes in two parts:
+Crafty comes in two parts:
 
-1. The [**VS Code extension**](https://marketplace.visualstudio.com/items?itemName=Paireto.paireto)
+1. The [**VS Code extension**](https://marketplace.visualstudio.com/items?itemName=Crafty.crafty)
 2. An agent-harness integration
 
 ### Agent harness setup
 
 On first install a **Welcome** wizard will take you through setup of your agents. You can return to
-this screen at any time from the Command Palette by opening `Paireto: Open Welcome`.
+this screen at any time from the Command Palette by opening `Crafty: Open Welcome`.
 
-After plugin setup, **restart your agent** to load the Paireto integration. Open a repo in VS Code, start the agent in its terminal, and the agent appears in the Paireto sidebar.
+After plugin setup, **restart your agent** to load the Crafty integration. Open a repo in VS Code, start the agent in its terminal, and the agent appears in the Crafty sidebar.
 
 # Agent support
 
-Paireto's architecture is agent-agnostic, but still in development. We currently support
+Crafty's architecture is agent-agnostic, but still in development. We currently support
 
 | Agent | Status |
 | --- | --- |
@@ -86,26 +102,26 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 When your agent finishes planning, the plan opens in VS Code and the agent waits. You may leave inline
 comments from the VS Code editor, then click **Approve** or **Send Feedback** to instruct the agent
 
-**Pi has no plan mode of its own, so Paireto adds one.** Start the turn with
-`/paireto-plan <what you want>`: while it is on, Pi's `write` and `edit` tools are blocked and the
+**Pi has no plan mode of its own, so Crafty adds one.** Start the turn with
+`/crafty-plan <what you want>`: while it is on, Pi's `write` and `edit` tools are blocked and the
 agent submits its plan for review instead. Approving the plan lifts the block, and Pi implements it
 in the same turn.
 
 ## Review Mode
 
-When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill (`/skill:paireto-review` in Pi).
+When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/crafty:review` skill (`/skill:crafty-review` in Pi).
 
 **Kiro is the exception: it has no automatic review.** Kiro runs its Stop hooks once per agent run,
 so the one pass is usually spent before the work is finished and a review gated on it opens late or
-not at all. With Kiro, ask for the review yourself — `/paireto-review`, or `/paireto-guided-review`
+not at all. With Kiro, ask for the review yourself — `/crafty-review`, or `/crafty-guided-review`
 for a guided one. Plan Mode is unaffected and still opens on its own.
 
 Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish. 
 
 ## Guided Review
 
-Ask your agent for a guided review (`/paireto:guided-review`, `$paireto-guided-review`,
-`/paireto-guided-review`, or `/skill:paireto-guided-review` in Pi) and it studies the changes, then hands VS Code a **review plan**: the changed
+Ask your agent for a guided review (`/crafty:guided-review`, `$crafty-guided-review`,
+`/crafty-guided-review`, or `/skill:crafty-guided-review` in Pi) and it studies the changes, then hands VS Code a **review plan**: the changed
 files grouped into named changesets, each with a description and its files in the order you should read
 them.
 
@@ -131,7 +147,7 @@ its agent activity. Manage all your VS Code windows and worktrees from any other
 # Troubleshooting
 
 - **Agent doesn't appear in the sidebar.** Make sure you restarted the agent after installing, and that
-  the repo is open in VS Code. Set `paireto.logLevel` to `debug` and check the *Paireto* output channel.
-- **Plugin didn't register.** Open `Paireto: Open Welcome`, run setup again, then restart the agent.
-- **No sound on notifications.** Confirm `paireto.notify.type` is `sound` and `paireto.notify.sound`
+  the repo is open in VS Code. Set `crafty.logLevel` to `debug` and check the *Crafty* output channel.
+- **Plugin didn't register.** Open `Crafty: Open Welcome`, run setup again, then restart the agent.
+- **No sound on notifications.** Confirm `crafty.notify.type` is `sound` and `crafty.notify.sound`
   names a valid system sound or file path.

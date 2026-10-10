@@ -35,15 +35,15 @@ const ADD_COMMENT_COMMAND: Record<
   },
 };
 
-/** Expose the test control plane. No-op unless PAIRETO_TEST === "1" (checked by the caller). */
+/** Expose the test control plane. No-op unless CRAFTY_TEST === "1" (checked by the caller). */
 export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Disposable {
   // The control plane owns its own CommentController: it materializes a real CommentThread on the
   // target doc, then feeds it to the existing add-comment command exactly like a user reply would.
   // The owning controller (plan/review) tracks the thread in ITS CommentSession, so this controller
   // only needs to mint the thread instance.
   const controller = vscode.comments.createCommentController(
-    "paireto.test",
-    "Paireto Test Control Plane",
+    "crafty.test",
+    "Crafty Test Control Plane",
   );
 
   const inspect = (): InspectSnapshot => {
@@ -139,8 +139,8 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
 
   return vscode.Disposable.from(
     controller,
-    vscode.commands.registerCommand("paireto.test.inspect", () => inspect()),
-    vscode.commands.registerCommand("paireto.test.addComment", (args: AddCommentArgs) =>
+    vscode.commands.registerCommand("crafty.test.inspect", () => inspect()),
+    vscode.commands.registerCommand("crafty.test.addComment", (args: AddCommentArgs) =>
       addComment(args),
     ),
   );

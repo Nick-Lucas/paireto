@@ -33,7 +33,7 @@ suite("Kiro credential lift", () => {
   // Off macOS the lift honours XDG_DATA_HOME over the home it was handed, so the temp home only
   // stands in for the machine's own once that redirect is out of the way.
   setup(() => {
-    home = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-creds-"));
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-kiro-creds-"));
     dataHome = process.env.XDG_DATA_HOME;
     delete process.env.XDG_DATA_HOME;
   });

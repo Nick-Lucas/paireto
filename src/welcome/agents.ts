@@ -96,7 +96,7 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     id: "codex",
     name: "Codex TUI",
     available: true,
-    // Stages a stable local marketplace and installs Paireto through Codex's native plugin CLI.
+    // Stages a stable local marketplace and installs Crafty through Codex's native plugin CLI.
     // Codex owns skills, MCP, hook discovery, and the one-time hook trust review.
     install: async (ctx) => {
       const result = await installCodex(ctx);
@@ -124,7 +124,7 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     installedProbe: (ctx) => openCodeInstalledProbe(ctx),
     profile: { name: "opencode", command: "opencode" },
     // Plan review is automatic for OpenCode's built-in `plan` agent — the plugin injects the
-    // planning instruction + scopes the paireto_submit_plan tool to it, so there's zero further
+    // planning instruction + scopes the crafty_submit_plan tool to it, so there's zero further
     // setup. Custom planning-agent names aren't auto-covered (and non-planning agents are denied
     // the tool); this note just sets that expectation, no action required.
     note:
@@ -163,8 +163,8 @@ export const ONBOARDING_AGENTS: OnboardingAgent[] = [
     installedProbe: (ctx) => piInstalledProbe(ctx),
     profile: { name: "pi", command: "pi" },
     note:
-      "Plan review is opt-in per session: start the turn with `/paireto-plan <what you want>`. " +
-      "Ask for a review yourself with `/skill:paireto-review`.",
+      "Plan review is opt-in per session: start the turn with `/crafty-plan <what you want>`. " +
+      "Ask for a review yourself with `/skill:crafty-review`.",
   },
 ];
 

@@ -1,8 +1,11 @@
 ---
+name: crafty-guided-review
 description: Prepare an interactive guided review plan for a human reviewer and act on the returned feedback
 ---
 
-Prepare a review plan so a human can review these changes, then hand it to Paireto.
+# Crafty Guided Review
+
+Prepare a review plan so a human can review these changes, then hand it to Crafty.
 
 ## 1. Choose what to compare
 
@@ -18,8 +21,9 @@ Group the changed files into changesets representing logical threads or features
 
 ## 4. Submit
 
-Call the `paireto_start_guided_review` tool once, with every changeset and the `compareTo` from step 1. It blocks until the reviewer responds.
+Call the Crafty MCP tool whose name ends in `crafty_start_guided_review` once, with every
+changeset and the `compareTo` from step 1. Its client-specific prefix can vary. It blocks until the reviewer responds.
 
 If it returns comments, address every item with code changes where relevant.
 
-Reply to questions with the `paireto_reply_to_feedback` tool.
+Reply to questions with the `mcp__crafty__crafty_reply_to_feedback` tool.

@@ -229,6 +229,6 @@ function createConnection(sock: net.Socket, residual: string): BridgeConnection 
  */
 export function warnIfRefused(result: ConnectResult): void {
   if (!result.ok && result.reason === "handshake-rejected") {
-    console.error(`paireto: ${refusedMessage(result.extVersion)}`);
+    console.error(`crafty: ${refusedMessage(result.extVersion)}`);
   }
 }

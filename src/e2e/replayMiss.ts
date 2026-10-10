@@ -9,7 +9,7 @@
 import * as fs from "node:fs";
 
 /** Env var naming the file a replay miss is recorded in (check mode only). */
-export const MISS_FILE_ENV = "PAIRETO_REPLAY_MISS_FILE";
+export const MISS_FILE_ENV = "CRAFTY_REPLAY_MISS_FILE";
 
 export interface ReplayMiss {
   method: string;

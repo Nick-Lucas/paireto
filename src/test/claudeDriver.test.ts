@@ -6,7 +6,7 @@ import { ClaudeDriver, showsPlanFilePermission, trustAnswerKeys } from "../e2e/d
 const TRUST_SCREEN = [
   " Accessing workspace:",
   "",
-  " /private/tmp/paireto-e2e-claudecode",
+  " /private/tmp/crafty-e2e-claudecode",
   "",
   " Quick safety check: Is this a project you created or one you trust? (Like your own code, a" +
     " well-known open source project, or work from your team). If not, take a moment to review" +

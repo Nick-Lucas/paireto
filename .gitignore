@@ -8,7 +8,7 @@ examples/
 docker/.secrets/
 src/e2e/proxy/certs/
 # Staging dir for proxy cert generation; holds a CA private key until the run removes it.
-src/e2e/proxy/.paireto-certs-*/
+src/e2e/proxy/.crafty-certs-*/
 .pnpm-store
-# Shim match-key dumps (PAIRETO_SHIM_DUMP), written when debugging a strict-VCR miss.
+# Shim match-key dumps (CRAFTY_SHIM_DUMP), written when debugging a strict-VCR miss.
 .shimdump/

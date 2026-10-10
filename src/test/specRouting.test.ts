@@ -18,7 +18,7 @@ import {
 } from "../e2e/specRouting.js";
 
 function specsDir(names: string[]): string {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-specs-"));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-specs-"));
   for (const name of names) {
     fs.writeFileSync(path.join(dir, name), "");
   }

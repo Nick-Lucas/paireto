@@ -17,9 +17,9 @@ function handoff(sessionId: string): CodexHandoff {
   return {
     pid: FAKE_CODEX_PID,
     sessionId,
-    repoRoot: "/tmp/paireto-liveness-repo",
+    repoRoot: "/tmp/crafty-liveness-repo",
     // No listening socket, so liveness never attaches and the test stays offline.
-    socketPath: "/tmp/paireto-liveness-absent.sock",
+    socketPath: "/tmp/crafty-liveness-absent.sock",
     harness: "codex",
     ts: "2026-01-01T00:00:00.000Z",
   };

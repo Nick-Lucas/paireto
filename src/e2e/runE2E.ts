@@ -131,7 +131,7 @@ async function runPair({
 }: PairRun): Promise<void> {
   at("sandbox setup");
   // Pin the repo so a harness's embedded cwd matches between record and check.
-  const sandbox = createSandbox({ fixedRepoRoot: mockPath(`paireto-e2e-${driver}`) });
+  const sandbox = createSandbox({ fixedRepoRoot: mockPath(`crafty-e2e-${driver}`) });
   const certsDir = path.join(repoRoot, "src", "e2e", "proxy", "certs");
 
   // Replay misses travel from the host runner's shim to the in-host test through this file.
@@ -164,24 +164,24 @@ async function runPair({
     }
     at("the E2E flow (VS Code + harness)");
     await runVSCode(repoRoot, label, passThrough, {
-      PAIRETO_TEST: "1",
+      CRAFTY_TEST: "1",
       [MODE_ENV]: mode,
       // Every run sends provider traffic through the normalizing shim, then MockServer.
       [MOCK_URL_ENV]: mock.proxyUrl,
       [MOCK_CA_ENV]: mock.caPath,
       ...(mode === "check" ? { [MISS_FILE_ENV]: missFilePath } : {}),
-      PAIRETO_E2E_SANDBOX: sandbox.repoRoot,
+      CRAFTY_E2E_SANDBOX: sandbox.repoRoot,
       // Read by .vscode-test.e2e.mjs to build the launch the CLI performs.
       [SPEC_ENV]: spec,
-      PAIRETO_E2E_USER_DATA_DIR: sandbox.userDataDir,
-      PAIRETO_E2E_TEST_TIMEOUT_MS: String(TEST_TIMEOUT_MS),
-      PAIRETO_REPO_ROOT: repoRoot,
+      CRAFTY_E2E_USER_DATA_DIR: sandbox.userDataDir,
+      CRAFTY_E2E_TEST_TIMEOUT_MS: String(TEST_TIMEOUT_MS),
+      CRAFTY_REPO_ROOT: repoRoot,
       XDG_STATE_HOME: sandbox.stateHome,
       // The runner runs under real node (process.execPath), but the extension host runs under
       // Electron — so the real-TUI drivers can't derive node's dir from their own execPath. Pass it
       // through so they can PIN it first on the tmux PATH (claude/codex hooks exec `node <script>`
       // and silently fail-open if node isn't found — rev-2 amendment 8).
-      PAIRETO_NODE_DIR: path.dirname(process.execPath),
+      CRAFTY_NODE_DIR: path.dirname(process.execPath),
     });
     if (mode === "record") {
       at("writing the cassette");

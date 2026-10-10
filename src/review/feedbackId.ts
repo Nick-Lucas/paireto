@@ -19,7 +19,7 @@ export function fakeNanoId(): string {
 /** A new feedback id: deterministic under E2E, random in a real window. nanoid is ESM-only, so it is
  *  reached through a dynamic import. */
 export async function newFeedbackId(): Promise<string> {
-  if (process.env.PAIRETO_TEST === "1") {
+  if (process.env.CRAFTY_TEST === "1") {
     return fakeNanoId();
   }
   return (await import("nanoid")).nanoid();

@@ -87,7 +87,7 @@ suite("editing a staged diff (tree selection)", () => {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
@@ -107,7 +107,7 @@ suite("editing a staged diff (tree selection)", () => {
       additions: 1,
       deletions: 0,
     };
-    await vscode.commands.executeCommand("paireto.review.openDiff", file);
+    await vscode.commands.executeCommand("crafty.review.openDiff", file);
     const input = await waitFor(() => {
       const active = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
       return active instanceof vscode.TabInputTextDiff && active.modified.path.endsWith(name)

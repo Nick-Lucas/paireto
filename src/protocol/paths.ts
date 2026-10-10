@@ -8,9 +8,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-const APP_DIR = "paireto";
+const APP_DIR = "crafty";
 
-/** `${XDG_STATE_HOME:-~/.local/state}/paireto` — keeps $HOME uncluttered (XDG state dir). */
+/** `${XDG_STATE_HOME:-~/.local/state}/crafty` — keeps $HOME uncluttered (XDG state dir). */
 export function stateDir(): string {
   const xdg = process.env.XDG_STATE_HOME;
   const base = xdg && xdg.trim() !== "" ? xdg : path.join(os.homedir(), ".local", "state");

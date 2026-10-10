@@ -90,7 +90,7 @@ suite("Codex liveness refusal", () => {
   test("a replacement window at the same path is tried again", async function () {
     this.timeout(15_000);
     const socketPath = path.join(
-      fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-window-")),
+      fs.mkdtempSync(path.join(os.tmpdir(), "crafty-codex-window-")),
       "win.sock",
     );
     const refusing = await startServer(ackWith(false), socketPath);

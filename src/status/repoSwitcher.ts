@@ -3,7 +3,7 @@
 //
 // Window target: plain Enter opens in a NEW window; Shift+Enter opens in THIS window (shift == this
 // window). VS Code's QuickPick API exposes no live modifier-hold state, so this is wired as an
-// alternate-accept keybinding (paireto.switcher.openInThisWindow) gated on a context key set
+// alternate-accept keybinding (crafty.switcher.openInThisWindow) gated on a context key set
 // while the switcher is visible — the title spells out the mapping. The per-row button mirrors it.
 
 import * as fs from "node:fs";
@@ -25,7 +25,7 @@ import {
   type SwitcherSections,
 } from "./switcherRows.js";
 
-const CONTEXT_VISIBLE = "paireto.switcherVisible";
+const CONTEXT_VISIBLE = "crafty.switcherVisible";
 
 interface SwitchItem extends vscode.QuickPickItem {
   fsPath?: string;

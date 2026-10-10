@@ -15,11 +15,11 @@ const FIXTURES_DIR = path.resolve(__dirname, "../../src/e2e/fixtures");
 
 /** Placeholders the scrubber writes — these are the only "identity-shaped" strings allowed through. */
 const PLACEHOLDERS = [
-  "paireto-e2e@example.invalid",
-  "user-PAIRETO_E2E_ACCOUNT",
-  "org-PAIRETO_E2E_ORG",
-  "acct_PAIRETO_E2E_ACCOUNT",
-  "PAIRETO_E2E_ID",
+  "crafty-e2e@example.invalid",
+  "user-CRAFTY_E2E_ACCOUNT",
+  "org-CRAFTY_E2E_ORG",
+  "acct_CRAFTY_E2E_ACCOUNT",
+  "CRAFTY_E2E_ID",
 ];
 
 /** Emails the agents themselves embed in their own instructions — not the recorder's identity. */
@@ -262,7 +262,7 @@ suite("fixture privacy", function () {
     assert.ok(!scrubbed.includes("019fdccf-6990-78f2-972e-59db23528aa8"));
     assert.deepStrictEqual(
       [...scrubbed.matchAll(SESSION_HANDLE)].map((match) => match[1]),
-      ["PAIRETO_E2E_ID", "PAIRETO_E2E_ID"],
+      ["CRAFTY_E2E_ID", "CRAFTY_E2E_ID"],
     );
   });
 
@@ -292,7 +292,7 @@ suite("fixture privacy", function () {
       metadata: { user_id: string };
       messages: unknown[];
     };
-    assert.strictEqual(parsed.metadata.user_id, "PAIRETO_E2E_ID");
+    assert.strictEqual(parsed.metadata.user_id, "CRAFTY_E2E_ID");
     assert.strictEqual(parsed.model, "claude-haiku-4-5");
     assert.deepStrictEqual(parsed.messages, [{ role: "user", content: "keep me" }]);
     assert.ok(!scrubbed.includes("1bddd36c-c4f7-4e34-ad61-12ecc8b8d173"));

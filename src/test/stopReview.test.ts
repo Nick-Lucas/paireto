@@ -121,7 +121,7 @@ suite("Stop review over the bridge", function () {
           if ((await inspect()).gateHasFeedback) {
             return true;
           }
-          await vscode.commands.executeCommand("paireto.test.addComment", {
+          await vscode.commands.executeCommand("crafty.test.addComment", {
             surface: "review",
             path: path.basename(file),
             kind: "comment",
@@ -129,7 +129,7 @@ suite("Stop review over the bridge", function () {
           });
           return undefined;
         });
-        await vscode.commands.executeCommand("paireto.gate.sendFeedback");
+        await vscode.commands.executeCommand("crafty.gate.sendFeedback");
         const refused = await waitFor("the refusal", () =>
           responses.find((m) => m.id === "first-stop"),
         );
@@ -154,7 +154,7 @@ suite("Stop review over the bridge", function () {
         await send("Stop", "stop-without-post");
         await waitForForegroundGate("review");
         assert.ok(!responses.some((m) => m.id === "stop-without-post"));
-        await vscode.commands.executeCommand("paireto.gate.approve");
+        await vscode.commands.executeCommand("crafty.gate.approve");
         assert.strictEqual(
           (
             await waitFor("approval without PostToolUse", () =>
@@ -186,7 +186,7 @@ suite("Stop review over the bridge", function () {
         // Release a review the test left open (an assertion failed mid-review) BEFORE waiting for
         // the gates to clear, or that wait times out and reports itself instead of the real failure.
         for (let attempt = 0; attempt < 3 && (await inspect()).gates.length > 0; attempt++) {
-          await vscode.commands.executeCommand("paireto.gate.approve");
+          await vscode.commands.executeCommand("crafty.gate.approve");
         }
         await waitFor("review cleanup", async () =>
           (await inspect()).gates.length === 0 ? true : undefined,

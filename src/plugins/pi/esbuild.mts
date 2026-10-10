@@ -16,7 +16,7 @@ export function piConfigs(ctx: PluginBuildContext): BuildOptions[] {
       target: "node20",
       minify: ctx.production,
       sourcemap: false,
-      outfile: `${PLUGIN_OUT_ROOT}/${OUT}/extensions/paireto.js`,
+      outfile: `${PLUGIN_OUT_ROOT}/${OUT}/extensions/crafty.js`,
       logLevel: "silent",
       plugins: [ctx.problemMatcher],
     },

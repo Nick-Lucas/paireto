@@ -8,7 +8,7 @@ import { ensureTestCertificates } from "../e2e/proxy/testCertificates.js";
 
 suite("E2E machine-local proxy certificates", () => {
   test("generates a matching long-lived CA/leaf pair and reuses it", () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-e2e-certs-test-"));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-e2e-certs-test-"));
 
     try {
       const certs = ensureTestCertificates(directory);
@@ -18,7 +18,7 @@ suite("E2E machine-local proxy certificates", () => {
       const originalFiles = snapshot(directory);
 
       assert.strictEqual(certs.created, true);
-      assert.match(ca.subject, /CN=Paireto-E2E-Test-CA/);
+      assert.match(ca.subject, /CN=Crafty-E2E-Test-CA/);
       assert.match(leaf.subjectAltName ?? "", /DNS:api\.anthropic\.com/);
       assert.match(leaf.subjectAltName ?? "", /DNS:chatgpt\.com/);
       assert.strictEqual(leaf.verify(ca.publicKey), true);
@@ -38,7 +38,7 @@ suite("E2E machine-local proxy certificates", () => {
   });
 
   test("replaces an incomplete local identity", () => {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-e2e-certs-test-"));
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-e2e-certs-test-"));
 
     try {
       const first = ensureTestCertificates(directory);

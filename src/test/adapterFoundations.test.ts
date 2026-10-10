@@ -183,7 +183,7 @@ suite("onboarding install stamp + installedProbe", () => {
   const pluginsRoot = path.resolve(__dirname, "../../dist/plugins");
 
   setup(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-stamp-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-stamp-"));
   });
   teardown(() => {
     fs.rmSync(dir, { recursive: true, force: true });

@@ -1,10 +1,10 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "paireto",
+  "name": "crafty",
   "version": "0.10.0",
-  "description": "Pair-programming with Paireto in VS Code.",
+  "description": "Pair-programming with Crafty in VS Code.",
   "author": {
-    "name": "Paireto"
+    "name": "Crafty"
   },
   "repository": "https://github.com/Nick-Lucas/paireto",
   "license": "Elastic-2.0",

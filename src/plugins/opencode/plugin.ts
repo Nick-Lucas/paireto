@@ -1,4 +1,4 @@
-// Paireto OpenCode adapter. OpenCode autoloads global + project plugins LAZILY (on the first session
+// Crafty OpenCode adapter. OpenCode autoloads global + project plugins LAZILY (on the first session
 // op, not server boot), runs them in-process under Bun, and exposes an `event` hook, awaited
 // `tool.execute.before/after` hooks, and custom `tool` registrations whose `execute()` can BLOCK the
 // agent by returning a Promise<string>.
@@ -59,7 +59,7 @@ interface ToolContext {
   sessionID?: string;
 }
 
-export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInput) => {
+export const CraftyOpenCode = async ({ worktree, client, directory }: PluginInput) => {
   const bridgeRoot = resolveOpenCodeRoot(worktree, directory);
   if (!bridgeRoot) {
     return {};
@@ -106,7 +106,7 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
     },
 
     // Inject the lean planning instruction into a PLANNING session's system prompt so the agent
-    // submits its plan via paireto_submit_plan instead of ending the turn.
+    // submits its plan via crafty_submit_plan instead of ending the turn.
     "experimental.chat.system.transform": async (
       input: { sessionID: string },
       output: { system: string[] },
@@ -137,7 +137,7 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
     },
 
     // Future-proofing: a newer or forked OpenCode may expose a `plan_exit` tool. If it shows up, point
-    // the agent at paireto_submit_plan instead. No-op today.
+    // the agent at crafty_submit_plan instead. No-op today.
     "tool.definition": async (input: { toolID?: string }, output: { description?: string }) => {
       try {
         if (input?.toolID === "plan_exit") {
@@ -209,7 +209,7 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
               // Self-contained synthetic gate event per the seam invariant: the adapter injects the
               // plan markdown (OpenCode has no plan payload of its own).
               event: {
-                type: "paireto.plan.submitted",
+                type: "crafty.plan.submitted",
                 properties: { sessionID },
                 plan_markdown: plan,
               } as never,

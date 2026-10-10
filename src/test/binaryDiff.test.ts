@@ -29,7 +29,7 @@ suite("binary diff content", () => {
   let provider: ReviewContentProvider;
 
   suiteSetup(async () => {
-    dir = await fs.mkdtemp(path.join(os.tmpdir(), "paireto-bin-"));
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), "crafty-bin-"));
     await fs.writeFile(path.join(dir, "pixel.png"), PNG_1x1);
     provider = new ReviewContentProvider();
   });

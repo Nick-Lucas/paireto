@@ -1,6 +1,6 @@
 # Headless tests in Docker
 
-Both Paireto test suites launch a real VS Code (Electron) window via `@vscode/test-electron`. On macOS
+Both Crafty test suites launch a real VS Code (Electron) window via `@vscode/test-electron`. On macOS
 that window pops up and steals focus on every run. Running the suites inside a **Linux container with a
 virtual X display (`xvfb`)** makes them fully headless — no window ever reaches the macOS host.
 
@@ -61,13 +61,13 @@ so a test exec never races the install.
   `xvfb-run`, which hangs in-container), marks the container ready, then runs `sleep infinity`.
 - `docker-compose.yml` — the persistent `tests` service: bind-mounts the repo at `/workspace`, shadows
   `node_modules` + `.vscode-test` with container-local named volumes, sets `shm_size: 2gb` (Chromium
-  needs more than Docker's default 64MB `/dev/shm`), `PAIRETO_DOCKER=1`, and a readiness healthcheck.
+  needs more than Docker's default 64MB `/dev/shm`), `CRAFTY_DOCKER=1`, and a readiness healthcheck.
 - `e2e.sh` — the one entry point for both E2E flows: picks the compose overlays for the mode, bumps
   the harness pins in record mode, builds and boots once, then execs the run with the per-run variables
   attached. `ANTHROPIC_API_KEY` is forwarded only
   in record mode, so a check run cannot reach a real provider even if the key is exported.
 - `docker-compose.e2e.yml` — E2E-only overlay: mounts the staged Claude secret (`./.secrets`, read-only
-  at `/paireto-secrets`) plus `~/.codex` (which Pi also records against — it reads the same ChatGPT
+  at `/crafty-secrets`) plus `~/.codex` (which Pi also records against — it reads the same ChatGPT
   subscription through its own provider), `~/.local/share/opencode`, `~/.config/opencode`.
 - `docker-compose.mockserver.yml` — adds MockServer for every E2E run. Record combines this with
   the credential overlay; check deliberately does not, seeds fake auth, installs a strict 599 catch-all,
@@ -76,7 +76,7 @@ so a test exec never races the install.
   (gitignored, 0600, contents never printed) so the Linux container can authenticate Claude without a
   keychain. Run automatically by `e2e:record:docker`.
 
-`PAIRETO_DOCKER=1` makes both runners (`.vscode-test.mjs` and `src/e2e/runE2E.ts`) pass `--no-sandbox`
+`CRAFTY_DOCKER=1` makes both runners (`.vscode-test.mjs` and `src/e2e/runE2E.ts`) pass `--no-sandbox`
 to Electron — required because it runs as root and Docker has no usable namespace sandbox. That flag is
 inert on a native macOS run (the env var is unset there), so `pnpm test` locally is unchanged.
 
@@ -84,4 +84,4 @@ inert on a native macOS run (the env var is unset there), so `pnpm test` locally
 
 - Comment out any credential line in `docker-compose.e2e.yml` for a harness you don't use.
 - To reset the cached install / VS Code download: `pnpm docker:down` then
-  `docker volume rm docker_paireto-node-modules docker_paireto-vscode-test`.
+  `docker volume rm docker_crafty-node-modules docker_crafty-vscode-test`.

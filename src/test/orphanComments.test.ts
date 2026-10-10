@@ -52,7 +52,7 @@ suite("orphaned comment selection", () => {
       id: "feedback-2",
       filePath: "",
       changeset: { id: "cs-1", title: "Rename the port" },
-      sourceDocument: { uri: "paireto-changeset://cs-1", markdown: "# Rename" },
+      sourceDocument: { uri: "crafty-changeset://cs-1", markdown: "# Rename" },
     });
     assert.deepStrictEqual(orphanCandidates([description], scanned, nothingChanged), []);
   });

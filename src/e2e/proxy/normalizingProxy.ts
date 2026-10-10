@@ -118,9 +118,9 @@ async function handleRequest(
     );
     // Env-gated dump of the exact match key, for diffing against the cassette's when a strict-VCR
     // miss needs explaining.
-    if (process.env.PAIRETO_SHIM_DUMP) {
-      fs.mkdirSync(process.env.PAIRETO_SHIM_DUMP, { recursive: true });
-      fs.writeFileSync(`${process.env.PAIRETO_SHIM_DUMP}/${digest}.json`, body);
+    if (process.env.CRAFTY_SHIM_DUMP) {
+      fs.mkdirSync(process.env.CRAFTY_SHIM_DUMP, { recursive: true });
+      fs.writeFileSync(`${process.env.CRAFTY_SHIM_DUMP}/${digest}.json`, body);
     }
   }
 

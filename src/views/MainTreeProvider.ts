@@ -1,4 +1,4 @@
-// The single Paireto sidebar view. Top-level rows are collapsible section headers — Agents,
+// The single Crafty sidebar view. Top-level rows are collapsible section headers — Agents,
 // Plan Review, Changed Files, Feedback. The Changed Files section nests group headers (Staged /
 // Unstaged / Committed), each laid out flat or as a compressed folder tree. Section/group/file
 // actions are inline buttons (see package.json view/item/context, keyed on contextValue).
@@ -689,7 +689,7 @@ function placeholder(label: string): Node {
 }
 
 /**
- * The top row that sends the user to the Welcome screen: either no agent has the Paireto plugin yet,
+ * The top row that sends the user to the Welcome screen: either no agent has the Crafty plugin yet,
  * or one has a stale copy that will not speak to this extension.
  */
 export function setupNoticeItem(prompt: SetupPrompt): vscode.TreeItem {
@@ -701,13 +701,13 @@ export function setupNoticeItem(prompt: SetupPrompt): vscode.TreeItem {
     item.label = "Set up an agent";
     item.iconPath = new vscode.ThemeIcon("rocket");
     item.tooltip =
-      "No agent has the Paireto plugin yet.\nClick to open the Welcome screen and set one up.";
+      "No agent has the Crafty plugin yet.\nClick to open the Welcome screen and set one up.";
     return item;
   }
   item.label = "Update agent plugins";
   item.description = prompt.agentNames.join(", ");
   item.iconPath = new vscode.ThemeIcon("warning", new vscode.ThemeColor("charts.orange"));
-  item.tooltip = `These agents have an old Paireto plugin: ${prompt.agentNames.join(
+  item.tooltip = `These agents have an old Crafty plugin: ${prompt.agentNames.join(
     ", ",
   )}.\nClick to open the Welcome screen and update them.`;
   return item;

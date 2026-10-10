@@ -47,8 +47,8 @@ suite("shared Agent Plugin MCP adapter", () => {
   test("uses one server identity with harness-specific session adapters", () => {
     const codex = createAgentPluginMcpAdapter("codex");
     const kiro = createAgentPluginMcpAdapter("kiro");
-    assert.strictEqual(codex.serverName, "paireto-agent-plugin");
-    assert.strictEqual(kiro.serverName, "paireto-agent-plugin");
+    assert.strictEqual(codex.serverName, "crafty-agent-plugin");
+    assert.strictEqual(kiro.serverName, "crafty-agent-plugin");
     assert.strictEqual(codex.harness, "codex");
     assert.strictEqual(kiro.harness, "kiro");
   });

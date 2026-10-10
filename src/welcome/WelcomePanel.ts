@@ -1,6 +1,6 @@
 // The Welcome / onboarding webview — the first (and only) webview in the extension. Shown once on
-// first install (gated by a globalState marker in extension.ts) and reopenable via paireto.openWelcome.
-// Two sections: per-agent setup (Claude Code functional, others "coming soon") and "The Paireto way"
+// first install (gated by a globalState marker in extension.ts) and reopenable via crafty.openWelcome.
+// Two sections: per-agent setup (Claude Code functional, others "coming soon") and "The Crafty way"
 // — a keybinding manager over built-in VS Code commands that writes the user's keybindings.json.
 
 import * as fs from "node:fs";
@@ -39,8 +39,8 @@ export class WelcomePanel {
       return;
     }
     const panel = vscode.window.createWebviewPanel(
-      "paireto.welcome",
-      "Welcome to Paireto",
+      "crafty.welcome",
+      "Welcome to Crafty",
       vscode.ViewColumn.One,
       {
         enableScripts: true,
@@ -51,7 +51,7 @@ export class WelcomePanel {
         ],
       },
     );
-    panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "paireto.svg");
+    panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "crafty.svg");
     WelcomePanel.current = new WelcomePanel(panel, context, status);
   }
 
@@ -63,7 +63,7 @@ export class WelcomePanel {
     private readonly status: AgentInstallStatus,
   ) {
     // NB: never reveal the Output panel here — opening Welcome must not force-show the "bottom bar".
-    // Logs land in the shared "Paireto" channel (gated on `paireto.logLevel`); open it manually.
+    // Logs land in the shared "Crafty" channel (gated on `crafty.logLevel`); open it manually.
     this.panel.webview.html = this.html();
     this.panel.webview.onDidReceiveMessage(
       (msg) => void this.onMessage(msg),
@@ -186,7 +186,7 @@ export class WelcomePanel {
     });
 
     return {
-      logoUri: this.mediaUri("PairetoHeader2x.png").toString(),
+      logoUri: this.mediaUri("CraftyHeader2x.png").toString(),
       versions: this.versions(),
       agents,
       shortcuts,
@@ -221,7 +221,7 @@ export class WelcomePanel {
       fs.writeFileSync(file, text, "utf8");
     } catch (err) {
       void vscode.window.showErrorMessage(
-        `Paireto: couldn't write keybindings.json — ${err instanceof Error ? err.message : String(err)}`,
+        `Crafty: couldn't write keybindings.json — ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -330,7 +330,7 @@ export class WelcomePanel {
   <meta http-equiv="Content-Security-Policy" content="${csp}" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <link href="${styleUri}" rel="stylesheet" />
-  <title>Welcome to Paireto</title>
+  <title>Welcome to Crafty</title>
 </head>
 <body>
   <div id="root"></div>

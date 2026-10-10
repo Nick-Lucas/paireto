@@ -24,7 +24,7 @@ export async function startServer(
   onLine: (line: string, sock: net.Socket) => void,
   at?: string,
 ): Promise<FakeServer> {
-  const dir = at ? path.dirname(at) : fs.mkdtempSync(path.join(os.tmpdir(), "paireto-bridge-"));
+  const dir = at ? path.dirname(at) : fs.mkdtempSync(path.join(os.tmpdir(), "crafty-bridge-"));
   const sockPath = at ?? path.join(dir, "test.sock");
   const received: string[] = [];
 

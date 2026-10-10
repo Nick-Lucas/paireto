@@ -77,7 +77,7 @@ export type RepoRootArg = z.infer<typeof RepoRootArg>;
 
 /** What a bulk Stage/Unstage/Discard was invoked on: a changeset row, a repository row (or any node
  *  that names one), or nothing. Nothing is a real case, not a defensive one: these three are palette
- *  commands ("Paireto: Stage All Changes"), and the palette passes no argument — that invocation is
+ *  commands ("Crafty: Stage All Changes"), and the palette passes no argument — that invocation is
  *  what the Choose Repository quick pick exists for. */
 export const BulkTargetArg = z.union([
   ChangesetIdArg.transform((changesetId) => ({ changesetId, repoRoot: undefined })),

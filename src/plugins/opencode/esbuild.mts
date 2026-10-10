@@ -20,7 +20,7 @@ export function openCodeConfigs(ctx: PluginBuildContext): BuildOptions[] {
       target: "node20",
       minify: ctx.production,
       sourcemap: false,
-      outfile: `${PLUGIN_OUT_ROOT}/${OUT}/paireto.js`,
+      outfile: `${PLUGIN_OUT_ROOT}/${OUT}/crafty.js`,
       external: ["@opencode-ai/plugin"],
       logLevel: "silent",
       plugins: [ctx.problemMatcher],

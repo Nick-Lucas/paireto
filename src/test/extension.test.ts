@@ -140,7 +140,7 @@ suite("repoKey", () => {
   });
 
   test("resolves symlinks identically (the /var trap)", () => {
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-key-"));
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-key-"));
     const real = path.join(base, "real-repo");
     const link = path.join(base, "link-repo");
     fs.mkdirSync(real);
@@ -187,7 +187,7 @@ suite("command manifest", () => {
 
   test("the review scheme pulls activation on demand (onFileSystem)", () => {
     // onStartupFinished fires AFTER the workbench restores editors, so a restored
-    // paireto-review:// diff tab resolves with no FileSystemProvider registered and shows an error
+    // crafty-review:// diff tab resolves with no FileSystemProvider registered and shows an error
     // until retried. onFileSystem:<scheme> makes VS Code fire activation and WAIT for the provider
     // registration before completing the read.
     assert.ok(
@@ -203,25 +203,25 @@ suite("command manifest", () => {
         (item) => item.command === command,
       )?.when ?? "";
 
-    for (const command of ["paireto.review.addComment", "paireto.review.addQuestion"]) {
+    for (const command of ["crafty.review.addComment", "crafty.review.addQuestion"]) {
       assert.match(forCommand(command), /!commentThread/, `${command} must need a fresh thread`);
     }
-    assert.match(forCommand("paireto.review.addReply"), /&& commentThread/);
+    assert.match(forCommand("crafty.review.addReply"), /&& commentThread/);
     assert.doesNotMatch(
-      forCommand("paireto.review.addReply"),
+      forCommand("crafty.review.addReply"),
       /!commentThread/,
       "a reply needs a thread to answer",
     );
   });
 
-  test("every command exposed in the Command Palette is namespaced as Paireto", () => {
+  test("every command exposed in the Command Palette is namespaced as Crafty", () => {
     const paletteHidden = new Set(
       manifest.contributes.menus.commandPalette
         .filter(({ when }) => when === "false")
         .map(({ command }) => command),
     );
     const unprefixed = manifest.contributes.commands.filter(
-      ({ command, title }) => !paletteHidden.has(command) && !title.startsWith("Paireto: "),
+      ({ command, title }) => !paletteHidden.has(command) && !title.startsWith("Crafty: "),
     );
     assert.deepStrictEqual(
       unprefixed,
@@ -232,43 +232,43 @@ suite("command manifest", () => {
 
   test("commands shown only inside local comment/tree context keep concise titles", () => {
     const localCommands = new Set([
-      "paireto.comment.edit",
-      "paireto.comment.save",
-      "paireto.comment.delete",
-      "paireto.plan.addComment",
-      "paireto.plan.addQuestion",
-      "paireto.review.openDiff",
-      "paireto.review.openFile",
-      "paireto.review.copyPath",
-      "paireto.review.revealInExplorer",
-      "paireto.review.stage",
-      "paireto.review.unstage",
-      "paireto.review.discard",
-      "paireto.review.addComment",
-      "paireto.review.addQuestion",
-      "paireto.review.revealComment",
-      "paireto.review.deleteComment",
-      "paireto.guidedReview.openFile",
-      "paireto.guidedReview.openChangeset",
-      "paireto.guidedReview.openPlan",
-      "paireto.agent.switch",
-      "paireto.agent.hide",
-      "paireto.agent.show",
+      "crafty.comment.edit",
+      "crafty.comment.save",
+      "crafty.comment.delete",
+      "crafty.plan.addComment",
+      "crafty.plan.addQuestion",
+      "crafty.review.openDiff",
+      "crafty.review.openFile",
+      "crafty.review.copyPath",
+      "crafty.review.revealInExplorer",
+      "crafty.review.stage",
+      "crafty.review.unstage",
+      "crafty.review.discard",
+      "crafty.review.addComment",
+      "crafty.review.addQuestion",
+      "crafty.review.revealComment",
+      "crafty.review.deleteComment",
+      "crafty.guidedReview.openFile",
+      "crafty.guidedReview.openChangeset",
+      "crafty.guidedReview.openPlan",
+      "crafty.agent.switch",
+      "crafty.agent.hide",
+      "crafty.agent.show",
     ]);
     const incorrectlyPrefixed = manifest.contributes.commands.filter(
-      ({ command, title }) => localCommands.has(command) && title.startsWith("Paireto: "),
+      ({ command, title }) => localCommands.has(command) && title.startsWith("Crafty: "),
     );
     assert.deepStrictEqual(incorrectlyPrefixed, []);
   });
 
   test("parent editor actions remain namespaced", () => {
     const parentCommands = new Set([
-      "paireto.gate.approve",
-      "paireto.gate.sendFeedback",
-      "paireto.review.pickDiffCompareTo",
+      "crafty.gate.approve",
+      "crafty.gate.sendFeedback",
+      "crafty.review.pickDiffCompareTo",
     ]);
     const unprefixed = manifest.contributes.commands.filter(
-      ({ command, title }) => parentCommands.has(command) && !title.startsWith("Paireto: "),
+      ({ command, title }) => parentCommands.has(command) && !title.startsWith("Crafty: "),
     );
     assert.deepStrictEqual(unprefixed, []);
   });
@@ -282,8 +282,8 @@ suite("command manifest", () => {
       path.join(__dirname, "../../src/review/ReviewController.ts"),
       "utf8",
     );
-    assert.match(planSource, /"paireto\.plan",\s*"Paireto: Add Comment"/);
-    assert.match(reviewSource, /"paireto\.review",\s*"Paireto: Add Comment"/);
+    assert.match(planSource, /"crafty\.plan",\s*"Crafty: Add Comment"/);
+    assert.match(reviewSource, /"crafty\.review",\s*"Crafty: Add Comment"/);
   });
 });
 
@@ -339,7 +339,7 @@ suite("gitToplevel (real git CLI, worktree fixture)", () => {
   let worktree: string;
 
   suiteSetup(() => {
-    base = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-toplevel-"));
+    base = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-toplevel-"));
     mainRepo = path.join(base, "main");
     fs.mkdirSync(mainRepo);
     const git = (args: string[]): void => {
@@ -370,7 +370,7 @@ suite("gitToplevel (real git CLI, worktree fixture)", () => {
   });
 
   test("resolves undefined for a directory outside any git repo", async () => {
-    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-nongit-"));
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-nongit-"));
     try {
       assert.strictEqual(await gitToplevel(outside), undefined);
     } finally {
@@ -596,7 +596,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with crafty_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: x
         src/a.ts:1  [COMMENT]
@@ -615,7 +615,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with crafty_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: q
         src/a.ts:1  [QUESTION]
@@ -646,7 +646,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with crafty_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: x
         src/a.ts:1  [QUESTION]
@@ -676,7 +676,7 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with crafty_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
         Feedback ID: a
         /workspace/api/src/a.ts:1  [COMMENT]
@@ -1649,7 +1649,7 @@ suite("repoSnapshots (cross-repo switcher activity)", () => {
 
   setup(() => {
     prevXdg = process.env.XDG_STATE_HOME;
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-activity-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-activity-"));
     process.env.XDG_STATE_HOME = dir;
   });
   teardown(() => {
@@ -1766,7 +1766,7 @@ suite("Compare To picker", () => {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
@@ -1824,7 +1824,7 @@ suite("Compare To picker", () => {
       driver: (typeof pickers)[number];
     }> => {
       const firstPicker = pickers.length;
-      const command = vscode.commands.executeCommand("paireto.review.pickCompareTo");
+      const command = vscode.commands.executeCommand("crafty.review.pickCompareTo");
       const compareDriver = await waitForPicker(firstPicker);
       const comparePicker = compareDriver.picker;
       comparePicker.value = "Branch/Ref";
@@ -1909,9 +1909,7 @@ suite("Compare To picker", () => {
       let snapshot: InspectSnapshot;
       let repository: InspectSnapshot["repositories"][number] | undefined;
       do {
-        snapshot = (await vscode.commands.executeCommand(
-          "paireto.test.inspect",
-        )) as InspectSnapshot;
+        snapshot = (await vscode.commands.executeCommand("crafty.test.inspect")) as InspectSnapshot;
         repository = snapshot.repositories.find((candidate) => candidate.repoRoot === repoRoot);
         if (snapshot.compareTo.ref === ref && repository?.compareRef === ref) {
           break;
@@ -2199,7 +2197,7 @@ suite("pickCurrentRepo (deterministic repo selection)", () => {
     const windowRepo = repo("/a/window");
     const picked = pickCurrentRepo(
       [otherRepo, windowRepo],
-      { scheme: "paireto-review", fsPath: "/a/other/x.ts" },
+      { scheme: "crafty-review", fsPath: "/a/other/x.ts" },
       "/a/window",
     );
     assert.strictEqual(picked, windowRepo);
@@ -2766,7 +2764,7 @@ suite("stage with unsaved changes (which documents a stage saves)", () => {
     const docs = [
       dirty,
       doc("/repo/src/clean.ts", false),
-      doc("/repo/src/virtual.ts", true, "paireto-review"),
+      doc("/repo/src/virtual.ts", true, "crafty-review"),
       doc("/elsewhere/b.ts", true),
     ];
     assert.deepStrictEqual(dirtyTargetDocs(docs, [target("src/a.ts"), target("src/clean.ts")]), [

@@ -64,14 +64,14 @@ export function planTab(): vscode.Tab | undefined {
 }
 
 export function inspect(): Thenable<InspectSnapshot> {
-  return vscode.commands.executeCommand<InspectSnapshot>("paireto.test.inspect");
+  return vscode.commands.executeCommand<InspectSnapshot>("crafty.test.inspect");
 }
 
 /** Activate the extension over the fixture git workspace; returns its canonical root. */
 export async function activateForFixtureRepo(): Promise<string> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   assert.ok(folder, "the test harness must open the fixture git workspace");
-  await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+  await vscode.extensions.getExtension("Crafty.crafty")?.activate();
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
   return canonicalize(folder.uri.fsPath);
 }
@@ -197,7 +197,7 @@ export async function queueFileComment(
     line: opts.line ?? 0,
     text,
   };
-  const queued = await vscode.commands.executeCommand<boolean>("paireto.test.addComment", args);
+  const queued = await vscode.commands.executeCommand<boolean>("crafty.test.addComment", args);
   assert.strictEqual(queued, true, "the file comment must attach to the fixture repo");
   return waitFor("the file comment to register", async () =>
     (await inspect()).feedback.map((item) => item.id).find((id) => !before.has(id)),
@@ -227,7 +227,7 @@ export async function addPlanComment(
     reply: opts.reply,
     text,
   };
-  const commented = await vscode.commands.executeCommand<boolean>("paireto.test.addComment", args);
+  const commented = await vscode.commands.executeCommand<boolean>("crafty.test.addComment", args);
   assert.strictEqual(commented, true, "the plan comment must attach to the plan document");
   await waitFor("the plan comment to register", async () =>
     (await inspect()).gateHasFeedback ? true : undefined,

@@ -32,7 +32,7 @@ export class McpClient {
       params: {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: {},
-        clientInfo: { name: "paireto-e2e", version: "1" },
+        clientInfo: { name: "crafty-e2e", version: "1" },
       },
     });
     const sid = res.headers.get("mcp-session-id");

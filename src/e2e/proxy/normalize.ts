@@ -41,10 +41,10 @@ const CODEX_CONTEXT_BLOCK =
 /** Anything that identifies the human who recorded a cassette. Applied to BOTH sides (see
  *  scrubIdentity) so scrubbing never costs a match. */
 const IDENTITY_PATTERNS: Array<[RegExp, string]> = [
-  [/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "paireto-e2e@example.invalid"],
-  [/\buser-[A-Za-z0-9]{16,}\b/g, "user-PAIRETO_E2E_ACCOUNT"],
-  [/\borg-[A-Za-z0-9]{16,}\b/g, "org-PAIRETO_E2E_ORG"],
-  [/\bacct[_-][A-Za-z0-9]{8,}\b/g, "acct_PAIRETO_E2E_ACCOUNT"],
+  [/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "crafty-e2e@example.invalid"],
+  [/\buser-[A-Za-z0-9]{16,}\b/g, "user-CRAFTY_E2E_ACCOUNT"],
+  [/\borg-[A-Za-z0-9]{16,}\b/g, "org-CRAFTY_E2E_ORG"],
+  [/\bacct[_-][A-Za-z0-9]{8,}\b/g, "acct_CRAFTY_E2E_ACCOUNT"],
 ];
 /** Fields whose VALUE is an opaque id the patterns above don't shape-match. The conversation handles
  *  (`prompt_cache_key`, `turn_id`) are deleted from the request match key anyway; they are listed here
@@ -70,7 +70,7 @@ const IDENTITY_KEYS = new Set([
   "userId",
   "user_uuid",
 ]);
-const IDENTITY_PLACEHOLDER = "PAIRETO_E2E_ID";
+const IDENTITY_PLACEHOLDER = "CRAFTY_E2E_ID";
 /** Fallback for non-JSON (SSE) payloads. The value pattern spans escaped quotes because an identity
  *  value can itself be an escaped JSON blob. */
 const IDENTITY_FIELDS = new RegExp(
@@ -104,7 +104,7 @@ export function scrubIdentity(raw: string): string {
  *  took. Both differ on every run and ride into the next request, and they sit inside an embedded
  *  JSON string rather than the document, so only a text pass reaches them. */
 const RUN_STAMPS: Array<[RegExp, string]> = [
-  [/(\\?"chunk_id\\?":\\?")[^"\\]+/g, "$1PAIRETO_E2E_CHUNK"],
+  [/(\\?"chunk_id\\?":\\?")[^"\\]+/g, "$1CRAFTY_E2E_CHUNK"],
   [/(\\?"wall_time_seconds\\?":)[0-9.eE+-]+/g, "$10"],
 ];
 
@@ -132,19 +132,19 @@ function scrubFeedbackIds(raw: string): string {
 }
 
 function scrubFeedbackText(value: string): string {
-  if (value.startsWith("---\nname: paireto-review\n")) {
-    return "NORMALIZED_PAIRETO_REVIEW_SKILL";
+  if (value.startsWith("---\nname: crafty-review\n")) {
+    return "NORMALIZED_CRAFTY_REVIEW_SKILL";
   }
-  if (value.startsWith("---\nname: paireto-guided-review\n")) {
-    return "NORMALIZED_PAIRETO_GUIDED_REVIEW_SKILL";
+  if (value.startsWith("---\nname: crafty-guided-review\n")) {
+    return "NORMALIZED_CRAFTY_GUIDED_REVIEW_SKILL";
   }
   if (
     value.startsWith(
-      "Prepare a review plan so a human can review these changes, then hand it to Paireto.",
+      "Prepare a review plan so a human can review these changes, then hand it to Crafty.",
     )
   ) {
     const argumentsAt = value.indexOf("\n\nARGUMENTS:");
-    return `NORMALIZED_PAIRETO_GUIDED_REVIEW_COMMAND${
+    return `NORMALIZED_CRAFTY_GUIDED_REVIEW_COMMAND${
       argumentsAt >= 0 ? value.slice(argumentsAt) : ""
     }`;
   }
@@ -344,19 +344,19 @@ function stripTypedReturn(body: Record<string, unknown>): void {
   });
 }
 
-/** Paireto's own tools — the ones this project ships and can regress. Everything else belongs to the
+/** Crafty's own tools — the ones this project ships and can regress. Everything else belongs to the
  *  harness/provider and churns independently of us. */
-export function isPairetoTool(name: string): boolean {
-  return /paireto/i.test(name);
+export function isCraftyTool(name: string): boolean {
+  return /crafty/i.test(name);
 }
 
 /**
- * Reduce a tool/server inventory to a stable match key that still fails on a Paireto regression.
+ * Reduce a tool/server inventory to a stable match key that still fails on a Crafty regression.
  *
  * Every tool keeps its name, sorted because the advertised order varies between runs, so a tool that
- * stops being offered breaks replay. Paireto's own tools are kept WHOLE — description and schema —
+ * stops being offered breaks replay. Crafty's own tools are kept WHOLE — description and schema —
  * because they are this project's surface to the agent, so a regression in either must break replay;
- * this caught `paireto_submit_plan` losing its `plan` parameter. Everything else is reduced to a
+ * this caught `crafty_submit_plan` losing its `plan` parameter. Everything else is reduced to a
  * name: provider descriptions and built-in schemas churn every CLI release, and a built-in
  * description can state the host OS and shell, which differs between the recording and replaying
  * machines.
@@ -372,7 +372,7 @@ export function normalizeToolInventory(value: unknown): unknown {
       }
       const tool = entry as Record<string, unknown>;
       const name = typeof tool.name === "string" ? tool.name : "";
-      return isPairetoTool(name) ? tool : { name };
+      return isCraftyTool(name) ? tool : { name };
     })
     .sort((left, right) => keyOf(left).localeCompare(keyOf(right)));
 }
@@ -396,7 +396,7 @@ const ABSOLUTE_PATH_LINE = /^\/\S*$/;
 /** A listing of the temp root itself. The E2E harness homes, sandboxes and state folders all live
  *  there, and which of them exist depends on what ran before on the machine, not on this run. */
 const TMP_ROOT_LISTING = /\bls\b[^&|;]*\s(?:\/private)?\/tmp\/?(?=\s|$|[&|;])/;
-const E2E_SCRATCH_ENTRY = /^(?:[bcdlps-] ENTRY )?(?:pai-|paireto-e2e-)\S*$/;
+const E2E_SCRATCH_ENTRY = /^(?:[bcdlps-] ENTRY )?(?:pai-|crafty-e2e-)\S*$/;
 
 function sortPathListOutput(content: string): string {
   const lines = content.split("\n");
@@ -520,7 +520,7 @@ export function normalizeCodexBody(raw: string): string {
  * prose is harness-owned and rewritten on the CLI's own release schedule — `exec` alone carries
  * several kB. Left in the match key, each Codex version bump in the Dockerfile expires every Codex
  * cassette. Names and namespaces survive, so a built-in that stops
- * being offered still breaks replay, and {@link normalizeToolInventory} keeps any Paireto tool
+ * being offered still breaks replay, and {@link normalizeToolInventory} keeps any Crafty tool
  * whole should Codex ever advertise one here.
  */
 function normalizeCodexAdditionalTools(body: Record<string, unknown>): void {
@@ -630,12 +630,12 @@ function normalizeCodexWorkflowToolResults(body: Record<string, unknown>): void 
 /** Codex names the staged plugin's hooks.json inside every `hook_run_id`, and that path carries the
  *  plugin version. The version is incidental to what these tests check, so scrub it — otherwise a
  *  routine version bump invalidates every recorded body that carries a hook prompt. */
-const PLUGIN_CACHE_VERSION = /(cache\/paireto\/paireto\/)\d+\.\d+\.\d+(\/)/g;
+const PLUGIN_CACHE_VERSION = /(cache\/crafty\/crafty\/)\d+\.\d+\.\d+(\/)/g;
 
 function stripPluginVersion(body: Record<string, unknown>): void {
   walk(body, (object) => {
     for (const [key, value] of Object.entries(object)) {
-      if (typeof value === "string" && value.includes("cache/paireto/paireto/")) {
+      if (typeof value === "string" && value.includes("cache/crafty/crafty/")) {
         object[key] = value.replace(PLUGIN_CACHE_VERSION, "$1VERSION$2");
       }
     }
@@ -660,7 +660,7 @@ function canonicalizeItemIds(body: Record<string, unknown>): void {
       }
       let mapped = renamed.get(value);
       if (mapped === undefined) {
-        mapped = `paireto-id-${renamed.size}`;
+        mapped = `crafty-id-${renamed.size}`;
         renamed.set(value, mapped);
       }
       object[key] = mapped;
@@ -685,7 +685,7 @@ const KIRO_SCOPED_ID_KEYS = new Set([
  *     Day of Week: Saturday
  *
  * Left alone, every Kiro cassette stops matching at midnight — the run that recorded it and the run
- * replaying it disagree about the day, which is a property of the calendar rather than of Paireto.
+ * replaying it disagree about the day, which is a property of the calendar rather than of Crafty.
  */
 const KIRO_CURRENT_DATE = /Date: [A-Z][a-z]+ \d{1,2}, \d{4}\nDay of Week: [A-Z][a-z]+/g;
 
@@ -707,7 +707,7 @@ function normalizeKiroDates(value: string): string {
 
 /**
  * Kiro asks the model for a session title in a request of its own. The prompt is harness-owned and
- * rewritten between releases, and the title it gets back never reaches Paireto, so the request is
+ * rewritten between releases, and the title it gets back never reaches Crafty, so the request is
  * keyed by its mode alone.
  */
 const KIRO_SESSION_TITLE = "session-title";
@@ -742,7 +742,7 @@ export function normalizeKiroBody(raw: string): string {
       }
       let replacement = renamed.get(value);
       if (replacement === undefined) {
-        replacement = `paireto-kiro-id-${renamed.size}`;
+        replacement = `crafty-kiro-id-${renamed.size}`;
         renamed.set(value, replacement);
       }
       object[key] = replacement;
@@ -758,7 +758,7 @@ export function normalizeKiroBody(raw: string): string {
  * Kiro nests each tool under `toolSpecification` and ships full JSON Schemas, and WHICH built-ins it
  * offers follows what its account/governance lookup answered — a replay reaches none of that, so the
  * inventory it sends is not the one that was recorded. Names are kept (a tool that stops being
- * offered still breaks replay) and Paireto's own tools stay whole.
+ * offered still breaks replay) and Crafty's own tools stay whole.
  */
 /**
  * Tools Kiro offers only when the signed-in account is entitled to them. The recorder is signed in
@@ -786,7 +786,7 @@ function normalizeKiroToolInventory(parsed: unknown): void {
           return entry;
         }
         const name = (spec as { name?: unknown }).name;
-        return typeof name === "string" && !isPairetoTool(name)
+        return typeof name === "string" && !isCraftyTool(name)
           ? { toolSpecification: { name } }
           : entry;
       })

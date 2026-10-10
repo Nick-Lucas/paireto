@@ -1,6 +1,6 @@
-// The `paireto_start_guided_review` tool: one definition, shared by every harness's MCP server.
+// The `crafty_start_guided_review` tool: one definition, shared by every harness's MCP server.
 //
-// Like `paireto_review`, the name and description are part of the agent-facing contract — the model
+// Like `crafty_review`, the name and description are part of the agent-facing contract — the model
 // decides whether to call this from the description alone, and the e2e replay fixtures match on the
 // whole tool inventory — so treat the text and the schema as fixed rather than reworded freely.
 
@@ -10,7 +10,7 @@ import { connect } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
 import { connectFailureMessage, NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
 
-export const GUIDED_REVIEW_TOOL_NAME = "paireto_start_guided_review";
+export const GUIDED_REVIEW_TOOL_NAME = "crafty_start_guided_review";
 
 export const GUIDED_REVIEW_TOOL_DESCRIPTION =
   "Hand a review plan to the human reviewer and wait for feedback. Blocks until they respond.";

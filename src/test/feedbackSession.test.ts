@@ -22,9 +22,9 @@ import { appendFeedbackReply, resolveThread, unresolveThread } from "../review/f
 import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 import { feedbackFilePath, type FeedbackState } from "../storage/FeedbackStore.js";
 
-const SCHEME = "paireto-feedback-session-doc";
-const REPO = "/paireto-session-repo";
-const OTHER = "/paireto-session-other";
+const SCHEME = "crafty-feedback-session-doc";
+const REPO = "/crafty-session-repo";
+const OTHER = "/crafty-session-other";
 const MAIN: FeedbackRef = { kind: "branch", value: "main" };
 const WHEN = "2026-08-12T20:00:00.000Z";
 
@@ -141,7 +141,7 @@ suite("feedback session", () => {
     const root = fs.existsSync("/private/tmp") ? "/private/tmp" : os.tmpdir();
     stateHome = fs.mkdtempSync(path.join(root, "pai-fbs-"));
     process.env.XDG_STATE_HOME = stateHome;
-    comments = new CommentSession(`paireto-feedback-session-${++seq}`, "Test", SCHEME, {
+    comments = new CommentSession(`crafty-feedback-session-${++seq}`, "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });

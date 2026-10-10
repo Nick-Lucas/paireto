@@ -1,8 +1,8 @@
 {
-  "name": "paireto",
-  "displayName": "Paireto",
+  "name": "crafty",
+  "displayName": "Crafty",
   "version": "0.25.0",
-  "description": "Paireto — VS Code companion for terminal-first AI coding agents.",
+  "description": "Crafty — shape what your terminal-first AI coding agents make, inside VS Code.",
   "categories": [
     "Other"
   ],
@@ -11,7 +11,7 @@
     "type": "git",
     "url": "https://github.com/Nick-Lucas/paireto"
   },
-  "publisher": "Paireto",
+  "publisher": "Crafty",
   "main": "./dist/extension.js",
   "scripts": {
     "vscode:prepublish": "pnpm run prepackage",
@@ -20,19 +20,19 @@
     "watch:esbuild": "node esbuild.mts --watch",
     "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
     "prepackage": "pnpm run check-types && pnpm run lint && node esbuild.mts --production",
-    "package": "vsce package --no-dependencies --out dist/paireto.vsix",
+    "package": "vsce package --no-dependencies --out dist/crafty.vsix",
     "compile-tests": "rm -rf out && tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview",
-    "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
+    "dogfood": "pnpm package && code --install-extension dist/crafty.vsix --force",
     "publish:minor": "vsce publish minor --no-dependencies",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
     "test": "vscode-test",
-    "e2e:record": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=record node out/e2e/runE2E.js",
-    "e2e:check": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=check node out/e2e/runE2E.js",
+    "e2e:record": "pnpm run compile && pnpm run compile-tests && CRAFTY_E2E_MODE=record node out/e2e/runE2E.js",
+    "e2e:check": "pnpm run compile && pnpm run compile-tests && CRAFTY_E2E_MODE=check node out/e2e/runE2E.js",
     "e2e:check:docker": "bash docker/e2e.sh check",
     "e2e:record:docker": "bash docker/e2e.sh record",
     "docker:build": "docker compose -f docker/docker-compose.yml build",
@@ -75,635 +75,635 @@
   "contributes": {
     "commands": [
       {
-        "command": "paireto.switcher.open",
-        "title": "Paireto: Switch Repository / Worktree",
+        "command": "crafty.switcher.open",
+        "title": "Crafty: Switch Repository / Worktree",
         "icon": "$(repo)"
       },
       {
-        "command": "paireto.switcher.openInThisWindow",
-        "title": "Paireto: Open Selected in This Window"
+        "command": "crafty.switcher.openInThisWindow",
+        "title": "Crafty: Open Selected in This Window"
       },
       {
-        "command": "paireto.openWelcome",
-        "title": "Paireto: Open Welcome"
+        "command": "crafty.openWelcome",
+        "title": "Crafty: Open Welcome"
       },
       {
-        "command": "paireto.gate.approve",
-        "title": "Paireto: Approve",
+        "command": "crafty.gate.approve",
+        "title": "Crafty: Approve",
         "icon": "media/approve.svg"
       },
       {
-        "command": "paireto.gate.sendFeedback",
-        "title": "Paireto: Send Feedback",
+        "command": "crafty.gate.sendFeedback",
+        "title": "Crafty: Send Feedback",
         "icon": "media/send-feedback.svg"
       },
       {
-        "command": "paireto.submit",
-        "title": "Paireto: Submit Feedback or Approve if no Feedback"
+        "command": "crafty.submit",
+        "title": "Crafty: Submit Feedback or Approve if no Feedback"
       },
       {
-        "command": "paireto.comment.edit",
+        "command": "crafty.comment.edit",
         "title": "Edit Comment",
         "icon": "$(edit)"
       },
       {
-        "command": "paireto.comment.save",
+        "command": "crafty.comment.save",
         "title": "Save Comment",
         "icon": "$(check)"
       },
       {
-        "command": "paireto.comment.delete",
+        "command": "crafty.comment.delete",
         "title": "Delete Comment",
         "icon": "$(trash)"
       },
       {
-        "command": "paireto.plan.addComment",
+        "command": "crafty.plan.addComment",
         "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.plan.addQuestion",
+        "command": "crafty.plan.addQuestion",
         "title": "Question",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.plan.addReply",
+        "command": "crafty.plan.addReply",
         "title": "Reply",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.review.refresh",
-        "title": "Paireto: Refresh",
+        "command": "crafty.review.refresh",
+        "title": "Crafty: Refresh",
         "icon": "$(refresh)"
       },
       {
-        "command": "paireto.review.pickCompareTo",
-        "title": "Paireto: Compare To…",
+        "command": "crafty.review.pickCompareTo",
+        "title": "Crafty: Compare To…",
         "icon": "$(git-compare)"
       },
       {
-        "command": "paireto.review.pickDiffCompareTo",
-        "title": "Paireto: Compare To…",
+        "command": "crafty.review.pickDiffCompareTo",
+        "title": "Crafty: Compare To…",
         "icon": "$(git-compare)"
       },
       {
-        "command": "paireto.review.toggleLayout",
-        "title": "Paireto: Toggle Flat / Tree View",
+        "command": "crafty.review.toggleLayout",
+        "title": "Crafty: Toggle Flat / Tree View",
         "icon": "$(list-tree)"
       },
       {
-        "command": "paireto.review.openDiff",
+        "command": "crafty.review.openDiff",
         "title": "Open Changes"
       },
       {
-        "command": "paireto.review.openFile",
+        "command": "crafty.review.openFile",
         "title": "Open File",
         "icon": "$(go-to-file)"
       },
       {
-        "command": "paireto.review.copyPath",
+        "command": "crafty.review.copyPath",
         "title": "Copy Path"
       },
       {
-        "command": "paireto.review.revealInExplorer",
+        "command": "crafty.review.revealInExplorer",
         "title": "Focus in Explorer"
       },
       {
-        "command": "paireto.review.stage",
+        "command": "crafty.review.stage",
         "title": "Stage Changes",
         "icon": "$(add)"
       },
       {
-        "command": "paireto.review.unstage",
+        "command": "crafty.review.unstage",
         "title": "Unstage Changes",
         "icon": "$(remove)"
       },
       {
-        "command": "paireto.review.stageAll",
-        "title": "Paireto: Stage All Changes",
+        "command": "crafty.review.stageAll",
+        "title": "Crafty: Stage All Changes",
         "icon": "$(add)"
       },
       {
-        "command": "paireto.review.unstageAll",
-        "title": "Paireto: Unstage All Changes",
+        "command": "crafty.review.unstageAll",
+        "title": "Crafty: Unstage All Changes",
         "icon": "$(remove)"
       },
       {
-        "command": "paireto.review.discard",
+        "command": "crafty.review.discard",
         "title": "Discard Changes",
         "icon": "$(discard)"
       },
       {
-        "command": "paireto.review.discardAll",
-        "title": "Paireto: Discard All Changes",
+        "command": "crafty.review.discardAll",
+        "title": "Crafty: Discard All Changes",
         "icon": "$(discard)"
       },
       {
-        "command": "paireto.review.addComment",
+        "command": "crafty.review.addComment",
         "title": "Comment",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.review.addReply",
+        "command": "crafty.review.addReply",
         "title": "Reply",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.review.unresolveThread",
+        "command": "crafty.review.unresolveThread",
         "title": "Unresolve"
       },
       {
-        "command": "paireto.review.resolveThread",
+        "command": "crafty.review.resolveThread",
         "title": "Resolve"
       },
       {
-        "command": "paireto.review.unresolveAndReply",
+        "command": "crafty.review.unresolveAndReply",
         "title": "Unresolve & Reply",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.review.addQuestion",
+        "command": "crafty.review.addQuestion",
         "title": "Question",
         "enablement": "!commentIsEmpty"
       },
       {
-        "command": "paireto.review.revealComment",
+        "command": "crafty.review.revealComment",
         "title": "Reveal Comment"
       },
       {
-        "command": "paireto.review.deleteComment",
+        "command": "crafty.review.deleteComment",
         "title": "Delete Comment",
         "icon": "$(trash)"
       },
       {
-        "command": "paireto.review.clearFeedback",
+        "command": "crafty.review.clearFeedback",
         "title": "Clear All Feedback",
         "icon": "$(clear-all)"
       },
       {
-        "command": "paireto.focusAgent",
-        "title": "Paireto: Focus Agent",
+        "command": "crafty.focusAgent",
+        "title": "Crafty: Focus Agent",
         "icon": "$(terminal)"
       },
       {
-        "command": "paireto.agent.switch",
+        "command": "crafty.agent.switch",
         "title": "Switch to Agent"
       },
       {
-        "command": "paireto.agent.hide",
+        "command": "crafty.agent.hide",
         "title": "Hide Agent",
         "icon": "$(eye)"
       },
       {
-        "command": "paireto.agent.show",
+        "command": "crafty.agent.show",
         "title": "Show Agent",
         "icon": "$(eye-closed)"
       },
       {
-        "command": "paireto.guidedReview.openFile",
+        "command": "crafty.guidedReview.openFile",
         "title": "Open Changes"
       },
       {
-        "command": "paireto.guidedReview.openChangeset",
+        "command": "crafty.guidedReview.openChangeset",
         "title": "Open Changeset"
       },
       {
-        "command": "paireto.guidedReview.openPlan",
+        "command": "crafty.guidedReview.openPlan",
         "title": "Open Review Plan"
       }
     ],
     "viewsContainers": {
       "activitybar": [
         {
-          "id": "paireto",
-          "title": "Paireto",
-          "icon": "media/paireto.svg"
+          "id": "crafty",
+          "title": "Crafty",
+          "icon": "media/crafty.svg"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "paireto.switcher.open",
+        "command": "crafty.switcher.open",
         "key": "cmd+shift+k",
         "mac": "cmd+shift+k",
         "win": "ctrl+shift+k",
         "linux": "ctrl+shift+k"
       },
       {
-        "command": "paireto.switcher.openInThisWindow",
+        "command": "crafty.switcher.openInThisWindow",
         "key": "shift+enter",
-        "when": "paireto.switcherVisible"
+        "when": "crafty.switcherVisible"
       }
     ],
     "views": {
-      "paireto": [
+      "crafty": [
         {
-          "id": "paireto.main",
-          "name": "Paireto",
+          "id": "crafty.main",
+          "name": "Crafty",
           "type": "tree",
-          "icon": "media/paireto.svg"
+          "icon": "media/crafty.svg"
         }
       ]
     },
     "menus": {
       "commandPalette": [
         {
-          "command": "paireto.switcher.openInThisWindow",
+          "command": "crafty.switcher.openInThisWindow",
           "when": "false"
         },
         {
-          "command": "paireto.submit",
-          "when": "paireto.planPending || paireto.reviewSessionActive"
+          "command": "crafty.submit",
+          "when": "crafty.planPending || crafty.reviewSessionActive"
         },
         {
-          "command": "paireto.plan.addQuestion",
+          "command": "crafty.plan.addQuestion",
           "when": "false"
         },
         {
-          "command": "paireto.plan.addComment",
+          "command": "crafty.plan.addComment",
           "when": "false"
         },
         {
-          "command": "paireto.plan.addReply",
+          "command": "crafty.plan.addReply",
           "when": "false"
         },
         {
-          "command": "paireto.review.addQuestion",
+          "command": "crafty.review.addQuestion",
           "when": "false"
         },
         {
-          "command": "paireto.review.addComment",
+          "command": "crafty.review.addComment",
           "when": "false"
         },
         {
-          "command": "paireto.review.addReply",
+          "command": "crafty.review.addReply",
           "when": "false"
         },
         {
-          "command": "paireto.review.openDiff",
+          "command": "crafty.review.openDiff",
           "when": "false"
         },
         {
-          "command": "paireto.review.pickDiffCompareTo",
+          "command": "crafty.review.pickDiffCompareTo",
           "when": "false"
         },
         {
-          "command": "paireto.review.openFile",
+          "command": "crafty.review.openFile",
           "when": "false"
         },
         {
-          "command": "paireto.review.copyPath",
+          "command": "crafty.review.copyPath",
           "when": "false"
         },
         {
-          "command": "paireto.review.revealInExplorer",
+          "command": "crafty.review.revealInExplorer",
           "when": "false"
         },
         {
-          "command": "paireto.review.stage",
+          "command": "crafty.review.stage",
           "when": "false"
         },
         {
-          "command": "paireto.review.unstage",
+          "command": "crafty.review.unstage",
           "when": "false"
         },
         {
-          "command": "paireto.review.discard",
+          "command": "crafty.review.discard",
           "when": "false"
         },
         {
-          "command": "paireto.review.revealComment",
+          "command": "crafty.review.revealComment",
           "when": "false"
         },
         {
-          "command": "paireto.review.deleteComment",
+          "command": "crafty.review.deleteComment",
           "when": "false"
         },
         {
-          "command": "paireto.review.clearFeedback",
+          "command": "crafty.review.clearFeedback",
           "when": "false"
         },
         {
-          "command": "paireto.gate.approve",
+          "command": "crafty.gate.approve",
           "when": "false"
         },
         {
-          "command": "paireto.gate.sendFeedback",
+          "command": "crafty.gate.sendFeedback",
           "when": "false"
         },
         {
-          "command": "paireto.comment.edit",
+          "command": "crafty.comment.edit",
           "when": "false"
         },
         {
-          "command": "paireto.comment.save",
+          "command": "crafty.comment.save",
           "when": "false"
         },
         {
-          "command": "paireto.comment.delete",
+          "command": "crafty.comment.delete",
           "when": "false"
         },
         {
-          "command": "paireto.agent.switch",
+          "command": "crafty.agent.switch",
           "when": "false"
         },
         {
-          "command": "paireto.agent.hide",
+          "command": "crafty.agent.hide",
           "when": "false"
         },
         {
-          "command": "paireto.agent.show",
+          "command": "crafty.agent.show",
           "when": "false"
         },
         {
-          "command": "paireto.guidedReview.openFile",
+          "command": "crafty.guidedReview.openFile",
           "when": "false"
         },
         {
-          "command": "paireto.guidedReview.openChangeset",
+          "command": "crafty.guidedReview.openChangeset",
           "when": "false"
         },
         {
-          "command": "paireto.guidedReview.openPlan",
+          "command": "crafty.guidedReview.openPlan",
           "when": "false"
         },
         {
-          "command": "paireto.review.unresolveAndReply",
+          "command": "crafty.review.unresolveAndReply",
           "when": "false"
         },
         {
-          "command": "paireto.review.resolveThread",
+          "command": "crafty.review.resolveThread",
           "when": "false"
         },
         {
-          "command": "paireto.review.unresolveThread",
+          "command": "crafty.review.unresolveThread",
           "when": "false"
         }
       ],
       "editor/title": [
         {
-          "command": "paireto.review.pickDiffCompareTo",
-          "when": "paireto.reviewDiffActive",
+          "command": "crafty.review.pickDiffCompareTo",
+          "when": "crafty.reviewDiffActive",
           "group": "navigation@1"
         },
         {
-          "command": "paireto.gate.approve",
-          "when": "resourceScheme == paireto-plan && !paireto.gateHasFeedback",
+          "command": "crafty.gate.approve",
+          "when": "resourceScheme == crafty-plan && !crafty.gateHasFeedback",
           "group": "navigation@1"
         },
         {
-          "command": "paireto.gate.sendFeedback",
-          "when": "resourceScheme == paireto-plan && paireto.gateHasFeedback",
+          "command": "crafty.gate.sendFeedback",
+          "when": "resourceScheme == crafty-plan && crafty.gateHasFeedback",
           "group": "navigation@2"
         }
       ],
       "comments/commentThread/context": [
         {
-          "command": "paireto.plan.addComment",
-          "when": "commentController == paireto.plan && !commentThread",
+          "command": "crafty.plan.addComment",
+          "when": "commentController == crafty.plan && !commentThread",
           "group": "inline@1"
         },
         {
-          "command": "paireto.plan.addQuestion",
-          "when": "commentController == paireto.plan && !commentThread",
+          "command": "crafty.plan.addQuestion",
+          "when": "commentController == crafty.plan && !commentThread",
           "group": "inline@2"
         },
         {
-          "command": "paireto.plan.addReply",
-          "when": "commentController == paireto.plan && commentThread == open",
+          "command": "crafty.plan.addReply",
+          "when": "commentController == crafty.plan && commentThread == open",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.addComment",
-          "when": "commentController == paireto.review && !commentThread",
+          "command": "crafty.review.addComment",
+          "when": "commentController == crafty.review && !commentThread",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.addQuestion",
-          "when": "commentController == paireto.review && !commentThread",
+          "command": "crafty.review.addQuestion",
+          "when": "commentController == crafty.review && !commentThread",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.addReply",
-          "when": "commentController == paireto.review && commentThread == open",
+          "command": "crafty.review.addReply",
+          "when": "commentController == crafty.review && commentThread == open",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.unresolveAndReply",
-          "when": "commentController == paireto.review && commentThread == resolved",
+          "command": "crafty.review.unresolveAndReply",
+          "when": "commentController == crafty.review && commentThread == resolved",
           "group": "inline@1"
         }
       ],
       "comments/comment/title": [
         {
-          "command": "paireto.comment.edit",
-          "when": "(commentController == paireto.plan || commentController == paireto.review) && comment == preview",
+          "command": "crafty.comment.edit",
+          "when": "(commentController == crafty.plan || commentController == crafty.review) && comment == preview",
           "group": "group@1"
         },
         {
-          "command": "paireto.comment.delete",
-          "when": "(commentController == paireto.plan || commentController == paireto.review) && comment == preview",
+          "command": "crafty.comment.delete",
+          "when": "(commentController == crafty.plan || commentController == crafty.review) && comment == preview",
           "group": "group@2"
         }
       ],
       "comments/comment/context": [
         {
-          "command": "paireto.comment.save",
-          "when": "(commentController == paireto.plan || commentController == paireto.review) && comment == editing",
+          "command": "crafty.comment.save",
+          "when": "(commentController == crafty.plan || commentController == crafty.review) && comment == editing",
           "group": "inline@1"
         }
       ],
       "view/item/context": [
         {
-          "command": "paireto.review.pickCompareTo",
-          "when": "view == paireto.main && viewItem == section:files",
+          "command": "crafty.review.pickCompareTo",
+          "when": "view == crafty.main && viewItem == section:files",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.toggleLayout",
-          "when": "view == paireto.main && viewItem == section:files",
+          "command": "crafty.review.toggleLayout",
+          "when": "view == crafty.main && viewItem == section:files",
           "group": "inline@2"
         },
         {
-          "command": "paireto.focusAgent",
-          "when": "view == paireto.main && viewItem =~ /^agentSession/",
+          "command": "crafty.focusAgent",
+          "when": "view == crafty.main && viewItem =~ /^agentSession/",
           "group": "inline@1"
         },
         {
-          "command": "paireto.agent.hide",
-          "when": "view == paireto.main && viewItem == agentSession",
+          "command": "crafty.agent.hide",
+          "when": "view == crafty.main && viewItem == agentSession",
           "group": "inline@2"
         },
         {
-          "command": "paireto.agent.show",
-          "when": "view == paireto.main && viewItem == agentSession:muted",
+          "command": "crafty.agent.show",
+          "when": "view == crafty.main && viewItem == agentSession:muted",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.deleteComment",
-          "when": "view == paireto.main && viewItem == reviewComment",
+          "command": "crafty.review.deleteComment",
+          "when": "view == crafty.main && viewItem == reviewComment",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.clearFeedback",
-          "when": "view == paireto.main && viewItem == section:feedback",
+          "command": "crafty.review.clearFeedback",
+          "when": "view == crafty.main && viewItem == section:feedback",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.discardAll",
-          "when": "view == paireto.main && viewItem == group:unstaged",
+          "command": "crafty.review.discardAll",
+          "when": "view == crafty.main && viewItem == group:unstaged",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.stageAll",
-          "when": "view == paireto.main && viewItem == group:unstaged",
+          "command": "crafty.review.stageAll",
+          "when": "view == crafty.main && viewItem == group:unstaged",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.unstageAll",
-          "when": "view == paireto.main && viewItem == group:staged",
+          "command": "crafty.review.unstageAll",
+          "when": "view == crafty.main && viewItem == group:staged",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.openFile",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
+          "command": "crafty.review.openFile",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:/",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.discard",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
+          "command": "crafty.review.discard",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:unstaged/",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.stage",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
+          "command": "crafty.review.stage",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:unstaged/",
           "group": "inline@3"
         },
         {
-          "command": "paireto.review.unstage",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:staged/",
+          "command": "crafty.review.unstage",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:staged/",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.openFile",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
+          "command": "crafty.review.openFile",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:/",
           "group": "1_open@1"
         },
         {
-          "command": "paireto.review.openDiff",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
+          "command": "crafty.review.openDiff",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:/",
           "group": "1_open@2"
         },
         {
-          "command": "paireto.review.copyPath",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
+          "command": "crafty.review.copyPath",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:/",
           "group": "3_copy@1"
         },
         {
-          "command": "paireto.review.revealInExplorer",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:/",
+          "command": "crafty.review.revealInExplorer",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:/",
           "group": "4_reveal@1"
         },
         {
-          "command": "paireto.review.stage",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
+          "command": "crafty.review.stage",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:unstaged/",
           "group": "2_git@1"
         },
         {
-          "command": "paireto.review.discard",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:unstaged/",
+          "command": "crafty.review.discard",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:unstaged/",
           "group": "2_git@2"
         },
         {
-          "command": "paireto.review.unstage",
-          "when": "view == paireto.main && viewItem =~ /^changedFile:staged/",
+          "command": "crafty.review.unstage",
+          "when": "view == crafty.main && viewItem =~ /^changedFile:staged/",
           "group": "2_git@1"
         },
         {
-          "command": "paireto.review.stage",
-          "when": "view == paireto.main && viewItem == folder:unstaged",
+          "command": "crafty.review.stage",
+          "when": "view == crafty.main && viewItem == folder:unstaged",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.discard",
-          "when": "view == paireto.main && viewItem == folder:unstaged",
+          "command": "crafty.review.discard",
+          "when": "view == crafty.main && viewItem == folder:unstaged",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.unstage",
-          "when": "view == paireto.main && viewItem == folder:staged",
+          "command": "crafty.review.unstage",
+          "when": "view == crafty.main && viewItem == folder:staged",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.stage",
-          "when": "view == paireto.main && viewItem == folder:unstaged",
+          "command": "crafty.review.stage",
+          "when": "view == crafty.main && viewItem == folder:unstaged",
           "group": "2_git@1"
         },
         {
-          "command": "paireto.review.discard",
-          "when": "view == paireto.main && viewItem == folder:unstaged",
+          "command": "crafty.review.discard",
+          "when": "view == crafty.main && viewItem == folder:unstaged",
           "group": "2_git@2"
         },
         {
-          "command": "paireto.review.unstage",
-          "when": "view == paireto.main && viewItem == folder:staged",
+          "command": "crafty.review.unstage",
+          "when": "view == crafty.main && viewItem == folder:staged",
           "group": "2_git@1"
         },
         {
-          "command": "paireto.review.unstageAll",
-          "when": "view == paireto.main && (viewItem == changeset:unstage || viewItem == changeset:both)",
+          "command": "crafty.review.unstageAll",
+          "when": "view == crafty.main && (viewItem == changeset:unstage || viewItem == changeset:both)",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.stageAll",
-          "when": "view == paireto.main && (viewItem == changeset:stage || viewItem == changeset:both)",
+          "command": "crafty.review.stageAll",
+          "when": "view == crafty.main && (viewItem == changeset:stage || viewItem == changeset:both)",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.stageAll",
-          "when": "view == paireto.main && (viewItem == changeset:stage || viewItem == changeset:both)",
+          "command": "crafty.review.stageAll",
+          "when": "view == crafty.main && (viewItem == changeset:stage || viewItem == changeset:both)",
           "group": "2_git@1"
         },
         {
-          "command": "paireto.review.unstageAll",
-          "when": "view == paireto.main && (viewItem == changeset:unstage || viewItem == changeset:both)",
+          "command": "crafty.review.unstageAll",
+          "when": "view == crafty.main && (viewItem == changeset:unstage || viewItem == changeset:both)",
           "group": "2_git@2"
         }
       ],
       "view/title": [
         {
-          "command": "paireto.review.refresh",
-          "when": "view == paireto.main",
+          "command": "crafty.review.refresh",
+          "when": "view == crafty.main",
           "group": "navigation@3"
         },
         {
-          "command": "paireto.gate.approve",
-          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && !paireto.gateHasFeedback",
+          "command": "crafty.gate.approve",
+          "when": "view == crafty.main && (crafty.planPending || crafty.reviewSessionActive) && !crafty.gateHasFeedback",
           "group": "navigation@4"
         },
         {
-          "command": "paireto.gate.sendFeedback",
-          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && paireto.gateHasFeedback",
+          "command": "crafty.gate.sendFeedback",
+          "when": "view == crafty.main && (crafty.planPending || crafty.reviewSessionActive) && crafty.gateHasFeedback",
           "group": "navigation@5"
         }
       ],
       "comments/commentThread/title": [
         {
-          "command": "paireto.review.resolveThread",
-          "when": "commentController == paireto.review && commentThread == open",
+          "command": "crafty.review.resolveThread",
+          "when": "commentController == crafty.review && commentThread == open",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.unresolveThread",
-          "when": "commentController == paireto.review && commentThread == resolved",
+          "command": "crafty.review.unresolveThread",
+          "when": "commentController == crafty.review && commentThread == resolved",
           "group": "inline@1"
         }
       ]
     },
     "configuration": {
-      "title": "Paireto",
+      "title": "Crafty",
       "properties": {
-        "paireto.logLevel": {
+        "crafty.logLevel": {
           "type": "string",
           "enum": [
             "error",
@@ -711,9 +711,9 @@
             "debug"
           ],
           "default": "info",
-          "description": "Paireto's log level."
+          "description": "Crafty's log level."
         },
-        "paireto.notify.type": {
+        "crafty.notify.type": {
           "type": "string",
           "enum": [
             "sound",
@@ -726,12 +726,12 @@
           "default": "sound",
           "description": "How to alert you when one of this window's agents finishes a turn or needs input (stopped / awaiting plan / awaiting permission)."
         },
-        "paireto.notify.sound": {
+        "crafty.notify.sound": {
           "type": "string",
           "default": "Ping",
-          "description": "Sound played when 'paireto.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
+          "description": "Sound played when 'crafty.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
         },
-        "paireto.review.mode": {
+        "crafty.review.mode": {
           "type": "string",
           "enum": [
             "automatic",
@@ -739,12 +739,12 @@
           ],
           "enumDescriptions": [
             "Open a Review automatically when the agent finishes a turn that edited files.",
-            "Only start a review if you have queued comments when the agent finishes, if an agent has answered a comment, or when running /paireto-review from your agent."
+            "Only start a review if you have queued comments when the agent finishes, if an agent has answered a comment, or when running /crafty-review from your agent."
           ],
           "default": "automatic",
-          "description": "When Paireto opens a code Review at the end of an agent's turn."
+          "description": "When Crafty opens a code Review at the end of an agent's turn."
         },
-        "paireto.planApprove.mode.claudecode": {
+        "crafty.planApprove.mode.claudecode": {
           "type": "string",
           "enum": [
             "auto",
@@ -756,7 +756,7 @@
           "default": "auto",
           "description": "Permission mode Claude Code enters when you approve its plan: auto (auto-approve with background safety checks), acceptEdits (auto-approve file edits), default (ask for permission), plan (stay in plan mode), off (leave the mode unchanged). Codex Stop hooks cannot change collaboration mode, so Codex has no equivalent key and still presents its native approve-and-switch action."
         },
-        "paireto.planApprove.mode.opencode": {
+        "crafty.planApprove.mode.opencode": {
           "type": "string",
           "enum": [
             "build",
@@ -769,11 +769,11 @@
     }
   },
   "activationEvents": [
-    "onFileSystem:paireto-changeset",
-    "onFileSystem:paireto-review",
+    "onFileSystem:crafty-changeset",
+    "onFileSystem:crafty-review",
     "onStartupFinished"
   ],
-  "icon": "media/PairetoAppIcon@2x.png",
+  "icon": "media/CraftyAppIcon@2x.png",
   "engines": {
     "vscode": "^1.125.0"
   },

@@ -46,7 +46,7 @@ suite("plan approval carries no next-step rules", () => {
   async function approve(id: string, sessionId: string, harness: Harness): Promise<void> {
     await openPlan(wire, { repoRoot, id, sessionId, harness });
     await waitForForegroundGate("plan");
-    await vscode.commands.executeCommand("paireto.gate.approve");
+    await vscode.commands.executeCommand("crafty.gate.approve");
   }
 
   test("Kiro declares its rules on the rejection, not the approval", async function () {

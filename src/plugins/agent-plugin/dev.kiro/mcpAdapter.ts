@@ -6,10 +6,10 @@ import { kiroPid, readKiroHandoff } from "./handoff.js";
 
 export function createKiroMcpAdapter(): McpHarnessAdapter {
   return {
-    serverName: "paireto-agent-plugin",
+    serverName: "crafty-agent-plugin",
     harness: "kiro",
     noTargetMessage:
-      "Paireto could not find a VS Code window for this Kiro workspace. Open the workspace in VS Code and try again.",
+      "Crafty could not find a VS Code window for this Kiro workspace. Open the workspace in VS Code and try again.",
     /**
      * Take the socket straight off the handoff rather than deriving it. Kiro starts this server
      * through the MCP SDK, which passes on only HOME, LOGNAME, PATH, SHELL, TERM and USER — deriving

@@ -52,7 +52,7 @@ suite("Kiro native Plan session fallback", () => {
   let kiroHome: string;
 
   setup(() => {
-    kiroHome = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-kiro-plan-"));
+    kiroHome = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-kiro-plan-"));
   });
 
   teardown(() => {
@@ -113,7 +113,7 @@ suite("Kiro native Plan session fallback", () => {
         {
           id: "h",
           timestamp: "t",
-          payload: { type: "ContextualHookInvoked", name: "Paireto Stop" },
+          payload: { type: "ContextualHookInvoked", name: "Crafty Stop" },
         },
       ],
     });

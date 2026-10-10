@@ -19,7 +19,7 @@ suite("automatic file storage", () => {
   let storage: ReturnType<typeof createAutoFileStorage>;
 
   setup(() => {
-    root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-file-storage-"));
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-file-storage-"));
     file = path.join(root, "buckets", "feedback.json");
     storage = createAutoFileStorage(file);
   });

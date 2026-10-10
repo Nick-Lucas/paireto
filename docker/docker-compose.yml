@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: paireto-tests
+    image: crafty-tests
     working_dir: /workspace
     # Keep the container alive so we can exec test commands into it repeatedly.
     command: ["sleep", "infinity"]
@@ -13,21 +13,21 @@ services:
     shm_size: "2gb"
     # `up --wait` blocks until the entrypoint has finished install + display setup.
     healthcheck:
-      test: ["CMD", "test", "-f", "/tmp/paireto-ready"]
+      test: ["CMD", "test", "-f", "/tmp/crafty-ready"]
       interval: "2s"
       timeout: "3s"
       retries: 150
       start_period: "2s"
     environment:
       # Gates the --no-sandbox launch arg in both test runners (Electron won't run as root without it).
-      PAIRETO_DOCKER: "1"
+      CRAFTY_DOCKER: "1"
     volumes:
       # Live source, edited on the host and run in the container.
       - ..:/workspace
       # Container-local Linux install + VS Code download (host macOS versions can't be reused).
-      - paireto-node-modules:/workspace/node_modules
-      - paireto-vscode-test:/workspace/.vscode-test
+      - crafty-node-modules:/workspace/node_modules
+      - crafty-vscode-test:/workspace/.vscode-test
 
 volumes:
-  paireto-node-modules:
-  paireto-vscode-test:
+  crafty-node-modules:
+  crafty-vscode-test:

@@ -33,7 +33,7 @@ import {
 } from "../e2e/mockserver/mode.js";
 import { mockProxyEnv, resolveMockProxy } from "../e2e/mockserver/proxyEnv.js";
 import {
-  isPairetoTool,
+  isCraftyTool,
   normalizeRequestBody,
   normalizeClaudeBody,
   normalizeCodexBody,
@@ -63,13 +63,13 @@ suite("provider-replay: mode parsing", () => {
   });
 
   test("parses record/check case-insensitively", () => {
-    assert.strictEqual(resolveMode({ PAIRETO_E2E_MODE: "record" }), "record");
-    assert.strictEqual(resolveMode({ PAIRETO_E2E_MODE: "CHECK" }), "check");
+    assert.strictEqual(resolveMode({ CRAFTY_E2E_MODE: "record" }), "record");
+    assert.strictEqual(resolveMode({ CRAFTY_E2E_MODE: "CHECK" }), "check");
   });
 
   test("rejects the removed live mode and unknown modes", () => {
-    assert.throws(() => resolveMode({ PAIRETO_E2E_MODE: "live" }), /invalid/);
-    assert.throws(() => resolveMode({ PAIRETO_E2E_MODE: "replay" }), /invalid/);
+    assert.throws(() => resolveMode({ CRAFTY_E2E_MODE: "live" }), /invalid/);
+    assert.throws(() => resolveMode({ CRAFTY_E2E_MODE: "replay" }), /invalid/);
   });
 
   test("the fixture is namespaced per (case, driver)", () => {
@@ -158,7 +158,7 @@ suite("provider-replay: recorded endpoints", () => {
       true,
     );
     // Kiro proxies MCP JSON-RPC through this operation, and `tools/list` rides on it: a replay that
-    // cannot answer it never learns Paireto's tools exist and diverges from the recorded run.
+    // cannot answer it never learns Crafty's tools exist and diverges from the recorded run.
     assert.strictEqual(recordsRequest("kiro", request("KiroRuntimeService.InvokeMCP")), true);
     // Recorded because their answers end up inside the next request: the feature configuration
     // decides the advertised tool inventory, the model catalogue supplies the display name Kiro
@@ -288,7 +288,7 @@ suite("provider-replay: fixture normalization", () => {
   // Kiro advertises its built-in tools with full JSON Schemas, and which ones it offers depends on
   // what its account/governance lookup answered — a check run reaches none of that, so the schemas
   // it sends differ from the recording. Reduce them the way the other harnesses are reduced.
-  test("reduces Kiro's built-in tool inventory but keeps Paireto's own tools whole", () => {
+  test("reduces Kiro's built-in tool inventory but keeps Crafty's own tools whole", () => {
     const inventory = (tools: unknown[]): string =>
       JSON.stringify({
         conversationState: {
@@ -304,9 +304,9 @@ suite("provider-replay: fixture normalization", () => {
         inputSchema: { json: { type: "object", properties: { [property]: { type: "string" } } } },
       },
     });
-    const paireto = {
+    const crafty = {
       toolSpecification: {
-        name: "paireto_start_guided_review",
+        name: "crafty_start_guided_review",
         description: "Hand a review plan to the human reviewer and wait for feedback.",
         inputSchema: { json: { type: "object", properties: { changesets: { type: "array" } } } },
       },
@@ -315,19 +315,19 @@ suite("provider-replay: fixture normalization", () => {
     // The recorder is signed in and is offered remote_web_search; the credential-free replay is not,
     // so an entitled tool must not reach the match key.
     const recorded = normalizeKiroBody(
-      inventory([builtin("web_search", "query"), builtin("remote_web_search", "query"), paireto]),
+      inventory([builtin("web_search", "query"), builtin("remote_web_search", "query"), crafty]),
     );
-    const replayed = normalizeKiroBody(inventory([paireto, builtin("web_search", "command")]));
+    const replayed = normalizeKiroBody(inventory([crafty, builtin("web_search", "command")]));
 
     assert.strictEqual(recorded, replayed, "a churning built-in schema must not break replay");
     assert.ok(recorded.includes("web_search"), "a tool that stops being offered must break replay");
     assert.ok(
       recorded.includes("Hand a review plan to the human reviewer"),
-      "Paireto's own tool keeps its description, so a regression in it breaks replay",
+      "Crafty's own tool keeps its description, so a regression in it breaks replay",
     );
     assert.ok(
       recorded.includes("changesets"),
-      "Paireto's own tool keeps its schema, so a lost parameter breaks replay",
+      "Crafty's own tool keeps its schema, so a lost parameter breaks replay",
     );
   });
 
@@ -380,7 +380,7 @@ suite("provider-replay: fixture normalization", () => {
         input: [
           {
             type: "input_text",
-            text: `---\nname: paireto-review\ndescription: Review.\n---\n\n# Paireto Review\n\n${instruction}`,
+            text: `---\nname: crafty-review\ndescription: Review.\n---\n\n# Crafty Review\n\n${instruction}`,
           },
         ],
       });
@@ -397,7 +397,7 @@ suite("provider-replay: fixture normalization", () => {
             content: [
               {
                 type: "text",
-                text: `Prepare a review plan so a human can review these changes, then hand it to Paireto.\n\n${instruction}\n\nARGUMENTS: Review the working tree.`,
+                text: `Prepare a review plan so a human can review these changes, then hand it to Crafty.\n\n${instruction}\n\nARGUMENTS: Review the working tree.`,
               },
             ],
           },
@@ -413,7 +413,7 @@ suite("provider-replay: fixture normalization", () => {
         input: [
           {
             type: "input_text",
-            text: `---\nname: paireto-guided-review\ndescription: Guided review.\n---\n\n${instruction}`,
+            text: `---\nname: crafty-guided-review\ndescription: Guided review.\n---\n\n${instruction}`,
           },
         ],
       });
@@ -563,7 +563,7 @@ suite("provider-replay: fixture normalization", () => {
           tools: [
             { name: "new-cli-tool", description: "prose that churns every CLI release" },
             {
-              name: "mcp__paireto__paireto_review",
+              name: "mcp__crafty__crafty_review",
               description: "prose",
               input_schema: { type: "object", properties: { reviewId: { type: "string" } } },
             },
@@ -619,10 +619,10 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(normalized.metadata, null);
     assert.strictEqual(normalized.system, null);
     // The inventory is REDUCED, not erased: every tool keeps its name (sorted, since order varies),
-    // and Paireto's own tool is kept whole so a broken definition still fails replay.
+    // and Crafty's own tool is kept whole so a broken definition still fails replay.
     assert.deepStrictEqual(normalized.tools, [
       {
-        name: "mcp__paireto__paireto_review",
+        name: "mcp__crafty__crafty_review",
         description: "prose",
         input_schema: { type: "object", properties: { reviewId: { type: "string" } } },
       },
@@ -853,14 +853,14 @@ suite("provider-replay: fixture normalization", () => {
       });
 
     assert.strictEqual(
-      normalizeCodexBody(body(["pai-e2e-claude-home", "pai-e2e-codex-home", "paireto-e2e-codex"])),
+      normalizeCodexBody(body(["pai-e2e-claude-home", "pai-e2e-codex-home", "crafty-e2e-codex"])),
       normalizeCodexBody(
         body([
           "pai-e2e-claude-home",
           "pai-e2e-codex-home",
           "pai-e2e-kiro-home",
           "pai-state-SFGf8l",
-          "paireto-e2e-codex",
+          "crafty-e2e-codex",
         ]),
       ),
     );
@@ -931,7 +931,7 @@ suite("provider-replay: fixture normalization", () => {
             content: [
               {
                 type: "input_text",
-                text: `<hook_prompt hook_run_id="stop:8:/tmp/home/plugins/cache/paireto/paireto/${version}/hooks/hooks.json">go</hook_prompt>`,
+                text: `<hook_prompt hook_run_id="stop:8:/tmp/home/plugins/cache/crafty/crafty/${version}/hooks/hooks.json">go</hook_prompt>`,
               },
             ],
           },
@@ -939,9 +939,9 @@ suite("provider-replay: fixture normalization", () => {
       });
 
     assert.strictEqual(normalizeCodexBody(body("0.5.7")), normalizeCodexBody(body("0.9.12")));
-    assert.ok(normalizeCodexBody(body("0.5.7")).includes("paireto/paireto/VERSION/hooks"));
+    assert.ok(normalizeCodexBody(body("0.5.7")).includes("crafty/crafty/VERSION/hooks"));
     // The path still has to be there — only its version segment is noise.
-    assert.ok(normalizeCodexBody(body("0.5.7")).includes("plugins/cache/paireto"));
+    assert.ok(normalizeCodexBody(body("0.5.7")).includes("plugins/cache/crafty"));
   });
 
   // Codex stamps a fresh `msg_<uuidv7>` on every conversation item, so a replayed body could never
@@ -958,7 +958,7 @@ suite("provider-replay: fixture normalization", () => {
             content: [
               {
                 type: "input_text",
-                text: `<hook_prompt hook_run_id="stop:8:/home/plugins/cache/paireto/paireto/${version}/hooks/hooks.json">go</hook_prompt>`,
+                text: `<hook_prompt hook_run_id="stop:8:/home/plugins/cache/crafty/crafty/${version}/hooks/hooks.json">go</hook_prompt>`,
               },
             ],
           },
@@ -967,7 +967,7 @@ suite("provider-replay: fixture normalization", () => {
 
     const normalized = normalizeCodexBody(body("0.5.7"));
     assert.strictEqual(normalized, normalizeCodexBody(body("9.9.9")));
-    assert.ok(normalized.includes("cache/paireto/paireto/VERSION/hooks/hooks.json"));
+    assert.ok(normalized.includes("cache/crafty/crafty/VERSION/hooks/hooks.json"));
     assert.ok(!normalized.includes("0.5.7"));
   });
 
@@ -996,15 +996,15 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(parsed.input[2].output, "stable", "content is untouched");
   });
 
-  test("keeps Paireto's Responses tool schema but drops built-in tool schema churn", () => {
-    const pairetoSchema = { type: "object", properties: { plan: { type: "string" } } };
+  test("keeps Crafty's Responses tool schema but drops built-in tool schema churn", () => {
+    const craftySchema = { type: "object", properties: { plan: { type: "string" } } };
     const raw = JSON.stringify({
       tools: [
         {
           type: "function",
-          name: "paireto_submit_plan",
+          name: "crafty_submit_plan",
           description: "Open plan review",
-          parameters: pairetoSchema,
+          parameters: craftySchema,
         },
         {
           type: "function",
@@ -1016,8 +1016,8 @@ suite("provider-replay: fixture normalization", () => {
       input: [{ role: "user", content: [{ type: "input_text", text: "plan" }] }],
     });
     const tools = toolsByName(normalizeCodexBody(raw));
-    // A broken paireto_submit_plan schema must still fail replay.
-    assert.deepStrictEqual(tools.get("paireto_submit_plan")?.parameters, pairetoSchema);
+    // A broken crafty_submit_plan schema must still fail replay.
+    assert.deepStrictEqual(tools.get("crafty_submit_plan")?.parameters, craftySchema);
     assert.ok(tools.has("bash"));
     assert.strictEqual(tools.get("bash")?.parameters, undefined);
   });
@@ -1102,24 +1102,24 @@ suite("provider-replay: fixture normalization", () => {
     const body = (names: string[]): string => JSON.stringify({ tools: names.map(tool) });
 
     assert.strictEqual(
-      normalizeCodexBody(body(["bash", "paireto_submit_plan", "write"])),
-      normalizeCodexBody(body(["write", "bash", "paireto_submit_plan"])),
+      normalizeCodexBody(body(["bash", "crafty_submit_plan", "write"])),
+      normalizeCodexBody(body(["write", "bash", "crafty_submit_plan"])),
     );
     // A tool that stops being offered must still break replay.
     assert.notStrictEqual(
       normalizeCodexBody(body(["bash", "write"])),
-      normalizeCodexBody(body(["bash", "paireto_submit_plan", "write"])),
+      normalizeCodexBody(body(["bash", "crafty_submit_plan", "write"])),
     );
   });
 
   // A cassette recorded on one machine has to replay on another: built-in descriptions state the
   // host OS and shell, and Codex's skills block enumerates whatever SKILL.md files that host can see.
-  test("drops host-dependent built-in tool descriptions but keeps Paireto's", () => {
+  test("drops host-dependent built-in tool descriptions but keeps Crafty's", () => {
     const body = (os: string): string =>
       JSON.stringify({
         tools: [
           { type: "function", name: "bash", description: `Be aware: OS: ${os}`, parameters: {} },
-          { type: "function", name: "paireto_submit_plan", description: "Open plan review" },
+          { type: "function", name: "crafty_submit_plan", description: "Open plan review" },
         ],
       });
 
@@ -1128,9 +1128,9 @@ suite("provider-replay: fixture normalization", () => {
     const tools = toolsByName(normalizeCodexBody(body("linux")));
     assert.strictEqual(tools.get("bash")?.description, undefined, "built-in description dropped");
     assert.strictEqual(
-      tools.get("paireto_submit_plan")?.description,
+      tools.get("crafty_submit_plan")?.description,
       "Open plan review",
-      "Paireto's is kept",
+      "Crafty's is kept",
     );
   });
 
@@ -1153,17 +1153,17 @@ suite("provider-replay: fixture normalization", () => {
     );
   });
 
-  test("recognises Paireto's own tools across each harness's naming", () => {
+  test("recognises Crafty's own tools across each harness's naming", () => {
     for (const name of [
-      "paireto_submit_plan",
-      "paireto_review",
-      "mcp__paireto__paireto_review",
-      "mcp__plugin_paireto_bridge__paireto_review",
+      "crafty_submit_plan",
+      "crafty_review",
+      "mcp__crafty__crafty_review",
+      "mcp__plugin_crafty_bridge__crafty_review",
     ]) {
-      assert.strictEqual(isPairetoTool(name), true, name);
+      assert.strictEqual(isCraftyTool(name), true, name);
     }
     for (const name of ["bash", "Write", "ExitPlanMode", "update_plan"]) {
-      assert.strictEqual(isPairetoTool(name), false, name);
+      assert.strictEqual(isCraftyTool(name), false, name);
     }
   });
 });
@@ -1215,7 +1215,7 @@ suite("provider-replay: Codex replay turn correlation", () => {
   let dir: string;
 
   setup(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-transcript-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-codex-transcript-"));
   });
   teardown(() => {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -1321,8 +1321,8 @@ suite("provider-replay: transparent proxy env", () => {
 
   test("resolves the proxy URL and CA for every E2E run", () => {
     const proxy = resolveMockProxy({
-      PAIRETO_MOCK_URL: "http://127.0.0.1:9999",
-      PAIRETO_MOCK_CA: "/tmp/ca.pem",
+      CRAFTY_MOCK_URL: "http://127.0.0.1:9999",
+      CRAFTY_MOCK_CA: "/tmp/ca.pem",
     });
     assert.strictEqual(proxy.url, "http://127.0.0.1:9999");
     assert.strictEqual(proxy.caPath, "/tmp/ca.pem");
@@ -1330,10 +1330,10 @@ suite("provider-replay: transparent proxy env", () => {
 
   test("requires the proxy URL and CA together", () => {
     assert.throws(
-      () => resolveMockProxy({ PAIRETO_MOCK_URL: "http://127.0.0.1:9999" }),
-      /PAIRETO_MOCK_CA/,
+      () => resolveMockProxy({ CRAFTY_MOCK_URL: "http://127.0.0.1:9999" }),
+      /CRAFTY_MOCK_CA/,
     );
-    assert.throws(() => resolveMockProxy({ PAIRETO_MOCK_CA: "/tmp/ca.pem" }), /PAIRETO_MOCK_URL/);
+    assert.throws(() => resolveMockProxy({ CRAFTY_MOCK_CA: "/tmp/ca.pem" }), /CRAFTY_MOCK_URL/);
   });
 });
 
@@ -1409,7 +1409,7 @@ suite("provider-replay: compressed request bodies", () => {
 
 suite("provider-replay: native MockServer launch", () => {
   test("redacts secrets from native container logs and recorded expectations", () => {
-    const args = nativeMockServerDockerArgs(1080, "paireto-test");
+    const args = nativeMockServerDockerArgs(1080, "crafty-test");
     assert.ok(args.includes("MOCKSERVER_REDACT_SECRETS_IN_LOG=true"));
     assert.ok(args.includes("MOCKSERVER_REDACT_SECRETS_IN_RECORDED_EXPECTATIONS=true"));
   });

@@ -1,6 +1,6 @@
 // Codex's MCP server.
 //
-// Exposes `paireto_review` and holds a liveness socket open for the active session. Codex strips the
+// Exposes `crafty_review` and holds a liveness socket open for the active session. Codex strips the
 // environment for MCP children, so both the session id and the socket path come from the handoff
 // file the hooks publish — which also carries the exact socket that already received this Codex
 // process's hook traffic, so a worktree is never confused with its main checkout.
@@ -13,11 +13,11 @@ import type { ReviewTarget } from "../../core/mcp/reviewTool.js";
 export function createCodexMcpAdapter(): McpHarnessAdapter {
   let liveness: CodexLiveness | undefined;
   return {
-    serverName: "paireto-agent-plugin",
+    serverName: "crafty-agent-plugin",
     harness: "codex",
 
     noTargetMessage:
-      "Paireto could not identify this Codex session. Send another prompt after the Paireto " +
+      "Crafty could not identify this Codex session. Send another prompt after the Crafty " +
       "extension and plugin are active, then try the review again.",
 
     resolveReviewTarget(): ReviewTarget | undefined {

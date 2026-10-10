@@ -15,7 +15,7 @@ import {
   deleteComment,
 } from "../comments/CommentSession.js";
 
-const SCHEME = "paireto-test-doc";
+const SCHEME = "crafty-test-doc";
 
 suite("commenting integration", () => {
   const contents = new Map<string, string>();
@@ -54,7 +54,7 @@ suite("commenting integration", () => {
   });
 
   test("a CommentController with this provider accepts a thread on the virtual doc", async () => {
-    const controller = vscode.comments.createCommentController("paireto-test", "Test");
+    const controller = vscode.comments.createCommentController("crafty-test", "Test");
     controller.commentingRangeProvider = {
       provideCommentingRanges: (doc) => fullDocumentCommentingRanges(doc, SCHEME),
     };
@@ -72,7 +72,7 @@ suite("commenting integration", () => {
   });
 
   test("editComment/saveComment toggle mode + contextValue and sync the edited body", async () => {
-    const controller = vscode.comments.createCommentController("paireto-test-edit", "Test");
+    const controller = vscode.comments.createCommentController("crafty-test-edit", "Test");
     try {
       const doc = await openDoc(4);
       const thread = controller.createCommentThread(doc.uri, new vscode.Range(1, 0, 1, 0), []);
@@ -126,7 +126,7 @@ suite("commenting integration", () => {
   test("a second top-level comment on one line gets its own thread", async () => {
     // The gutter "+" opens an empty widget thread of its own, so two top-level comments can sit on
     // one line. VS Code stacks them.
-    const session = new CommentSession("paireto-test-one-per", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-one-per", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -147,7 +147,7 @@ suite("commenting integration", () => {
   });
 
   test("remove takes the thread with it and leaves a line-mate alone", async () => {
-    const session = new CommentSession("paireto-test-del", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-del", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -168,7 +168,7 @@ suite("commenting integration", () => {
   });
 
   test("deleting a reply leaves the thread and the comment it answers", async () => {
-    const session = new CommentSession("paireto-test-del-reply", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-del-reply", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -188,7 +188,7 @@ suite("commenting integration", () => {
   });
 
   test("removing the opener takes its replies, a reply takes only itself", async () => {
-    const session = new CommentSession("paireto-test-would", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-would", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -212,7 +212,7 @@ suite("commenting integration", () => {
   });
 
   test("deleteComment asks the owner to delete", async () => {
-    const session = new CommentSession("paireto-test-owner-delete", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-owner-delete", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -235,7 +235,7 @@ suite("commenting integration", () => {
   test("removing the comment that opens a thread takes the replies with it", async () => {
     // The thread belongs to the comment that started it. Removing that comment alone would promote a
     // reply into a top-level comment answering nothing.
-    const session = new CommentSession("paireto-test-del-opener", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-del-opener", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -261,7 +261,7 @@ suite("commenting integration", () => {
   test("a removed comment's thread stops being collected", async () => {
     // A thread left tracked after its last comment went would be taken down twice, and would still
     // answer disposeThreads long after there was nothing on it to take down.
-    const session = new CommentSession("paireto-test-collect", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-collect", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -278,7 +278,7 @@ suite("commenting integration", () => {
   });
 
   test("disposeThreads takes down the selected threads and stops tracking them", async () => {
-    const session = new CommentSession("paireto-test-dispose-many", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-dispose-many", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -299,7 +299,7 @@ suite("commenting integration", () => {
   });
 
   test("place moves a whole thread to a replacement document and disposes the old one", async () => {
-    const session = new CommentSession("paireto-test-place-move", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-place-move", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -332,7 +332,7 @@ suite("commenting integration", () => {
   });
 
   test("place keeps the thread and its collapsed state while the document is unchanged", async () => {
-    const session = new CommentSession("paireto-test-place-keep", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-place-keep", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -361,7 +361,7 @@ suite("commenting integration", () => {
   });
 
   test("a resolved thread says so, folds away, and keeps its words", async () => {
-    const session = new CommentSession("paireto-test-resolved", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-resolved", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -393,7 +393,7 @@ suite("commenting integration", () => {
   });
 
   test("a resolved thread a reviewer opens does not shut on the next write", async () => {
-    const session = new CommentSession("paireto-test-reopened", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-reopened", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });
@@ -419,7 +419,7 @@ suite("commenting integration", () => {
   });
 
   test("place labels a thread from its opening comment, not from a reply", async () => {
-    const session = new CommentSession("paireto-test-place-label", "Test", SCHEME, {
+    const session = new CommentSession("crafty-test-place-label", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });

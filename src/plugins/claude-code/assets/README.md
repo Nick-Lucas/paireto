@@ -1,6 +1,6 @@
-# paireto — Claude Code plugin
+# crafty — Claude Code plugin
 
-This plugin bridges Claude Code to the **Paireto** VS Code extension. It runs small,
+This plugin bridges Claude Code to the **Crafty** VS Code extension. It runs small,
 zero-dependency Node hook scripts that talk to the extension over a per-repo Unix domain socket.
 
 It does two things:
@@ -11,7 +11,7 @@ It does two things:
    markdown to VS Code and blocks until you Approve or Send Feedback in the editor. Feedback comes back
    as a `deny` so Claude revises the plan.
 
-The socket lives under `${XDG_STATE_HOME:-~/.local/state}/paireto/s/<repo-key>.sock`, where
+The socket lives under `${XDG_STATE_HOME:-~/.local/state}/crafty/s/<repo-key>.sock`, where
 `<repo-key>` is `sha256(realpath(git-toplevel))[:8]`. The extension creates one socket per open repo;
 the hook scripts resolve which socket to use from the agent's `cwd`.
 
@@ -26,7 +26,7 @@ If you prefer not to use the extension's installer, register this directory as a
 
 ```
 /plugin marketplace add /absolute/path/to/plugins        # the dir containing .claude-plugin/marketplace.json
-/plugin install paireto@paireto
+/plugin install crafty@crafty
 ```
 
 Then restart Claude Code so the hooks take effect.

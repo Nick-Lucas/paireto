@@ -72,8 +72,8 @@ suite("bridge handshake refusal", () => {
 
   setup(() => {
     // Keep the socket out of the real state dir — its path is derived from XDG_STATE_HOME.
-    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-handshake-state-"));
-    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-handshake-repo-"));
+    stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-handshake-state-"));
+    repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-handshake-repo-"));
     previousXdg = process.env.XDG_STATE_HOME;
     process.env.XDG_STATE_HOME = stateDir;
   });

@@ -352,7 +352,7 @@ export class DiffService {
     }
   }
 
-  /** Encode a ContentRef as the `ref` query value used in paireto-review URIs. */
+  /** Encode a ContentRef as the `ref` query value used in crafty-review URIs. */
   static encodeRef(ref: ContentRef): string {
     switch (ref.kind) {
       case "empty":

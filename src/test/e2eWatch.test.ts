@@ -86,13 +86,13 @@ suite("OpenCode run agent", () => {
   test("a slash command runs as the command, with the rest of the prompt as its arguments", () => {
     const args = openCodeRunArgs({
       ...turn,
-      prompt: "/paireto-review Review the changes.",
+      prompt: "/crafty-review Review the changes.",
       planMode: false,
     });
-    assert.strictEqual(args[args.indexOf("--command") + 1], "paireto-review");
+    assert.strictEqual(args[args.indexOf("--command") + 1], "crafty-review");
     assert.strictEqual(args.at(-1), "Review the changes.");
     assert.ok(
-      !args.some((arg) => arg.startsWith("/paireto-review")),
+      !args.some((arg) => arg.startsWith("/crafty-review")),
       "the command name is never sent as plain text",
     );
   });
@@ -100,11 +100,11 @@ suite("OpenCode run agent", () => {
 
 suite("Pi RPC session", () => {
   test("plan mode rides on the package's own command", () => {
-    assert.strictEqual(piPromptLine("add hello.txt", true), "/paireto-plan add hello.txt");
+    assert.strictEqual(piPromptLine("add hello.txt", true), "/crafty-plan add hello.txt");
   });
 
   test("ordinary work is sent as the user typed it", () => {
-    assert.strictEqual(piPromptLine("/skill:paireto-review go", false), "/skill:paireto-review go");
+    assert.strictEqual(piPromptLine("/skill:crafty-review go", false), "/skill:crafty-review go");
   });
 
   test("token-delta events are kept out of the failure log, which the reporter would drop", () => {
@@ -117,7 +117,7 @@ suite("Pi RPC session", () => {
 suite("E2E fail-fast signals", () => {
   test("an auto-rejected permission ends the run, naming the request", () => {
     const fatal = openCodeRunFatal(
-      "! permission requested: external_directory (/tmp/paireto-e2e-opencode/*); auto-rejecting",
+      "! permission requested: external_directory (/tmp/crafty-e2e-opencode/*); auto-rejecting",
     );
 
     assert.ok(fatal);
@@ -152,7 +152,7 @@ suite("E2E fail-fast signals", () => {
 
   test("ordinary progress is not fatal", () => {
     for (const line of [
-      '⚙ paireto_submit_plan {"plan":"1. Create hello.txt"}',
+      '⚙ crafty_submit_plan {"plan":"1. Create hello.txt"}',
       "> plan · gpt-5.6-luna",
       "",
     ]) {

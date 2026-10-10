@@ -20,7 +20,7 @@ suite("repo-relative path", () => {
 
   test("stays repo-relative when only one side is canonical", function () {
     // Needs a real symlink to reproduce; /private/tmp is macOS's, so build one anywhere.
-    const base = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-symlink-"));
+    const base = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-symlink-"));
     const real = path.join(base, "real-repo");
     const link = path.join(base, "linked-repo");
     fs.mkdirSync(real);

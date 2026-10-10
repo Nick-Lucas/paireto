@@ -1,8 +1,8 @@
 // The full-flow E2E case (runs INSIDE the extension host, under Mocha). Drives plan → feedback →
 // approve → implement → review-feedback → review-approve over the real per-repo socket, using the
 // suite's HarnessDriver for the agent side and the env-gated test control plane + real
-// paireto.gate.* commands for the user side. Assertions read the socket-observed state
-// (paireto.test.inspect) and the sandbox filesystem — never terminal scraping.
+// crafty.gate.* commands for the user side. Assertions read the socket-observed state
+// (crafty.test.inspect) and the sandbox filesystem — never terminal scraping.
 //
 // One suite per driver, so the drivers are a matrix rather than a choice the spec reads out of the
 // environment. A run executes ONE row of it: the driver name is the outermost suite title, and
@@ -36,7 +36,7 @@ const PLAN_FEEDBACK = "Also add bye.txt containing 'bye', then resubmit.";
 const REVIEW_FEEDBACK =
   "Can you also create note.txt containing 'note'? Reply with what you changed.";
 
-const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
+const repoRoot = requireEnv("CRAFTY_E2E_SANDBOX");
 
 driversForSharedSpec(__dirname, CASE).forEach((harness) => {
   suite(pairLabel(CASE, harness), () => {
@@ -97,7 +97,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       // CONSUMED (gateHasFeedback flips false) so we never re-fire onto the fresh revised gate.
       await wait("the plan feedback to be delivered (deny sent)", async () => {
         if ((await inspect()).gateHasFeedback) {
-          await vscode.commands.executeCommand("paireto.gate.sendFeedback");
+          await vscode.commands.executeCommand("crafty.gate.sendFeedback");
           return false;
         }
         return true;
@@ -115,7 +115,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
 
     test("approving the plan implements it", async () => {
       await driveUntil(
-        "paireto.gate.approve",
+        "crafty.gate.approve",
         secondPlan.id,
         async () => !planGates(await inspect()).some((g) => g.id === secondPlan.id),
         "the revised plan gate to resolve on approve",
@@ -158,7 +158,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         throw new Error(`the E2E feedback ID was not retained\n${await dump()}`);
       }
       await driveUntil(
-        "paireto.gate.sendFeedback",
+        "crafty.gate.sendFeedback",
         firstReview.id,
         async () => !reviewGates(await inspect()).some((g) => g.id === firstReview.id),
         "the review gate to resolve on send-feedback",
@@ -189,7 +189,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         ),
       );
       await driveUntil(
-        "paireto.gate.approve",
+        "crafty.gate.approve",
         secondReview.id,
         async () => !reviewGates(await inspect()).some((g) => g.id === secondReview.id),
         "the second review gate to resolve on approve",

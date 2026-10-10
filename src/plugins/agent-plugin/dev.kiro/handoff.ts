@@ -30,7 +30,7 @@ const KiroHandoffSchema = z.object({
 export type KiroHandoff = z.infer<typeof KiroHandoffSchema>;
 
 function defaultStateRoot(): string {
-  return path.join(os.homedir(), ".local", "state", "paireto", "handoff");
+  return path.join(os.homedir(), ".local", "state", "crafty", "handoff");
 }
 
 function handoffFile(pid: number, stateRoot = defaultStateRoot()): string | undefined {

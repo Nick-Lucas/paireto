@@ -13,7 +13,7 @@ import {
 } from "../comments/CommentSession.js";
 import { PlanThreads } from "../plan/PlanThreads.js";
 
-const SCHEME = "paireto-plan-threads-test";
+const SCHEME = "crafty-plan-threads-test";
 const PLAN = ["# Plan", "", "Step one.", "Step two."].join("\n");
 
 suite("plan comment threads", () => {
@@ -29,7 +29,7 @@ suite("plan comment threads", () => {
       provideTextDocumentContent: () => PLAN,
     });
     await vscode.workspace.openTextDocument(uri);
-    session = new CommentSession("paireto-plan-threads", "Test", SCHEME, {
+    session = new CommentSession("crafty-plan-threads", "Test", SCHEME, {
       prompt: "Test",
       placeHolder: "Test",
     });

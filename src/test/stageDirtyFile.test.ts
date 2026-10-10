@@ -30,9 +30,9 @@ async function waitFor<T>(
   }
 }
 
-/** The read-only control plane exposed under PAIRETO_TEST (see .vscode-test.mjs). */
+/** The read-only control plane exposed under CRAFTY_TEST (see .vscode-test.mjs). */
 function inspect(): Thenable<InspectSnapshot> {
-  return vscode.commands.executeCommand<InspectSnapshot>("paireto.test.inspect");
+  return vscode.commands.executeCommand<InspectSnapshot>("crafty.test.inspect");
 }
 
 /** Every open review diff tab (any tab group). */
@@ -83,7 +83,7 @@ async function openDirtyDiff(
     deletions: 0,
     repoRoot: canonicalize(root),
   };
-  await vscode.commands.executeCommand("paireto.review.openDiff", file);
+  await vscode.commands.executeCommand("crafty.review.openDiff", file);
   const tab = await waitFor(() => {
     const active = vscode.window.tabGroups.activeTabGroup.activeTab;
     const input = active?.input;
@@ -110,14 +110,14 @@ suite("staging a file with unsaved changes", () => {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
     const name = "stage-dirty-modified.txt";
     const { file, doc } = await openDirtyDiff(root, name);
 
-    await vscode.commands.executeCommand("paireto.review.stage", file);
+    await vscode.commands.executeCommand("crafty.review.stage", file);
 
     const staged = await waitFor(
       () => (indexContent(root, name).includes("three") ? indexContent(root, name) : undefined),
@@ -143,7 +143,7 @@ suite("staging a file with unsaved changes", () => {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
@@ -170,7 +170,7 @@ suite("staging a file with unsaved changes", () => {
       deletions: 1,
       repoRoot: canonicalize(root),
     };
-    await vscode.commands.executeCommand("paireto.review.stage", file);
+    await vscode.commands.executeCommand("crafty.review.stage", file);
 
     const staged = await waitFor(
       () => (stagedStatus(root, name) === "D" ? "yes" : undefined),
@@ -188,7 +188,7 @@ suite("staging a file with unsaved changes", () => {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
@@ -208,7 +208,7 @@ suite("staging a file with unsaved changes", () => {
       deletions: 0,
       repoRoot: canonicalize(root),
     };
-    await vscode.commands.executeCommand("paireto.review.openDiff", staged);
+    await vscode.commands.executeCommand("crafty.review.openDiff", staged);
     assert.ok(
       await waitFor(() => (reviewDiffTabs().length === 1 ? "yes" : undefined), 20_000),
       "the staged diff tab must open",
@@ -220,7 +220,7 @@ suite("staging a file with unsaved changes", () => {
     edit.insert(doc.uri, new vscode.Position(doc.lineCount, 0), "three\n");
     assert.ok(await vscode.workspace.applyEdit(edit), "the document must accept an edit");
 
-    await vscode.commands.executeCommand("paireto.review.unstage", staged);
+    await vscode.commands.executeCommand("crafty.review.unstage", staged);
 
     const moved = await waitFor(async () => {
       const rows = (await inspect()).openDiffs.filter((row) => row.path === name);

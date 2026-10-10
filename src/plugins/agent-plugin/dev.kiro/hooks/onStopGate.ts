@@ -4,7 +4,7 @@
 // proposal is visible nowhere else. A turn end carries no review: Kiro's agent server runs Stop
 // hooks once per graph run (`onAgentStopHooksExecuted`), so the single pass is routinely spent
 // before the work is done, and a review that opens on a spent pass never reopens. A Kiro user asks
-// for a review instead — `/paireto-review` or `/paireto-guided-review`, both of which ride the MCP
+// for a review instead — `/crafty-review` or `/crafty-guided-review`, both of which ride the MCP
 // tool and need no hook at all.
 
 import * as os from "node:os";

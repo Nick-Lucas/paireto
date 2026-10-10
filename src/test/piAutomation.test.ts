@@ -24,7 +24,7 @@ suite("pi plan mode", () => {
   });
 
   test("leaves the read-only built-ins alone, so the agent can still research", () => {
-    for (const tool of ["read", "bash", "grep", "find", "ls", "paireto_submit_plan"]) {
+    for (const tool of ["read", "bash", "grep", "find", "ls", "crafty_submit_plan"]) {
       assert.strictEqual(blocksInPlanMode(true, tool), false, tool);
     }
   });

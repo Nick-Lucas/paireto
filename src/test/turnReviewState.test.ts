@@ -166,7 +166,7 @@ suite("Central Git turn comparison", () => {
   const git = (...args: string[]) =>
     execFileSync("git", ["-C", root, ...args], { stdio: "ignore" });
   setup(async () => {
-    root = await fs.mkdtemp(path.join(os.tmpdir(), "paireto-turn-"));
+    root = await fs.mkdtemp(path.join(os.tmpdir(), "crafty-turn-"));
     git("init");
     git("config", "user.email", "test@example.com");
     git("config", "user.name", "Test");
@@ -253,7 +253,7 @@ suite("Central Git turn comparison", () => {
   });
 
   test("a symlink out of the repository is compared by its path alone", async () => {
-    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "paireto-outside-"));
+    const outside = await fs.mkdtemp(path.join(os.tmpdir(), "crafty-outside-"));
     try {
       const target = path.join(outside, "file");
       await fs.writeFile(target, "one");
@@ -268,7 +268,7 @@ suite("Central Git turn comparison", () => {
   });
 
   test("detects an edit inside an already dirty submodule", async () => {
-    const sub = await fs.mkdtemp(path.join(os.tmpdir(), "paireto-sub-"));
+    const sub = await fs.mkdtemp(path.join(os.tmpdir(), "crafty-sub-"));
     const inSub = (...args: string[]) =>
       execFileSync("git", ["-C", sub, ...args], { stdio: "ignore" });
     try {

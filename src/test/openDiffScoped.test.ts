@@ -35,7 +35,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     execFileSync("git", args, { cwd: repo }).toString().trim();
 
   suiteSetup(() => {
-    repo = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-scoped-"));
+    repo = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-scoped-"));
     const write = (name: string, content: string): void =>
       fs.writeFileSync(path.join(repo, name), content);
     git(["init", "-q"]);
@@ -404,7 +404,7 @@ suite("syncFileForOpenDiff (openDiff's scoped sync, never a full refresh)", () =
     // Regression: the scoped scan matched entries against the queried paths only, while the merge
     // dropped everything touching the rename-WIDENED affected set — clicking the untracked old-path
     // row deleted the unstaged edit at the rename's new path from the model with no replacement.
-    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-merge-"));
+    const repo = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-merge-"));
     try {
       const git = (args: string[]): void => {
         execFileSync("git", args, { cwd: repo });
@@ -478,7 +478,7 @@ suite("openDiff integration (activated extension)", () => {
     this.timeout(30_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     // Leftover/session-restored diff tabs would satisfy the active-tab polls below.
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
@@ -498,7 +498,7 @@ suite("openDiff integration (activated extension)", () => {
       }, 20_000);
     const openDiffRefreshes = async (): Promise<number> => {
       const snapshot = (await vscode.commands.executeCommand(
-        "paireto.test.inspect",
+        "crafty.test.inspect",
       )) as InspectSnapshot;
       // Both fallback reasons count: a fall back through the superseded path leaves the other
       // key flat, and the assertion would pass without proving anything.
@@ -510,12 +510,12 @@ suite("openDiff integration (activated extension)", () => {
 
     // The first open may legitimately fall back to the full refresh (the repo may have no model
     // yet) — it seeds the model; only the count from here on is the assertion.
-    await vscode.commands.executeCommand("paireto.review.openDiff", file);
+    await vscode.commands.executeCommand("crafty.review.openDiff", file);
     assert.ok(await waitForDiffTab(), "openDiff must open a diff tab");
     const before = await openDiffRefreshes();
 
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
-    await vscode.commands.executeCommand("paireto.review.openDiff", file);
+    await vscode.commands.executeCommand("crafty.review.openDiff", file);
     assert.ok(await waitForDiffTab(), "openDiff must reopen a diff tab");
     assert.strictEqual(
       await openDiffRefreshes(),

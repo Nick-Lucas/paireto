@@ -1,4 +1,4 @@
-// The `paireto_review` tool: one definition, shared by every harness's MCP server.
+// The `crafty_review` tool: one definition, shared by every harness's MCP server.
 //
 // The name and description are part of the agent-facing contract — the model decides whether to
 // call this from the description alone, and the e2e replay fixtures match on it — so treat both as
@@ -10,7 +10,7 @@ import { connect } from "../bridgeClient.js";
 import { refusedMessage } from "../ndjson.js";
 import type { BridgeTarget } from "../target.js";
 
-export const REVIEW_TOOL_NAME = "paireto_review";
+export const REVIEW_TOOL_NAME = "crafty_review";
 
 export const REVIEW_TOOL_DESCRIPTION =
   "Open an interactive code review in the connected editor and wait for the user to " +
@@ -41,8 +41,8 @@ export function textResult(text: string, isError = false): ToolResult {
 }
 
 export const NO_WINDOW_MESSAGE =
-  "No VS Code Paireto is listening for this repository. Open the project in VS Code " +
-  "(with the Paireto extension active) and try again.";
+  "No VS Code Crafty is listening for this repository. Open the project in VS Code " +
+  "(with the Crafty extension active) and try again.";
 
 /**
  * Turn a failed connect into something the reader can act on.
@@ -58,7 +58,7 @@ export function connectFailureMessage(reason: ConnectFailure, extVersion?: strin
   if (reason === "handshake-rejected") {
     return refusedMessage(extVersion);
   }
-  return `Could not connect to the VS Code Paireto bridge (${reason}).`;
+  return `Could not connect to the VS Code Crafty bridge (${reason}).`;
 }
 
 /**

@@ -37,7 +37,7 @@ export interface Steps {
 
 export function makeSteps(driver: HarnessDriver): Steps {
   const inspect = async (): Promise<InspectSnapshot> =>
-    (await vscode.commands.executeCommand("paireto.test.inspect")) as InspectSnapshot;
+    (await vscode.commands.executeCommand("crafty.test.inspect")) as InspectSnapshot;
 
   const dump = async (): Promise<string> => {
     let snap = "<inspect failed>";
@@ -101,7 +101,7 @@ export function makeSteps(driver: HarnessDriver): Steps {
       if (landed(await inspect())) {
         return true;
       }
-      await vscode.commands.executeCommand("paireto.test.addComment", args);
+      await vscode.commands.executeCommand("crafty.test.addComment", args);
       return landed(await inspect());
     });
 

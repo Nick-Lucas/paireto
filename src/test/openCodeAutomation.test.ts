@@ -48,17 +48,17 @@ suite("OpenCode adapter automation helpers", () => {
     test("empty config: adds the tool to primary_tools, allows plan, denies build", () => {
       const config: OpenCodeConfig = {};
       applyOpenCodeConfig(config, ["plan"]);
-      assert.deepStrictEqual(config.experimental?.primary_tools, ["paireto_submit_plan"]);
-      assert.strictEqual(permissionOf(config, "plan").paireto_submit_plan, "allow");
-      assert.strictEqual(permissionOf(config, "build").paireto_submit_plan, "deny");
+      assert.deepStrictEqual(config.experimental?.primary_tools, ["crafty_submit_plan"]);
+      assert.strictEqual(permissionOf(config, "plan").crafty_submit_plan, "allow");
+      assert.strictEqual(permissionOf(config, "build").crafty_submit_plan, "deny");
     });
 
     test("preserves + dedups existing primary_tools, never duplicating the tool", () => {
       const config: OpenCodeConfig = {
-        experimental: { primary_tools: ["foo", "foo", "paireto_submit_plan"] },
+        experimental: { primary_tools: ["foo", "foo", "crafty_submit_plan"] },
       };
       applyOpenCodeConfig(config, ["plan"]);
-      assert.deepStrictEqual(config.experimental?.primary_tools, ["foo", "paireto_submit_plan"]);
+      assert.deepStrictEqual(config.experimental?.primary_tools, ["foo", "crafty_submit_plan"]);
     });
 
     test("permission spread hazard: existing per-tool entries survive (in-place, never spread)", () => {
@@ -69,33 +69,33 @@ suite("OpenCode adapter automation helpers", () => {
       const perm = permissionOf(config, "plan");
       assert.strictEqual(perm.edit, "allow", "edit preserved");
       assert.strictEqual(perm.bash, "ask", "bash preserved");
-      assert.strictEqual(perm.paireto_submit_plan, "allow");
+      assert.strictEqual(perm.crafty_submit_plan, "allow");
     });
 
     test("permission spread hazard: a malformed (string) permission is reset to a usable object", () => {
       const config: OpenCodeConfig = { agent: { plan: { permission: "allow" } } };
       applyOpenCodeConfig(config, ["plan"]);
-      assert.deepStrictEqual(config.agent?.plan.permission, { paireto_submit_plan: "allow" });
+      assert.deepStrictEqual(config.agent?.plan.permission, { crafty_submit_plan: "allow" });
     });
 
     test("a declared subagent is NOT denied (it never sees the primary-only tool)", () => {
       const config: OpenCodeConfig = { agent: { helper: { mode: "subagent" } } };
       applyOpenCodeConfig(config, ["plan"]);
-      assert.strictEqual(permissionOf(config, "helper").paireto_submit_plan, undefined);
+      assert.strictEqual(permissionOf(config, "helper").crafty_submit_plan, undefined);
     });
 
     test("a declared non-planning primary agent IS denied", () => {
       const config: OpenCodeConfig = { agent: { reviewer: { mode: "primary" }, freeform: {} } };
       applyOpenCodeConfig(config, ["plan"]);
-      assert.strictEqual(permissionOf(config, "reviewer").paireto_submit_plan, "deny");
-      assert.strictEqual(permissionOf(config, "freeform").paireto_submit_plan, "deny");
+      assert.strictEqual(permissionOf(config, "reviewer").crafty_submit_plan, "deny");
+      assert.strictEqual(permissionOf(config, "freeform").crafty_submit_plan, "deny");
     });
 
     test("a custom planning agent is allowed (and not re-denied by the build sweep)", () => {
       const config: OpenCodeConfig = { agent: { architect: {} } };
       applyOpenCodeConfig(config, ["plan", "architect"]);
-      assert.strictEqual(permissionOf(config, "architect").paireto_submit_plan, "allow");
-      assert.strictEqual(permissionOf(config, "plan").paireto_submit_plan, "allow");
+      assert.strictEqual(permissionOf(config, "architect").crafty_submit_plan, "allow");
+      assert.strictEqual(permissionOf(config, "plan").crafty_submit_plan, "allow");
     });
 
     test("idempotent: running twice yields the same config", () => {

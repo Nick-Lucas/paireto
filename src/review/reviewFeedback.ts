@@ -34,7 +34,7 @@ export function serialiseRejectedReviewFeedback(
   return dedent`
     Code review feedback received from the user:
 
-    Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+    Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with crafty_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
 
     ${rendered}
   `;

@@ -1,5 +1,5 @@
 {
-  "name": "paireto-opencode",
-  "description": "Bridges OpenCode to the VS Code Paireto extension",
+  "name": "crafty-opencode",
+  "description": "Bridges OpenCode to the VS Code Crafty extension",
   "version": "0.10.0"
 }

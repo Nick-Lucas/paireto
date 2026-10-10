@@ -32,7 +32,7 @@ suite("Codex bundled plugin contract", () => {
         "utf8",
       ),
     ) as { name: string; skills: string; mcpServers: string };
-    assert.strictEqual(manifest.name, "paireto");
+    assert.strictEqual(manifest.name, "crafty");
     assert.strictEqual(manifest.skills, "./skills/");
     assert.strictEqual(manifest.mcpServers, "./.mcp.json");
 
@@ -41,37 +41,37 @@ suite("Codex bundled plugin contract", () => {
       "utf8",
     );
     assert.ok(hooks.includes("${PLUGIN_ROOT}/com.openai.codex/runtime/on-event.js"));
-    assert.ok(!hooks.includes("{{PAIRETO_SCRIPTS}}"));
+    assert.ok(!hooks.includes("{{CRAFTY_SCRIPTS}}"));
 
     const mcp = JSON.parse(
       fs.readFileSync(path.join(bundledPlugin, "com.openai.codex", ".mcp.json"), "utf8"),
     ) as {
-      mcpServers: { paireto: { args: string[]; cwd: string; tool_timeout_sec: number } };
+      mcpServers: { crafty: { args: string[]; cwd: string; tool_timeout_sec: number } };
       mcp_servers?: unknown;
     };
     assert.strictEqual(mcp.mcp_servers, undefined);
-    assert.deepStrictEqual(mcp.mcpServers.paireto.args, ["./runtime/mcp.js"]);
-    assert.strictEqual(mcp.mcpServers.paireto.cwd, ".");
-    assert.strictEqual(mcp.mcpServers.paireto.tool_timeout_sec, 86_400);
+    assert.deepStrictEqual(mcp.mcpServers.crafty.args, ["./runtime/mcp.js"]);
+    assert.strictEqual(mcp.mcpServers.crafty.cwd, ".");
+    assert.strictEqual(mcp.mcpServers.crafty.tool_timeout_sec, 86_400);
 
     const skill = fs.readFileSync(
-      path.join(bundledPlugin, "skills", "paireto-review", "SKILL.md"),
+      path.join(bundledPlugin, "skills", "crafty-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(skill.includes("ends in `paireto_review`"));
-    assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "paireto-plan", "SKILL.md")));
+    assert.ok(skill.includes("ends in `crafty_review`"));
+    assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "crafty-plan", "SKILL.md")));
     const guided = fs.readFileSync(
-      path.join(bundledPlugin, "skills", "paireto-guided-review", "SKILL.md"),
+      path.join(bundledPlugin, "skills", "crafty-guided-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(guided.includes("ends in `paireto_start_guided_review`"));
+    assert.ok(guided.includes("ends in `crafty_start_guided_review`"));
     // The built server, not the source: this asserts the artifact the installer actually stages.
     // Match on the bare tool names, which survive minification, rather than a source spelling.
     const server = fs.readFileSync(path.join(bundledPlugin, "runtime", "mcp.js"), "utf8");
-    assert.ok(server.includes("paireto_review"));
-    assert.ok(server.includes("paireto_start_guided_review"));
+    assert.ok(server.includes("crafty_review"));
+    assert.ok(server.includes("crafty_start_guided_review"));
     assert.ok(
-      !fs.existsSync(path.join(bundledPlugin, "skills", "paireto-review", "scripts", "review.js")),
+      !fs.existsSync(path.join(bundledPlugin, "skills", "crafty-review", "scripts", "review.js")),
     );
   });
 });
@@ -81,7 +81,7 @@ suite("Codex native marketplace", () => {
     assert.deepStrictEqual(codexMarketplacePlan("/extension/plugins", "/global/codex"), {
       sourcePlugin: "/extension/plugins/agent-plugin",
       marketplaceRoot: "/global/codex/marketplace",
-      stagedPlugin: "/global/codex/marketplace/plugins/paireto",
+      stagedPlugin: "/global/codex/marketplace/plugins/crafty",
       marketplaceManifest: "/global/codex/marketplace/.agents/plugins/marketplace.json",
     });
   });
@@ -95,11 +95,11 @@ suite("Codex native marketplace", () => {
         policy: { installation: string; authentication: string };
       }[];
     };
-    assert.strictEqual(marketplace.name, "paireto");
+    assert.strictEqual(marketplace.name, "crafty");
     assert.deepStrictEqual(marketplace.plugins, [
       {
-        name: "paireto",
-        source: { source: "local", path: "./plugins/paireto" },
+        name: "crafty",
+        source: { source: "local", path: "./plugins/crafty" },
         policy: { installation: "AVAILABLE", authentication: "ON_INSTALL" },
         category: "Developer Tools",
       },
@@ -110,15 +110,15 @@ suite("Codex native marketplace", () => {
   // entry on the literal path `hooks/hooks.json`. Staging therefore has to LIFT the files authored
   // under com.openai.codex/ rather than copy the portable package verbatim.
   test("stages the Codex-native layout at the plugin root", () => {
-    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-view-"));
-    const stagedPlugin = path.join(tempRoot, "paireto");
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-codex-view-"));
+    const stagedPlugin = path.join(tempRoot, "crafty");
     try {
       materializeCodexPlugin(bundledPlugin, stagedPlugin);
 
       assert.ok(fs.existsSync(path.join(stagedPlugin, ".codex-plugin", "plugin.json")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, "hooks", "hooks.json")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, ".mcp.json")));
-      assert.ok(fs.existsSync(path.join(stagedPlugin, "skills", "paireto-review", "SKILL.md")));
+      assert.ok(fs.existsSync(path.join(stagedPlugin, "skills", "crafty-review", "SKILL.md")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, "runtime", "mcp.js")));
       // The hook commands address the namespace runtime, so that directory has to survive staging.
       assert.ok(
@@ -140,7 +140,7 @@ suite("Codex native plugin probe", () => {
     const list = JSON.stringify({
       installed: [
         {
-          pluginId: "paireto@paireto",
+          pluginId: "crafty@crafty",
           version: "0.5.7",
           installed: true,
           enabled: true,
@@ -152,12 +152,12 @@ suite("Codex native plugin probe", () => {
 
   test("reports an old native plugin as update available", () => {
     const list = JSON.stringify({
-      installed: [{ pluginId: "paireto@paireto", version: "0.5.2", installed: true }],
+      installed: [{ pluginId: "crafty@crafty", version: "0.5.2", installed: true }],
     });
     assert.strictEqual(codexPluginInstallState(list, "0.5.7"), "update-available");
   });
 
-  test("does not confuse foreign plugins or malformed output for Paireto", () => {
+  test("does not confuse foreign plugins or malformed output for Crafty", () => {
     assert.strictEqual(
       codexPluginInstallState(
         JSON.stringify({ installed: [{ pluginId: "codex@someone-else", version: "0.5.6" }] }),

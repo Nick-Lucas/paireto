@@ -20,19 +20,19 @@ const required = (name) => {
 export default defineConfig({
 	// The one spec this window was prepared for; runE2E.js passes `--grep` to pick the driver's suite
 	// inside it. Both halves are Mocha's own selection.
-	files: required('PAIRETO_E2E_SPEC'),
+	files: required('CRAFTY_E2E_SPEC'),
 	// The pinned VS Code the repo's test cache already holds (see .vscode-test/); avoids a download.
 	version: '1.128.0',
-	workspaceFolder: required('PAIRETO_E2E_SANDBOX'),
+	workspaceFolder: required('CRAFTY_E2E_SANDBOX'),
 	launchArgs: [
 		'--user-data-dir',
-		required('PAIRETO_E2E_USER_DATA_DIR'),
+		required('CRAFTY_E2E_USER_DATA_DIR'),
 		// In Docker (see docker/README.md) VS Code runs as root under xvfb, so Electron needs
-		// --no-sandbox; inert on a native macOS run where PAIRETO_DOCKER is unset.
-		...(process.env.PAIRETO_DOCKER ? ['--no-sandbox', '--disable-gpu'] : []),
+		// --no-sandbox; inert on a native macOS run where CRAFTY_DOCKER is unset.
+		...(process.env.CRAFTY_DOCKER ? ['--no-sandbox', '--disable-gpu'] : []),
 	],
 	mocha: {
-		timeout: Number(required('PAIRETO_E2E_TEST_TIMEOUT_MS')),
+		timeout: Number(required('CRAFTY_E2E_TEST_TIMEOUT_MS')),
 		// A step depends on the one before it, so once one fails the rest are noise.
 		bail: true,
 		color: false,

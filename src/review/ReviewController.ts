@@ -252,8 +252,8 @@ export class ReviewController implements vscode.Disposable {
     // diff AND on the editable working-tree (file:) side of an editable one, so it works regardless
     // of whether the file can be edited. Comments remain queued until an agent review consumes them.
     this.commentSession = new CommentSession(
-      "paireto.review",
-      "Paireto: Add Comment",
+      "crafty.review",
+      "Crafty: Add Comment",
       Schemes.review,
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
       (doc) =>
@@ -390,7 +390,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
-   * Begin a blocking review (invoked by the MCP paireto_review tool via the bridge). Waits for any
+   * Begin a blocking review (invoked by the MCP crafty_review tool via the bridge). Waits for any
    * in-progress review to finish (at most one at a time), then opens a review — which automatically
    * consumes the bucket of unclaimed comments the user already left — and blocks until they resolve it.
    */
@@ -401,23 +401,23 @@ export class ReviewController implements vscode.Disposable {
     signal: AbortSignal,
   ): Promise<ReviewGateResult> {
     if (this.roots.gitRoots.length === 0) {
-      void vscode.window.showWarningMessage("Paireto code review requires a Git repository.");
+      void vscode.window.showWarningMessage("Crafty code review requires a Git repository.");
       return { status: "cancelled", feedback: "" };
     }
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
     log.info(
-      `review opened for agent ${sessionId?.slice(0, 8) ?? "unknown"}: manual (/paireto-review)`,
+      `review opened for agent ${sessionId?.slice(0, 8) ?? "unknown"}: manual (/crafty-review)`,
     );
     return this.runReview(requestId, sessionId, repoRoot, signal, (result) => result);
   }
 
   /**
-   * Begin a guided review (invoked by the `paireto_start_guided_review` tool via the bridge). The
+   * Begin a guided review (invoked by the `crafty_start_guided_review` tool via the bridge). The
    * agent's changeset plan becomes a sidebar section over the ordinary Changes surfaces, and the
    * agent blocks until the user approves or sends feedback — the same two outcomes as any review.
-   * Takes the review slot: `reviewId` feeds the `paireto-review://` URIs, so two review-like
+   * Takes the review slot: `reviewId` feeds the `crafty-review://` URIs, so two review-like
    * sessions at once would mint colliding tabs.
    */
   async startGuidedSession(
@@ -430,7 +430,7 @@ export class ReviewController implements vscode.Disposable {
   ): Promise<ReviewGateResult> {
     const who = sessionId?.slice(0, 8) ?? "unknown";
     if (this.roots.gitRoots.length === 0) {
-      void vscode.window.showWarningMessage("Paireto guided review requires a Git repository.");
+      void vscode.window.showWarningMessage("Crafty guided review requires a Git repository.");
       return { status: "cancelled", feedback: "" };
     }
     // The plan is model output. A plan we cannot render goes back to the agent as feedback saying
@@ -499,7 +499,7 @@ export class ReviewController implements vscode.Disposable {
     const who = sessionId?.slice(0, 8) ?? "unknown";
     const hasPendingFeedback = this.getPendingComments().length > 0;
     const automatic =
-      vscode.workspace.getConfiguration("paireto").get<string>("review.mode", "automatic") ===
+      vscode.workspace.getConfiguration("crafty").get<string>("review.mode", "automatic") ===
       "automatic";
     const changedThisTurn = await this.turns.changedSinceStart(sessionId, repoRoot);
     const open = shouldOpenTurnEndReview({
@@ -545,7 +545,7 @@ export class ReviewController implements vscode.Disposable {
 
   /**
    * Non-blocking toast announcing a review that opened by itself — a turn-end gate or a guided
-   * review, never /paireto-review, which the user asked for and so stays silent. One-click actions:
+   * review, never /crafty-review, which the user asked for and so stays silent. One-click actions:
    * go and review it, or approve as-is.
    */
   private notifyReviewOpened(requestId: string, message: string): void {
@@ -566,7 +566,7 @@ export class ReviewController implements vscode.Disposable {
 
   /**
    * Register a review gate, block until the user resolves it (or the connection drops), tear it down,
-   * and map the gate result to the caller's reply type. Shared by /paireto-review and the turn-end
+   * and map the gate result to the caller's reply type. Shared by /crafty-review and the turn-end
    * gate. The caller must already hold the review slot.
    */
   private async runReview<T>(
@@ -687,13 +687,13 @@ export class ReviewController implements vscode.Disposable {
     return this.activeRequestId !== undefined;
   }
 
-  /** The tree row each open diff tab stands for, for `paireto.test.inspect` — lets a test pin that a
+  /** The tree row each open diff tab stands for, for `crafty.test.inspect` — lets a test pin that a
    *  tab which outlives a write-op still names the row the file is on. */
   openDiffRows(): { path: string; group: FileGroup }[] {
     return Array.from(this.openDiffs.values(), (open) => ({ path: open.path, group: open.group }));
   }
 
-  /** Per-reason refresh() tally for `paireto.test.inspect` — lets a test pin that a flow (e.g.
+  /** Per-reason refresh() tally for `crafty.test.inspect` — lets a test pin that a flow (e.g.
    *  openDiff's scoped sync) never ran the full refresh. */
   getRefreshCounts(): Record<string, number> {
     return Object.fromEntries(this.refreshCounts);
@@ -1326,7 +1326,7 @@ export class ReviewController implements vscode.Disposable {
     if (join(open.repoRoot, open.path) !== uri.fsPath) {
       return; // not the file shown in the tracked diff
     }
-    // Only act when the edit is in OUR active higher-level diff (base = paireto-review, right = the file),
+    // Only act when the edit is in OUR active higher-level diff (base = crafty-review, right = the file),
     // never a plain editor on the same path.
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
     const isOurDiff =
@@ -1347,7 +1347,7 @@ export class ReviewController implements vscode.Disposable {
 
   /** The active editor changed — if it's one of our diff tabs, re-select that file's tree row.
    *  Honours VS Code's `explorer.autoReveal`: when disabled, focusing a diff tab no longer pulls the
-   *  Paireto sidebar forward or moves the tree selection. */
+   *  Crafty sidebar forward or moves the tree selection. */
   private syncSelectionToActiveTab(): void {
     this.syncActiveDiffContext();
     const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
@@ -1482,7 +1482,7 @@ export class ReviewController implements vscode.Disposable {
     }).toUri();
     // When editable, the modified side is the real working-tree file: it gets LSP + editing, and
     // edits land in the lowest (unstaged) level. Otherwise it's a read-only virtual document (the
-    // paireto-review FileSystemProvider is registered read-only, so it genuinely can't be typed into).
+    // crafty-review FileSystemProvider is registered read-only, so it genuinely can't be typed into).
     const editable = this.isEditable(file);
     this.debug(`openDiff: ${file.path} group=${file.group} editable=${editable}`);
     const modUri = editable
@@ -1511,7 +1511,7 @@ export class ReviewController implements vscode.Disposable {
     // An add (no base) or delete (no modified) has nothing to diff against — a two-pane diff would
     // show a broken/empty side (an image viewer can't render the 0-byte side at all). Open the one
     // real side in a single editor, like the native git panel. The doc is still commentable: the
-    // working-tree file: side and the paireto-review virtual side both match the comment controller.
+    // working-tree file: side and the crafty-review virtual side both match the comment controller.
     const singleSide = singlePaneSide(sides);
     if (singleSide) {
       const paneUri = singleSide === "base" ? baseUri : modUri;
@@ -1746,7 +1746,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   /**
-   * Map a comment thread's URI to (side, relPath). The thread sits on either a `paireto-review://`
+   * Map a comment thread's URI to (side, relPath). The thread sits on either a `crafty-review://`
    * diff side (side + path in the query) or the editable working-tree file (its modified side).
    */
   private resolveCommentAnchor(
@@ -1823,7 +1823,7 @@ export class ReviewController implements vscode.Disposable {
     const dropped = this.prunedComments.get(id);
     if (dropped) {
       void vscode.window.showInformationMessage(
-        `Paireto: ${dropped} no longer exists, so the comment on it was removed.`,
+        `Crafty: ${dropped} no longer exists, so the comment on it was removed.`,
       );
       return;
     }
@@ -2054,7 +2054,7 @@ export class ReviewController implements vscode.Disposable {
 
   private warnFeedbackClosed(): void {
     void vscode.window.showWarningMessage(
-      "Paireto: feedback for this repository is not open yet. Try again in a moment.",
+      "Crafty: feedback for this repository is not open yet. Try again in a moment.",
     );
   }
 
@@ -2576,7 +2576,7 @@ export function shouldOpenTurnEndReview(opts: {
   changedThisTurn: boolean;
   hasPendingFeedback: boolean;
   agentRepliedOrResolvedComment: boolean;
-  /** `paireto.review.mode === "automatic"`. When false, edits alone don't park — only feedback does. */
+  /** `crafty.review.mode === "automatic"`. When false, edits alone don't park — only feedback does. */
   automatic: boolean;
   /** The harness can carry a turn-end review at all — see AgentStrategy.supportsTurnEndReview. */
   harnessSupported: boolean;

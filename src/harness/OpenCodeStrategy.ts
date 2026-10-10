@@ -47,8 +47,8 @@ export type OpenCodeEventType =
   // Synthetic: the plugin's awaited tool.execute.before/after hooks re-emitted as events.
   | "tool.execute.before"
   | "tool.execute.after"
-  // Synthetic: the paireto_submit_plan custom tool's plan submission.
-  | "paireto.plan.submitted";
+  // Synthetic: the crafty_submit_plan custom tool's plan submission.
+  | "crafty.plan.submitted";
 
 /** The subset of an OpenCode `Session` object the adapter consumes (the SDK `Session` has more). */
 export interface OpenCodeSessionInfo {
@@ -93,13 +93,13 @@ export interface OpenCodeEventProperties {
  * The child→parent correlation the plugin computes is NOT a field here: it's adapter-injected
  * enrichment that rides alongside in `HarnessEventMeta.parentSessionId`, because a forwarded SDK
  * event is (by the seam invariant) the harness's own shape. `plan_markdown` stays, but ONLY on the
- * fully SYNTHETIC `paireto.plan.submitted` event, which is the plugin's OWN dialect (there is no
+ * fully SYNTHETIC `crafty.plan.submitted` event, which is the plugin's OWN dialect (there is no
  * corresponding SDK event) — so carrying the plan on it doesn't touch any raw harness payload.
  */
 export interface OpenCodeForwardedEvent {
   type: OpenCodeEventType;
   properties: OpenCodeEventProperties;
-  /** SYNTHETIC-ONLY: plan markdown on the plugin-fabricated `paireto.plan.submitted` gate event. Not
+  /** SYNTHETIC-ONLY: plan markdown on the plugin-fabricated `crafty.plan.submitted` gate event. Not
    *  present on any forwarded real SDK event. */
   plan_markdown?: string;
 }
@@ -107,15 +107,15 @@ export interface OpenCodeForwardedEvent {
 
 /** The custom tool whose invocation is a plan proposal (opt-in — the agent must be instructed to call
  *  it). Its blocking round-trip is the plan gate; the tool.execute.before edge is the telemetry. */
-const PLAN_TOOL = "paireto_submit_plan";
+const PLAN_TOOL = "crafty_submit_plan";
 
 export class OpenCodeStrategy implements AgentStrategy {
   readonly harness: Harness = "opencode";
   readonly displayName = "OpenCode";
   readonly planToolName = PLAN_TOOL;
   // For OpenCode `nextMode` is not a permission mode but the TARGET AGENT to switch to on approval
-  // (the plugin's paireto_submit_plan tool prompts it to proceed). Default to `build` so an approved
-  // plan hands off to the implementer; `paireto.planApprove.mode.opencode` overrides it, "off" stays.
+  // (the plugin's crafty_submit_plan tool prompts it to proceed). Default to `build` so an approved
+  // plan hands off to the implementer; `crafty.planApprove.mode.opencode` overrides it, "off" stays.
   readonly supportsTurnEndReview = true;
   readonly defaultPlanApproveMode: string | undefined = "build";
   // The plugin holds a per-top-level-session liveness socket open; the OS dropping it on process
@@ -196,7 +196,7 @@ export class OpenCodeStrategy implements AgentStrategy {
         return event.properties.tool === PLAN_TOOL ? "planProposal" : "preToolUse";
       case "tool.execute.after":
         return "postToolUse";
-      case "paireto.plan.submitted":
+      case "crafty.plan.submitted":
         return "planProposal";
       default:
         // session.error, session.updated, permission.replied, and anything unmodelled → drop.
@@ -231,7 +231,7 @@ export class OpenCodeStrategy implements AgentStrategy {
       sessionId,
       agentId,
       toolName,
-      // Present only on the blocking plan-gate event (paireto.plan.submitted); the tool.execute.before
+      // Present only on the blocking plan-gate event (crafty.plan.submitted); the tool.execute.before
       // plan edge carries no text (it's just the awaiting-plan telemetry edge).
       planText: event?.plan_markdown,
       // OpenCode reports no background-task/session-cron counts.

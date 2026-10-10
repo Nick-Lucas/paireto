@@ -1,6 +1,6 @@
 // Claude Code's MCP server.
 //
-// Exposes `paireto_review`, which opens a blocking code-review session in the connected VS Code
+// Exposes `crafty_review`, which opens a blocking code-review session in the connected VS Code
 // window over the same per-repo socket the hooks use, and holds a second socket open for the
 // session's lifetime so the extension learns when this agent dies.
 
@@ -12,7 +12,7 @@ import { resolveTarget } from "../core/target.js";
 import { claudeCwd, livenessSessionId, reviewSessionId } from "./session.js";
 
 const adapter: McpHarnessAdapter = {
-  serverName: "paireto",
+  serverName: "crafty",
   harness: "claudecode",
 
   resolveReviewTarget(): ReviewTarget | undefined {

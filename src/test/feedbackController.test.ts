@@ -141,7 +141,7 @@ suite("review controller feedback", () => {
   const opened: FeedbackSession[] = [];
 
   setup(() => {
-    stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-feedback-controller-"));
+    stateHome = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-feedback-controller-"));
   });
 
   teardown(async () => {
@@ -341,7 +341,7 @@ suite("review controller feedback", () => {
       attachment: {
         group: "staged",
         baseRef: "INDEX",
-        sourceUri: "paireto-review://old/a.ts?side=base",
+        sourceUri: "crafty-review://old/a.ts?side=base",
       },
     };
 
@@ -359,7 +359,7 @@ suite("review controller feedback", () => {
     const first = comment("first");
     const second = comment("second");
     for (const model of [first, second]) {
-      model.sourceDocument = { uri: "paireto-changeset:/Same.md?id=cs1", markdown: model.id };
+      model.sourceDocument = { uri: "crafty-changeset:/Same.md?id=cs1", markdown: model.id };
       await session.add(model);
     }
 

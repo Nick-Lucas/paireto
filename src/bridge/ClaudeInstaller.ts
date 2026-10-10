@@ -11,8 +11,8 @@ import * as path from "node:path";
 import { log } from "../log.js";
 import type { InstallResult } from "./types.js";
 
-const MARKETPLACE_NAME = "paireto";
-const PLUGIN_NAME = "paireto";
+const MARKETPLACE_NAME = "crafty";
+const PLUGIN_NAME = "crafty";
 const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
 /** A probe runs behind the Welcome screen, so it waits far less than an install does. */
 const PROBE_TIMEOUT_MS = 5000;

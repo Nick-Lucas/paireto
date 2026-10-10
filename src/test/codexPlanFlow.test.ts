@@ -2,7 +2,7 @@ import * as assert from "node:assert";
 
 import { planGateOutcome } from "../plugins/agent-plugin/com.openai.codex/planFlow.js";
 
-suite("Codex Paireto plan continuation", () => {
+suite("Codex Crafty plan continuation", () => {
   test("approval allows Stop so Codex can present its native mode-switch selector", () => {
     assert.deepStrictEqual(planGateOutcome({ decision: "allow" }), {
       decision: "allow",

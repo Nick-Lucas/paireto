@@ -13,13 +13,13 @@ export type E2EDriver = "claudecode" | "codex" | "kiro" | "opencode" | "pi";
 export const E2E_DRIVERS: readonly E2EDriver[] = ["claudecode", "codex", "kiro", "opencode", "pi"];
 
 /** Env var selecting the mode (unset = `record`). */
-export const MODE_ENV = "PAIRETO_E2E_MODE";
+export const MODE_ENV = "CRAFTY_E2E_MODE";
 /** Env var carrying the normalizing-shim URL the harness uses as its HTTP(S) proxy. */
-export const MOCK_URL_ENV = "PAIRETO_MOCK_URL";
+export const MOCK_URL_ENV = "CRAFTY_MOCK_URL";
 /** Env var carrying the path to MockServer's CA cert (so the harness trusts the MITM proxy). */
-export const MOCK_CA_ENV = "PAIRETO_MOCK_CA";
+export const MOCK_CA_ENV = "CRAFTY_MOCK_CA";
 /** Env var carrying the compiled spec the window runs — set by runE2E, read by .vscode-test.e2e.mjs. */
-export const SPEC_ENV = "PAIRETO_E2E_SPEC";
+export const SPEC_ENV = "CRAFTY_E2E_SPEC";
 
 /** Parse the mode from an env bag (defaults to `record`); unknown values fail loudly. */
 export function resolveMode(env: NodeJS.ProcessEnv = process.env): E2EMode {

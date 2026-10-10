@@ -41,7 +41,7 @@ async function selectCompareRef(ref: string): Promise<void> {
   };
 
   try {
-    const command = vscode.commands.executeCommand("paireto.review.pickCompareTo");
+    const command = vscode.commands.executeCommand("crafty.review.pickCompareTo");
     const compareDriver = await waitForPicker(0);
     const branchRefItem = compareDriver.picker.items.find((item) =>
       item.label.includes("Branch/Ref"),
@@ -80,9 +80,7 @@ async function selectCompareRef(ref: string): Promise<void> {
 async function inspectRepository(
   repoRoot: string,
 ): Promise<InspectSnapshot["repositories"][number]> {
-  const snapshot = (await vscode.commands.executeCommand(
-    "paireto.test.inspect",
-  )) as InspectSnapshot;
+  const snapshot = (await vscode.commands.executeCommand("crafty.test.inspect")) as InspectSnapshot;
   const repository = snapshot.repositories.find((candidate) => candidate.repoRoot === repoRoot);
   assert.ok(repository, "the Changes model must include the fixture repository");
   return repository;
@@ -105,7 +103,7 @@ suite("committed diff retention", () => {
     this.timeout(60_000);
     const folder = vscode.workspace.workspaceFolders?.[0];
     assert.ok(folder, "the test harness must open the fixture git workspace");
-    await vscode.extensions.getExtension("Paireto.paireto")?.activate();
+    await vscode.extensions.getExtension("Crafty.crafty")?.activate();
     await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 
     const root = folder.uri.fsPath;
@@ -132,7 +130,7 @@ suite("committed diff retention", () => {
     assert.ok(repository.committedPaths.includes(fileName), "the committed row must be visible");
 
     fs.writeFileSync(filePath, "committed\nworking tree\n");
-    await vscode.commands.executeCommand("paireto.review.refresh");
+    await vscode.commands.executeCommand("crafty.review.refresh");
     repository = await inspectRepository(repoRoot);
     assert.ok(repository.unstagedPaths.includes(fileName), "the Working Tree row must be visible");
     assert.ok(
@@ -148,7 +146,7 @@ suite("committed diff retention", () => {
       additions: 1,
       deletions: 1,
     };
-    await vscode.commands.executeCommand("paireto.review.openDiff", committedFile);
+    await vscode.commands.executeCommand("crafty.review.openDiff", committedFile);
     const input = await activeDiff();
     assert.ok(input, "the committed row must open a diff");
     assert.strictEqual(input.original.scheme, Schemes.review);

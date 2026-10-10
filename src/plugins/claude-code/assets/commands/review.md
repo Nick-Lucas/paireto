@@ -4,9 +4,9 @@ description: Start an interactive code review in VS Code and act on the feedback
 
 Start an interactive code review of the current changes in VS Code.
 
-Call the `paireto_review` tool now. It opens the review panels in the connected VS Code window and
+Call the `crafty_review` tool now. It opens the review panels in the connected VS Code window and
 **blocks until the user submits feedback or cancels** — this is expected; wait for it to return.
 
 If it returns feedback, address every item.
 
-Reply to questions with the `paireto_reply_to_feedback` tool.
+Reply to questions with the `crafty_reply_to_feedback` tool.

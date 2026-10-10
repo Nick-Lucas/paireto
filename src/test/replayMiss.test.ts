@@ -14,7 +14,7 @@ suite("replay miss handoff", () => {
   let file: string;
 
   setup(() => {
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-miss-"));
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "crafty-miss-"));
     file = path.join(dir, "replay-miss.json");
   });
   teardown(() => {

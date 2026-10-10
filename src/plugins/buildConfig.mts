@@ -18,8 +18,8 @@ export interface PluginBuildContext {
 }
 
 /** The virtual module that carries an asset tree into esbuild's module graph. */
-const ASSET_NAMESPACE = "paireto-assets";
-const ASSET_ENTRY = "paireto:assets";
+const ASSET_NAMESPACE = "crafty-assets";
+const ASSET_ENTRY = "crafty:assets";
 
 /** Every file and directory under `root`, so an asset tree can be declared to esbuild's watcher. */
 function assetPaths(root: string): { files: string[]; dirs: string[] } {

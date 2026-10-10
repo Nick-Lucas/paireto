@@ -12,12 +12,12 @@ import { type InstallProbe, installProbeFor } from "../welcome/installProbe.js";
 import type { InstallState } from "../welcome/protocol.js";
 import type { InstallResult } from "./types.js";
 
-const MARKETPLACE_NAME = "paireto";
+const MARKETPLACE_NAME = "crafty";
 /** The Agent Plugins client namespace holding the Codex-only files. */
 const CODEX_NAMESPACE = "com.openai.codex";
 /** A probe answers a render, so it waits far less than an install does. */
 const PROBE_TIMEOUT_MS = 5000;
-const PLUGIN_NAME = "paireto";
+const PLUGIN_NAME = "crafty";
 const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
 
 export interface CodexMarketplacePlan {
@@ -137,7 +137,7 @@ export function renderCodexMarketplace(): string {
   return `${JSON.stringify(
     {
       name: MARKETPLACE_NAME,
-      interface: { displayName: "Paireto" },
+      interface: { displayName: "Crafty" },
       plugins: [
         {
           name: PLUGIN_NAME,
@@ -264,7 +264,7 @@ async function repointStaleMarketplace(
     env,
   );
   if (removed.code === 0) {
-    log.info(`[codex] repointed stale Paireto marketplace from ${configuredRoot}`);
+    log.info(`[codex] repointed stale Crafty marketplace from ${configuredRoot}`);
   }
 }
 

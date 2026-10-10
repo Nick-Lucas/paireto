@@ -18,7 +18,7 @@ export interface KiroInstallPlan {
 
 /** Marks a global skill directory as ours, so a reinstall can clear one we no longer ship without
  *  touching a skill the user or another Power owns. */
-const KIRO_SKILL_PREFIX = "paireto";
+const KIRO_SKILL_PREFIX = "crafty";
 
 export interface KiroInstallOptions {
   kiroHome?: string;
@@ -31,9 +31,9 @@ function defaultKiroHome(): string {
 export function kiroInstallPlan(pluginsRoot: string, kiroHome: string): KiroInstallPlan {
   return {
     sourcePlugin: path.join(pluginsRoot, "agent-plugin"),
-    installedPower: path.join(kiroHome, "powers", "installed", "paireto"),
+    installedPower: path.join(kiroHome, "powers", "installed", "crafty"),
     registryFile: path.join(kiroHome, "powers", "installed.json"),
-    hookFile: path.join(kiroHome, "hooks", "paireto.json"),
+    hookFile: path.join(kiroHome, "hooks", "crafty.json"),
     skillsDir: path.join(kiroHome, "skills"),
   };
 }
@@ -48,7 +48,7 @@ function commandFor(root: string, script: string): string {
  * the plan and ends the turn rather than switching to execution, so the FIRST proposal is only
  * visible at Stop. Kiro then runs Stop hooks once per user turn — a hook that asks it to continue
  * does not get a second run — so a revised plan comes back through `switch_to_execution`, which is
- * exactly what Paireto's plan feedback tells the agent to call.
+ * exactly what Crafty's plan feedback tells the agent to call.
  *
  * That same once-per-run limit is why no turn-end REVIEW is registered: the pass is routinely spent
  * on the plan, so a review gated on it would open late or not at all. Kiro reviews on request only.
@@ -59,7 +59,7 @@ export function renderKiroHooks(stagedPower: string): string {
   const stop = commandFor(stagedPower, "on-stop-gate.js");
   const passive = ["SessionStart", "UserPromptSubmit", "PreToolUse", "PostToolUse"].map(
     (trigger) => ({
-      name: `Paireto ${trigger}`,
+      name: `Crafty ${trigger}`,
       trigger,
       action: { type: "command", command: event },
       timeout: 5,
@@ -67,7 +67,7 @@ export function renderKiroHooks(stagedPower: string): string {
     }),
   );
   const fileEvents = ["PostFileCreate", "PostFileSave", "PostFileDelete"].map((trigger) => ({
-    name: `Paireto ${trigger}`,
+    name: `Crafty ${trigger}`,
     trigger,
     action: { type: "command", command: event },
     timeout: 5,
@@ -80,7 +80,7 @@ export function renderKiroHooks(stagedPower: string): string {
         ...passive,
         ...fileEvents,
         {
-          name: "Paireto native Plan review",
+          name: "Crafty native Plan review",
           trigger: "PreToolUse",
           matcher: "^switch_to_execution$",
           action: { type: "command", command: plan },
@@ -88,14 +88,14 @@ export function renderKiroHooks(stagedPower: string): string {
           enabled: true,
         },
         {
-          name: "Paireto Stop event",
+          name: "Crafty Stop event",
           trigger: "Stop",
           action: { type: "command", command: event },
           timeout: 5,
           enabled: true,
         },
         {
-          name: "Paireto plan proposal at turn end",
+          name: "Crafty plan proposal at turn end",
           trigger: "Stop",
           action: { type: "command", command: stop },
           timeout: 345600,
@@ -126,13 +126,13 @@ function findInstalledKiroPower(kiroHome: string): InstalledKiroPower | undefine
   try {
     const plan = kiroInstallPlan("", kiroHome);
     const registry = readKiroPowerRegistry(plan.registryFile);
-    if (!registry.installedPowers.some(isPairetoRegistryEntry)) {
+    if (!registry.installedPowers.some(isCraftyRegistryEntry)) {
       return undefined;
     }
     const parsed = JSON.parse(
       fs.readFileSync(path.join(plan.installedPower, "plugin.json"), "utf8"),
     ) as { name?: unknown; version?: unknown };
-    if (parsed.name === "paireto" && typeof parsed.version === "string") {
+    if (parsed.name === "crafty" && typeof parsed.version === "string") {
       return { root: plan.installedPower, version: parsed.version };
     }
   } catch {
@@ -191,8 +191,8 @@ interface KiroPowerRegistry extends JsonObject {
   installedPowers: unknown[];
 }
 
-function isPairetoRegistryEntry(entry: unknown): boolean {
-  return isJsonObject(entry) && entry.name === "paireto";
+function isCraftyRegistryEntry(entry: unknown): boolean {
+  return isJsonObject(entry) && entry.name === "crafty";
 }
 
 function readKiroPowerRegistry(file: string): KiroPowerRegistry {
@@ -214,10 +214,10 @@ function readKiroPowerRegistry(file: string): KiroPowerRegistry {
 function renderKiroPowerRegistry(file: string): string {
   const current = readKiroPowerRegistry(file);
   const installedPowers = current.installedPowers.filter((entry, index, entries) => {
-    return !isPairetoRegistryEntry(entry) || entries.findIndex(isPairetoRegistryEntry) === index;
+    return !isCraftyRegistryEntry(entry) || entries.findIndex(isCraftyRegistryEntry) === index;
   });
-  if (!installedPowers.some(isPairetoRegistryEntry)) {
-    installedPowers.push({ name: "paireto" });
+  if (!installedPowers.some(isCraftyRegistryEntry)) {
+    installedPowers.push({ name: "crafty" });
   }
   return `${JSON.stringify(
     {

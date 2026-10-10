@@ -1,6 +1,6 @@
 // The HarnessDriver contract: one implementation per harness, feeding the single full-flow test whose
 // steps branch on driver-declared capabilities. A driver launches its real TUI (in tmux) or server
-// and plays the agent side. The test never scrapes terminals — it drives via the real paireto.gate.*
+// and plays the agent side. The test never scrapes terminals — it drives via the real crafty.gate.*
 // commands + the test control plane, and asserts on the socket-observed state and the filesystem.
 
 /** What each step must branch on — verified per-harness. */
