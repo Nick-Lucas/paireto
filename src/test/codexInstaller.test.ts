@@ -58,13 +58,15 @@ suite("Codex bundled plugin contract", () => {
       path.join(bundledPlugin, "skills", "paireto-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(skill.includes("ends in `paireto_review`"));
+    assert.ok(skill.includes("`paireto_review` tool"));
+    assert.ok(skill.includes("client-specific prefix"));
     assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "paireto-plan", "SKILL.md")));
     const guided = fs.readFileSync(
       path.join(bundledPlugin, "skills", "paireto-guided-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(guided.includes("ends in `paireto_start_guided_review`"));
+    assert.ok(guided.includes("`paireto_start_guided_review` tool"));
+    assert.ok(guided.includes("client-specific prefix"));
     // The built server, not the source: this asserts the artifact the installer actually stages.
     // Match on the bare tool names, which survive minification, rather than a source spelling.
     const server = fs.readFileSync(path.join(bundledPlugin, "runtime", "mcp.js"), "utf8");
