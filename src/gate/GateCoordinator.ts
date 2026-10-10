@@ -14,8 +14,8 @@ export type GateKind = "plan" | "review" | "guided";
 /** The active flow behind the shared Approve / Send-Feedback commands. */
 export interface GateSession {
   readonly kind: GateKind;
-  approve(): void | Promise<void>;
-  sendFeedback(): void | Promise<void>;
+  approve(): boolean | Promise<boolean>;
+  sendFeedback(): boolean | Promise<boolean>;
   /** True when there's ≥1 actionable comment queued (drives which gate button shows). */
   hasFeedback(): boolean;
 }
@@ -37,6 +37,7 @@ export interface GateEntry {
 export class GateCoordinator implements vscode.Disposable {
   private readonly entries: GateEntry[] = [];
   private foregroundId?: string;
+  private readonly answered = new Set<string>();
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   /** Fires whenever the set of pending gates or the foreground changes (drives the Agents panel). */
   readonly onDidChange = this.changeEmitter.event;
@@ -56,6 +57,28 @@ export class GateCoordinator implements vscode.Disposable {
 
   get foregroundEntry(): GateEntry | undefined {
     return this.entries.find((e) => e.id === this.foregroundId);
+  }
+
+  isAnswered(): boolean {
+    return this.foregroundId !== undefined && this.answered.has(this.foregroundId);
+  }
+
+  async answer(action: (session: GateSession) => boolean | Promise<boolean>): Promise<void> {
+    const entry = this.foregroundEntry;
+    if (!entry || this.answered.has(entry.id)) {
+      return;
+    }
+    this.answered.add(entry.id);
+    this.changeEmitter.fire();
+    let done = false;
+    try {
+      done = await action(entry.session);
+    } finally {
+      if (!done) {
+        this.answered.delete(entry.id);
+        this.changeEmitter.fire();
+      }
+    }
   }
 
   isActive(): boolean {
@@ -97,6 +120,7 @@ export class GateCoordinator implements vscode.Disposable {
       return;
     }
     this.entries.splice(idx, 1);
+    this.answered.delete(id);
     if (this.foregroundId === id) {
       this.foregroundId = undefined;
       const next = this.entries[this.entries.length - 1];

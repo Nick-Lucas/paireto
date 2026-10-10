@@ -313,7 +313,7 @@
         },
         {
           "command": "paireto.submit",
-          "when": "paireto.planPending || paireto.reviewSessionActive"
+          "when": "(paireto.planPending || paireto.reviewSessionActive) && !paireto.gateAnswered"
         },
         {
           "command": "paireto.plan.addQuestion",
@@ -448,12 +448,12 @@
         },
         {
           "command": "paireto.gate.approve",
-          "when": "resourceScheme == paireto-plan && !paireto.gateHasFeedback",
+          "when": "resourceScheme == paireto-plan && !paireto.gateHasFeedback && !paireto.gateAnswered",
           "group": "navigation@1"
         },
         {
           "command": "paireto.gate.sendFeedback",
-          "when": "resourceScheme == paireto-plan && paireto.gateHasFeedback",
+          "when": "resourceScheme == paireto-plan && paireto.gateHasFeedback && !paireto.gateAnswered",
           "group": "navigation@2"
         }
       ],
@@ -678,12 +678,12 @@
         },
         {
           "command": "paireto.gate.approve",
-          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && !paireto.gateHasFeedback",
+          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && !paireto.gateHasFeedback && !paireto.gateAnswered",
           "group": "navigation@4"
         },
         {
           "command": "paireto.gate.sendFeedback",
-          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && paireto.gateHasFeedback",
+          "when": "view == paireto.main && (paireto.planPending || paireto.reviewSessionActive) && paireto.gateHasFeedback && !paireto.gateAnswered",
           "group": "navigation@5"
         }
       ],

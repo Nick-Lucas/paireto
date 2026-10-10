@@ -221,9 +221,9 @@ export class PlanReviewController implements vscode.Disposable {
     this.changeEmitter.fire();
   }
 
-  private async approve(review: PlanReview): Promise<void> {
+  private async approve(review: PlanReview): Promise<boolean> {
     if (!this.plans.has(review.id)) {
-      return;
+      return false;
     }
 
     const configured = vscode.workspace
@@ -238,12 +238,12 @@ export class PlanReviewController implements vscode.Disposable {
         (nextMode ? ` (mode -> ${nextMode})` : ""),
     );
     this.answeredPlans.delete(review.sessionId);
-    this.registry.fulfill(review.key, { decision: "allow", nextMode });
+    return this.registry.fulfill(review.key, { decision: "allow", nextMode });
   }
 
-  private async sendFeedback(review: PlanReview): Promise<void> {
+  private async sendFeedback(review: PlanReview): Promise<boolean> {
     if (!this.plans.has(review.id)) {
-      return;
+      return false;
     }
     const comments = this.collect(review);
     const codeComments = this.codeFeedback.getPendingComments();
@@ -259,7 +259,7 @@ export class PlanReviewController implements vscode.Disposable {
       void vscode.window.showWarningMessage(
         `No plan comments to send. Add a comment on the plan, or use Approve.${queued}`,
       );
-      return;
+      return false;
     }
 
     let include = false;
@@ -272,11 +272,11 @@ export class PlanReviewController implements vscode.Disposable {
         PLAN_FEEDBACK_ONLY,
       );
       if (!this.plans.has(review.id)) {
-        return; // resolved while the dialog was open
+        return false; // resolved while the dialog was open
       }
       if (choice !== INCLUDE_FILE_COMMENTS && choice !== PLAN_FEEDBACK_ONLY) {
         log.info("plan review feedback cancelled at the file-comment prompt");
-        return;
+        return false;
       }
       include = choice === INCLUDE_FILE_COMMENTS;
     }
@@ -298,7 +298,7 @@ export class PlanReviewController implements vscode.Disposable {
       markdown: review.markdown,
       threads: this.threads.threadsFor(review.uri),
     });
-    this.registry.fulfill(review.key, { decision: "deny", reason });
+    return this.registry.fulfill(review.key, { decision: "deny", reason });
   }
 
   /** Answers whether the comment attached, so a caller is never left waiting for a silent drop. */
@@ -434,8 +434,8 @@ export class PlanReviewController implements vscode.Disposable {
     if (review.previousUri) {
       this.provider.clear(review.previousUri);
     }
-    await this.coordinator.unregister(review.id);
     this.updatePendingContext();
+    await this.coordinator.unregister(review.id);
     this.changeEmitter.fire();
   }
 

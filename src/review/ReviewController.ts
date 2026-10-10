@@ -2066,42 +2066,42 @@ export class ReviewController implements vscode.Disposable {
 
   // ── GateSession (shared Approve / Send-Feedback commands dispatch here while active) ──
   /** Approve: proceed with no changes (the agent continues, no feedback). */
-  async approve(): Promise<void> {
+  async approve(): Promise<boolean> {
     if (!this.activeRequestId) {
-      return;
+      return false;
     }
     if (this.getPendingComments().length > 0) {
       void vscode.window.showWarningMessage(
         "This review has feedback that has not been sent. Send it before approving.",
       );
-      return;
+      return false;
     }
     // On approval we clear the feedback session since everything is considered done
     this.feedback?.clear();
     log.info(`review approved for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}`);
-    this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
+    return this.gate.fulfill(this.activeRequestId, { status: "cancelled", feedback: "" });
   }
 
-  async sendFeedback(): Promise<void> {
+  async sendFeedback(): Promise<boolean> {
     if (!this.activeRequestId) {
-      return;
+      return false;
     }
     const pending = this.getPendingComments();
     if (pending.length === 0) {
       void vscode.window.showWarningMessage(
         "No comments to send. Add a comment, or Approve to proceed with no changes.",
       );
-      return;
+      return false;
     }
     const comments = await this.markCommentsSent(pending);
     if (comments.length === 0) {
-      return;
+      return false;
     }
     const feedback = serialiseRejectedReviewFeedback(comments, this.isMultiRepository());
     log.info(
       `review feedback sent for agent ${this.activeSessionId?.slice(0, 8) ?? "unknown"}: ${comments.length} comment(s)`,
     );
-    this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
+    return this.gate.fulfill(this.activeRequestId, { status: "submitted", feedback });
   }
 
   /** True when there's ≥1 comment to send (drives which gate button shows). */
