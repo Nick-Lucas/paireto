@@ -33,8 +33,8 @@ const PLAN_PROMPT =
   "Plan how to add a file hello.txt containing 'hi'. Keep the plan to one short step. " +
   "Do not ask clarifying questions.";
 const PLAN_FEEDBACK = "Also add bye.txt containing 'bye', then resubmit.";
-const REVIEW_FEEDBACK =
-  "Can you also create note.txt containing 'note'? Reply with what you changed.";
+const REVIEW_FEEDBACK = "Also create note.txt containing 'note'.";
+const REVIEW_QUESTION = "Why does this file contain 'bye'?";
 
 const repoRoot = requireEnv("PAIRETO_E2E_SANDBOX");
 
@@ -157,6 +157,11 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       if (!(await inspect()).feedback.some((item) => item.id === RECORDED_FEEDBACK_ID)) {
         throw new Error(`the E2E feedback ID was not retained\n${await dump()}`);
       }
+      await ensureComment(
+        { surface: "review", kind: "question", path: "bye.txt", text: REVIEW_QUESTION },
+        (snap) => snap.commentBucketCount > 1,
+        "the review question to register",
+      );
       await driveUntil(
         "paireto.gate.sendFeedback",
         firstReview.id,
@@ -164,12 +169,15 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         "the review gate to resolve on send-feedback",
       );
       await wait("note.txt to be written", () => Promise.resolve(fileIs("note.txt", "note")));
-      await wait("the agent reply to appear on the settled comment", async () => {
-        const feedback = (await inspect()).feedback[0];
-
+      await wait("the agent reply to appear on the open question", async () => {
+        const question = (await inspect()).feedback.find((item) => item.id !== RECORDED_FEEDBACK_ID);
         return (
-          feedback?.delivery === "sent" && feedback.resolved && feedback.itemKinds.includes("reply")
+          question?.delivery === "sent" && !question.resolved && question.itemKinds.includes("reply")
         );
+      });
+      await wait("the comment to settle on send", async () => {
+        const comment = (await inspect()).feedback.find((item) => item.id === RECORDED_FEEDBACK_ID);
+        return comment?.delivery === "sent" && comment.resolved;
       });
       log.push("note.txt present");
     });
@@ -183,6 +191,13 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         },
       );
       log.push(`review gate ${secondReview.id}`);
+      const comment = (await inspect()).feedback.find((item) => item.id === RECORDED_FEEDBACK_ID);
+      if (comment?.itemKinds.includes("reply")) {
+        throw new Error(`the agent replied to a comment\n${await dump()}`);
+      }
+      if (!fileIs("bye.txt", "bye")) {
+        throw new Error(`the agent changed bye.txt for a question\n${await dump()}`);
+      }
       await wait("the feedback edit to be available for review", async () =>
         (await inspect()).repositories.some((repo) =>
           [...repo.stagedPaths, ...repo.unstagedPaths].includes("note.txt"),

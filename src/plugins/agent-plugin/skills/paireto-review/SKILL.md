@@ -9,8 +9,8 @@ Call the Paireto MCP tool whose name ends in `paireto_review` now. Its client-sp
 vary. It opens Paireto's review panels in the connected VS Code window and blocks until the user
 submits feedback or approves the changes. Wait for it to return.
 
-When it returns:
+If it returns feedback, act on each item by its kind:
 
-If it returns feedback, address every item.
-
-Reply to questions with the `paireto_reply_to_feedback` tool.
+- **Question**: answer it with the Paireto MCP tool whose name ends in `paireto_reply_to_feedback`. Do not
+  change code for a question.
+- **Comment**: make the code changes it asks for. Do not reply to a comment.
