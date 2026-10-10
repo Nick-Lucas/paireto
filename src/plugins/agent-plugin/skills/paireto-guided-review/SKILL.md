@@ -24,6 +24,10 @@ Group the changed files into changesets representing logical threads or features
 Call the Paireto MCP tool whose name ends in `paireto_start_guided_review` once, with every
 changeset and the `compareTo` from step 1. Its client-specific prefix can vary. It blocks until the reviewer responds.
 
-If it returns comments, address every item with code changes where relevant.
+## 5. Act on the feedback
 
-Reply to questions with the `mcp__paireto__paireto_reply_to_feedback` tool.
+If it returns feedback, act on each item by its kind:
+
+- **Question**: answer it with the Paireto MCP tool whose name ends in `paireto_reply_to_feedback`. Do not
+  change code for a question.
+- **Comment**: make the code changes it asks for. Do not reply to a comment.

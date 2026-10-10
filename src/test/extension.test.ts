@@ -596,7 +596,10 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Each item includes its feedback ID, file:line and kind, quoted line, and comment. Act on each item by its kind:
+        - [QUESTION]: answer it with paireto_reply_to_feedback. Do not change code for a question.
+        - [COMMENT]: make the code changes it asks for. Do not reply to a comment.
+        The reviewer closes each item themselves.
 
         Feedback ID: x
         src/a.ts:1  [COMMENT]
@@ -615,7 +618,10 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Each item includes its feedback ID, file:line and kind, quoted line, and comment. Act on each item by its kind:
+        - [QUESTION]: answer it with paireto_reply_to_feedback. Do not change code for a question.
+        - [COMMENT]: make the code changes it asks for. Do not reply to a comment.
+        The reviewer closes each item themselves.
 
         Feedback ID: q
         src/a.ts:1  [QUESTION]
@@ -646,7 +652,10 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Each item includes its feedback ID, file:line and kind, quoted line, and comment. Act on each item by its kind:
+        - [QUESTION]: answer it with paireto_reply_to_feedback. Do not change code for a question.
+        - [COMMENT]: make the code changes it asks for. Do not reply to a comment.
+        The reviewer closes each item themselves.
 
         Feedback ID: x
         src/a.ts:1  [QUESTION]
@@ -676,7 +685,10 @@ suite("serialiseRejectedReviewFeedback", () => {
       dedent`
         Code review feedback received from the user:
 
-        Address these review comments. Each item includes its feedback ID, file:line and kind, quoted line, and comment. Reply with paireto_reply_to_feedback to tell the reviewer what you did; they close each item themselves.
+        Each item includes its feedback ID, file:line and kind, quoted line, and comment. Act on each item by its kind:
+        - [QUESTION]: answer it with paireto_reply_to_feedback. Do not change code for a question.
+        - [COMMENT]: make the code changes it asks for. Do not reply to a comment.
+        The reviewer closes each item themselves.
 
         Feedback ID: a
         /workspace/api/src/a.ts:1  [COMMENT]

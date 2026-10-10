@@ -20,6 +20,9 @@ Group the changed files into changesets representing logical threads or features
 
 Call the `paireto_start_guided_review` tool once, with every changeset and the `compareTo` from step 1. It blocks until the reviewer responds.
 
-If it returns comments, address every item with code changes where relevant.
+## 5. Act on the feedback
 
-Reply to questions with the `paireto_reply_to_feedback` tool.
+If it returns feedback, act on each item by its kind:
+
+- **Question**: answer it with the `paireto_reply_to_feedback` tool. Do not change code for a question.
+- **Comment**: make the code changes it asks for. Do not reply to a comment.
