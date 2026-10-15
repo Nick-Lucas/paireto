@@ -1104,7 +1104,7 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async discardFiles(files: RepoChangedFile[]): Promise<void> {
-    if (!files.length) {
+    if (!files.length || !(await this.confirmDiscard(files))) {
       return;
     }
     const dirty = dirtyTargetDocs(vscode.workspace.textDocuments, files);
@@ -1126,6 +1126,23 @@ export class ReviewController implements vscode.Disposable {
         repoFiles.map((f) => f.path),
       );
     }
+  }
+
+  private async confirmDiscard(files: RepoChangedFile[]): Promise<boolean> {
+    const DISCARD = "Discard";
+    const deletesUntracked = files.some((f) => f.status === "U");
+    const choice = await vscode.window.showWarningMessage(
+      files.length === 1
+        ? `Discard changes in "${files[0].path}"?`
+        : `Discard changes in ${files.length} files?`,
+      {
+        modal: true,
+        detail:
+          (deletesUntracked ? "Untracked files will be deleted. " : "") + "This cannot be undone.",
+      },
+      DISCARD,
+    );
+    return choice === DISCARD;
   }
 
   /**
