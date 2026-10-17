@@ -237,7 +237,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   /** Create the sidebar tree view (kept here so `reveal` can select the row of the focused diff). */
   register(): vscode.TreeView<Node> {
-    this.view = vscode.window.createTreeView(Views.main, { treeDataProvider: this });
+    this.view = vscode.window.createTreeView(Views.main, {
+      treeDataProvider: this,
+      canSelectMany: true,
+    });
     this.subs.push(this.view);
     this.updateBadge();
     return this.view;

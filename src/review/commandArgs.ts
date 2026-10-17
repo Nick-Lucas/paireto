@@ -135,6 +135,27 @@ export function withArg<S extends z.ZodTypeAny>(
   };
 }
 
+export function withSelection<S extends z.ZodTypeAny>(
+  schema: S,
+  run: (values: z.infer<S>[]) => unknown,
+): (arg: unknown, selection?: unknown) => unknown {
+  const parseClicked = withArg(schema, (value) => value);
+  return (arg: unknown, selection?: unknown) => {
+    const clicked = parseClicked(arg) as z.infer<S>;
+    if (!Array.isArray(selection) || !selection.includes(arg)) {
+      return run([clicked]);
+    }
+    const values = selection.flatMap((item) => {
+      if (item === arg) {
+        return [clicked];
+      }
+      const value = readArg(schema, item);
+      return value === undefined ? [] : [value];
+    });
+    return run(values);
+  };
+}
+
 /** For a caller whose argument is genuinely optional — "not that shape" is one of the answers it
  *  handles, so there is no error to report. Command handlers use {@link withArg} instead. */
 export function readArg<S extends z.ZodTypeAny>(schema: S, arg: unknown): z.infer<S> | undefined {
