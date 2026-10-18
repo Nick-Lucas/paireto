@@ -48,8 +48,9 @@ export function agentPluginConfigs(ctx: PluginBuildContext): BuildOptions[] {
     ),
     assetOnlyBundle(
       ctx,
-      "src/plugins/agent-plugin/com.openai.codex/skills",
+      "src/plugins/agent-plugin/skills",
       `${OUT}/com.openai.codex/skills`,
+      (text) => text.replaceAll(/`(paireto_[a-z_]+)`/g, "`mcp__paireto__$1`"),
     ),
     assetOnlyBundle(
       ctx,
