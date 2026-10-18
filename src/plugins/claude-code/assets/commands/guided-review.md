@@ -4,7 +4,7 @@ description: Prepare an interactive guided review plan for a human reviewer and 
 
 # Paireto Guided Review
 
-Prepare a review plan so a human reviewer can review these changes, then hand it to Paireto. Paireto tool names can have a client-specific prefix.
+Prepare a review plan so a human reviewer can review these changes, then hand it to Paireto.
 
 ## 1. Choose what to compare
 
@@ -20,11 +20,11 @@ Group the changed files into changesets representing logical threads or features
 
 ## 4. Submit
 
-Call the `paireto_start_guided_review` tool once, with every changeset and the `compareTo` from step 1. It opens the review in the connected VS Code window and blocks until the reviewer sends feedback or approves the changes. This is expected. Wait for it to return.
+Call the `mcp__plugin_paireto_bridge__paireto_start_guided_review` tool once, with every changeset and the `compareTo` from step 1. It opens the review in the connected VS Code window and blocks until the reviewer sends feedback or approves the changes. This is expected. Wait for it to return.
 
 ## 5. Act on the feedback
 
 If it returns feedback, act on each item by its kind:
 
-- **Question**: answer it with the `paireto_reply_to_feedback` tool. Do not change code for a question.
+- **Question**: answer it with the `mcp__plugin_paireto_bridge__paireto_reply_to_feedback` tool. Do not change code for a question.
 - **Comment**: make the code changes it asks for. Do not reply to a comment.

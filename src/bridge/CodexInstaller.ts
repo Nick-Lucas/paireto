@@ -95,10 +95,12 @@ export function materializeCodexPlugin(sourcePlugin: string, stagedPlugin: strin
   fs.cpSync(sourcePlugin, stagedPlugin, { recursive: true });
 
   const namespace = path.join(stagedPlugin, CODEX_NAMESPACE);
-  for (const entry of [".codex-plugin", ".mcp.json", "hooks"]) {
+  for (const entry of [".codex-plugin", ".mcp.json", "hooks", "skills"]) {
     const from = path.join(namespace, entry);
     if (fs.existsSync(from)) {
-      fs.renameSync(from, path.join(stagedPlugin, entry));
+      const to = path.join(stagedPlugin, entry);
+      fs.rmSync(to, { recursive: true, force: true });
+      fs.renameSync(from, to);
     }
   }
   fs.rmSync(path.join(stagedPlugin, "plugin.json"), { force: true });

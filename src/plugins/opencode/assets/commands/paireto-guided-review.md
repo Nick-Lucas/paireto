@@ -4,7 +4,7 @@ description: Prepare an interactive guided review plan for a human reviewer and 
 
 # Paireto Guided Review
 
-Prepare a review plan so a human reviewer can review these changes, then hand it to Paireto. Paireto tool names can have a client-specific prefix.
+Prepare a review plan so a human reviewer can review these changes, then hand it to Paireto.
 
 ## 1. Choose what to compare
 

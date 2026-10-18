@@ -48,6 +48,11 @@ export function agentPluginConfigs(ctx: PluginBuildContext): BuildOptions[] {
     ),
     assetOnlyBundle(
       ctx,
+      "src/plugins/agent-plugin/com.openai.codex/skills",
+      `${OUT}/com.openai.codex/skills`,
+    ),
+    assetOnlyBundle(
+      ctx,
       "src/plugins/agent-plugin/com.openai.codex/hooks/hooks.json",
       `${OUT}/com.openai.codex/hooks/hooks.json`,
     ),

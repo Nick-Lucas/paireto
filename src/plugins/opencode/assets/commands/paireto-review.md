@@ -4,7 +4,7 @@ description: Start an interactive code review with a human reviewer and act on t
 
 # Paireto Review
 
-Start an interactive code review of the current changes with a human reviewer. Paireto tool names can have a client-specific prefix.
+Start an interactive code review of the current changes with a human reviewer.
 
 ## 1. Submit
 

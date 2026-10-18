@@ -170,9 +170,13 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       );
       await wait("note.txt to be written", () => Promise.resolve(fileIs("note.txt", "note")));
       await wait("the agent reply to appear on the open question", async () => {
-        const question = (await inspect()).feedback.find((item) => item.id !== RECORDED_FEEDBACK_ID);
+        const question = (await inspect()).feedback.find(
+          (item) => item.id !== RECORDED_FEEDBACK_ID,
+        );
         return (
-          question?.delivery === "sent" && !question.resolved && question.itemKinds.includes("reply")
+          question?.delivery === "sent" &&
+          !question.resolved &&
+          question.itemKinds.includes("reply")
         );
       });
       await wait("the comment to settle on send", async () => {
