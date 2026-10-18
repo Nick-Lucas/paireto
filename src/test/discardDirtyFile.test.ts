@@ -1,8 +1,8 @@
 // Discarding a file whose diff tab still holds unsaved edits. The change goes back to the committed
 // content, so the file leaves every group and its tab has nothing left to show — but a tab with
 // unsaved edits cannot be closed, because VS Code raises its own save dialog for it. The discard
-// therefore throws those edits away with the rest of the change. Driven through the activated
-// extension's real commands, like stageDirtyFile.test.ts.
+// therefore throws those edits away with the rest of the change, once the user confirms the discard.
+// Driven through the activated extension's real commands, like stageDirtyFile.test.ts.
 
 import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
@@ -50,7 +50,7 @@ function reviewDiffTabs(name: string): vscode.Tab[] {
   return tabs;
 }
 
-/** Record every warning raised, so a test can pin that the discard asks the user nothing. */
+/** Record every warning raised and answer each with the given choice. */
 function stubWarnings(answer: string | undefined): { seen: SeenWarning[]; restore: () => void } {
   const seen: SeenWarning[] = [];
   const real = vscode.window.showWarningMessage;
@@ -134,7 +134,7 @@ suite("discarding a file with unsaved changes", () => {
     const root = await activateForFixture();
     const name = "discard-dirty-modified.txt";
     const { file, doc } = await openDirtyDiff(root, name);
-    warnings = stubWarnings(undefined);
+    warnings = stubWarnings("Discard");
 
     await vscode.commands.executeCommand("paireto.review.discard", file);
 
@@ -153,12 +153,12 @@ suite("discarding a file with unsaved changes", () => {
     );
   });
 
-  test("the discard asks nothing: running the command is the decision", async function () {
+  test("the discard asks for a modal confirmation first", async function () {
     this.timeout(60_000);
     const root = await activateForFixture();
-    const name = "discard-no-prompt.txt";
+    const name = "discard-confirm.txt";
     const { file } = await openDirtyDiff(root, name);
-    warnings = stubWarnings(undefined);
+    warnings = stubWarnings("Discard");
 
     await vscode.commands.executeCommand("paireto.review.discard", file);
 
@@ -166,7 +166,34 @@ suite("discarding a file with unsaved changes", () => {
       () => (fs.readFileSync(path.join(root, name), "utf8") === "one\n" ? "yes" : undefined),
       20_000,
     );
-    assert.strictEqual(restored, "yes", "the discard must run without a confirmation");
-    assert.deepStrictEqual(warnings.seen, [], "the discard must raise no dialog");
+    assert.strictEqual(
+      restored,
+      "yes",
+      "a confirmed discard must take the file back to its commit",
+    );
+    assert.strictEqual(warnings.seen.length, 1, "the discard must ask exactly once");
+    assert.strictEqual(warnings.seen[0].options?.modal, true, "the confirmation must be modal");
+    assert.ok(
+      warnings.seen[0].message.includes(name),
+      "the confirmation must name the file it discards",
+    );
+  });
+
+  test("a dismissed confirmation keeps the change and the unsaved edits", async function () {
+    this.timeout(60_000);
+    const root = await activateForFixture();
+    const name = "discard-dismissed.txt";
+    const { file, doc } = await openDirtyDiff(root, name);
+    warnings = stubWarnings(undefined);
+
+    await vscode.commands.executeCommand("paireto.review.discard", file);
+
+    assert.strictEqual(warnings.seen.length, 1, "the discard must ask before it acts");
+    assert.strictEqual(
+      fs.readFileSync(path.join(root, name), "utf8"),
+      "one\ntwo\n",
+      "a dismissed discard must leave the file on disk as it was",
+    );
+    assert.strictEqual(doc.isDirty, true, "a dismissed discard must keep the unsaved edits");
   });
 });
