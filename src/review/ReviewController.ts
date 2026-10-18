@@ -48,6 +48,7 @@ import {
   FilesArg,
   GuidedRowArg,
   withArg,
+  withSelection,
 } from "./commandArgs.js";
 import {
   ChangesetDocProvider,
@@ -279,15 +280,17 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
       reg(
         Commands.reviewOpenDiff,
-        withArg(FileArg, (file) => this.openDiff(file)),
+        withSelection(FileArg, (files) => this.openDiffFiles(files)),
       ),
       reg(
         Commands.reviewOpenFile,
-        withArg(FileArg, (file) => this.openFile(file)),
+        withSelection(FileArg, (files) => this.openFiles(files)),
       ),
       reg(
         Commands.reviewCopyPath,
-        withArg(FileArg, (file) => vscode.env.clipboard.writeText(file.path)),
+        withSelection(FileArg, (files) =>
+          vscode.env.clipboard.writeText([...new Set(files.map((file) => file.path))].join("\n")),
+        ),
       ),
       reg(
         Commands.reviewRevealInExplorer,
@@ -300,15 +303,15 @@ export class ReviewController implements vscode.Disposable {
       ),
       reg(
         Commands.reviewStage,
-        withArg(FilesArg, (files) => this.stageFiles(files)),
+        withSelection(FilesArg, (lists) => this.stageFiles(selectedFiles(lists, "unstaged"))),
       ),
       reg(
         Commands.reviewUnstage,
-        withArg(FilesArg, (files) => this.unstageFiles(files)),
+        withSelection(FilesArg, (lists) => this.unstageFiles(selectedFiles(lists, "staged"))),
       ),
       reg(
         Commands.reviewDiscard,
-        withArg(FilesArg, (files) => this.discardFiles(files)),
+        withSelection(FilesArg, (lists) => this.discardFiles(selectedFiles(lists, "unstaged"))),
       ),
       reg(
         Commands.guidedReviewOpenFile,
@@ -1390,10 +1393,24 @@ export class ReviewController implements vscode.Disposable {
     }
   }
 
-  private async openFile(file?: RepoChangedFile): Promise<void> {
-    if (!file) {
-      return;
+  private async openFiles(files: RepoChangedFile[]): Promise<void> {
+    const options = files.length > 1 ? { preview: false } : undefined;
+    for (const file of files) {
+      await this.openFile(file, options);
     }
+  }
+
+  private async openDiffFiles(files: RepoChangedFile[]): Promise<void> {
+    const options = files.length > 1 ? { preview: false } : undefined;
+    for (const file of files) {
+      await this.openDiff(file, options);
+    }
+  }
+
+  private async openFile(
+    file: RepoChangedFile,
+    options?: vscode.TextDocumentShowOptions,
+  ): Promise<void> {
     const uri = vscode.Uri.file(join(file.repoRoot, file.path));
     // A diff tab showing this file as its modified side satisfies vscode.open's "already open"
     // check without ever showing the plain file — close any such tab first (in any group) so Open
@@ -1406,7 +1423,7 @@ export class ReviewController implements vscode.Disposable {
     );
     // `vscode.open` (not showTextDocument) lets VS Code pick the editor for the file type — image
     // preview, etc. — instead of forcing a text editor, matching the native git panel's "Open File".
-    await vscode.commands.executeCommand("vscode.open", uri);
+    await vscode.commands.executeCommand("vscode.open", uri, options);
   }
 
   private async openDiff(
@@ -2281,6 +2298,18 @@ async function fileExists(target: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function selectedFiles(lists: RepoChangedFile[][], group: FileGroup): RepoChangedFile[] {
+  const seen = new Set<string>();
+  return lists.flat().filter((file) => {
+    const key = `${file.repoRoot}\0${file.path}`;
+    if (file.group !== group || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
 }
 
 function filesByRoot(files: RepoChangedFile[]): Map<string, RepoChangedFile[]> {
