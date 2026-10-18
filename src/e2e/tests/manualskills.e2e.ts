@@ -75,7 +75,6 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         sessionId,
         log,
         planMode: false,
-        loadPluginMcp: true,
         completionMarker: FEEDBACK_FILE,
       });
     });
