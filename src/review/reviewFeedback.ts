@@ -35,8 +35,10 @@ export function serialiseRejectedReviewFeedback(
     Code review feedback received from the user:
 
     Each item includes its feedback ID, file:line and kind, quoted line, and comment. Act on each item by its kind:
+
     - [QUESTION]: answer it with paireto_reply_to_feedback. Do not change code for a question.
     - [COMMENT]: make the code changes it asks for. Do not reply to a comment.
+
     The reviewer closes each item themselves.
 
     ${rendered}
