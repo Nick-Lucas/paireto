@@ -3,7 +3,6 @@
 // the keychain OAuth credential (or ANTHROPIC_API_KEY in CI) — built by buildClaudeHome, contents
 // never logged, shredded in dispose.
 //
-import * as fs from "node:fs";
 import * as path from "node:path";
 
 import { resolveMode } from "../mockserver/mode.js";
@@ -44,15 +43,15 @@ const PLAN_FILE_EDIT_PERMISSION = /do you want to (?:make this edit to|create) p
 const PERMISSION_POLL_MS = 500;
 /**
  * Tools pre-approved outside plan mode, so no run depends on scraping a permission dialog it does not
- * otherwise need. The bundled MCP tools are named as Claude addresses them (`mcp__<server>__<tool>`,
- * where the server key is the one in the plugin's own .mcp.json). A user answers each of these once
- * per project; the driver just answers them up front.
+ * otherwise need. The bundled MCP tools are named as Claude addresses a plugin's tools
+ * (`mcp__plugin_<plugin>_<server>__<tool>`, where the server key is the one in the plugin's own
+ * .mcp.json). A user answers each of these once per project; the driver just answers them up front.
  */
 const PRE_APPROVED_TOOLS = [
-  "mcp__bridge__paireto_review",
-  "mcp__bridge__paireto_start_guided_review",
-  "mcp__bridge__paireto_reply_to_feedback",
-  "mcp__bridge__paireto_resolve_feedback",
+  "mcp__plugin_paireto_bridge__paireto_review",
+  "mcp__plugin_paireto_bridge__paireto_start_guided_review",
+  "mcp__plugin_paireto_bridge__paireto_reply_to_feedback",
+  "mcp__plugin_paireto_bridge__paireto_resolve_feedback",
   "Write",
   "Edit",
 ];
@@ -104,6 +103,7 @@ export class ClaudeDriver implements HarnessDriver {
     env.DISABLE_TELEMETRY = "1";
     env.DISABLE_ERROR_REPORTING = "1";
     env.DISABLE_AUTOUPDATER = "1";
+    env.ENABLE_CLAUDEAI_MCP_SERVERS = "false";
     // Record keeps Claude's real OAuth token; check uses the fake local credential from buildClaudeHome.
     Object.assign(env, proxy.env);
     this.log(`mode=${mode}: HTTPS_PROXY=${proxy.url} (+CA trust)`);
@@ -116,19 +116,8 @@ export class ClaudeDriver implements HarnessDriver {
       // Outside plan mode the agent has to read the repo unattended; `auto` is the mode Paireto
       // itself puts an agent into after a plan approval, so it is a state a user's session reaches.
       planMode ? "plan" : "auto",
-      // Load NO external (account/user/project) MCP servers: their tool set varies run-to-run and
-      // Claude lists it in a `<system-reminder>` inside the first user message, so it would make every
-      // /v1/messages body non-reproducible for replay. Also removes all /v1/mcp* traffic from fixtures.
-      // With --mcp-config alongside it, exactly the bundled server loads and nothing else.
-      "--strict-mcp-config",
-      ...(ctx.loadPluginMcp
-        ? [
-            "--mcp-config",
-            shellQuote(this.writePluginMcpConfig(pluginDir)),
-            "--allowedTools",
-            shellQuote(PRE_APPROVED_TOOLS.join(",")),
-          ]
-        : []),
+      "--allowedTools",
+      shellQuote(PRE_APPROVED_TOOLS.join(",")),
       // A fixed session id keeps session-derived values (the plan-file slug Claude embeds in
       // the first message) are identical between record and check.
       "--session-id",
@@ -154,16 +143,6 @@ export class ClaudeDriver implements HarnessDriver {
     await this.waitForReady();
     this.log(`prompt: ${text}`);
     await this.tmux.typeLine(text);
-  }
-
-  /** The bundled plugin's own `.mcp.json` with `${CLAUDE_PLUGIN_ROOT}` already resolved: that
-   *  placeholder is expanded for a plugin's own config, not for one passed via `--mcp-config`. */
-  private writePluginMcpConfig(pluginDir: string): string {
-    const file = path.join(this.home?.env.CLAUDE_CONFIG_DIR ?? pluginDir, "plugin-mcp.json");
-    const template = fs.readFileSync(path.join(pluginDir, ".mcp.json"), "utf8");
-    fs.writeFileSync(file, template.replaceAll("${CLAUDE_PLUGIN_ROOT}", pluginDir));
-    this.log(`mcp-config: ${file} (bundled server, plugin root ${pluginDir})`);
-    return file;
   }
 
   /**

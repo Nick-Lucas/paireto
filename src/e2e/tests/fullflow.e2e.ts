@@ -63,7 +63,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       // / tmux) is a hard FAIL with the reason — never a silent skip.
       await requireDriver(driver, harness);
       const sessionId = `${harness}-${crypto.randomBytes(4).toString("hex")}`;
-      await driver.launch({ repoRoot, sessionId, log, loadPluginMcp: true });
+      await driver.launch({ repoRoot, sessionId, log });
       await driver.enterPlanMode();
     });
 
