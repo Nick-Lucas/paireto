@@ -2,6 +2,7 @@ import * as assert from "node:assert";
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { mock } from "node:test";
 
 import * as vscode from "vscode";
 
@@ -127,8 +128,14 @@ suite("changes list multi-select", () => {
     const a = node(changedFile(root, "multi-discard-a.txt", "unstaged"));
     const b = node(changedFile(root, "multi-discard-b.txt", "unstaged"));
 
-    await vscode.commands.executeCommand("paireto.review.discard", a, [a, b]);
+    const warning = mock.method(vscode.window, "showWarningMessage", async () => "Discard");
+    try {
+      await vscode.commands.executeCommand("paireto.review.discard", a, [a, b]);
+    } finally {
+      warning.mock.restore();
+    }
 
+    assert.strictEqual(warning.mock.callCount(), 1);
     assert.strictEqual(fs.readFileSync(path.join(root, "multi-discard-a.txt"), "utf8"), "one\n");
     assert.strictEqual(fs.readFileSync(path.join(root, "multi-discard-b.txt"), "utf8"), "one\n");
   });
