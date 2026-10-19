@@ -8,7 +8,8 @@ import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
 export const FEEDBACK_REPLY_TOOL_NAME = "paireto_reply_to_feedback";
 
 export const FEEDBACK_REPLY_TOOL_DESCRIPTION =
-  "Add an agent reply to one Paireto feedback item. Use the feedback ID returned by a review.";
+  "Answer one Paireto review question. Use the feedback ID returned by a review. Do not use this " +
+  "for a comment: make the code changes the comment asks for and do not reply.";
 
 export const FeedbackReplyArgs = z.object({
   feedbackId: z.string().trim().min(1).describe("The stable feedback ID."),
