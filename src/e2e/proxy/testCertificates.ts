@@ -24,6 +24,7 @@ const HOSTS = [
   "runtime.eu-central-1.kiro.dev",
   "management.us-east-1.kiro.dev",
   "management.eu-central-1.kiro.dev",
+  "prod.us-east-1.auth.desktop.kiro.dev",
   "registry.npmjs.org",
   "models.dev",
   // OpenCode resolves its model catalogue from either host. An unlisted host fails the TLS handshake
