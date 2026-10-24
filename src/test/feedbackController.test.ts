@@ -62,6 +62,7 @@ const NO_CHANGES: ChangesModel = {
   staged: [],
   unstaged: [],
   committed: [],
+  net: [],
   compareLabel: "main",
   compareRef: null,
 };

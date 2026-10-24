@@ -25,6 +25,7 @@ import { PlanReviewController } from "./plan/PlanReviewController.js";
 import { canonicalize } from "./protocol/paths.js";
 import { ReviewContentProvider } from "./review/ReviewContentProvider.js";
 import { ReviewController } from "./review/ReviewController.js";
+import { SeenFiles } from "./review/SeenFiles.js";
 import { FeedbackSession } from "./review/feedback/FeedbackSession.js";
 import {
   createFeedbackRebuilder,
@@ -109,9 +110,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewController,
   );
 
+  const seenFiles = new SeenFiles(context.workspaceState);
   const mainTree = new MainTreeProvider(
     agents,
     reviewController,
+    seenFiles,
     planReview,
     coordinator,
     locator,
@@ -153,6 +156,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     activityPublisher,
     reviewContent,
     reviewController,
+    seenFiles,
     mainTree,
     installStatus,
     switcher,

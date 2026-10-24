@@ -76,6 +76,7 @@ function repository(files: RepoChangedFile[]): RepositoryReviewState {
       staged: files.filter((f) => f.group === "staged"),
       unstaged: files.filter((f) => f.group === "unstaged"),
       committed: files.filter((f) => f.group === "committed"),
+      net: [],
       compareLabel: "HEAD",
       compareRef: null,
     },

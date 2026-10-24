@@ -10,6 +10,8 @@ export type { CompareTo, CompareToKind } from "./protocol/types.js";
 /** How the Changed Files list is laid out. */
 export type FileLayout = "tree" | "flat";
 
+export type ChangesMode = "staging" | "delta" | "review";
+
 /** Headline agent state derived from Claude hook telemetry; drives the status-bar glyph. */
 export type AgentState =
   | "idle"

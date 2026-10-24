@@ -4,21 +4,21 @@
 
 import type { ChangedFile } from "../git/DiffService.js";
 
-export type TreeEntry =
-  | { type: "folder"; name: string; path: string; children: TreeEntry[] }
-  | { type: "file"; file: ChangedFile };
+export type TreeEntry<F extends { path: string } = ChangedFile> =
+  | { type: "folder"; name: string; path: string; children: TreeEntry<F>[] }
+  | { type: "file"; file: F };
 
-interface MutFolder {
-  folders: Map<string, MutFolder>;
-  files: ChangedFile[];
+interface MutFolder<F> {
+  folders: Map<string, MutFolder<F>>;
+  files: F[];
 }
 
-function emptyFolder(): MutFolder {
+function emptyFolder<F>(): MutFolder<F> {
   return { folders: new Map(), files: [] };
 }
 
-export function buildFileTree(files: ChangedFile[]): TreeEntry[] {
-  const root = emptyFolder();
+export function buildFileTree<F extends { path: string }>(files: F[]): TreeEntry<F>[] {
+  const root = emptyFolder<F>();
   for (const file of files) {
     const parts = file.path.split("/");
     parts.pop(); // drop the file name; keep only folder segments
@@ -37,15 +37,15 @@ export function buildFileTree(files: ChangedFile[]): TreeEntry[] {
 }
 
 /** All files at or below an entry — used to stage/unstage/discard a whole folder at once. */
-export function filesInEntry(entry: TreeEntry): ChangedFile[] {
+export function filesInEntry<F extends { path: string }>(entry: TreeEntry<F>): F[] {
   if (entry.type === "file") {
     return [entry.file];
   }
   return entry.children.flatMap(filesInEntry);
 }
 
-function toEntries(node: MutFolder, prefix: string): TreeEntry[] {
-  const folders: TreeEntry[] = [];
+function toEntries<F extends { path: string }>(node: MutFolder<F>, prefix: string): TreeEntry<F>[] {
+  const folders: TreeEntry<F>[] = [];
   for (const [name, child] of [...node.folders.entries()].sort(([a], [b]) => a.localeCompare(b))) {
     let label = name;
     let folder = child;
@@ -59,7 +59,7 @@ function toEntries(node: MutFolder, prefix: string): TreeEntry[] {
     }
     folders.push({ type: "folder", name: label, path, children: toEntries(folder, path) });
   }
-  const fileEntries: TreeEntry[] = node.files
+  const fileEntries: TreeEntry<F>[] = node.files
     .slice()
     .sort((a, b) => a.path.localeCompare(b.path))
     .map((file) => ({ type: "file", file }));

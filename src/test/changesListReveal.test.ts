@@ -37,6 +37,7 @@ function state(groups: Partial<Record<FileGroup, RepoChangedFile[]>>): ReviewSta
   return {
     compareTo: { kind: "head" },
     layout: "flat",
+    mode: "staging",
     repositories: [
       {
         repoRoot: REPO,
@@ -45,6 +46,7 @@ function state(groups: Partial<Record<FileGroup, RepoChangedFile[]>>): ReviewSta
           staged: [],
           unstaged: [],
           committed: [],
+          net: [],
           compareLabel: "HEAD",
           compareRef: null,
           ...groups,

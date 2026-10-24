@@ -31,10 +31,12 @@ import { getOpeningComment, type ThreadItem, type ReviewThread } from "../review
 import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
 import type { SetupPrompt } from "../welcome/installStatus.js";
 import type { AgentSession } from "../agents/AgentSession.js";
-import type { AgentState, FileGroup } from "../types.js";
+import type { AgentState, ChangesMode, FileGroup } from "../types.js";
+import { buildDelta, stagingFlags, type DeltaFile, type StageState } from "../review/delta.js";
+import type { SeenFiles } from "../review/SeenFiles.js";
 import { repoKey } from "../protocol/paths.js";
 import { describeCompareTo } from "../protocol/guidedReview.js";
-import { buildFileTree, type TreeEntry } from "./fileTree.js";
+import { buildFileTree, filesInEntry, type TreeEntry } from "./fileTree.js";
 
 // Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
 // per-status SVG so the colour stays on the indicator only (a FileDecoration would tint the whole
@@ -50,13 +52,15 @@ const STATUS_ICON_FILE: Record<FileStatus, string> = {
   "!": "conflict",
 };
 
+type StatusIconVariant = "worktree" | "staged" | "partial";
+
 function statusIcon(
   extensionUri: vscode.Uri,
   status: FileStatus,
-  muted = false,
+  tone: StatusIconVariant = "worktree",
 ): { light: vscode.Uri; dark: vscode.Uri } {
   const name = STATUS_ICON_FILE[status] ?? "m";
-  const variant = muted ? `${name}-staged` : name;
+  const variant = tone === "worktree" ? name : `${name}-${tone}`;
   return {
     light: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-light.svg`),
     dark: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-dark.svg`),
@@ -94,6 +98,12 @@ type Node =
       entry: Extract<TreeEntry, { type: "folder" }>;
     }
   | { kind: "file"; file: RepoChangedFile }
+  | {
+      kind: "deltaFolder";
+      repoRoot: string;
+      entry: Extract<TreeEntry<DeltaFile>, { type: "folder" }>;
+    }
+  | { kind: "deltaFile"; delta: DeltaFile }
   | { kind: "agent"; session: AgentSession }
   | { kind: "reviewComment"; thread: ReviewThread }
   | {
@@ -197,6 +207,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   constructor(
     private readonly agents: AgentSessionService,
     private readonly review: ReviewController,
+    private readonly seen: SeenFiles,
     private readonly plan: PlanReviewController,
     private readonly coordinator: GateCoordinator,
     private readonly locator: AgentServiceLocator,
@@ -210,6 +221,13 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     this.subs.push(
       this.agents.onDidChange(fire),
       this.review.onDidChangeState(() => this.onStateChanged()),
+      this.seen.onDidChange(() => this.emitter.fire()),
+      vscode.commands.registerCommand(Commands.reviewMarkAllSeen, () =>
+        this.seen.setSeen(this.allDeltaFiles(), true),
+      ),
+      vscode.commands.registerCommand(Commands.reviewMarkAllUnseen, () =>
+        this.seen.setSeen(this.allDeltaFiles(), false),
+      ),
       this.plan.onDidChange(fire),
       this.installStatus.onDidChange(() => this.emitter.fire()),
       this.review.onDidChangeActiveDiff((t) => this.syncSelection(t)),
@@ -249,8 +267,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     this.view = vscode.window.createTreeView(Views.main, {
       treeDataProvider: this,
       canSelectMany: true,
+      manageCheckboxStateManually: true,
     });
-    this.subs.push(this.view);
+    this.subs.push(
+      this.view,
+      this.view.onDidChangeCheckboxState((event) => this.onCheckboxes(event.items)),
+    );
     this.updateBadge();
     return this.view;
   }
@@ -269,11 +291,48 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     this.view.badge = computeViewBadge(changed);
   }
 
+  private async onCheckboxes(
+    items: ReadonlyArray<[Node, vscode.TreeItemCheckboxState]>,
+  ): Promise<void> {
+    for (const [node, state] of items) {
+      await this.seen.setSeen(
+        this.deltaFilesUnder(node),
+        state === vscode.TreeItemCheckboxState.Checked,
+      );
+    }
+  }
+
+  private deltaFilesUnder(node: Node): DeltaFile[] {
+    switch (node.kind) {
+      case "deltaFile":
+        return [node.delta];
+      case "deltaFolder":
+        return filesInEntry(node.entry);
+      case "repository":
+        return this.deltaFor(node.repository);
+      default:
+        return [];
+    }
+  }
+
+  private allDeltaFiles(): DeltaFile[] {
+    return this.review.getState().repositories.flatMap((repository) => this.deltaFor(repository));
+  }
+
+  private deltaFor(repository: RepositoryReviewState): DeltaFile[] {
+    return buildDelta(repository.repoRoot, repository.changes);
+  }
+
   // ── Selection sync: keep the highlighted row pointed at the diff the editor is showing ──
   private syncSelection(target: { repoRoot: string; group: FileGroup; path: string }): void {
     // A review plan replaces the Changed Files list, so there is no `file` row to reveal — and
     // revealing one would drag the selection off the changeset row the user just clicked.
-    if (this.review.getState().guided) {
+    const state = this.review.getState();
+    if (state.guided) {
+      return;
+    }
+    if (state.mode !== "staging") {
+      void this.revealDeltaRow(target);
       return;
     }
     if (this.rowFor(target)) {
@@ -303,6 +362,17 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     } catch {
       /* tree not ready / row collapsed away — non-fatal */
     }
+  }
+
+  private async revealDeltaRow(t: { repoRoot: string; path: string }): Promise<void> {
+    const repository = this.repository(t.repoRoot);
+    const delta = repository && this.deltaFor(repository).find((row) => row.path === t.path);
+    if (!delta || !this.view) {
+      return;
+    }
+    await this.view
+      .reveal({ kind: "deltaFile", delta }, { select: true, focus: false })
+      .then(undefined, () => undefined);
   }
 
   getParent(node: Node): Node | undefined {
@@ -339,6 +409,16 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
           node.file.group,
           (e) => e.type === "file" && e.file.path === node.file.path,
         );
+      case "deltaFolder":
+        return this.deltaParent(
+          node.repoRoot,
+          (e) => e.type === "folder" && e.path === node.entry.path,
+        );
+      case "deltaFile":
+        return this.deltaParent(
+          node.delta.repoRoot,
+          (e) => e.type === "file" && e.file.path === node.delta.path,
+        );
       case "agent":
         return { kind: "section", id: "agents", label: "Agents" };
       case "reviewComment":
@@ -367,6 +447,20 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     return parent ? { kind: "folder", repoRoot, group, entry: parent } : groupHeader;
   }
 
+  private deltaParent(repoRoot: string, matches: (e: TreeEntry<DeltaFile>) => boolean): Node {
+    const state = this.review.getState();
+    const repository = this.repository(repoRoot);
+    const top: Node =
+      state.repositories.length > 1 && repository
+        ? { kind: "repository", repository }
+        : { kind: "section", id: "files", label: "Changed Files" };
+    if (state.layout === "flat" || !repository) {
+      return top;
+    }
+    const parent = findEntryParent(buildFileTree(this.deltaFor(repository)), matches);
+    return parent ? { kind: "deltaFolder", repoRoot, entry: parent } : top;
+  }
+
   getTreeItem(node: Node): vscode.TreeItem {
     switch (node.kind) {
       case "setupNotice":
@@ -374,7 +468,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "section": {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.id = `section:${node.id}`;
-        item.contextValue = `section:${node.id}`;
+        item.contextValue = node.id === "files" ? this.filesSectionContext() : `section:${node.id}`;
         item.description = node.description;
         item.tooltip = node.tooltip;
         item.command = node.command;
@@ -390,12 +484,37 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
           vscode.TreeItemCollapsibleState.Expanded,
         );
         item.id = `repository:${repoKey(node.repository.repoRoot)}`;
-        item.contextValue = "repository";
         item.iconPath = vscode.ThemeIcon.Folder;
         item.description = repositoryBranchLabel(node.repository.branch);
         item.tooltip = node.repository.repoRoot;
+        const { mode } = this.review.getState();
+        const files = mode === "staging" ? [] : this.deltaFor(node.repository);
+        item.contextValue = deltaContainerContext("repository", mode, files);
+        if (mode === "review") {
+          item.checkboxState = this.checkboxFor(files);
+        }
         return item;
       }
+      case "deltaFolder": {
+        const { mode } = this.review.getState();
+        const files = filesInEntry(node.entry);
+        const item = new vscode.TreeItem(node.entry.name, vscode.TreeItemCollapsibleState.Expanded);
+        item.id = `deltaFolder:${repoKey(node.repoRoot)}:${node.entry.path}`;
+        item.resourceUri = vscode.Uri.file(path.join(node.repoRoot, node.entry.path));
+        item.iconPath = vscode.ThemeIcon.Folder;
+        item.contextValue = deltaContainerContext("deltaFolder", mode, files);
+        if (mode === "review") {
+          item.checkboxState = this.checkboxFor(files);
+        }
+        return item;
+      }
+      case "deltaFile":
+        return deltaFileItem(
+          node.delta,
+          this.review.getState().mode,
+          this.seen.isSeen(node.delta),
+          this.extensionUri,
+        );
       case "group": {
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.id = `group:${repoKey(node.repoRoot)}:${node.group}`;
@@ -458,6 +577,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return this.groupChildren(node.repoRoot, node.group);
       case "folder":
         return node.entry.children.map((e) => entryToNode(e, node.repoRoot, node.group));
+      case "deltaFolder":
+        return node.entry.children.map((e) => deltaEntryToNode(e, node.repoRoot));
       case "reviewComment":
         return node.thread.items.flatMap((item) =>
           item.kind === "comment"
@@ -507,7 +628,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         kind: "section",
         id: "files",
         label: "Changed Files",
-        description: changesDescription(this.review.getState()),
+        description: this.filesDescription(),
       });
     }
 
@@ -570,7 +691,29 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     }
   }
 
+  private filesSectionContext(): string {
+    const { mode } = this.review.getState();
+    const files = mode === "staging" ? [] : this.allDeltaFiles();
+    return deltaContainerContext("section:files", mode, files);
+  }
+
+  private checkboxFor(files: DeltaFile[]): vscode.TreeItemCheckboxState {
+    return files.length > 0 && files.every((file) => this.seen.isSeen(file))
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
+  }
+
   private repositoryChildren(repository: RepositoryReviewState): Node[] {
+    const { mode, layout } = this.review.getState();
+    if (mode !== "staging") {
+      const deltas = this.deltaFor(repository);
+      if (!deltas.length) {
+        return [placeholder("No changes")];
+      }
+      return layout === "flat"
+        ? deltas.map((delta) => ({ kind: "deltaFile", delta }) as Node)
+        : buildFileTree(deltas).map((e) => deltaEntryToNode(e, repository.repoRoot));
+    }
     const { changes, repoRoot } = repository;
     const groups: Node[] = [];
     if (changes.committed.length) {
@@ -593,6 +736,18 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       return files.map((file) => ({ kind: "file", file }) as Node);
     }
     return buildFileTree(files).map((e) => entryToNode(e, repoRoot, group));
+  }
+
+  private filesDescription(): string | undefined {
+    const state = this.review.getState();
+    const compare = changesDescription(state);
+    if (state.mode !== "review") {
+      return compare;
+    }
+    const files = this.allDeltaFiles();
+    const seen = files.filter((file) => this.seen.isSeen(file)).length;
+    const progress = `${seen}/${files.length} seen`;
+    return compare ? `${compare} · ${progress}` : progress;
   }
 
   private repository(repoRoot: string): RepositoryReviewState | undefined {
@@ -626,11 +781,11 @@ const GROUP_ICON: Record<FileGroup, { icon: string; color: string }> = {
  * is at the tree root (parent is the group header) or absent. The ambiguity is intentional — callers
  * fall back to the group header in both cases.
  */
-function findEntryParent(
-  entries: TreeEntry[],
-  matches: (e: TreeEntry) => boolean,
-  parent?: Extract<TreeEntry, { type: "folder" }>,
-): Extract<TreeEntry, { type: "folder" }> | undefined {
+function findEntryParent<F extends { path: string }>(
+  entries: TreeEntry<F>[],
+  matches: (e: TreeEntry<F>) => boolean,
+  parent?: Extract<TreeEntry<F>, { type: "folder" }>,
+): Extract<TreeEntry<F>, { type: "folder" }> | undefined {
   for (const e of entries) {
     if (matches(e)) {
       return parent;
@@ -660,6 +815,7 @@ function emptyChanges(): RepositoryChangesModel {
     staged: [],
     unstaged: [],
     committed: [],
+    net: [],
     compareLabel: "HEAD",
     compareRef: null,
   };
@@ -690,6 +846,76 @@ function entryToNode(entry: TreeEntry, repoRoot: string, group: FileGroup): Node
   return entry.type === "folder"
     ? { kind: "folder", repoRoot, group, entry }
     : { kind: "file", file: entry.file as RepoChangedFile };
+}
+
+function deltaEntryToNode(entry: TreeEntry<DeltaFile>, repoRoot: string): Node {
+  return entry.type === "folder"
+    ? { kind: "deltaFolder", repoRoot, entry }
+    : { kind: "deltaFile", delta: entry.file };
+}
+
+export function deltaContainerContext(
+  prefix: string,
+  mode: ChangesMode,
+  files: DeltaFile[],
+): string {
+  switch (mode) {
+    case "staging":
+      return prefix;
+    case "delta":
+      return `${prefix}:delta${stagingFlags(files)}`;
+    case "review":
+      return `${prefix}:review`;
+  }
+}
+
+const STAGE_LABEL: Record<StageState, string> = {
+  unstaged: "Not staged",
+  partial: "Partly staged",
+  staged: "Staged",
+  committed: "Committed",
+};
+
+export function stageIcon(
+  delta: DeltaFile,
+  extensionUri: vscode.Uri,
+): vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri } {
+  switch (delta.stage) {
+    case "committed":
+      return new vscode.ThemeIcon(
+        GROUP_ICON.committed.icon,
+        new vscode.ThemeColor(GROUP_ICON.committed.color),
+      );
+    case "staged":
+      return statusIcon(extensionUri, delta.status, "staged");
+    case "partial":
+      return statusIcon(extensionUri, delta.status, "partial");
+    case "unstaged":
+      return statusIcon(extensionUri, delta.status);
+  }
+}
+
+export function deltaFileItem(
+  delta: DeltaFile,
+  mode: ChangesMode,
+  seen: boolean,
+  extensionUri: vscode.Uri,
+): vscode.TreeItem {
+  const item = new vscode.TreeItem(path.basename(delta.path), vscode.TreeItemCollapsibleState.None);
+  item.id = `deltaFile:${repoKey(delta.repoRoot)}:${delta.path}`;
+  item.iconPath = stageIcon(delta, extensionUri);
+  const dir = path.dirname(delta.path);
+  const counts = `+${delta.additions} -${delta.deletions}`;
+  item.description = dir === "." ? counts : `${dir}  ${counts}`;
+  item.tooltip = `${delta.path}\n${statusWord(delta.status)} · ${counts}\n${STAGE_LABEL[delta.stage]}`;
+  item.contextValue = deltaContainerContext("deltaFile", mode, [delta]);
+  item.command = { command: Commands.reviewOpenDelta, title: "Open Changes", arguments: [delta] };
+  if (mode === "review") {
+    item.checkboxState = seen
+      ? vscode.TreeItemCheckboxState.Checked
+      : vscode.TreeItemCheckboxState.Unchecked;
+  }
+  return item;
 }
 
 function count(n: number): string | undefined {
@@ -886,7 +1112,11 @@ export function changesetFileItem(
           GROUP_ICON.committed.icon,
           new vscode.ThemeColor(GROUP_ICON.committed.color),
         )
-      : statusIcon(extensionUri, row.file.status, row.file.group === "staged");
+      : statusIcon(
+          extensionUri,
+          row.file.status,
+          row.file.group === "staged" ? "staged" : "worktree",
+        );
   item.tooltip = `${item.tooltip}\n${GROUP_LABELS[row.file.group]}`;
   item.command = {
     command: Commands.guidedReviewOpenFile,
