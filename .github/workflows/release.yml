@@ -65,7 +65,7 @@ jobs:
     needs: bump
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    environment: marketplace
+    environment: Release
     permissions:
       contents: write
       id-token: write
