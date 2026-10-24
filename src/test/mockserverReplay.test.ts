@@ -24,6 +24,7 @@ import {
   stripVolatileRequestMatchers,
   unwrapExpectations,
 } from "../e2e/mockserver/MockServerController.js";
+import { isFixtureRequest } from "../e2e/mockserver/fixtureRoutes.js";
 import {
   E2E_DRIVERS,
   filterPairs,
@@ -169,6 +170,7 @@ suite("provider-replay: recorded endpoints", () => {
       recordsRequest("kiro", request("AmazonCodeWhispererService.GetProfile")),
       false,
     );
+    assert.strictEqual(recordsRequest("kiro", { path: "/v1/responses" }), true);
   });
 
   // Codex refuses to start a turn without them, so dropping them from the cassette only works if the
@@ -251,6 +253,31 @@ suite("provider-replay: fixture normalization", () => {
     assert.ok(!withRoot("sess_11111111-1111-4111-8111-111111111111").includes("sess_"));
   });
 
+  test("normalizes the Kiro per-run ids in a responses request's metadata", () => {
+    const withIds = (session: string, continuation: string) =>
+      normalizeKiroBody(
+        JSON.stringify({
+          metadata: {
+            "kiro:agent_mode": "vibe",
+            "kiro:conversation_id": session,
+            "kiro:root_conversation_id": session,
+            "kiro:agent_continuation_id": continuation,
+          },
+        }),
+      );
+
+    const first = withIds(
+      "sess_11111111-1111-4111-8111-111111111111",
+      "33333333-3333-4333-8333-333333333333",
+    );
+    assert.strictEqual(
+      first,
+      withIds("sess_22222222-2222-4222-8222-222222222222", "44444444-4444-4444-8444-444444444444"),
+    );
+    assert.ok(!first.includes("sess_"));
+    assert.ok(first.includes("vibe"));
+  });
+
   // normalizeKiroBody walks every object, so an array named `tools` that is NOT an inventory (a tool
   // result quoting one, say) must be left exactly as it is — sorting it would reorder content.
   test("leaves an array named tools alone when it is not an inventory", () => {
@@ -269,9 +296,9 @@ suite("provider-replay: fixture normalization", () => {
     ]);
   });
 
-  // The recorder signs in with OAuth and sends a profile ARN; replay uses an API key and sends none.
+  // The recorder sends the account's profile ARN and replay sends a fake one.
   // The ARN also spells out an AWS account id, so it must not reach a committed cassette.
-  test("drops the Kiro profile ARN, which differs by auth method and names an account", () => {
+  test("drops the Kiro profile ARN, which differs between runs and names an account", () => {
     const withArn = normalizeKiroBody(
       JSON.stringify({
         origin: "KIRO_CLI",
@@ -1339,22 +1366,23 @@ suite("provider-replay: transparent proxy env", () => {
 
 suite("provider-replay: normalizing proxy plan", () => {
   test("routes every driver through the shim and normalizes only replay requests", () => {
-    for (const driver of ["claudecode", "codex", "opencode", "pi"] as const) {
+    for (const driver of E2E_DRIVERS) {
       assert.deepStrictEqual(normalizingProxyPlan("record", driver), {
         normalizeDriver: undefined,
-        fatalMissPaths: undefined,
-        fatalMissTargets: undefined,
+        fatalMissRoutes: undefined,
       });
       const check = normalizingProxyPlan("check", driver);
       assert.strictEqual(check.normalizeDriver, driver);
-      assert.ok(check.fatalMissPaths?.length);
+      assert.ok(check.fatalMissRoutes?.length);
     }
-    const kiro = normalizingProxyPlan("check", "kiro");
-    assert.ok(
-      kiro.fatalMissTargets?.some((target) =>
-        target.test("KiroRuntimeService.GenerateAssistantResponse"),
-      ),
-    );
+  });
+
+  test("a Kiro replay miss on model traffic ends the run, on either inference endpoint", () => {
+    const routes = normalizingProxyPlan("check", "kiro").fatalMissRoutes ?? [];
+    assert.ok(isFixtureRequest(routes, "/", "KiroRuntimeService.GenerateAssistantResponse"));
+    assert.ok(isFixtureRequest(routes, "/v1/responses", undefined));
+    assert.ok(!isFixtureRequest(routes, "/", "AmazonCodeWhispererService.GetProfile"));
+    assert.ok(!isFixtureRequest(routes, "/", undefined));
   });
 });
 

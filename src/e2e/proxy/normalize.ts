@@ -675,6 +675,9 @@ const KIRO_SCOPED_ID_KEYS = new Set([
   "conversationId",
   "rootConversationId",
   "toolUseId",
+  "kiro:agent_continuation_id",
+  "kiro:conversation_id",
+  "kiro:root_conversation_id",
 ]);
 
 /**
@@ -726,9 +729,8 @@ export function normalizeKiroBody(raw: string): string {
   walk(parsed, (object) => {
     normalizeKiroOrigin(object);
     for (const [key, value] of Object.entries(object)) {
-      // The recorder signs in with OAuth and carries a profile ARN; replay authenticates with an API
-      // key and carries none. It also spells out an AWS account id, so it has no business in a
-      // committed cassette either way.
+      // The recorder carries the account's profile ARN and replay carries a fake one. It also spells
+      // out an AWS account id, so it has no business in a committed cassette either way.
       if (key === "profileArn") {
         delete object[key];
         continue;
