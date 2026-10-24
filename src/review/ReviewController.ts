@@ -1049,6 +1049,9 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.saveBeforeStage(files))) {
       return;
     }
+    if (!(await this.confirmStageConflicts(files))) {
+      return;
+    }
     const byRoot = [...filesByRoot(files)];
     try {
       for (const [repoRoot, repoFiles] of byRoot) {
@@ -1083,6 +1086,27 @@ export class ReviewController implements vscode.Disposable {
       }
     }
     return true;
+  }
+
+  private async confirmStageConflicts(files: RepoChangedFile[]): Promise<boolean> {
+    const withMarkers: RepoChangedFile[] = [];
+    for (const file of files) {
+      if (file.status === "!" && (await this.diff.hasConflictMarkers(file.repoRoot, file.path))) {
+        withMarkers.push(file);
+      }
+    }
+    if (!withMarkers.length) {
+      return true;
+    }
+    const YES = "Yes";
+    const choice = await vscode.window.showWarningMessage(
+      withMarkers.length === 1
+        ? `Are you sure you want to stage ${basename(withMarkers[0].path)} with merge conflicts?`
+        : `Are you sure you want to stage ${withMarkers.length} files with merge conflicts?`,
+      { modal: true },
+      YES,
+    );
+    return choice === YES;
   }
 
   private async unstageFiles(files: RepoChangedFile[]): Promise<void> {

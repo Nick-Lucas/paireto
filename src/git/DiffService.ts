@@ -8,6 +8,8 @@ import { join } from "node:path";
 import { currentBranch, git, gitSafe, splitNul } from "./gitCli.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 
+const CONFLICT_MARKER = /^<{7}\s|^={7}$|^>{7}\s/m;
+
 export type FileStatus = "A" | "M" | "D" | "R" | "C" | "U" | "!";
 
 export interface ChangedFile {
@@ -93,6 +95,14 @@ export class DiffService {
     const out = await gitSafe(repoRoot, ["ls-files", "-u", "-z", "--", `:(literal)${relPath}`]);
     const stages = new Set(splitNul(out).map((entry) => entry.split("\t")[0]?.split(" ")[2]));
     return stages.has("2") && stages.has("3");
+  }
+
+  async hasConflictMarkers(repoRoot: string, relPath: string): Promise<boolean> {
+    try {
+      return CONFLICT_MARKER.test(await readFile(join(repoRoot, relPath), "utf8"));
+    } catch {
+      return false;
+    }
   }
 
   /**
