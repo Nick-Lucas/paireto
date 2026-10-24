@@ -24,8 +24,6 @@ export const Commands = {
   reviewPickDiffCompareTo: "paireto.review.pickDiffCompareTo",
   reviewPickViewMode: "paireto.review.pickViewMode",
   reviewOpenDelta: "paireto.review.openDelta",
-  reviewMarkAllSeen: "paireto.review.markAllSeen",
-  reviewMarkAllUnseen: "paireto.review.markAllUnseen",
   reviewRefresh: "paireto.review.refresh",
   reviewOpenDiff: "paireto.review.openDiff",
   reviewOpenFile: "paireto.review.openFile",

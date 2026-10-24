@@ -222,12 +222,6 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       this.agents.onDidChange(fire),
       this.review.onDidChangeState(() => this.onStateChanged()),
       this.seen.onDidChange(() => this.emitter.fire()),
-      vscode.commands.registerCommand(Commands.reviewMarkAllSeen, () =>
-        this.seen.setSeen(this.allDeltaFiles(), true),
-      ),
-      vscode.commands.registerCommand(Commands.reviewMarkAllUnseen, () =>
-        this.seen.setSeen(this.allDeltaFiles(), false),
-      ),
       this.plan.onDidChange(fire),
       this.installStatus.onDidChange(() => this.emitter.fire()),
       this.review.onDidChangeActiveDiff((t) => this.syncSelection(t)),
@@ -310,6 +304,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return filesInEntry(node.entry);
       case "repository":
         return this.deltaFor(node.repository);
+      case "section":
+        return node.id === "files" ? this.allDeltaFiles() : [];
       default:
         return [];
     }
@@ -469,6 +465,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.id = `section:${node.id}`;
         item.contextValue = node.id === "files" ? this.filesSectionContext() : `section:${node.id}`;
+        if (node.id === "files" && this.review.getState().mode === "review") {
+          item.checkboxState = this.checkboxFor(this.allDeltaFiles());
+        }
         item.description = node.description;
         item.tooltip = node.tooltip;
         item.command = node.command;
@@ -694,10 +693,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   private filesSectionContext(): string {
     const { mode } = this.review.getState();
     const files = mode === "staging" ? [] : this.allDeltaFiles();
-    const context = deltaContainerContext("section:files", mode, files);
-    return mode === "review" && this.checkboxFor(files) === vscode.TreeItemCheckboxState.Checked
-      ? `${context}:allSeen`
-      : context;
+    return deltaContainerContext("section:files", mode, files);
   }
 
   private checkboxFor(files: DeltaFile[]): vscode.TreeItemCheckboxState {

@@ -420,18 +420,35 @@ suite("Review mode — tree", () => {
     assert.strictEqual(filesSection(tree).description, "HEAD · 2/3 seen");
   });
 
-  test("the section offers Mark All Seen until every file is seen, then Mark All Unseen", async () => {
+  test("the Changed Files checkbox is ticked only when every file is seen, and ticks them all", async () => {
     const seen = new SeenFiles(new MemoryMemento());
     const tree = treeIn("review", seen, repo);
-    const sectionContext = (): string | undefined =>
-      tree.getTreeItem(filesSection(tree)).contextValue;
+    const sectionBox = (): vscode.TreeItemCheckboxState | undefined =>
+      tree.getTreeItem(filesSection(tree)).checkboxState as vscode.TreeItemCheckboxState;
     const rows = buildDelta(REPO, repo.changes);
 
-    assert.strictEqual(sectionContext(), "section:files:review");
+    assert.strictEqual(sectionBox(), vscode.TreeItemCheckboxState.Unchecked);
     await seen.setSeen(rows.slice(0, 1), true);
-    assert.strictEqual(sectionContext(), "section:files:review");
-    await seen.setSeen(rows, true);
-    assert.strictEqual(sectionContext(), "section:files:review:allSeen");
+    assert.strictEqual(sectionBox(), vscode.TreeItemCheckboxState.Unchecked);
+
+    await tree.onCheckboxes([[filesSection(tree), vscode.TreeItemCheckboxState.Checked]]);
+    assert.strictEqual(sectionBox(), vscode.TreeItemCheckboxState.Checked);
+    assert.ok(
+      rows.every((row) => seen.isSeen(row)),
+      "ticking the section marks every file seen",
+    );
+
+    await tree.onCheckboxes([[filesSection(tree), vscode.TreeItemCheckboxState.Unchecked]]);
+    assert.ok(
+      rows.every((row) => !seen.isSeen(row)),
+      "unticking the section marks every file unseen",
+    );
+  });
+
+  test("the Changed Files row has no checkbox outside Review mode", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo);
+
+    assert.strictEqual(tree.getTreeItem(filesSection(tree)).checkboxState, undefined);
   });
 
   test("Delta mode lists one row per file and offers bulk stage and unstage on the section", () => {
@@ -447,7 +464,7 @@ suite("Review mode — tree", () => {
 });
 
 interface ViewModePicker {
-  pickViewMode(): Promise<void>;
+  pickViewMode(): void;
 }
 
 function controllerWith(
@@ -478,39 +495,56 @@ function controllerWith(
   return { controller, saved, fired: () => fires };
 }
 
-async function pickWith(
+interface OpenedPicker {
+  pick: vscode.QuickPick<ViewModeItem>;
+  activeOnOpen: string[];
+  hidden: () => boolean;
+}
+
+async function withPicker(
   controller: ViewModePicker,
-  choose: (pick: vscode.QuickPick<ViewModeItem>) => Promise<void>,
-): Promise<string[]> {
+  run: (opened: OpenedPicker) => Promise<void>,
+): Promise<void> {
   const original = vscode.window.createQuickPick;
-  let opened: vscode.QuickPick<ViewModeItem> | undefined;
-  let activeOnOpen: string[] = [];
+  let opened: OpenedPicker | undefined;
   vscode.window.createQuickPick = (<T extends vscode.QuickPickItem>() => {
     const pick = original<ViewModeItem>();
+    let hidden = false;
+    pick.onDidHide(() => (hidden = true));
     const show = pick.show.bind(pick);
     pick.show = () => {
       show();
-      activeOnOpen = pick.activeItems.map((item) => item.label);
-      opened = pick;
+      opened = {
+        pick,
+        activeOnOpen: pick.activeItems.map((item) => item.label),
+        hidden: () => hidden,
+      };
     };
     return pick as unknown as vscode.QuickPick<T>;
   }) as typeof vscode.window.createQuickPick;
   try {
-    const done = controller.pickViewMode();
+    controller.pickViewMode();
     assert.ok(opened, "the View Modes picker must open");
-    await choose(opened);
-    await done;
+    await run(opened);
   } finally {
     vscode.window.createQuickPick = original;
+    opened?.pick.hide();
   }
-  return activeOnOpen;
 }
 
-async function accept(
-  pick: vscode.QuickPick<ViewModeItem>,
-  label: (text: string) => boolean,
-): Promise<void> {
-  for (let step = 0; step < pick.items.length && !label(pick.activeItems[0]?.label ?? ""); step++) {
+async function until(probe: () => boolean, what: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (!probe()) {
+    assert.ok(Date.now() < deadline, what);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+}
+
+const labels = (items: readonly ViewModeItem[]): string[] => items.map((item) => item.label);
+
+async function accept(pick: vscode.QuickPick<ViewModeItem>, name: string): Promise<void> {
+  const reached = (): boolean => pick.activeItems[0]?.label.endsWith(` ${name}`) ?? false;
+  for (let step = 0; step < pick.items.length && !reached(); step++) {
     const moved = new Promise((resolve) => {
       const sub = pick.onDidChangeActive(() => {
         sub.dispose();
@@ -520,15 +554,55 @@ async function accept(
     await vscode.commands.executeCommand("workbench.action.quickOpenSelectNext");
     await moved;
   }
-  assert.ok(label(pick.activeItems[0]?.label ?? ""), "the picker must reach the choice");
+  assert.ok(reached(), `the picker must reach ${name}`);
   await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+  await until(
+    () => labels(pick.items).includes(`$(check) ${name}`),
+    `${name} must be ticked after it is picked`,
+  );
 }
 
 suite("View Modes control", () => {
   test("one picker offers the view and the layout, with the current ones ticked", () => {
-    assert.deepStrictEqual(
-      viewModeItems("delta", "flat").map((item) => item.label),
-      [
+    assert.deepStrictEqual(labels(viewModeItems("delta", "flat")), [
+      "View",
+      "$(blank) Staging",
+      "$(check) Delta",
+      "$(blank) Review",
+      "Layout",
+      "$(blank) Tree",
+      "$(check) Flat",
+    ]);
+  });
+
+  test("the picker opens with the current view highlighted", async () => {
+    await withPicker(controllerWith("review", "tree").controller, async ({ activeOnOpen }) => {
+      assert.deepStrictEqual(activeOnOpen, ["$(check) Review"]);
+    });
+  });
+
+  test("picking a view applies it and the picker stays open on that row", async () => {
+    const { controller, saved, fired } = controllerWith("staging", "tree");
+
+    await withPicker(controller, async ({ pick, hidden }) => {
+      await accept(pick, "Review");
+
+      assert.deepStrictEqual(saved, { mode: "review" });
+      assert.strictEqual(fired(), 1);
+      assert.strictEqual(hidden(), false, "the picker must stay open after a pick");
+      assert.deepStrictEqual(labels(pick.activeItems), ["$(check) Review"]);
+    });
+  });
+
+  test("a view and a layout can both be picked in one go", async () => {
+    const { controller, saved } = controllerWith("staging", "tree");
+
+    await withPicker(controller, async ({ pick }) => {
+      await accept(pick, "Delta");
+      await accept(pick, "Flat");
+
+      assert.deepStrictEqual(saved, { mode: "delta", layout: "flat" });
+      assert.deepStrictEqual(labels(pick.items), [
         "View",
         "$(blank) Staging",
         "$(check) Delta",
@@ -536,44 +610,16 @@ suite("View Modes control", () => {
         "Layout",
         "$(blank) Tree",
         "$(check) Flat",
-      ],
-    );
-  });
-
-  test("the picker opens with the current view highlighted", async () => {
-    const { controller } = controllerWith("review", "tree");
-
-    const active = await pickWith(controller, (pick) => {
-      pick.hide();
-      return Promise.resolve();
+      ]);
     });
-
-    assert.deepStrictEqual(active, ["$(check) Review"]);
-  });
-
-  test("picking a view switches the view and keeps the layout", async () => {
-    const { controller, saved, fired } = controllerWith("staging", "tree");
-
-    await pickWith(controller, (pick) => accept(pick, (label) => label.endsWith("Review")));
-
-    assert.deepStrictEqual(saved, { mode: "review" });
-    assert.strictEqual(fired(), 1);
-  });
-
-  test("picking a layout switches the layout and keeps the view", async () => {
-    const { controller, saved } = controllerWith("delta", "tree");
-
-    await pickWith(controller, (pick) => accept(pick, (label) => label.endsWith("Flat")));
-
-    assert.deepStrictEqual(saved, { layout: "flat" });
   });
 
   test("dismissing the picker changes nothing", async () => {
     const { controller, saved, fired } = controllerWith("delta", "tree");
 
-    await pickWith(controller, (pick) => {
+    await withPicker(controller, async ({ pick, hidden }) => {
       pick.hide();
-      return Promise.resolve();
+      await until(hidden, "the picker must close");
     });
 
     assert.deepStrictEqual(saved, {});

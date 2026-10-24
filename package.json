@@ -156,16 +156,6 @@
         "title": "Open Changes"
       },
       {
-        "command": "paireto.review.markAllSeen",
-        "title": "Paireto: Mark All Files as Seen",
-        "icon": "$(check-all)"
-      },
-      {
-        "command": "paireto.review.markAllUnseen",
-        "title": "Paireto: Mark All Files as Unseen",
-        "icon": "$(circle-large-outline)"
-      },
-      {
         "command": "paireto.review.openDiff",
         "title": "Open Changes"
       },
@@ -551,16 +541,6 @@
           "command": "paireto.review.stageAll",
           "when": "view == paireto.main && viewItem =~ /^(section:files|repository):delta.*:stage/",
           "group": "inline@5"
-        },
-        {
-          "command": "paireto.review.markAllUnseen",
-          "when": "view == paireto.main && viewItem =~ /^section:files:review:allSeen$/",
-          "group": "inline@4"
-        },
-        {
-          "command": "paireto.review.markAllSeen",
-          "when": "view == paireto.main && viewItem =~ /^section:files:review$/",
-          "group": "inline@4"
         },
         {
           "command": "paireto.review.unstage",

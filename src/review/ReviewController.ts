@@ -1046,11 +1046,14 @@ export class ReviewController implements vscode.Disposable {
     this.openDiffs.delete(oldTabKey);
   }
 
-  private async pickViewMode(): Promise<void> {
-    const choice = await chooseViewMode(this.mode, this.layout);
-    if (!choice) {
-      return;
-    }
+  private pickViewMode(): void {
+    openViewModePicker(
+      () => ({ mode: this.mode, layout: this.layout }),
+      (choice) => this.applyViewMode(choice),
+    );
+  }
+
+  private async applyViewMode(choice: ViewModeChoice): Promise<void> {
     if (choice.kind === "mode") {
       this.mode = choice.mode;
       await this.store.setMode(this.mode);
@@ -2531,28 +2534,41 @@ export function viewModeItems(mode: ChangesMode, layout: FileLayout): ViewModeIt
   ];
 }
 
-export function chooseViewMode(
-  mode: ChangesMode,
-  layout: FileLayout,
-): Promise<ViewModeChoice | undefined> {
-  const items = viewModeItems(mode, layout);
+function sameChoice(a: ViewModeChoice | undefined, b: ViewModeChoice): boolean {
+  return (
+    a?.kind === b.kind &&
+    (a.kind === "mode"
+      ? a.mode === (b as typeof a).mode
+      : a.layout === (b as Extract<ViewModeChoice, { kind: "layout" }>).layout)
+  );
+}
+
+export function openViewModePicker(
+  current: () => { mode: ChangesMode; layout: FileLayout },
+  apply: (choice: ViewModeChoice) => Promise<void>,
+): vscode.QuickPick<ViewModeItem> {
   const pick = vscode.window.createQuickPick<ViewModeItem>();
   pick.title = "View Modes";
-  pick.items = items;
-  pick.activeItems = items.filter(
-    (item) => item.choice?.kind === "mode" && item.choice.mode === mode,
-  );
-  return new Promise((resolve) => {
-    pick.onDidAccept(() => {
-      resolve(pick.selectedItems[0]?.choice);
-      pick.hide();
-    });
-    pick.onDidHide(() => {
-      resolve(undefined);
-      pick.dispose();
-    });
-    pick.show();
+  pick.keepScrollPosition = true;
+  const render = (active?: ViewModeChoice): void => {
+    const { mode, layout } = current();
+    const items = viewModeItems(mode, layout);
+    const focus = active ?? { kind: "mode", mode };
+    pick.items = items;
+    pick.activeItems = items.filter((item) => sameChoice(item.choice, focus));
+  };
+  render();
+  pick.onDidAccept(async () => {
+    const choice = pick.selectedItems[0]?.choice;
+    if (!choice) {
+      return;
+    }
+    await apply(choice);
+    render(choice);
   });
+  pick.onDidHide(() => pick.dispose());
+  pick.show();
+  return pick;
 }
 
 export function sharedCompareToHolds(rootCount: number, compareTo: CompareTo): boolean {
