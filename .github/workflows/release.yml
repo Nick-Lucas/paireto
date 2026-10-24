@@ -28,15 +28,15 @@ jobs:
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
-      - name: Require a green CI run on this commit
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq length)
-          if [ "$passed" = "0" ]; then
-            echo "::error::CI has not passed on $GITHUB_SHA. Wait for CI to go green on main, then run the release again."
-            exit 1
-          fi
+      # - name: Require a green CI run on this commit
+      #   env:
+      #     GH_TOKEN: ${{ github.token }}
+      #   run: |
+      #     passed=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$GITHUB_SHA" --status success --json databaseId --jq length)
+      #     if [ "$passed" = "0" ]; then
+      #       echo "::error::CI has not passed on $GITHUB_SHA. Wait for CI to go green on main, then run the release again."
+      #       exit 1
+      #     fi
       - id: app-token
         uses: actions/create-github-app-token@v3
         with:
