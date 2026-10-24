@@ -28,10 +28,10 @@ Do not change `version` in `package.json` by hand. Do not publish from a local m
 
 The `publish` job signs in to Microsoft Entra ID with GitHub OIDC. It does not use an Azure DevOps personal access token, because Azure DevOps retires global personal access tokens on 1 December 2026.
 
-The app registration has a federated credential with these values. The subject is case-sensitive and must match the environment name:
+The app registration has a federated credential with these values. The repository uses immutable OIDC subjects, so the subject holds the owner and repository IDs. The subject is case-sensitive and must match the environment name:
 
 - Issuer: `https://token.actions.githubusercontent.com`
-- Subject: `repo:Nick-Lucas/paireto:environment:Release`
+- Subject: `repo:Nick-Lucas@8896153/paireto@1269574683:environment:Release`
 - Audience: `api://AzureADTokenExchange`
 
 The **Show the Marketplace identity ID** step prints the ID of the identity that publishes. That ID is a member of the `Paireto` publisher, with the **Contributor** role.
