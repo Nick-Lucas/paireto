@@ -503,11 +503,14 @@ export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = 
   }
   const kiroHome = path.join(dir, ".kiro");
   fs.mkdirSync(kiroHome, { recursive: true });
-  // check mode: a syntactically valid fake API key so Kiro is "logged in" and sends the requests the
-  // fixture answers, while the proxy + MockServer SIMULATE keep it fully offline. Recording instead
-  // copies the machine's real sign-in into this throwaway home, the way the other harnesses do.
-  const apiKey = opts.checkMode ? "ksk_paireto_e2e_check_fake" : process.env.KIRO_API_KEY;
-  if (!opts.checkMode && !apiKey) {
+  // check mode: a fake social sign-in that never expires, so Kiro is "logged in" the way a recording
+  // is and sends the requests the fixture answers, while the proxy + MockServer SIMULATE keep it fully
+  // offline. Recording instead copies the machine's real sign-in into this throwaway home, the way
+  // the other harnesses do.
+  const apiKey = opts.checkMode ? undefined : process.env.KIRO_API_KEY;
+  if (opts.checkMode) {
+    seedKiroSecrets(dir, fakeKiroSocialSignIn());
+  } else if (!apiKey) {
     seedKiroSecrets(dir, resolveKiroSecrets());
   }
   return {
@@ -517,6 +520,18 @@ export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = 
       ...(apiKey ? { KIRO_API_KEY: apiKey } : {}),
     },
     cleanup: () => rm(dir, Boolean(opts.homeDir)),
+  };
+}
+
+function fakeKiroSocialSignIn(): Record<string, string> {
+  return {
+    "kirocli:social:token": JSON.stringify({
+      access_token: "paireto-e2e-check-fake-access",
+      expires_at: "2100-01-01T00:00:00.000000Z",
+      refresh_token: "paireto-e2e-check-fake-refresh",
+      provider: "github",
+      profile_arn: "arn:aws:codewhisperer:us-east-1:000000000000:profile/PAIRETOE2ECHECK",
+    }),
   };
 }
 
