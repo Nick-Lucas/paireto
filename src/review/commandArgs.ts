@@ -21,7 +21,7 @@ import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 export const ChangedFileArg = z.object({
   path: z.string(),
   oldPath: z.string().optional(),
-  status: z.enum(["A", "M", "D", "R", "C", "U"]),
+  status: z.enum(["A", "M", "D", "R", "C", "U", "!"]),
   group: z.enum(["staged", "unstaged", "committed"]),
   additions: z.number(),
   deletions: z.number(),

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { currentBranch, git, gitSafe, splitNul } from "./gitCli.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 
-export type FileStatus = "A" | "M" | "D" | "R" | "C" | "U"; // U = untracked
+export type FileStatus = "A" | "M" | "D" | "R" | "C" | "U" | "!";
 
 export interface ChangedFile {
   path: string; // repo-relative (the "new" path for renames)
@@ -89,6 +89,20 @@ export class DiffService {
     };
   }
 
+  async hasBothConflictSides(repoRoot: string, relPath: string): Promise<boolean> {
+    const out = await gitSafe(repoRoot, ["ls-files", "-u", "-z", "--", `:(literal)${relPath}`]);
+    const stages = new Set(splitNul(out).map((entry) => entry.split("\t")[0]?.split(" ")[2]));
+    return stages.has("2") && stages.has("3");
+  }
+
+  async hasConflictMarkers(repoRoot: string, relPath: string): Promise<boolean> {
+    const out = await git(repoRoot, ["diff", "--check", "--", `:(literal)${relPath}`]).then(
+      (result) => result.stdout,
+      (error: { stdout?: string }) => error.stdout ?? "",
+    );
+    return out.split("\n").some((line) => line.endsWith(": leftover conflict marker"));
+  }
+
   /**
    * The scoped equivalent of {@link getChanges} for ONE file: the current entries for the given
    * paths (matched by path, or a rename's old path), against an already-resolved compare ref. Lets
@@ -118,7 +132,7 @@ export class DiffService {
         ? gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"])
         : undefined;
 
-    const [stagedAll, unstagedAll, committedAll] = await Promise.all([
+    const [stagedRaw, unstagedRaw, committedAll] = await Promise.all([
       this.collect(repoRoot, ["diff", "--cached"], "staged"),
       this.collect(repoRoot, ["diff"], "unstaged"),
       compareRef
@@ -128,6 +142,7 @@ export class DiffService {
         : [],
     ]);
 
+    const { staged: stagedAll, unstaged: unstagedAll } = collapseConflicts(stagedRaw, unstagedRaw);
     const scoped = widenAcrossRenames(paths, [...stagedAll, ...unstagedAll, ...committedAll]);
     const scope = (files: ChangedFile[]): ChangedFile[] =>
       scoped === undefined ? files : files.filter((f) => matchesPaths(f, scoped));
@@ -381,6 +396,17 @@ export class DiffService {
   }
 }
 
+function collapseConflicts(
+  staged: ChangedFile[],
+  unstaged: ChangedFile[],
+): { staged: ChangedFile[]; unstaged: ChangedFile[] } {
+  const conflicted = new Set(unstaged.filter((f) => f.status === "!").map((f) => f.path));
+  return {
+    staged: staged.filter((f) => !conflicted.has(f.path)),
+    unstaged: unstaged.filter((f) => !conflicted.has(f.path) || f.status === "!"),
+  };
+}
+
 /** True when the file is in the scoped repo-relative path set — by its path or, for a rename, its
  *  old path (so either half of a rename pair matches). */
 function matchesPaths(file: ChangedFile, paths: ReadonlySet<string>): boolean {
@@ -523,6 +549,9 @@ async function countLines(repoRoot: string, relPath: string): Promise<number> {
 function normalizeStatus(letter: string): FileStatus {
   if (letter === "A" || letter === "M" || letter === "D") {
     return letter;
+  }
+  if (letter === "U") {
+    return "!";
   }
   return "M";
 }
