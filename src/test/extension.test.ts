@@ -1855,8 +1855,18 @@ suite("Compare To picker", () => {
       comparePicker.value = "Branch/Ref";
       const branchRefItem = comparePicker.items.find((item) => item.label.includes("Branch/Ref"));
       assert.ok(branchRefItem, "the Compare To picker must contain the Branch/Ref item");
-      comparePicker.activeItems = [branchRefItem];
-      await wait(25);
+      const activeDeadline = Date.now() + 5_000;
+      let activeSince: number | undefined;
+      while (activeSince === undefined || Date.now() - activeSince < 250) {
+        assert.ok(Date.now() <= activeDeadline, "Branch/Ref must stay the active item");
+        if (comparePicker.activeItems[0] !== branchRefItem) {
+          comparePicker.activeItems = [branchRefItem];
+          activeSince = undefined;
+        } else {
+          activeSince ??= Date.now();
+        }
+        await wait(25);
+      }
       assert.strictEqual(comparePicker.value, "Branch/Ref");
       assert.ok(compareDriver.accept, "the Compare To picker must register an accept listener");
       compareDriver.accept();
