@@ -10,12 +10,31 @@ The **Release** workflow (`.github/workflows/release.yml`) bumps the version and
 
 The workflow does these steps:
 
-1. The `bump` job runs `npm version`. Then it pushes the `chore(release): X.Y.Z` commit and the `vX.Y.Z` tag to `main` in one atomic push.
+1. The `bump` job calculates the next stable version with `scripts/releaseVersion.mts` and sets it with `npm version`. Then it pushes the `chore(release): X.Y.Z` commit and the `vX.Y.Z` tag to `main` in one atomic push.
 2. The `publish` job builds the VSIX from the tag and publishes it to the Marketplace. Then it creates a GitHub release with the VSIX attached.
 
 If the `publish` job fails, fix the cause and select **Re-run failed jobs**. Do not start a new release, because that bumps the version again. `vsce publish --skip-duplicate` makes the re-run safe after a partial publish.
 
 Do not change `version` in `package.json` by hand. Do not publish from a local machine.
+
+## Pre-releases
+
+The **Release** workflow also publishes a pre-release each time CI passes on a push to `main`. You do not start it. Users get the pre-release when they select **Switch to Pre-Release Version** on the extension in VS Code.
+
+The `prerelease` job does not commit or tag. It sets the version only in the build, so `package.json` on `main` keeps the stable version.
+
+If a new push to `main` passes CI while a pre-release publishes, the workflow stops the older pre-release run.
+
+## Version numbers
+
+The Marketplace accepts only `major.minor.patch` versions, and a pre-release cannot use the same version as a stable release. The workflow uses the numbering that the [VS Code publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#prerelease-extensions) recommends:
+
+- Stable releases use an even minor version. A `minor` bump goes to the next even minor version, for example from `0.30.4` to `0.32.0`.
+- Pre-releases use the odd minor version above the stable version, and the patch is the workflow run number. For example, the stable version `0.30.0` gives pre-releases `0.31.<run number>`.
+
+VS Code installs the highest version. A pre-release user gets each new pre-release, and gets a new stable release when its minor version is higher than the pre-release minor version.
+
+`scripts/releaseVersion.mts` calculates both kinds of version from `package.json`.
 
 ## Settings that the workflow uses
 
