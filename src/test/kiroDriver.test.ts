@@ -11,14 +11,14 @@ suite("Kiro E2E launch contract", () => {
   test("uses CLI v3, the recording model, and the native planner", () => {
     assert.strictEqual(
       kiroLaunchCommand(true),
-      `kiro-cli chat --v3 --agent kiro_planner --model ${KIRO_E2E_MODEL} --trust-all-tools --tui`,
+      `kiro-cli chat --v3 --agent kiro_planner --model ${KIRO_E2E_MODEL} --trust-all-tools --trust-workspace --tui`,
     );
   });
 
   test("guided review uses the default agent but keeps the same model", () => {
     assert.strictEqual(
       kiroLaunchCommand(false),
-      `kiro-cli chat --v3 --model ${KIRO_E2E_MODEL} --trust-all-tools --tui`,
+      `kiro-cli chat --v3 --model ${KIRO_E2E_MODEL} --trust-all-tools --trust-workspace --tui`,
     );
   });
 

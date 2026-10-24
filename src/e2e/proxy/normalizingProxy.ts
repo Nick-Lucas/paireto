@@ -12,6 +12,7 @@ import * as https from "node:https";
 import type { Socket } from "node:net";
 import * as zlib from "node:zlib";
 
+import { isFixtureRequest, type FixtureRoute } from "../mockserver/fixtureRoutes.js";
 import type { E2EDriver } from "../mockserver/mode.js";
 import { recordReplayMiss } from "../replayMiss.js";
 import { normalizeRequestBody } from "./normalize.js";
@@ -50,9 +51,7 @@ export interface NormalizingProxyOptions {
   normalizeDriver?: E2EDriver;
   /** Endpoints whose replay miss ends the run. Scoped to the harness's inference traffic, because a
    *  miss on incidental traffic (a model catalogue, a registry) is survivable and expected offline. */
-  fatalMissPaths?: RegExp[];
-  /** Optional request operation filter for providers that multiplex calls on one path. */
-  fatalMissTargets?: RegExp[];
+  fatalMissRoutes?: FixtureRoute[];
   /** File the first miss is recorded in, for the in-host test to abort on. */
   missFilePath?: string;
   log: (line: string) => void;
@@ -269,11 +268,7 @@ function noteStrictMiss(
   const path = (req.url ?? "/").split("?")[0];
   if (
     statusCode !== STRICT_MISS_STATUS ||
-    !opts.fatalMissPaths?.some((matcher) => matcher.test(path)) ||
-    (opts.fatalMissTargets !== undefined &&
-      !opts.fatalMissTargets.some((matcher) =>
-        matcher.test(String(req.headers["x-amz-target"] ?? "")),
-      ))
+    !isFixtureRequest(opts.fatalMissRoutes ?? [], path, amzTarget(req.headers["x-amz-target"]))
   ) {
     return;
   }
@@ -284,6 +279,10 @@ function noteStrictMiss(
     bodyDigest,
     body,
   });
+}
+
+function amzTarget(header: string | string[] | undefined): string | undefined {
+  return Array.isArray(header) ? header[0] : header;
 }
 
 function readBody(req: http.IncomingMessage): Promise<Buffer> {

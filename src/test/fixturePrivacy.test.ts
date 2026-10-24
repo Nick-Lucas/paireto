@@ -214,7 +214,7 @@ suite("fixture privacy", function () {
         );
         assert.deepStrictEqual(
           Object.keys((expectation.httpRequest?.headers as Record<string, unknown>) ?? {}),
-          isKiro ? ["x-amz-target"] : [],
+          isKiro && expectation.httpRequest?.path === "/" ? ["x-amz-target"] : [],
           `${where} stores a request header outside the whitelist`,
         );
         assert.deepStrictEqual(

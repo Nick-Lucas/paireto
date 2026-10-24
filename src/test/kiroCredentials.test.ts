@@ -8,6 +8,7 @@ import * as path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { kiroDatabaseFile, readLocalKiroSecrets } from "../e2e/kiroCredentials.js";
+import { buildKiroHome } from "../e2e/sandbox.js";
 
 const SOCIAL = "kirocli:social:token";
 
@@ -63,5 +64,29 @@ suite("Kiro credential lift", () => {
     seedDatabase(home, { [SOCIAL]: "fresh" });
     const secrets = readLocalKiroSecrets(home, () => "keychain", false);
     assert.deepStrictEqual(secrets, { [SOCIAL]: "fresh" });
+  });
+});
+
+suite("Kiro replay sign-in", () => {
+  test("replay signs in with a social token like a recording, not an API key", () => {
+    const home = buildKiroHome({ checkMode: true });
+    try {
+      assert.strictEqual(home.env.KIRO_API_KEY, undefined);
+      const database = new DatabaseSync(kiroDatabaseFile(home.env.HOME ?? ""), { readOnly: true });
+      let stored: { value: string } | undefined;
+      try {
+        stored = database.prepare("SELECT value FROM auth_kv WHERE key = ?").get(SOCIAL) as
+          | { value: string }
+          | undefined;
+      } finally {
+        database.close();
+      }
+      assert.ok(stored, "no social token was seeded");
+      const token = JSON.parse(stored.value) as { provider?: string; expires_at?: string };
+      assert.strictEqual(token.provider, "github");
+      assert.ok(Date.parse(token.expires_at ?? "") > Date.parse("2099-01-01T00:00:00Z"));
+    } finally {
+      home.cleanup();
+    }
   });
 });

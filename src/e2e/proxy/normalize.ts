@@ -388,7 +388,7 @@ function keyOf(entry: unknown): string {
 /** A shell command that reports a directory in the order the filesystem walks it. That order is a
  *  property of the machine, not of the tree, so two hosts holding identical files disagree — while
  *  the set of paths, which is what the model reasons about, is the same on both. */
-const DIRECTORY_LISTING = /^\s*(find|ls)\s/;
+const DIRECTORY_LISTING = /(?:^|[;&|])\s*(?:find|ls)\s/;
 const LONG_LISTING_ENTRY =
   /^([bcdlps-])[rwxStTs-]{9}\s+\d+\s+\S+\s+\S+\s+\d+\s+(?:[A-Z][a-z]{2}\s+\d{1,2}\s+(?:\d{2}:\d{2}|\d{4})|TIMESTAMP)\s+(.*)$/;
 const LONG_LISTING_TOTAL = /^(\s*total\s+)\d+$/;
@@ -675,6 +675,9 @@ const KIRO_SCOPED_ID_KEYS = new Set([
   "conversationId",
   "rootConversationId",
   "toolUseId",
+  "kiro:agent_continuation_id",
+  "kiro:conversation_id",
+  "kiro:root_conversation_id",
 ]);
 
 /**
@@ -726,9 +729,8 @@ export function normalizeKiroBody(raw: string): string {
   walk(parsed, (object) => {
     normalizeKiroOrigin(object);
     for (const [key, value] of Object.entries(object)) {
-      // The recorder signs in with OAuth and carries a profile ARN; replay authenticates with an API
-      // key and carries none. It also spells out an AWS account id, so it has no business in a
-      // committed cassette either way.
+      // The recorder carries the account's profile ARN and replay carries a fake one. It also spells
+      // out an AWS account id, so it has no business in a committed cassette either way.
       if (key === "profileArn") {
         delete object[key];
         continue;

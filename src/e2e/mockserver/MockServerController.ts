@@ -24,6 +24,7 @@ import { loadReplayMiss, type ReplayMiss } from "../replayMiss.js";
 import { normalizeRequestBody, scrubIdentity } from "../proxy/normalize.js";
 import { startNormalizingProxy } from "../proxy/normalizingProxy.js";
 import { CODEX_CHECK_ACCOUNT_ID } from "../sandbox.js";
+import { isFixtureRequest, type FixtureRoute } from "./fixtureRoutes.js";
 import { McpClient } from "./mcpClient.js";
 import { fixtureFileName, MOCK_URL_ENV, type E2EDriver, type E2EMode } from "./mode.js";
 
@@ -33,10 +34,9 @@ const IMAGE = "mockserver/mockserver:mockserver-7.4.0";
 interface HarnessProfile {
   /** Only provider interactions needed to drive inference; updater, telemetry and account traffic is
    *  discarded. Whatever matches here is committed, so a path whose response carries account state
-   *  belongs in LOCAL_BOOTSTRAP instead. */
-  fixturePaths: RegExp[];
-  /** Further limits a shared provider path to the operations that carry model inference. */
-  fixtureTargets?: RegExp[];
+   *  belongs in LOCAL_BOOTSTRAP instead. A route's targets further limit a shared provider path to
+   *  the operations that carry model inference. */
+  fixtureRoutes: FixtureRoute[];
 }
 
 export interface BootstrapExpectation {
@@ -134,10 +134,10 @@ const PROFILES: Record<string, HarnessProfile> = {
   // `/v1/messages` carries the whole conversation; everything else Claude Code talks to is telemetry
   // or account bootstrap, answered locally in check (see prepareCheck).
   claudecode: {
-    fixturePaths: [/^\/v1\/messages$/],
+    fixtureRoutes: [{ path: /^\/v1\/messages$/ }],
   },
   codex: {
-    fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
+    fixtureRoutes: [{ path: /^\/backend-api\/codex\/(?:models|responses)$/ }],
   },
   // Kiro multiplexes every operation onto `/`, so the operation header is what selects the
   // conversation traffic. Three lookups are recorded alongside it because their answers end up
@@ -149,19 +149,24 @@ const PROFILES: Record<string, HarnessProfile> = {
   // Left out, a replay misses on its own preamble rather than on anything the model said. The
   // account-state operations (GetProfile, GetUsageLimits) are deliberately NOT recorded.
   kiro: {
-    fixturePaths: [/^\/$/],
-    fixtureTargets: [
-      /^KiroRuntimeService\.GenerateAssistantResponse$/,
-      /^KiroRuntimeService\.GetFeatureConfiguration$/,
-      /^KiroRuntimeService\.InvokeMCP$/,
-      /^KiroControlPlaneBearerService\.ListAvailableModels$/,
+    fixtureRoutes: [
+      {
+        path: /^\/$/,
+        targets: [
+          /^KiroRuntimeService\.GenerateAssistantResponse$/,
+          /^KiroRuntimeService\.GetFeatureConfiguration$/,
+          /^KiroRuntimeService\.InvokeMCP$/,
+          /^KiroControlPlaneBearerService\.ListAvailableModels$/,
+        ],
+      },
+      { path: /^\/v1\/responses$/ },
     ],
   },
   opencode: {
-    fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
+    fixtureRoutes: [{ path: /^\/backend-api\/codex\/(?:models|responses)$/ }],
   },
   pi: {
-    fixturePaths: [/^\/backend-api\/codex\/(?:models|responses)$/],
+    fixtureRoutes: [{ path: /^\/backend-api\/codex\/(?:models|responses)$/ }],
   },
 };
 
@@ -170,16 +175,14 @@ export function recordsRequest(
   driver: E2EDriver,
   request: { path?: string; headers?: Record<string, unknown> },
 ): boolean {
-  const profile = profileFor(driver);
-  const requestPath = request.path;
-  if (!requestPath || !profile.fixturePaths.some((matcher) => matcher.test(requestPath))) {
-    return false;
-  }
-  if (!profile.fixtureTargets) {
-    return true;
-  }
-  const target = requestHeaderValue(request.headers, "x-amz-target");
-  return Boolean(target && profile.fixtureTargets.some((matcher) => matcher.test(target)));
+  return (
+    request.path !== undefined &&
+    isFixtureRequest(
+      profileFor(driver).fixtureRoutes,
+      request.path,
+      requestHeaderValue(request.headers, "x-amz-target"),
+    )
+  );
 }
 
 /** The locally-answered startup calls for a driver, empty when it makes none. */
@@ -191,16 +194,14 @@ export interface NormalizingProxyPlan {
   /** Undefined means the shim forwards the original request body unchanged. */
   normalizeDriver: E2EDriver | undefined;
   /** Only strict replay misses on inference endpoints end the run. */
-  fatalMissPaths: RegExp[] | undefined;
-  fatalMissTargets: RegExp[] | undefined;
+  fatalMissRoutes: FixtureRoute[] | undefined;
 }
 
 /** Every mode uses the shim. Recording is pass-through; replay uses the selected driver normalizer. */
 export function normalizingProxyPlan(mode: E2EMode, driver: E2EDriver): NormalizingProxyPlan {
   return {
     normalizeDriver: mode === "check" ? driver : undefined,
-    fatalMissPaths: mode === "check" ? profileFor(driver).fixturePaths : undefined,
-    fatalMissTargets: mode === "check" ? profileFor(driver).fixtureTargets : undefined,
+    fatalMissRoutes: mode === "check" ? profileFor(driver).fixtureRoutes : undefined,
   };
 }
 
@@ -280,8 +281,7 @@ export class MockServerController {
       mockBaseUrl: baseUrl,
       mockCaPath: opts.mockServerCaPath,
       normalizeDriver: plan.normalizeDriver,
-      fatalMissPaths: plan.fatalMissPaths,
-      fatalMissTargets: plan.fatalMissTargets,
+      fatalMissRoutes: plan.fatalMissRoutes,
       missFilePath: opts.missFilePath,
       log: opts.log,
     });

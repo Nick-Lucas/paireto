@@ -205,7 +205,7 @@ are never written.
 | `claudecode` | `claude` + `tmux`   | `~/.claude.json` + keychain `Claude Code-credentials` (or `ANTHROPIC_API_KEY`)    |
 | `codex`      | `codex` + `tmux`    | `~/.codex/auth.json`                                                              |
 | `kiro`       | `kiro-cli` + `tmux` | keychain `kirocli:*` (or `auth_kv` in `kiro-cli/data.sqlite3`), or `KIRO_API_KEY` |
-| `opencode`   | `opencode`          | `~/.local/share/opencode/auth.json` (built-in OpenAI OAuth provider)              |
+| `opencode`   | `opencode`          | `~/.codex/auth.json`, restated for OpenCode's built-in OpenAI OAuth provider      |
 | `pi`         | `pi`                | `~/.codex/auth.json`, restated in Pi's own credential shape                       |
 
 - `claudecode` / `codex` / `kiro` need **tmux** on PATH for startup keystrokes and failure-screen capture.

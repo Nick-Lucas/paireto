@@ -40,8 +40,8 @@ load with a re-record instruction, and `record` refuses to write one if it can't
   re-record, extend `IDENTITY_PATTERNS`/`IDENTITY_KEYS` in `src/e2e/proxy/normalize.ts` and re-record —
   never hand-edit the value out and leave the scrubber blind to it.
 - **Account and billing endpoints are never recorded.** They answer with the recorder's plan, quota use
-  and credit balance, and drive no inference, so `fixturePaths` in `MockServerController.ts` excludes
+  and credit balance, and drive no inference, so `fixtureRoutes` in `MockServerController.ts` excludes
   them and `LOCAL_BOOTSTRAP` answers them with a synthetic payload instead. Adding an endpoint to
-  `fixturePaths` commits whatever it returns — check the body first.
+  `fixtureRoutes` commits whatever it returns — check the body first.
 - Fixtures are large but text; they diff. Re-record when the plugin's wire shape or the driver prompts
   change and a Docker check starts 599-ing (the strict-VCR "no fixture matched" signal).

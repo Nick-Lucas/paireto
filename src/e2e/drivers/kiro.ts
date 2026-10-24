@@ -21,7 +21,10 @@ export const KIRO_E2E_MODEL = "claude-haiku-4.5";
 
 export function kiroLaunchCommand(planMode: boolean): string {
   const agent = planMode ? "--agent kiro_planner " : "";
-  return `kiro-cli chat --v3 ${agent}--model ${KIRO_E2E_MODEL} ` + "--trust-all-tools --tui";
+  return (
+    `kiro-cli chat --v3 ${agent}--model ${KIRO_E2E_MODEL} ` +
+    "--trust-all-tools --trust-workspace --tui"
+  );
 }
 
 export class KiroDriver implements HarnessDriver {

@@ -22,7 +22,7 @@ export default defineConfig({
 	// inside it. Both halves are Mocha's own selection.
 	files: required('PAIRETO_E2E_SPEC'),
 	// The pinned VS Code the repo's test cache already holds (see .vscode-test/); avoids a download.
-	version: '1.128.0',
+	version: '1.143.1',
 	workspaceFolder: required('PAIRETO_E2E_SANDBOX'),
 	launchArgs: [
 		'--user-data-dir',
