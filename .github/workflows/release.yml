@@ -8,18 +8,22 @@ on:
         type: choice
         options: [patch, minor, major]
         default: minor
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: write
 
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: release-${{ github.event_name }}
+  cancel-in-progress: ${{ github.event_name == 'workflow_run' }}
 
 jobs:
   bump:
     name: Bump version and tag
-    if: github.ref == 'refs/heads/main'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -57,7 +61,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          tag=$(npm version "$BUMP" -m "chore(release): %s")
+          tag=$(npm version "$(node scripts/releaseVersion.mts stable "$BUMP")" -m "chore(release): %s")
           git push --atomic origin "HEAD:refs/heads/main" "refs/tags/$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
@@ -96,3 +100,38 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.bump.outputs.tag }}
         run: gh release create "$TAG" dist/paireto.vsix --verify-tag --generate-notes --title "$TAG"
+
+  prerelease:
+    name: Publish a pre-release to the Marketplace
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: Release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.21.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: npm version "$(node scripts/releaseVersion.mts prerelease "$GITHUB_RUN_NUMBER")" --no-git-tag-version
+      - run: pnpm run package --pre-release
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+      - run: pnpm exec vsce publish --pre-release --azure-credential --packagePath dist/paireto.vsix --skip-duplicate
