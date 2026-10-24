@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: write
+      contents: read
       actions: read
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -37,7 +37,16 @@ jobs:
             echo "::error::CI has not passed on $GITHUB_SHA. Wait for CI to go green on main, then run the release again."
             exit 1
           fi
+      - id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
       - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc

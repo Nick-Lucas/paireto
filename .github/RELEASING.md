@@ -21,6 +21,8 @@ Do not change `version` in `package.json` by hand. Do not publish from a local m
 
 | Name | Kind | Where | Purpose |
 | --- | --- | --- | --- |
+| `RELEASE_APP_CLIENT_ID` | Variable | Repository | The client ID of the GitHub App that pushes the release commit and tag. |
+| `RELEASE_APP_PRIVATE_KEY` | Secret | Repository | A private key of that GitHub App. |
 | `AZURE_CLIENT_ID` | Variable | `marketplace` environment | The client ID of the Microsoft Entra app registration that publishes. |
 | `AZURE_TENANT_ID` | Variable | `marketplace` environment | The tenant ID of that app registration. |
 
@@ -34,4 +36,4 @@ The app registration has a federated credential with these values:
 
 The **Show the Marketplace identity ID** step prints the ID of the identity that publishes. That ID is a member of the `Paireto` publisher, with the **Contributor** role.
 
-The `bump` job pushes with `GITHUB_TOKEN`. The `main-2` ruleset requires CI checks on `main`, so the **GitHub Actions** app is on its bypass list. A push made with `GITHUB_TOKEN` does not start CI, so the release commit has no CI run of its own. The commit before it must pass CI before the release can start.
+The `bump` job pushes with a token from the GitHub App. The app has **Contents: Read and write** on this repository, and it is on the bypass list of the `main-2` ruleset, because that ruleset requires CI checks on `main`.
