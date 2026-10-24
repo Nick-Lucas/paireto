@@ -1489,6 +1489,20 @@ export class ReviewController implements vscode.Disposable {
       this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
     }
 
+    if (file.status === "!") {
+      const uri = vscode.Uri.file(join(repoRoot, file.path));
+      if (await this.diff.hasBothConflictSides(repoRoot, file.path)) {
+        await vscode.commands.executeCommand("git.openMergeEditor", uri);
+      } else {
+        await vscode.commands.executeCommand("vscode.open", uri, {
+          preview: show?.preview ?? true,
+          viewColumn: show?.viewColumn,
+          preserveFocus: show?.preserveFocus,
+        });
+      }
+      return;
+    }
+
     const naturalSides = this.diff.fileSides(file, changes.compareRef);
     const sides = show?.baseComparison
       ? withBaseComparison(naturalSides, show.baseComparison.ref)
