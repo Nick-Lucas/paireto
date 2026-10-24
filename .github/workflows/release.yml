@@ -23,7 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
-      contents: read
+      contents: write
       actions: read
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -38,8 +38,6 @@ jobs:
             exit 1
           fi
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.RELEASE_TOKEN }}
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
