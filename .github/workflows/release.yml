@@ -7,7 +7,7 @@ on:
         description: Version bump
         type: choice
         options: [patch, minor, major]
-        default: patch
+        default: minor
 
 permissions:
   contents: read
