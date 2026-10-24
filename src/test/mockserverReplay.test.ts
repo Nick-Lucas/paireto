@@ -1222,6 +1222,18 @@ suite("provider-replay: directory listing order", () => {
     );
   });
 
+  test("a find that the command reaches part way through is still a listing", () => {
+    const command =
+      "rg --files docs src | sort && find docs src -type f -maxdepth 5 -print -exec sed -n '1,220p' {} \\;";
+    const prefix = "docs/changelog.md\nsrc/auth/login.ts\nsrc/auth/session.ts\n";
+    const login = "src/auth/login.ts\nexport function login() {}";
+    const session = "src/auth/session.ts\nexport function newSession() {}";
+    assert.strictEqual(
+      normalizeClaudeBody(turn(command, `${prefix}${login}\n${session}`)),
+      normalizeClaudeBody(turn(command, `${prefix}${session}\n${login}`)),
+    );
+  });
+
   test("a listing that gained or lost a path still differs", () => {
     const three = normalizeClaudeBody(turn(FIND, "a.ts\nb.ts\nc.ts"));
     assert.notStrictEqual(three, normalizeClaudeBody(turn(FIND, "a.ts\nb.ts")));
