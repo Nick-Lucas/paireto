@@ -46,31 +46,31 @@
   },
   "dependencies": {
     "dedent": "^1.7.2",
-    "immer": "^11.1.18",
+    "immer": "^11.2.9",
     "jsonc-parser": "^3.3.1",
-    "nanoid": "^6.0.1",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "zustand": "^5.0.15"
+    "nanoid": "^6.0.2",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "@types/mocha": "^10.0.10",
-    "@types/node": "~26.2.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "@types/vscode": "^1.125.0",
+    "@types/node": "~26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/vscode": "^1.140.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
-    "@vscode/vsce": "^3.9.2",
+    "@vscode/vsce": "^4.0.0",
     "ajv": "^8.20.0",
     "esbuild": "^0.28.2",
-    "mocha": "^11.8.0",
+    "mocha": "^12.0.3",
     "npm-run-all": "^4.1.5",
-    "oxfmt": "^0.63.0",
-    "oxlint": "^1.78.0",
+    "oxfmt": "^0.74.0",
+    "oxlint": "^1.89.0",
     "typescript": "^7.0.2",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "contributes": {
     "commands": [
@@ -839,7 +839,7 @@
   ],
   "icon": "media/PairetoAppIcon@2x.png",
   "engines": {
-    "vscode": "^1.125.0"
+    "vscode": "^1.140.0"
   },
   "packageManager": "pnpm@11.21.0"
 }
