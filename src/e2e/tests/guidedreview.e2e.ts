@@ -102,13 +102,12 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         fs.utimesSync(file, stamped, stamped);
       }
       const sessionId = `${harness}-${crypto.randomBytes(4).toString("hex")}`;
-      // Ordinary work, not plan mode — and the bundled MCP server loaded so its tool is callable.
+      // Ordinary work, not plan mode.
       await driver.launch({
         repoRoot,
         sessionId,
         log,
         planMode: false,
-        loadPluginMcp: true,
         completionMarker: FEEDBACK_FILE,
       });
     });

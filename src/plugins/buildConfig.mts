@@ -47,7 +47,11 @@ function assetPaths(root: string): { files: string[]; dirs: string[] } {
  * A virtual entry module declares the whole tree to the watcher instead: the files catch an edit and
  * the directories catch an add, a rename or a delete.
  */
-export function copyAssets(from: string, to: string): Plugin {
+export function copyAssets(
+  from: string,
+  to: string,
+  transform?: (contents: string) => string,
+): Plugin {
   return {
     name: `copy-assets:${to}`,
     setup(build) {
@@ -68,6 +72,11 @@ export function copyAssets(from: string, to: string): Plugin {
         const sourceIsDirectory = fs.statSync(from).isDirectory();
         fs.mkdirSync(sourceIsDirectory ? to : path.dirname(to), { recursive: true });
         fs.cpSync(from, to, { recursive: true });
+        if (transform) {
+          for (const file of assetPaths(to).files) {
+            fs.writeFileSync(file, transform(fs.readFileSync(file, "utf8")));
+          }
+        }
       });
     },
   };
@@ -101,12 +110,17 @@ export function nodePluginBundle(
 
 /** An asset-only config: no code to bundle, just the static tree to copy. The entry imports the
  *  virtual asset module so the tree is what this build watches, and the output is thrown away. */
-export function assetOnlyBundle(ctx: PluginBuildContext, from: string, to: string): BuildOptions {
+export function assetOnlyBundle(
+  ctx: PluginBuildContext,
+  from: string,
+  to: string,
+  transform?: (contents: string) => string,
+): BuildOptions {
   return {
     stdin: { contents: `import "${ASSET_ENTRY}";`, loader: "js" },
     bundle: true,
     write: false,
     logLevel: "silent",
-    plugins: [ctx.problemMatcher, copyAssets(from, path.join(PLUGIN_OUT_ROOT, to))],
+    plugins: [ctx.problemMatcher, copyAssets(from, path.join(PLUGIN_OUT_ROOT, to), transform)],
   };
 }

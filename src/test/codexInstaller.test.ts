@@ -54,17 +54,22 @@ suite("Codex bundled plugin contract", () => {
     assert.strictEqual(mcp.mcpServers.paireto.cwd, ".");
     assert.strictEqual(mcp.mcpServers.paireto.tool_timeout_sec, 86_400);
 
-    const skill = fs.readFileSync(
-      path.join(bundledPlugin, "skills", "paireto-review", "SKILL.md"),
-      "utf8",
-    );
-    assert.ok(skill.includes("ends in `paireto_review`"));
-    assert.ok(!fs.existsSync(path.join(bundledPlugin, "skills", "paireto-plan", "SKILL.md")));
+    const codexSkills = path.join(bundledPlugin, "com.openai.codex", "skills");
+    const skill = fs.readFileSync(path.join(codexSkills, "paireto-review", "SKILL.md"), "utf8");
+    assert.ok(skill.includes("`mcp__paireto__paireto_review` tool"));
+    assert.ok(skill.includes("`mcp__paireto__paireto_reply_to_feedback` tool"));
+    assert.ok(!fs.existsSync(path.join(codexSkills, "paireto-plan", "SKILL.md")));
     const guided = fs.readFileSync(
-      path.join(bundledPlugin, "skills", "paireto-guided-review", "SKILL.md"),
+      path.join(codexSkills, "paireto-guided-review", "SKILL.md"),
       "utf8",
     );
-    assert.ok(guided.includes("ends in `paireto_start_guided_review`"));
+    assert.ok(guided.includes("`mcp__paireto__paireto_start_guided_review` tool"));
+    assert.ok(guided.includes("`mcp__paireto__paireto_reply_to_feedback` tool"));
+    for (const name of ["paireto-review", "paireto-guided-review"]) {
+      const core = fs.readFileSync(path.join(bundledPlugin, "skills", name, "SKILL.md"), "utf8");
+      const codex = fs.readFileSync(path.join(codexSkills, name, "SKILL.md"), "utf8");
+      assert.strictEqual(codex.replaceAll("mcp__paireto__", ""), core);
+    }
     // The built server, not the source: this asserts the artifact the installer actually stages.
     // Match on the bare tool names, which survive minification, rather than a source spelling.
     const server = fs.readFileSync(path.join(bundledPlugin, "runtime", "mcp.js"), "utf8");
@@ -118,7 +123,12 @@ suite("Codex native marketplace", () => {
       assert.ok(fs.existsSync(path.join(stagedPlugin, ".codex-plugin", "plugin.json")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, "hooks", "hooks.json")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, ".mcp.json")));
-      assert.ok(fs.existsSync(path.join(stagedPlugin, "skills", "paireto-review", "SKILL.md")));
+      assert.ok(
+        fs
+          .readFileSync(path.join(stagedPlugin, "skills", "paireto-review", "SKILL.md"), "utf8")
+          .includes("`mcp__paireto__paireto_review` tool"),
+      );
+      assert.ok(!fs.existsSync(path.join(stagedPlugin, "com.openai.codex", "skills")));
       assert.ok(fs.existsSync(path.join(stagedPlugin, "runtime", "mcp.js")));
       // The hook commands address the namespace runtime, so that directory has to survive staging.
       assert.ok(
