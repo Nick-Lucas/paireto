@@ -67,8 +67,8 @@ so a test exec never races the install.
   attached. `ANTHROPIC_API_KEY` is forwarded only
   in record mode, so a check run cannot reach a real provider even if the key is exported.
 - `docker-compose.e2e.yml` — E2E-only overlay: mounts the staged Claude secret (`./.secrets`, read-only
-  at `/paireto-secrets`) plus `~/.codex` (which Pi also records against — it reads the same ChatGPT
-  subscription through its own provider), `~/.local/share/opencode`, `~/.config/opencode`.
+  at `/paireto-secrets`) plus `~/.codex` (which OpenCode and Pi also record against — they read the
+  same ChatGPT subscription through their own providers).
 - `docker-compose.mockserver.yml` — adds MockServer for every E2E run. Record combines this with
   the credential overlay; check deliberately does not, seeds fake auth, installs a strict 599 catch-all,
   and runs with MockServer in `SIMULATE` mode so a fixture miss cannot reach a provider.

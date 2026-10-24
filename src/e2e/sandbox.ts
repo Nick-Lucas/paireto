@@ -320,8 +320,9 @@ export function probeOpenCode(mode: E2EMode = "record"): Availability {
   if (mode === "check") {
     return true;
   }
-  const dataAuth = path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
-  return fs.existsSync(dataAuth) ? true : "no opencode auth.json";
+  return fs.existsSync(path.join(os.homedir(), ".codex", "auth.json"))
+    ? true
+    : "no ~/.codex/auth.json — OpenCode records against the same ChatGPT subscription as Codex";
 }
 
 export function probePi(mode: E2EMode = "record"): Availability {
@@ -449,8 +450,8 @@ export function buildCodexHome(opts: { checkMode?: boolean; homeDir?: string } =
 }
 
 /**
- * Build an isolated opencode home: temp XDG_CONFIG_HOME + XDG_DATA_HOME with auth.json copied into
- * the data home. Plugin + opencode.json + auth-plugin copying is the driver's job.
+ * Build an isolated opencode home: temp XDG_CONFIG_HOME + XDG_DATA_HOME with an auth.json restated
+ * from ~/.codex/auth.json in the data home. Plugin + opencode.json + auth-plugin copying is the driver's job.
  */
 export function buildOpenCodeHome(
   opts: { checkMode?: boolean; homeDir?: string } = {},
@@ -480,9 +481,13 @@ export function buildOpenCodeHome(
     );
     fs.chmodSync(authPath, 0o600);
   } else {
-    const srcAuth = path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
-    if (fs.existsSync(srcAuth)) {
-      copySecret(srcAuth, authPath);
+    const credential = openCodeCredentialFromCodex(
+      readFileOrEmpty(path.join(os.homedir(), ".codex", "auth.json")),
+    );
+    if (credential) {
+      fs.mkdirSync(path.dirname(authPath), { recursive: true });
+      fs.writeFileSync(authPath, JSON.stringify(credential));
+      fs.chmodSync(authPath, 0o600);
     }
   }
   return {
@@ -516,6 +521,18 @@ export function buildKiroHome(opts: { checkMode?: boolean; homeDir?: string } = 
 }
 
 export function piCredentialFromCodex(codexAuthJson: string): Record<string, unknown> | undefined {
+  const oauth = chatGptOAuthFromCodex(codexAuthJson);
+  return oauth && { "openai-codex": oauth };
+}
+
+export function openCodeCredentialFromCodex(
+  codexAuthJson: string,
+): Record<string, unknown> | undefined {
+  const oauth = chatGptOAuthFromCodex(codexAuthJson);
+  return oauth && { openai: oauth };
+}
+
+function chatGptOAuthFromCodex(codexAuthJson: string): Record<string, unknown> | undefined {
   let tokens: { access_token?: unknown; refresh_token?: unknown } | undefined;
   try {
     tokens = (JSON.parse(codexAuthJson) as { tokens?: typeof tokens }).tokens;
@@ -534,7 +551,7 @@ export function piCredentialFromCodex(codexAuthJson: string): Record<string, unk
   if (typeof accountId !== "string" || typeof exp !== "number") {
     return undefined;
   }
-  return { "openai-codex": { type: "oauth", access, refresh, expires: exp * 1000, accountId } };
+  return { type: "oauth", access, refresh, expires: exp * 1000, accountId };
 }
 
 function decodeJwtClaims(token: string): Record<string, unknown> {

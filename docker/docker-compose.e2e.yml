@@ -9,5 +9,3 @@ services:
     volumes:
       - ./.secrets:/paireto-secrets:ro
       - ${HOME}/.codex:/root/.codex:ro
-      - ${HOME}/.local/share/opencode:/root/.local/share/opencode:ro
-      - ${HOME}/.config/opencode:/root/.config/opencode:ro
