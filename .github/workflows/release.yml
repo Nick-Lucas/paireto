@@ -10,7 +10,7 @@ on:
         default: minor
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release
@@ -25,6 +25,7 @@ jobs:
     permissions:
       contents: read
       actions: read
+    environment: Release
     outputs:
       tag: ${{ steps.version.outputs.tag }}
     steps:
