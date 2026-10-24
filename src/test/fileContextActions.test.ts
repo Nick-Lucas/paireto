@@ -36,7 +36,10 @@ suite("changed file context menu", () => {
     for (const command of ["paireto.review.copyPath", "paireto.review.revealInExplorer"]) {
       const entry = context.find((item) => item.command === command);
       assert.ok(entry, `${command} must be in the tree item context menu`);
-      assert.strictEqual(entry.when, "view == paireto.main && viewItem =~ /^changedFile:/");
+      assert.strictEqual(
+        entry.when,
+        "view == paireto.main && viewItem =~ /^(changedFile|deltaFile):/",
+      );
       assert.ok(!entry.group?.startsWith("inline"), `${command} must not be an inline button`);
     }
   });

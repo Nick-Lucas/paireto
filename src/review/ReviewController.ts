@@ -24,6 +24,7 @@ import {
   type ChangesModel,
   type ContentRef,
   type FileSides,
+  type ScopedChanges,
 } from "../git/DiffService.js";
 import type { WorkspaceRootCatalog } from "../git/WorkspaceRootCatalog.js";
 import { TurnReviewState } from "./TurnReviewState.js";
@@ -31,7 +32,7 @@ import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { Harness } from "../protocol/types.js";
 import { currentFeedbackRef, type FeedbackRef } from "../git/gitCli.js";
-import type { CompareTo, FileGroup, FileLayout } from "../types.js";
+import type { ChangesMode, CompareTo, FileGroup, FileLayout } from "../types.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewPath } from "./ReviewPath.js";
@@ -44,6 +45,7 @@ import {
   CommentIdArg,
   CommentReplyArg,
   CommentThreadArg,
+  DeltaArg,
   FileArg,
   FilesArg,
   GuidedRowArg,
@@ -91,6 +93,7 @@ const EMPTY_CHANGES: ChangesModel = {
   staged: [],
   unstaged: [],
   committed: [],
+  net: [],
   compareLabel: "HEAD",
   compareRef: null,
 };
@@ -128,6 +131,7 @@ export type RefreshReason =
 export interface ReviewState {
   compareTo: CompareTo;
   layout: FileLayout;
+  mode: ChangesMode;
   repositories: RepositoryReviewState[];
   /** The agent's changeset plan resolved against the live changes, while a guided review is open. */
   guided?: GuidedReviewState;
@@ -188,6 +192,7 @@ export class ReviewController implements vscode.Disposable {
   private reviewId = newReviewId();
   private compareTo: CompareTo;
   private layout: FileLayout;
+  private mode: ChangesMode;
   private readonly repositoryStates = new Map<string, RepositoryReviewState>();
   /** The last ref a scan really read for each root. A scan that failed says nothing about a branch,
    *  so the remembered answer stands until another scan succeeds. */
@@ -248,6 +253,7 @@ export class ReviewController implements vscode.Disposable {
   ) {
     this.compareTo = store.getCompareTo();
     this.layout = store.getLayout();
+    this.mode = store.getMode();
     this.turns = new TurnReviewState(() => this.roots.gitRoots.map((root) => root.repoRoot));
     // Commenting is always available on the Changes diffs — on the review-scheme side of a locked
     // diff AND on the editable working-tree (file:) side of an editable one, so it works regardless
@@ -277,7 +283,11 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewRefresh, () => this.refresh("manual")),
       reg(Commands.reviewPickCompareTo, () => this.changeCompareTo()),
       reg(Commands.reviewPickDiffCompareTo, () => this.changeActiveDiffCompareTo()),
-      reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
+      reg(Commands.reviewPickViewMode, () => this.pickViewMode()),
+      reg(
+        Commands.reviewOpenDelta,
+        withArg(DeltaArg, (file) => this.openAgainstCompareTo(file)),
+      ),
       reg(
         Commands.reviewOpenDiff,
         withSelection(FileArg, (files) => this.openDiffFiles(files)),
@@ -771,6 +781,7 @@ export class ReviewController implements vscode.Disposable {
     return {
       compareTo: this.compareTo,
       layout: this.layout,
+      mode: this.mode,
       repositories,
       guided: this.guidedPlan && this.buildGuided(this.guidedPlan, repositories),
     };
@@ -1035,9 +1046,21 @@ export class ReviewController implements vscode.Disposable {
     this.openDiffs.delete(oldTabKey);
   }
 
-  private async toggleLayout(): Promise<void> {
-    this.layout = this.layout === "tree" ? "flat" : "tree";
-    await this.store.setLayout(this.layout);
+  private pickViewMode(): void {
+    openViewModePicker(
+      () => ({ mode: this.mode, layout: this.layout }),
+      (choice) => this.applyViewMode(choice),
+    );
+  }
+
+  private async applyViewMode(choice: ViewModeChoice): Promise<void> {
+    if (choice.kind === "mode") {
+      this.mode = choice.mode;
+      await this.store.setMode(this.mode);
+    } else {
+      this.layout = choice.layout;
+      await this.store.setLayout(this.layout);
+    }
     this.changeEmitter.fire();
   }
 
@@ -2061,8 +2084,12 @@ export class ReviewController implements vscode.Disposable {
     if (!file) {
       return; // A path with no live change has nothing to open — the row already says so.
     }
+    void this.openAgainstCompareTo(file);
+  }
+
+  private openAgainstCompareTo(file: RepoChangedFile): Promise<OpenedReviewFile | undefined> {
     const changes = this.changesFor(file.repoRoot);
-    void this.openDiff(file, {
+    return this.openDiff(file, {
       baseComparison: changes
         ? plannedBaseComparison(this.diff.fileSides(file, changes.compareRef), changes)
         : undefined,
@@ -2387,6 +2414,7 @@ function scopedChanges(repoRoot: string, changes: ChangesModel): RepositoryChang
     staged: scope(changes.staged),
     unstaged: scope(changes.unstaged),
     committed: scope(changes.committed),
+    net: changes.net,
     compareLabel: changes.compareLabel,
     compareRef: changes.compareRef,
   };
@@ -2459,6 +2487,90 @@ export function selectCommentFile(
  * once several Git roots are open — it need not name anything in the others — so the window falls
  * back to the default branch there.
  */
+export type ViewModeChoice =
+  | { kind: "mode"; mode: ChangesMode }
+  | { kind: "layout"; layout: FileLayout };
+
+export type ViewModeItem = vscode.QuickPickItem & { choice?: ViewModeChoice };
+
+const MODE_OPTIONS: { mode: ChangesMode; label: string; detail: string }[] = [
+  {
+    mode: "staging",
+    label: "Staging",
+    detail: "Changes grouped into Committed, Staged and Working Tree",
+  },
+  {
+    mode: "delta",
+    label: "Delta",
+    detail: "One row per file against Compare To, with stage and unstage controls",
+  },
+  {
+    mode: "review",
+    label: "Review",
+    detail: "One row per file against Compare To, marked off as you review it",
+  },
+];
+
+const LAYOUT_OPTIONS: { layout: FileLayout; label: string; detail: string }[] = [
+  { layout: "tree", label: "Tree", detail: "Files nested in their folders" },
+  { layout: "flat", label: "Flat", detail: "Files in one list, with their folder beside the name" },
+];
+
+export function viewModeItems(mode: ChangesMode, layout: FileLayout): ViewModeItem[] {
+  const mark = (current: boolean): string => (current ? "$(check)" : "$(blank)");
+  return [
+    { label: "View", kind: vscode.QuickPickItemKind.Separator },
+    ...MODE_OPTIONS.map((option): ViewModeItem => ({
+      label: `${mark(option.mode === mode)} ${option.label}`,
+      detail: option.detail,
+      choice: { kind: "mode", mode: option.mode },
+    })),
+    { label: "Layout", kind: vscode.QuickPickItemKind.Separator },
+    ...LAYOUT_OPTIONS.map((option): ViewModeItem => ({
+      label: `${mark(option.layout === layout)} ${option.label}`,
+      detail: option.detail,
+      choice: { kind: "layout", layout: option.layout },
+    })),
+  ];
+}
+
+function sameChoice(a: ViewModeChoice | undefined, b: ViewModeChoice): boolean {
+  return (
+    a?.kind === b.kind &&
+    (a.kind === "mode"
+      ? a.mode === (b as typeof a).mode
+      : a.layout === (b as Extract<ViewModeChoice, { kind: "layout" }>).layout)
+  );
+}
+
+export function openViewModePicker(
+  current: () => { mode: ChangesMode; layout: FileLayout },
+  apply: (choice: ViewModeChoice) => Promise<void>,
+): vscode.QuickPick<ViewModeItem> {
+  const pick = vscode.window.createQuickPick<ViewModeItem>();
+  pick.title = "View Modes";
+  pick.keepScrollPosition = true;
+  const render = (active?: ViewModeChoice): void => {
+    const { mode, layout } = current();
+    const items = viewModeItems(mode, layout);
+    const focus = active ?? { kind: "mode", mode };
+    pick.items = items;
+    pick.activeItems = items.filter((item) => sameChoice(item.choice, focus));
+  };
+  render();
+  pick.onDidAccept(async () => {
+    const choice = pick.selectedItems[0]?.choice;
+    if (!choice) {
+      return;
+    }
+    await apply(choice);
+    render(choice);
+  });
+  pick.onDidHide(() => pick.dispose());
+  pick.show();
+  return pick;
+}
+
 export function sharedCompareToHolds(rootCount: number, compareTo: CompareTo): boolean {
   return rootCount <= 1 || compareTo.kind !== "ref";
 }
@@ -2508,7 +2620,7 @@ export interface OpenDiffSync {
     repoRoot: string,
     relPaths: string[],
     compareRef: string | null,
-  ): Promise<ChangedFile[]>;
+  ): Promise<ScopedChanges>;
   getRepository(repoRoot: string): RepositoryReviewState | undefined;
   setRepository(state: RepositoryReviewState): void;
   /** The repo's refresh() sequence (bumped synchronously at every refresh() start) — read around
@@ -2538,7 +2650,7 @@ export async function syncFileForOpenDiff(
   }
   const seq = deps.getRefreshSeq(repoRoot);
   const relPaths = file.oldPath ? [file.path, file.oldPath] : [file.path];
-  let fresh: ChangedFile[];
+  let fresh: ScopedChanges;
   try {
     fresh = await deps.changesForPath(repoRoot, relPaths, snapshot.changes.compareRef);
   } catch {
@@ -2580,7 +2692,7 @@ function mergeChangesForPath(
   changes: RepositoryChangesModel,
   repoRoot: string,
   relPaths: string[],
-  fresh: ChangedFile[],
+  fresh: ScopedChanges,
 ): { changes: RepositoryChangesModel; changed: boolean } {
   // Affected = the queried paths plus every path the scoped result touches, INCLUDING a rename's
   // old path — and stale entries match by their old path too, so a rename entry keyed by its new
@@ -2588,24 +2700,33 @@ function mergeChangesForPath(
   // across rename pairs to a fixpoint, so it is always a superset of `affected` — anything dropped
   // here that still exists in git comes back via `fresh`.
   const affected = new Set(relPaths);
-  for (const f of fresh) {
+  for (const f of [...fresh.files, ...fresh.net]) {
     affected.add(f.path);
     if (f.oldPath !== undefined) {
       affected.add(f.oldPath);
     }
   }
-  const touches = (f: ChangedFile): boolean =>
+  const touches = (f: { path: string; oldPath?: string }): boolean =>
     affected.has(f.path) || (f.oldPath !== undefined && affected.has(f.oldPath));
   const next = { ...changes };
   let changed = false;
   for (const group of ["staged", "unstaged", "committed"] as FileGroup[]) {
     const kept = changes[group].filter((f) => !touches(f));
-    const replacement = fresh.filter((f) => f.group === group).map((f) => ({ ...f, repoRoot }));
+    const replacement = fresh.files
+      .filter((f) => f.group === group)
+      .map((f) => ({ ...f, repoRoot }));
     const merged = [...kept, ...replacement].sort((a, b) => a.path.localeCompare(b.path));
     if (!groupEqual(changes[group], merged)) {
       next[group] = merged;
       changed = true;
     }
+  }
+  const net = [...changes.net.filter((f) => !touches(f)), ...fresh.net].sort((a, b) =>
+    a.path.localeCompare(b.path),
+  );
+  if (JSON.stringify(net) !== JSON.stringify(changes.net)) {
+    next.net = net;
+    changed = true;
   }
   return { changes: next, changed };
 }

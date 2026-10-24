@@ -19,10 +19,25 @@ export interface ChangedFile {
   deletions: number;
 }
 
+export interface NetChange {
+  path: string;
+  oldPath?: string;
+  status: FileStatus;
+  additions: number;
+  deletions: number;
+  contentId: string;
+}
+
+export interface ScopedChanges {
+  files: ChangedFile[];
+  net: NetChange[];
+}
+
 export interface ChangesModel {
   staged: ChangedFile[];
   unstaged: ChangedFile[];
   committed: ChangedFile[];
+  net: NetChange[];
   /** Human label for the resolved Compare-To point (e.g. "main", "merge-base"). */
   compareLabel: string;
   /** Resolved ref the committed group is diffed against, or null when Compare-To = HEAD. */
@@ -78,12 +93,13 @@ export class DiffService {
   /** Build the grouped Changes model for the given Compare-To point. */
   async getChanges(repoRoot: string, compareTo: CompareTo): Promise<ChangesModel> {
     const resolved = await this.resolveCompareTo(repoRoot, compareTo);
-    const { staged, unstaged, committed } = await this.scan(repoRoot, resolved.ref);
-    const sort = (a: ChangedFile, b: ChangedFile): number => a.path.localeCompare(b.path);
+    const { staged, unstaged, committed, net } = await this.scan(repoRoot, resolved.ref);
+    const sort = (a: { path: string }, b: { path: string }): number => a.path.localeCompare(b.path);
     return {
       staged: staged.sort(sort),
       unstaged: unstaged.sort(sort),
       committed: committed.sort(sort),
+      net: net.sort(sort),
       compareLabel: resolved.label,
       compareRef: resolved.ref,
     };
@@ -112,9 +128,9 @@ export class DiffService {
     repoRoot: string,
     relPaths: string[],
     compareRef: string | null,
-  ): Promise<ChangedFile[]> {
-    const { staged, unstaged, committed } = await this.scan(repoRoot, compareRef, relPaths);
-    return [...staged, ...unstaged, ...committed];
+  ): Promise<ScopedChanges> {
+    const { staged, unstaged, committed, net } = await this.scan(repoRoot, compareRef, relPaths);
+    return { files: [...staged, ...unstaged, ...committed], net };
   }
 
   /**
@@ -126,13 +142,18 @@ export class DiffService {
     repoRoot: string,
     compareRef: string | null,
     paths: string[] = [],
-  ): Promise<{ staged: ChangedFile[]; unstaged: ChangedFile[]; committed: ChangedFile[] }> {
+  ): Promise<{
+    staged: ChangedFile[];
+    unstaged: ChangedFile[];
+    committed: ChangedFile[];
+    net: NetChange[];
+  }> {
     const unscopedUntracked =
       paths.length === 0
         ? gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"])
         : undefined;
 
-    const [stagedRaw, unstagedRaw, committedAll] = await Promise.all([
+    const [stagedRaw, unstagedRaw, committedAll, netAll] = await Promise.all([
       this.collect(repoRoot, ["diff", "--cached"], "staged"),
       this.collect(repoRoot, ["diff"], "unstaged"),
       compareRef
@@ -140,10 +161,18 @@ export class DiffService {
             (): ChangedFile[] => [],
           )
         : [],
+      this.collect(repoRoot, ["diff", compareRef ?? "HEAD"], "unstaged").catch(
+        (): ChangedFile[] => [],
+      ),
     ]);
 
     const { staged: stagedAll, unstaged: unstagedAll } = collapseConflicts(stagedRaw, unstagedRaw);
-    const scoped = widenAcrossRenames(paths, [...stagedAll, ...unstagedAll, ...committedAll]);
+    const scoped = widenAcrossRenames(paths, [
+      ...stagedAll,
+      ...unstagedAll,
+      ...committedAll,
+      ...netAll,
+    ]);
     const scope = (files: ChangedFile[]): ChangedFile[] =>
       scoped === undefined ? files : files.filter((f) => matchesPaths(f, scoped));
     const staged = scope(stagedAll);
@@ -164,7 +193,20 @@ export class DiffService {
     }
 
     const committed = scope(committedAll);
-    return { staged, unstaged, committed };
+    const netFiles = [...scope(netAll), ...unstaged.filter((f) => f.status === "U")];
+    const contentIds = await hashWorkingFiles(
+      repoRoot,
+      netFiles.filter((f) => f.status !== "D").map((f) => f.path),
+    );
+    const net = netFiles.map(({ path, oldPath, status, additions, deletions }): NetChange => ({
+      path,
+      oldPath,
+      status,
+      additions,
+      deletions,
+      contentId: status === "D" ? "deleted" : (contentIds.get(path) ?? ""),
+    }));
+    return { staged, unstaged, committed, net };
   }
 
   /** Run a name-status diff + numstat for one group and merge the line counts.
@@ -532,6 +574,21 @@ export function parseNumstat(output: string): Counts {
     });
   }
   return map;
+}
+
+const HASH_BATCH = 200;
+
+async function hashWorkingFiles(repoRoot: string, paths: string[]): Promise<Map<string, string>> {
+  const ids = new Map<string, string>();
+  for (let start = 0; start < paths.length; start += HASH_BATCH) {
+    const batch = paths.slice(start, start + HASH_BATCH);
+    const hashes = (await gitSafe(repoRoot, ["hash-object", "--", ...batch])).split("\n");
+    if (hashes.length < batch.length) {
+      continue;
+    }
+    batch.forEach((path, index) => ids.set(path, hashes[index]));
+  }
+  return ids;
 }
 
 async function countLines(repoRoot: string, relPath: string): Promise<number> {

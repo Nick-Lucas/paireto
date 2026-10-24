@@ -68,7 +68,7 @@ suite("merge conflicts in the change list", () => {
   });
 
   test("changesForPath agrees with getChanges for a conflicted file", async () => {
-    const fresh = await diff.changesForPath(repo, ["f.txt"], null);
+    const fresh = (await diff.changesForPath(repo, ["f.txt"], null)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [{ path: "f.txt", group: "unstaged", status: "!" }],
@@ -76,7 +76,7 @@ suite("merge conflicts in the change list", () => {
   });
 
   test("changesForPath keeps a cleanly merged file staged", async () => {
-    const fresh = await diff.changesForPath(repo, ["clean.txt"], null);
+    const fresh = (await diff.changesForPath(repo, ["clean.txt"], null)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [{ path: "clean.txt", group: "staged", status: "M" }],

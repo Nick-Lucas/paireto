@@ -122,6 +122,16 @@ itself. Finish with the usual **Approve** or **Send Feedback**.
 
 **Changed Files** is the native git panel with extras: pick what to **Compare To** (HEAD, merge-base, stack-base, default branch, or any other ref), add review comments for your agent, and step in manually to fix code. 
 
+Use the **View Modes** button on the section to pick the layout (tree or flat) and one of three views. The picker stays open, so you can change both in one go:
+
+- **Staging** groups the changes into Committed, Staged and Working Tree, like the native git panel.
+- **Delta** shows each file once, with its net change against Compare To. The status letter shows the
+  stage state: full colour is not staged, half grey is partly staged, grey is staged, and a commit icon
+  is committed. Stage and unstage a file, a folder, or everything from its row.
+- **Review** shows the same rows with a checkbox. Tick a file when you have read it, or tick a folder,
+  repository, or the Changed Files row to mark all the files below it. A seen file has a grey status
+  letter. A file you marked becomes unseen again when its content changes.
+
 ## Switch repo or worktree
 
 Hit **`Cmd+Shift+K`** for the switcher: current window, worktrees, and recent repos, each showing

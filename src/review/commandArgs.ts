@@ -14,6 +14,7 @@ import { z } from "zod";
 import { prettifyError } from "zod/v4";
 
 import { log } from "../log.js";
+import type { DeltaFile } from "./delta.js";
 import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 
 /** A changed file as the tree carries it. Spelled out rather than passed through, so the parsed
@@ -32,10 +33,19 @@ export type ChangedFileArg = z.infer<typeof ChangedFileArg>;
 /** The changed file a command argument names: the file itself, a Changed Files node wrapping one, or
  *  a Review Plan row wrapping one a level further down. A planned row whose path has no live change
  *  carries no file, and resolves to nothing — correct, there is nothing to act on. */
+const DeltaLayersArg = z.object({ layers: z.array(ChangedFileArg).min(1) });
+
+export const DeltaArg = z.union([
+  DeltaLayersArg.transform((delta) => delta.layers[0]),
+  z.object({ delta: DeltaLayersArg }).transform((node) => node.delta.layers[0]),
+]);
+export type DeltaArg = z.infer<typeof DeltaArg>;
+
 export const FileArg = z.union([
   ChangedFileArg,
   z.object({ file: ChangedFileArg }).transform((node) => node.file),
   z.object({ row: z.object({ file: ChangedFileArg }) }).transform((node) => node.row.file),
+  DeltaArg,
 ]);
 export type FileArg = z.infer<typeof FileArg>;
 
@@ -45,6 +55,12 @@ export const FilesArg = z.union([
   z
     .object({ kind: z.literal("folder"), entry: z.custom<TreeEntry>() })
     .transform((node) => filesInEntry(node.entry) as ChangedFileArg[]),
+  z
+    .object({ kind: z.literal("deltaFolder"), entry: z.custom<TreeEntry<DeltaFile>>() })
+    .transform((node) => filesInEntry(node.entry).flatMap((delta) => delta.layers)),
+  z
+    .object({ kind: z.literal("deltaFile"), delta: DeltaLayersArg })
+    .transform((node) => node.delta.layers),
   FileArg.transform((file) => [file]),
 ]);
 export type FilesArg = z.infer<typeof FilesArg>;
@@ -71,6 +87,9 @@ export type ChangesetIdArg = z.infer<typeof ChangesetIdArg>;
 /** A repository, named directly or through a changed file. */
 export const RepoRootArg = z.union([
   z.object({ repoRoot: z.string() }).transform((node) => node.repoRoot),
+  z
+    .object({ repository: z.object({ repoRoot: z.string() }) })
+    .transform((node) => node.repository.repoRoot),
   FileArg.transform((file) => file.repoRoot),
 ]);
 export type RepoRootArg = z.infer<typeof RepoRootArg>;
@@ -82,7 +101,9 @@ export type RepoRootArg = z.infer<typeof RepoRootArg>;
 export const BulkTargetArg = z.union([
   ChangesetIdArg.transform((changesetId) => ({ changesetId, repoRoot: undefined })),
   RepoRootArg.transform((repoRoot) => ({ changesetId: undefined, repoRoot })),
-  z.undefined().transform(() => ({ changesetId: undefined, repoRoot: undefined })),
+  z
+    .union([z.undefined(), z.object({ kind: z.literal("section") })])
+    .transform(() => ({ changesetId: undefined, repoRoot: undefined })),
 ]);
 export type BulkTargetArg = z.infer<typeof BulkTargetArg>;
 

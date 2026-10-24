@@ -71,7 +71,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
   });
 
   test("reports only the requested path, at its current group", async () => {
-    const fresh = await diff.changesForPath(repo, ["solo.txt"], null);
+    const fresh = (await diff.changesForPath(repo, ["solo.txt"], null)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [{ path: "solo.txt", group: "unstaged", status: "M" }],
@@ -80,7 +80,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
   });
 
   test("sees a layer move that happened after the tree rendered", async () => {
-    const fresh = await diff.changesForPath(repo, ["moved.txt"], null);
+    const fresh = (await diff.changesForPath(repo, ["moved.txt"], null)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group })),
       [{ path: "moved.txt", group: "staged" }],
@@ -88,11 +88,11 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
   });
 
   test("returns no entries for a change that no longer exists", async () => {
-    assert.deepStrictEqual(await diff.changesForPath(repo, ["gone.txt"], null), []);
+    assert.deepStrictEqual((await diff.changesForPath(repo, ["gone.txt"], null)).files, []);
   });
 
   test("an untracked file reports as an unstaged add with line counts", async () => {
-    const fresh = await diff.changesForPath(repo, ["new.txt"], null);
+    const fresh = (await diff.changesForPath(repo, ["new.txt"], null)).files;
     assert.strictEqual(fresh.length, 1);
     assert.strictEqual(fresh[0].group, "unstaged");
     assert.strictEqual(fresh[0].status, "U");
@@ -103,7 +103,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     // git pairs a rename only when BOTH sides are inside the pathspec — a scan scoped to just the
     // old path would degrade the R into a phantom `D ren-old.txt` the full scan never reports,
     // corrupting the merged model (Staged showing both a rename of the path and its deletion).
-    const fresh = await diff.changesForPath(repo, ["ren-old.txt"], null);
+    const fresh = (await diff.changesForPath(repo, ["ren-old.txt"], null)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, oldPath: f.oldPath, group: f.group, status: f.status })),
       [
@@ -119,7 +119,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     // there — an unstaged edit at ren-new.txt missing from the scoped result would be dropped from
     // the merged model with no replacement.
     fs.writeFileSync(path.join(repo, "ren-new.txt"), "ren-new v2\n");
-    const fresh = await diff.changesForPath(repo, ["ren-old.txt"], null);
+    const fresh = (await diff.changesForPath(repo, ["ren-old.txt"], null)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [
@@ -131,7 +131,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
   });
 
   test("a committed rename remains when its new path has a Working Tree change", async () => {
-    const fresh = await diff.changesForPath(repo, ["crn-old.txt"], compareRef);
+    const fresh = (await diff.changesForPath(repo, ["crn-old.txt"], compareRef)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [
@@ -147,7 +147,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     // the scoped scan would miss the file the full scan reports and the merge would drop its row
     // with no replacement — the pathspec must use the `:(literal)` magic prefix.
     fs.writeFileSync(path.join(repo, ":colon.txt"), "one\n");
-    const fresh = await diff.changesForPath(repo, [":colon.txt"], null);
+    const fresh = (await diff.changesForPath(repo, [":colon.txt"], null)).files;
     assert.deepStrictEqual(
       fresh.map((f) => ({ path: f.path, group: f.group, status: f.status })),
       [{ path: ":colon.txt", group: "unstaged", status: "U" }],
@@ -155,13 +155,13 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
   });
 
   test("committed entries remain against the compare ref with a lower-layer change", async () => {
-    const committed = await diff.changesForPath(repo, ["hist.txt"], compareRef);
+    const committed = (await diff.changesForPath(repo, ["hist.txt"], compareRef)).files;
     assert.deepStrictEqual(
       committed.map((f) => ({ path: f.path, group: f.group })),
       [{ path: "hist.txt", group: "committed" }],
     );
     fs.writeFileSync(path.join(repo, "hist.txt"), "hist v3\n");
-    const withWorkingChange = await diff.changesForPath(repo, ["hist.txt"], compareRef);
+    const withWorkingChange = (await diff.changesForPath(repo, ["hist.txt"], compareRef)).files;
     assert.deepStrictEqual(
       withWorkingChange.map((f) => ({ path: f.path, group: f.group })),
       [
@@ -171,7 +171,7 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
       "the committed and Working Tree comparisons must both remain available",
     );
     git(["add", "hist.txt"]);
-    const withStagedChange = await diff.changesForPath(repo, ["hist.txt"], compareRef);
+    const withStagedChange = (await diff.changesForPath(repo, ["hist.txt"], compareRef)).files;
     assert.deepStrictEqual(
       withStagedChange.map((f) => ({ path: f.path, group: f.group })),
       [
@@ -199,6 +199,7 @@ suite("syncFileForOpenDiff (openDiff's scoped sync, never a full refresh)", () =
         staged: files.filter((f) => f.group === "staged"),
         unstaged: files.filter((f) => f.group === "unstaged"),
         committed: files.filter((f) => f.group === "committed"),
+        net: [],
         compareLabel: "HEAD",
         compareRef: null,
       },
@@ -234,7 +235,9 @@ suite("syncFileForOpenDiff (openDiff's scoped sync, never a full refresh)", () =
       changesForPath: (_root, relPaths) => {
         calls.changesForPath.push(relPaths);
         duringGitCall?.(competing);
-        return fresh instanceof Error ? Promise.reject(fresh) : Promise.resolve(fresh);
+        return fresh instanceof Error
+          ? Promise.reject(fresh)
+          : Promise.resolve({ files: fresh, net: [] });
       },
       getRepository: () => current,
       setRepository: (s) => {

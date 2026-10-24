@@ -22,7 +22,8 @@ export const Commands = {
   planAddReply: "paireto.plan.addReply",
   reviewPickCompareTo: "paireto.review.pickCompareTo",
   reviewPickDiffCompareTo: "paireto.review.pickDiffCompareTo",
-  reviewToggleLayout: "paireto.review.toggleLayout",
+  reviewPickViewMode: "paireto.review.pickViewMode",
+  reviewOpenDelta: "paireto.review.openDelta",
   reviewRefresh: "paireto.review.refresh",
   reviewOpenDiff: "paireto.review.openDiff",
   reviewOpenFile: "paireto.review.openFile",
@@ -89,5 +90,7 @@ export const StateKeys = {
   activeReviewId: "paireto.activeReviewId",
   compareTo: "paireto.compareTo",
   fileLayout: "paireto.fileLayout",
+  changesMode: "paireto.changesMode",
+  seenFiles: "paireto.seenFiles",
   recentRefs: "paireto.recentRefs",
 } as const;
