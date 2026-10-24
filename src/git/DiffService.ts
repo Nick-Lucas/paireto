@@ -388,31 +388,14 @@ export class DiffService {
   }
 }
 
-/** An unmerged path shows up in both diffs, plus a second `M` entry in the unstaged one. Keep one
- *  unmerged row per path in the unstaged group and none in the staged group. */
 function collapseConflicts(
   staged: ChangedFile[],
   unstaged: ChangedFile[],
 ): { staged: ChangedFile[]; unstaged: ChangedFile[] } {
-  const conflicted = new Set(
-    [...staged, ...unstaged].filter((f) => f.status === "!").map((f) => f.path),
-  );
-  if (conflicted.size === 0) {
-    return { staged, unstaged };
-  }
-  const seen = new Set<string>();
+  const conflicted = new Set(unstaged.filter((f) => f.status === "!").map((f) => f.path));
   return {
     staged: staged.filter((f) => !conflicted.has(f.path)),
-    unstaged: unstaged.filter((f) => {
-      if (!conflicted.has(f.path)) {
-        return true;
-      }
-      if (f.status !== "!" || seen.has(f.path)) {
-        return false;
-      }
-      seen.add(f.path);
-      return true;
-    }),
+    unstaged: unstaged.filter((f) => !conflicted.has(f.path) || f.status === "!"),
   };
 }
 
