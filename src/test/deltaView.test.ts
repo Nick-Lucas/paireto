@@ -179,6 +179,55 @@ suite("Delta view — net changes against Compare To", () => {
   });
 });
 
+suite("Delta view — merge conflicts", () => {
+  test("a conflicted file is one conflicted row and a cleanly merged file stays staged", async () => {
+    const { root, git, write } = makeRepo();
+    try {
+      write("both.txt", "one\n");
+      write("gone.txt", "one\n");
+      write("clean.txt", "one\n");
+      git(["add", "."]);
+      git(["commit", "-q", "-m", "files"]);
+      git(["checkout", "-q", "-b", "feature"]);
+      write("both.txt", "feature\n");
+      write("gone.txt", "feature\n");
+      write("clean.txt", "feature\n");
+      git(["commit", "-q", "-am", "feature"]);
+      git(["checkout", "-q", "main"]);
+      write("both.txt", "main\n");
+      git(["rm", "-q", "gone.txt"]);
+      git(["commit", "-q", "-am", "main"]);
+      assert.throws(() => git(["merge", "feature"]));
+
+      const changes = await new DiffService().getChanges(root, { kind: "head" });
+      const withRoot = (files: typeof changes.staged): RepoChangedFile[] =>
+        files.map((file) => ({ ...file, repoRoot: root }));
+      const rows = buildDelta(root, {
+        ...changes,
+        staged: withRoot(changes.staged),
+        unstaged: withRoot(changes.unstaged),
+        committed: withRoot(changes.committed),
+      });
+
+      assert.deepStrictEqual(
+        rows.map((row) => ({
+          path: row.path,
+          status: row.status,
+          stage: row.stage,
+          layers: row.layers.map((l) => `${l.group}:${l.status}`),
+        })),
+        [
+          { path: "both.txt", status: "!", stage: "unstaged", layers: ["unstaged:!"] },
+          { path: "clean.txt", status: "M", stage: "staged", layers: ["staged:M"] },
+          { path: "gone.txt", status: "!", stage: "unstaged", layers: ["unstaged:!"] },
+        ],
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
 suite("Delta view — one row per file", () => {
   test("each row says how much of the change is staged", () => {
     const rows = buildDelta(
@@ -297,6 +346,43 @@ suite("Delta view — rows", () => {
       "m-staged-dark.svg",
     );
     assert.strictEqual(iconFile(deltaFileItem(row, "review", false, EXTENSION)), "m-dark.svg");
+  });
+
+  test("a conflicted row shows the conflict icon in Delta and Review mode", () => {
+    const [row] = buildDelta(
+      REPO,
+      repository([layer("src/a.ts", "unstaged", { status: "!" })], [net("src/a.ts")]).changes,
+    );
+
+    assert.deepStrictEqual(
+      [
+        deltaFileItem(row, "delta", false, EXTENSION),
+        deltaFileItem(row, "review", false, EXTENSION),
+        deltaFileItem(row, "review", true, EXTENSION),
+      ].map(iconFile),
+      ["conflict-dark.svg", "conflict-dark.svg", "conflict-dark.svg"],
+    );
+  });
+
+  test("every icon a row can show is a file the extension ships", () => {
+    const media = path.resolve(__dirname, "../../media/status");
+    const statuses = ["A", "M", "D", "R", "C", "U", "!"] as const;
+    const missing = statuses.flatMap((status) =>
+      (["unstaged", "partial", "staged"] as const).flatMap((stage) => {
+        const row = { ...deltaRow(stage), status };
+        return [
+          deltaFileItem(row, "delta", false, EXTENSION),
+          deltaFileItem(row, "review", true, EXTENSION),
+          deltaFileItem(row, "review", false, EXTENSION),
+        ]
+          .map(iconFile)
+          .filter((file): file is string => file !== undefined)
+          .filter((file) => !fs.existsSync(path.join(media, file)))
+          .map((file) => `${status}/${stage}: ${file}`);
+      }),
+    );
+
+    assert.deepStrictEqual(missing, []);
   });
 
   test("in Review mode a row has a seen checkbox and no stage actions", () => {

@@ -45,7 +45,7 @@ export function buildDelta(repoRoot: string, changes: RepositoryChangesModel): D
       repoRoot,
       path: net.path,
       oldPath: net.oldPath,
-      status: net.status,
+      status: layers.some((layer) => layer.status === "!") ? "!" : net.status,
       additions: net.additions,
       deletions: net.deletions,
       contentId: net.contentId && `${base}:${net.contentId}`,

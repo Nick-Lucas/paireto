@@ -60,7 +60,7 @@ function statusIcon(
   tone: StatusIconVariant = "worktree",
 ): { light: vscode.Uri; dark: vscode.Uri } {
   const name = STATUS_ICON_FILE[status] ?? "m";
-  const variant = tone === "worktree" ? name : `${name}-${tone}`;
+  const variant = tone === "worktree" || status === "!" ? name : `${name}-${tone}`;
   return {
     light: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-light.svg`),
     dark: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-dark.svg`),
