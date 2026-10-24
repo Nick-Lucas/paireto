@@ -8,8 +8,6 @@ import { join } from "node:path";
 import { currentBranch, git, gitSafe, splitNul } from "./gitCli.js";
 import type { CompareTo, FileGroup, FileLayout } from "../types.js";
 
-const CONFLICT_MARKER = /^<{7}\s|^={7}$|^>{7}\s/m;
-
 export type FileStatus = "A" | "M" | "D" | "R" | "C" | "U" | "!";
 
 export interface ChangedFile {
@@ -98,11 +96,11 @@ export class DiffService {
   }
 
   async hasConflictMarkers(repoRoot: string, relPath: string): Promise<boolean> {
-    try {
-      return CONFLICT_MARKER.test(await readFile(join(repoRoot, relPath), "utf8"));
-    } catch {
-      return false;
-    }
+    const out = await git(repoRoot, ["diff", "--check", "--", `:(literal)${relPath}`]).then(
+      (result) => result.stdout,
+      (error: { stdout?: string }) => error.stdout ?? "",
+    );
+    return out.split("\n").some((line) => line.endsWith(": leftover conflict marker"));
   }
 
   /**

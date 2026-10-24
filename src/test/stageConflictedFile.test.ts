@@ -62,10 +62,10 @@ suite("staging a conflicted file (activated extension)", () => {
     original = git(["rev-parse", "--abbrev-ref", "HEAD"]);
     before = git(["rev-parse", "HEAD"]);
     git(["checkout", "-q", "-b", "stage-conflict-feature"]);
-    fs.writeFileSync(path.join(root, "notes.txt"), "one\nfeature\n");
+    fs.writeFileSync(path.join(root, "notes.txt"), "Notes\n=======\none\nfeature\n");
     git(["commit", "-q", "-am", "feature"]);
     git(["checkout", "-q", original]);
-    fs.writeFileSync(path.join(root, "notes.txt"), "one\nmain\n");
+    fs.writeFileSync(path.join(root, "notes.txt"), "Notes\n=======\none\nmain\n");
     git(["commit", "-q", "-am", "main"]);
     assert.throws(() => git(["merge", "stage-conflict-feature"]));
   });
@@ -118,6 +118,28 @@ suite("staging a conflicted file (activated extension)", () => {
   test("a file whose markers were removed is staged with no warning", async function () {
     this.timeout(60_000);
     fs.writeFileSync(path.join(root, "notes.txt"), "one\nresolved\n");
+    warnings = stubWarnings(undefined);
+
+    await vscode.commands.executeCommand("paireto.review.stage", conflictedFile());
+
+    assert.deepStrictEqual(warnings.seen, []);
+    assert.strictEqual(git(["ls-files", "-u"]), "", "the file must leave the conflicted state");
+  });
+
+  test("a resolved file that keeps a heading underline from both sides is staged with no warning", async function () {
+    this.timeout(60_000);
+    fs.writeFileSync(path.join(root, "notes.txt"), "Notes\n=======\none\nresolved\n");
+    warnings = stubWarnings(undefined);
+
+    await vscode.commands.executeCommand("paireto.review.stage", conflictedFile());
+
+    assert.deepStrictEqual(warnings.seen, []);
+    assert.strictEqual(git(["ls-files", "-u"]), "", "the file must leave the conflicted state");
+  });
+
+  test("a resolved file with only whitespace errors is staged with no warning", async function () {
+    this.timeout(60_000);
+    fs.writeFileSync(path.join(root, "notes.txt"), "Notes\n=======\none\nresolved \n");
     warnings = stubWarnings(undefined);
 
     await vscode.commands.executeCommand("paireto.review.stage", conflictedFile());
