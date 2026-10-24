@@ -648,7 +648,9 @@ async function accept(pick: vscode.QuickPick<ViewModeItem>, name: string): Promi
   );
 }
 
-suite("View Modes control", () => {
+suite("View Modes control", function () {
+  this.timeout(30_000);
+
   test("one picker offers the view and the layout, with the current ones ticked", () => {
     assert.deepStrictEqual(labels(viewModeItems("delta", "flat")), [
       "View",

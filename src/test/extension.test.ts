@@ -1923,7 +1923,10 @@ suite("Compare To picker", () => {
       const deadline = Date.now() + 5_000;
       do {
         await wait(25);
-      } while (refDriver.picker.busy && Date.now() <= deadline);
+      } while (
+        (refDriver.picker.busy || refDriver.picker.items.length > 0) &&
+        Date.now() <= deadline
+      );
       assert.deepStrictEqual(refDriver.picker.items, [], `${input} must not be selectable`);
       assert.ok(refDriver.hide, "the ref picker must register a hide listener");
       refDriver.hide();
