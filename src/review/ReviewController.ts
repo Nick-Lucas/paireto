@@ -98,6 +98,8 @@ const EMPTY_CHANGES: ChangesModel = {
   compareRef: null,
 };
 
+const OPEN_DIFF_ANYWAY = "Open Diff Anyway";
+
 const GROUP_LABEL: Record<FileGroup, string> = {
   staged: "Staged",
   unstaged: "Working Tree",
@@ -227,6 +229,7 @@ export class ReviewController implements vscode.Disposable {
   private openDiffFile?: OpenDiffState;
   /** Each open diff's state, keyed by its virtual tab URI — lets a tab switch re-select its row. */
   private readonly openDiffs = new Map<string, OpenDiffState>();
+  private openDiffSeq = 0;
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private readonly refreshSeq = new Map<string, number>();
   /** Narrow seam `openDiff` syncs through (one scoped git check, not the full refresh). */
@@ -1508,8 +1511,11 @@ export class ReviewController implements vscode.Disposable {
       /** Set when silently re-pointing an already-open tab after a git write (stage/unstage/
        *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
       suppressActiveDiffEvent?: boolean;
+      ignoreSizeLimit?: boolean;
     },
   ): Promise<OpenedReviewFile | undefined> {
+    const seq = show?.suppressActiveDiffEvent ? undefined : ++this.openDiffSeq;
+    const superseded = () => seq !== undefined && seq !== this.openDiffSeq;
     const repoRoot = requestedFile.repoRoot;
     // Opening is a synchronization boundary, but a SCOPED one: re-check just this file against git
     // (never the full multi-root getChanges scan or a refreshAllOpen() re-fire of every open review
@@ -1517,6 +1523,9 @@ export class ReviewController implements vscode.Disposable {
     // are about to open; the provider may still cache a URI from a previously closed tab.
     if (!show?.skipRefresh) {
       await syncFileForOpenDiff(this.openDiffSync, repoRoot, requestedFile);
+    }
+    if (superseded()) {
+      return;
     }
     const changes = this.changesFor(repoRoot);
     if (!changes) {
@@ -1532,13 +1541,16 @@ export class ReviewController implements vscode.Disposable {
     const file = show?.trackedGroup
       ? { ...refreshedFile, group: show.trackedGroup }
       : refreshedFile;
-    if (!show?.suppressActiveDiffEvent) {
-      this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
-    }
-
     if (file.status === "!") {
       const uri = vscode.Uri.file(join(repoRoot, file.path));
-      if (await this.diff.hasBothConflictSides(repoRoot, file.path)) {
+      const bothSides = await this.diff.hasBothConflictSides(repoRoot, file.path);
+      if (superseded()) {
+        return;
+      }
+      if (!show?.suppressActiveDiffEvent) {
+        this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
+      }
+      if (bothSides) {
         await vscode.commands.executeCommand("git.openMergeEditor", uri);
       } else {
         await vscode.commands.executeCommand("vscode.open", uri, {
@@ -1567,7 +1579,12 @@ export class ReviewController implements vscode.Disposable {
       baseRef,
       baseLabel,
     };
-    this.openDiffFile = open;
+    const publish = () => {
+      if (!show?.suppressActiveDiffEvent) {
+        this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
+      }
+      this.openDiffFile = open;
+    };
     const baseUri = ReviewPath.create({
       reviewId: this.reviewId,
       side: "base",
@@ -1603,13 +1620,8 @@ export class ReviewController implements vscode.Disposable {
     const modifiedLabel = editable ? "Working Tree" : GROUP_LABEL[file.group];
     const title = `${name} (${modifiedLabel} vs ${baseLabel})`;
 
-    // An add (no base) or delete (no modified) has nothing to diff against — a two-pane diff would
-    // show a broken/empty side (an image viewer can't render the 0-byte side at all). Open the one
-    // real side in a single editor, like the native git panel. The doc is still commentable: the
-    // working-tree file: side and the paireto-review virtual side both match the comment controller.
-    const singleSide = singlePaneSide(sides);
-    if (singleSide) {
-      const paneUri = singleSide === "base" ? baseUri : modUri;
+    const openSinglePane = async (paneUri: vscode.Uri): Promise<OpenedReviewFile> => {
+      publish();
       if (paneUri.scheme === Schemes.review) {
         this.openDiffs.set(paneUri.toString(), open);
       }
@@ -1621,12 +1633,52 @@ export class ReviewController implements vscode.Disposable {
       this.syncActiveDiffContext();
       void ensureCommentingVisible();
       return { baseUri, modifiedUri: modUri, visibleUris: [paneUri] };
+    };
+
+    // An add (no base) or delete (no modified) has nothing to diff against — a two-pane diff would
+    // show a broken/empty side (an image viewer can't render the 0-byte side at all). Open the one
+    // real side in a single editor, like the native git panel. The doc is still commentable: the
+    // working-tree file: side and the paireto-review virtual side both match the comment controller.
+    const singleSide = singlePaneSide(sides);
+    if (singleSide) {
+      return openSinglePane(singleSide === "base" ? baseUri : modUri);
     }
 
-    // Remember which row this tab represents, so switching back to it re-selects the right row.
-    this.openDiffs.set(baseUri.toString(), open);
+    const limitMb = vscode.workspace
+      .getConfiguration("paireto")
+      .get<number>("review.maxDiffFileSize", 5);
+    if (limitMb > 0 && !show?.ignoreSizeLimit) {
+      const [baseSize, modifiedSize] = await Promise.all([
+        this.diff.contentSize(repoRoot, sides.base, file.oldPath ?? file.path),
+        this.diff.contentSize(repoRoot, sides.modified, file.path),
+      ]);
+      if (superseded()) {
+        return;
+      }
+      const largest = Math.max(baseSize, modifiedSize);
+      if (largest > limitMb * 1024 * 1024) {
+        const opened = await openSinglePane(modUri);
+        if (!show?.suppressActiveDiffEvent) {
+          const sizeInMb = largest / (1024 * 1024);
+          void vscode.window
+            .showWarningMessage(
+              `${name} is too large to diff (${sizeInMb.toFixed(1)} MB). Paireto opened the file without the diff.`,
+              OPEN_DIFF_ANYWAY,
+            )
+            .then((choice) => {
+              if (choice === OPEN_DIFF_ANYWAY) {
+                void this.openDiff(requestedFile, { ...show, ignoreSizeLimit: true });
+              }
+            });
+        }
+        return opened;
+      }
+    }
 
     if (editable && (await isTextFile(join(repoRoot, file.path)))) {
+      if (superseded()) {
+        return;
+      }
       // Open the real working-tree file as a normal document first so the TypeScript server attaches
       // it to the workspace's configured project. Opening it only as a diff's modified side can leave
       // it in an inferred single-file project, so imported types resolve to `any`. Skipped for binary
@@ -1634,6 +1686,12 @@ export class ReviewController implements vscode.Disposable {
       // image diff.
       await vscode.workspace.openTextDocument(modUri);
     }
+    if (superseded()) {
+      return;
+    }
+    publish();
+    // Remember which row this tab represents, so switching back to it re-selects the right row.
+    this.openDiffs.set(baseUri.toString(), open);
     // Preview (recycled by the next open) like the explorer and the native git panel — safe for
     // editable diffs too, because VS Code pins a preview tab the moment its document goes dirty.
     await vscode.commands.executeCommand("vscode.diff", baseUri, modUri, title, {

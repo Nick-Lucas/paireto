@@ -2,7 +2,7 @@
 // refs per file, plus the git write-ops (stage/unstage/discard). Uses the git CLI for exact behavior;
 // the ReviewContentProvider resolves the returned ContentRefs to actual text.
 
-import { readFile, rm } from "node:fs/promises";
+import { readFile, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { currentBranch, git, gitSafe, splitNul } from "./gitCli.js";
@@ -388,6 +388,24 @@ export class DiffService {
     return wrapDeleted(file, base, { kind: "ref", ref: "HEAD" });
   }
 
+  async contentSize(repoRoot: string, ref: ContentRef, relPath: string): Promise<number> {
+    switch (ref.kind) {
+      case "empty":
+        return 0;
+      case "working":
+        return stat(join(repoRoot, relPath)).then(
+          (info) => info.size,
+          () => 0,
+        );
+      case "index":
+        return parseObjectSize(await gitSafe(repoRoot, ["cat-file", "-s", `:${relPath}`]));
+      case "ref":
+        return parseObjectSize(
+          await gitSafe(repoRoot, ["cat-file", "-s", `${ref.ref}:${relPath}`]),
+        );
+    }
+  }
+
   // ── Git write-ops (operate on repo-relative paths) ─────────────────────────
   async stage(repoRoot: string, paths: string[]): Promise<void> {
     await git(repoRoot, ["add", "--", ...paths]);
@@ -447,6 +465,11 @@ function collapseConflicts(
     staged: staged.filter((f) => !conflicted.has(f.path)),
     unstaged: unstaged.filter((f) => !conflicted.has(f.path) || f.status === "!"),
   };
+}
+
+function parseObjectSize(output: string): number {
+  const size = Number.parseInt(output.trim(), 10);
+  return Number.isFinite(size) && size > 0 ? size : 0;
 }
 
 /** True when the file is in the scoped repo-relative path set — by its path or, for a rename, its
