@@ -22,6 +22,7 @@ import {
   stubWarnings,
   resetWorkbench,
   waitFor,
+  waitForForegroundGate,
   type Wire,
 } from "./planGateHarness.js";
 
@@ -187,6 +188,7 @@ suite("agent replies to feedback", () => {
     await waitFor("the review to open for the answer", async () =>
       (await inspect()).reviewActive ? true : undefined,
     );
+    await waitForForegroundGate("review");
 
     await vscode.commands.executeCommand(Commands.gateApprove);
     await waitFor("the stop gate to answer", () =>
