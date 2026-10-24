@@ -40,6 +40,7 @@ jobs:
       - run: pnpm run check-types
       - run: pnpm run lint
       - run: pnpm run format
+      - run: node --test scripts/releaseVersion.test.mts
 
   build:
     name: Build VSIX

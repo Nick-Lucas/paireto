@@ -29,7 +29,7 @@ If a new push to `main` passes CI while a pre-release publishes, the workflow st
 
 The Marketplace accepts only `major.minor.patch` versions, and a pre-release cannot use the same version as a stable release. The workflow uses the numbering that the [VS Code publishing guide](https://code.visualstudio.com/api/working-with-extensions/publishing-extension#prerelease-extensions) recommends:
 
-- Stable releases use an even minor version. A `minor` bump goes to the next even minor version, for example from `0.30.4` to `0.32.0`.
+- Stable releases use an even minor version. A `minor` bump goes to the even minor version above the current pre-releases, for example from `0.30.4` to `0.32.0`. Version `0.29.0` came before this rule, so its next `minor` bump also goes to `0.32.0`, above the `0.31` pre-releases.
 - Pre-releases use the odd minor version above the stable version, and the patch is the workflow run number. For example, the stable version `0.30.0` gives pre-releases `0.31.<run number>`.
 
 VS Code installs the highest version. A pre-release user gets each new pre-release, and gets a new stable release when its minor version is higher than the pre-release minor version.

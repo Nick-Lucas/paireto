@@ -23,19 +23,23 @@ export function formatVersion({ major, minor, patch }: Version): string {
   return `${major}.${minor}.${patch}`;
 }
 
+function preReleaseMinor(stableMinor: number): number {
+  return stableMinor % 2 === 0 ? stableMinor + 1 : stableMinor + 2;
+}
+
 export function nextStable(current: Version, bump: Bump): Version {
   switch (bump) {
     case "major":
       return { major: current.major + 1, minor: 0, patch: 0 };
     case "minor":
-      return { major: current.major, minor: current.minor + 2 - (current.minor % 2), patch: 0 };
+      return { major: current.major, minor: preReleaseMinor(current.minor) + 1, patch: 0 };
     case "patch":
       return { ...current, patch: current.patch + 1 };
   }
 }
 
 export function preRelease(stable: Version, build: number): Version {
-  return { major: stable.major, minor: stable.minor + 1 + (stable.minor % 2), patch: build };
+  return { major: stable.major, minor: preReleaseMinor(stable.minor), patch: build };
 }
 
 function isBump(value: string): value is Bump {
