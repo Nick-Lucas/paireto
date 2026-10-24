@@ -789,6 +789,12 @@
           "default": "Ping",
           "description": "Sound played when 'paireto.notify.type' is 'sound': a system-sound name (e.g. macOS 'Glass', 'Ping', 'Hero') or an absolute path to a sound file."
         },
+        "paireto.review.maxDiffFileSize": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "description": "Largest file size in MB that Paireto opens as a diff. A larger file opens as a normal editor with an option to open the diff anyway. 0 means no limit."
+        },
         "paireto.review.mode": {
           "type": "string",
           "enum": [

@@ -148,22 +148,29 @@ export class DiffService {
     committed: ChangedFile[];
     net: NetChange[];
   }> {
+    const stagedArgs = ["diff", "--cached"];
+    const unstagedArgs = ["diff"];
+    const committedArgs = compareRef ? ["diff", compareRef, "HEAD"] : undefined;
+    const netArgs = ["diff", compareRef ?? "HEAD"];
+    const lineCounts = (pathspec: string[]): Promise<Counts[]> =>
+      Promise.all(
+        [stagedArgs, unstagedArgs, committedArgs, netArgs].map((args) =>
+          args ? numstat(repoRoot, args, pathspec) : new Map(),
+        ),
+      );
+    const unscopedCounts = paths.length === 0 ? lineCounts([]) : undefined;
     const unscopedUntracked =
       paths.length === 0
         ? gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z"])
         : undefined;
 
     const [stagedRaw, unstagedRaw, committedAll, netAll] = await Promise.all([
-      this.collect(repoRoot, ["diff", "--cached"], "staged"),
-      this.collect(repoRoot, ["diff"], "unstaged"),
-      compareRef
-        ? this.collect(repoRoot, ["diff", compareRef, "HEAD"], "committed").catch(
-            (): ChangedFile[] => [],
-          )
+      this.listChanges(repoRoot, stagedArgs, "staged"),
+      this.listChanges(repoRoot, unstagedArgs, "unstaged"),
+      committedArgs
+        ? this.listChanges(repoRoot, committedArgs, "committed").catch((): ChangedFile[] => [])
         : [],
-      this.collect(repoRoot, ["diff", compareRef ?? "HEAD"], "unstaged").catch(
-        (): ChangedFile[] => [],
-      ),
+      this.listChanges(repoRoot, netArgs, "unstaged").catch((): ChangedFile[] => []),
     ]);
 
     const { staged: stagedAll, unstaged: unstagedAll } = collapseConflicts(stagedRaw, unstagedRaw);
@@ -173,13 +180,17 @@ export class DiffService {
       ...committedAll,
       ...netAll,
     ]);
+    const pathspec =
+      scoped === undefined ? [] : ["--", ...[...scoped].map((p) => `:(literal)${p}`)];
+    const counts = await (unscopedCounts ?? lineCounts(pathspec));
+    [stagedRaw, unstagedRaw, committedAll, netAll].forEach((files, index) =>
+      applyCounts(files, counts[index]),
+    );
     const scope = (files: ChangedFile[]): ChangedFile[] =>
       scoped === undefined ? files : files.filter((f) => matchesPaths(f, scoped));
     const staged = scope(stagedAll);
     const unstaged = scope(unstagedAll);
 
-    const pathspec =
-      scoped === undefined ? [] : ["--", ...[...scoped].map((p) => `:(literal)${p}`)];
     const untrackedOut = await (unscopedUntracked ??
       gitSafe(repoRoot, ["ls-files", "--others", "--exclude-standard", "-z", ...pathspec]));
     for (const p of splitNul(untrackedOut)) {
@@ -209,28 +220,16 @@ export class DiffService {
     return { staged, unstaged, committed, net };
   }
 
-  /** Run a name-status diff + numstat for one group and merge the line counts.
-   *  name-status uses {@link git} (throwing) so a transient git failure surfaces as an error rather
-   *  than a spurious "no changes" — the caller keeps the last good model instead of blanking it. */
-  private async collect(
+  /** Run a name-status diff for one group. Uses {@link git} (throwing) so a transient git failure
+   *  surfaces as an error rather than a spurious "no changes" — the caller keeps the last good
+   *  model instead of blanking it. */
+  private async listChanges(
     repoRoot: string,
     diffArgs: string[],
     group: FileGroup,
   ): Promise<ChangedFile[]> {
-    const [nameStatus, numstat] = await Promise.all([
-      git(repoRoot, [...diffArgs, "--name-status", "-z"]),
-      gitSafe(repoRoot, [...diffArgs, "--numstat", "-z"]),
-    ]);
-    const files = parseNameStatus(nameStatus.stdout, group);
-    const counts = parseNumstat(numstat);
-    for (const f of files) {
-      const c = counts.get(f.path);
-      if (c) {
-        f.additions = c.additions;
-        f.deletions = c.deletions;
-      }
-    }
-    return files;
+    const nameStatus = await git(repoRoot, [...diffArgs, "--name-status", "-z"]);
+    return parseNameStatus(nameStatus.stdout, group);
   }
 
   /** Resolve a Compare-To descriptor to a concrete ref (null = HEAD, no committed group) + label.
@@ -550,6 +549,20 @@ export function pickStackBase(
     }
   }
   return undefined;
+}
+
+async function numstat(repoRoot: string, diffArgs: string[], pathspec: string[]): Promise<Counts> {
+  return parseNumstat(await gitSafe(repoRoot, [...diffArgs, "--numstat", "-z", ...pathspec]));
+}
+
+function applyCounts(files: ChangedFile[], counts: Counts): void {
+  for (const f of files) {
+    const c = counts.get(f.path);
+    if (c) {
+      f.additions = c.additions;
+      f.deletions = c.deletions;
+    }
+  }
 }
 
 /** Parse `git diff --numstat -z` into per-path counts. */
