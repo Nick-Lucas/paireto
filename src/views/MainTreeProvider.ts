@@ -47,6 +47,7 @@ const STATUS_ICON_FILE: Record<FileStatus, string> = {
   R: "r",
   C: "c",
   U: "u",
+  "!": "conflict",
 };
 
 function statusIcon(
@@ -126,7 +127,15 @@ const STATE_ICON: Record<AgentState, string> = {
 };
 
 function statusWord(s: ChangedFile["status"]): string {
-  return { A: "Added", M: "Modified", D: "Deleted", R: "Renamed", C: "Copied", U: "Untracked" }[s];
+  return {
+    A: "Added",
+    M: "Modified",
+    D: "Deleted",
+    R: "Renamed",
+    C: "Copied",
+    U: "Untracked",
+    "!": "Conflicted",
+  }[s];
 }
 
 /**
