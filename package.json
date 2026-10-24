@@ -26,7 +26,6 @@
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
     "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview",
     "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
-    "publish:minor": "vsce publish minor --no-dependencies",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
     "autofix": "oxlint --fix src && oxfmt src",
