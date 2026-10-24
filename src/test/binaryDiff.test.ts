@@ -3,6 +3,7 @@
 // ANY file type VS Code can open, matching the native git panel.
 
 import * as assert from "node:assert";
+import { execFileSync } from "node:child_process";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -50,7 +51,44 @@ suite("binary diff content", () => {
     const stat = await provider.stat(uri);
     assert.strictEqual(stat.size, PNG_1x1.length);
   });
+
+  test("stat reports the size of a working-tree file without reading it into memory", async () => {
+    const size = 3 * 1024 * 1024 * 1024;
+    const name = "huge.bin";
+    await fs.writeFile(path.join(dir, name), "");
+    await fs.truncate(path.join(dir, name), size);
+    try {
+      const stat = await provider.stat(fileUri(dir, name, "WORKING"));
+      assert.strictEqual(stat.size, size);
+    } finally {
+      await fs.rm(path.join(dir, name), { force: true });
+    }
+  });
+
+  test("stat reports the blob size for the index and for a ref", async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), "paireto-stat-"));
+    try {
+      const git = (...args: string[]) => execFileSync("git", args, { cwd: repo });
+      git("init", "-q");
+      await fs.writeFile(path.join(repo, "a.txt"), "committed\n");
+      git("add", "a.txt");
+      git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", "a");
+      await fs.writeFile(path.join(repo, "a.txt"), "staged content\n");
+      git("add", "a.txt");
+
+      const head = await provider.stat(fileUri(repo, "a.txt", "HEAD"));
+      const index = await provider.stat(fileUri(repo, "a.txt", "INDEX"));
+      assert.strictEqual(head.size, "committed\n".length);
+      assert.strictEqual(index.size, "staged content\n".length);
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
 });
+
+function fileUri(repoRoot: string, relPath: string, ref: string) {
+  return ReviewPath.create({ reviewId: "rev1", side: "modified", relPath, ref, repoRoot }).toUri();
+}
 
 function pixelUri(repoRoot: string) {
   return ReviewPath.create({

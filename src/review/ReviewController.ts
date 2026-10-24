@@ -1635,10 +1635,6 @@ export class ReviewController implements vscode.Disposable {
       return { baseUri, modifiedUri: modUri, visibleUris: [paneUri] };
     };
 
-    // An add (no base) or delete (no modified) has nothing to diff against — a two-pane diff would
-    // show a broken/empty side (an image viewer can't render the 0-byte side at all). Open the one
-    // real side in a single editor, like the native git panel. The doc is still commentable: the
-    // working-tree file: side and the paireto-review virtual side both match the comment controller.
     const singleSide = singlePaneSide(sides);
     if (singleSide) {
       return openSinglePane(singleSide === "base" ? baseUri : modUri);
@@ -1648,14 +1644,14 @@ export class ReviewController implements vscode.Disposable {
       .getConfiguration("paireto")
       .get<number>("review.maxDiffFileSize", 5);
     if (limitMb > 0 && !show?.ignoreSizeLimit) {
-      const [baseSize, modifiedSize] = await Promise.all([
-        this.diff.contentSize(repoRoot, sides.base, file.oldPath ?? file.path),
-        this.diff.contentSize(repoRoot, sides.modified, file.path),
+      const [baseStat, modifiedStat] = await Promise.all([
+        vscode.workspace.fs.stat(baseUri),
+        vscode.workspace.fs.stat(modUri),
       ]);
       if (superseded()) {
         return;
       }
-      const largest = Math.max(baseSize, modifiedSize);
+      const largest = Math.max(baseStat.size, modifiedStat.size);
       if (largest > limitMb * 1024 * 1024) {
         const opened = await openSinglePane(modUri);
         if (!show?.suppressActiveDiffEvent) {

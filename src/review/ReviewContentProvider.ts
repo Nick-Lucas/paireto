@@ -9,7 +9,7 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import { gitSafeBytes } from "../git/gitCli.js";
+import { gitSafe, gitSafeBytes } from "../git/gitCli.js";
 import { ReviewPath } from "./ReviewPath.js";
 import { Schemes } from "../config.js";
 
@@ -19,7 +19,7 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
   private readonly emitter = new vscode.EventEmitter<vscode.FileChangeEvent[]>();
   readonly onDidChangeFile = this.emitter.event;
 
-  /** Last-resolved content per URI, so stat() + readFile() share one git call; cleared on change. */
+  /** Last-resolved content per URI, so repeated readFile() calls share one git call; cleared on change. */
   private readonly cache = new Map<string, Uint8Array>();
   /** Invalidation generation per URI; prevents a pre-refresh read finishing late into the cache. */
   private readonly generations = new Map<string, number>();
@@ -68,12 +68,11 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
   }
 
   async stat(uri: vscode.Uri): Promise<vscode.FileStat> {
-    const content = await this.resolve(uri);
     return {
       type: vscode.FileType.File,
       ctime: 0,
       mtime: 0,
-      size: content.byteLength,
+      size: await this.resolveSize(uri),
       permissions: vscode.FilePermission.Readonly,
     };
   }
@@ -117,6 +116,26 @@ export class ReviewContentProvider implements vscode.FileSystemProvider, vscode.
       this.cache.set(key, bytes);
     }
     return bytes;
+  }
+
+  private async resolveSize(uri: vscode.Uri): Promise<number> {
+    const cached = this.cache.get(uri.toString());
+    if (cached !== undefined) {
+      return cached.byteLength;
+    }
+    const { ref, repoRoot, relPath } = ReviewPath.fromUri(uri);
+    if (ref === "EMPTY" || !repoRoot || !relPath) {
+      return 0;
+    }
+    if (ref === "WORKING") {
+      return fs.stat(path.join(repoRoot, relPath)).then(
+        (info) => info.size,
+        () => 0,
+      );
+    }
+    const spec = ref === "INDEX" ? `:${relPath}` : `${ref}:${relPath}`;
+    const size = Number.parseInt((await gitSafe(repoRoot, ["cat-file", "-s", spec])).trim(), 10);
+    return Number.isFinite(size) && size > 0 ? size : 0;
   }
 
   private async resolveContent(uri: vscode.Uri): Promise<Uint8Array> {

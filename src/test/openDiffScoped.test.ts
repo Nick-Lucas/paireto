@@ -79,6 +79,41 @@ suite("DiffService.changesForPath (scoped per-file git check)", () => {
     );
   });
 
+  test("counts lines only for the scoped paths, not for every changed file", async () => {
+    const shim = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-git-shim-"));
+    const calls = path.join(shim, "calls.log");
+    const realGit = execFileSync("sh", ["-c", "command -v git"]).toString().trim();
+    fs.writeFileSync(
+      path.join(shim, "git"),
+      `#!/bin/sh\necho "$*" >> "${calls}"\nexec "${realGit}" "$@"\n`,
+      { mode: 0o755 },
+    );
+    const originalPath = process.env.PATH;
+    process.env.PATH = `${shim}${path.delimiter}${originalPath ?? ""}`;
+    let fresh: ChangedFile[];
+    try {
+      fresh = (await diff.changesForPath(repo, ["solo.txt"], compareRef)).files;
+    } finally {
+      process.env.PATH = originalPath;
+    }
+    const numstats = fs
+      .readFileSync(calls, "utf8")
+      .split("\n")
+      .filter((line) => line.includes(repo) && line.includes("--numstat"));
+    fs.rmSync(shim, { recursive: true, force: true });
+
+    assert.ok(numstats.length > 0, "the scoped check must still count lines");
+    assert.deepStrictEqual(
+      numstats.filter((line) => !line.includes(" -- ")),
+      [],
+      "every numstat must be limited to the scoped paths",
+    );
+    assert.deepStrictEqual(
+      fresh.map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+      [{ path: "solo.txt", additions: 1, deletions: 1 }],
+    );
+  });
+
   test("sees a layer move that happened after the tree rendered", async () => {
     const fresh = (await diff.changesForPath(repo, ["moved.txt"], null)).files;
     assert.deepStrictEqual(
