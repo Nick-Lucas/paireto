@@ -283,8 +283,7 @@ export class ReviewController implements vscode.Disposable {
       reg(Commands.reviewRefresh, () => this.refresh("manual")),
       reg(Commands.reviewPickCompareTo, () => this.changeCompareTo()),
       reg(Commands.reviewPickDiffCompareTo, () => this.changeActiveDiffCompareTo()),
-      reg(Commands.reviewToggleLayout, () => this.toggleLayout()),
-      reg(Commands.reviewPickMode, () => this.pickMode()),
+      reg(Commands.reviewPickViewMode, () => this.pickViewMode()),
       reg(
         Commands.reviewOpenDelta,
         withArg(DeltaArg, (file) => this.openAgainstCompareTo(file)),
@@ -1047,39 +1046,18 @@ export class ReviewController implements vscode.Disposable {
     this.openDiffs.delete(oldTabKey);
   }
 
-  private async toggleLayout(): Promise<void> {
-    this.layout = this.layout === "tree" ? "flat" : "tree";
-    await this.store.setLayout(this.layout);
-    this.changeEmitter.fire();
-  }
-
-  private async pickMode(): Promise<void> {
-    const items: (vscode.QuickPickItem & { mode: ChangesMode })[] = [
-      {
-        mode: "staging",
-        label: "Staging",
-        detail: "Changes grouped into Committed, Staged and Working Tree",
-      },
-      {
-        mode: "delta",
-        label: "Delta",
-        detail: "One row per file against Compare To, with stage and unstage controls",
-      },
-      {
-        mode: "review",
-        label: "Review",
-        detail: "One row per file against Compare To, marked off as you review it",
-      },
-    ];
-    const picked = await vscode.window.showQuickPick(
-      items.map((item) => ({ ...item, description: item.mode === this.mode ? "current" : "" })),
-      { title: "Changed Files View" },
-    );
-    if (!picked || picked.mode === this.mode) {
+  private async pickViewMode(): Promise<void> {
+    const choice = await chooseViewMode(this.mode, this.layout);
+    if (!choice) {
       return;
     }
-    this.mode = picked.mode;
-    await this.store.setMode(this.mode);
+    if (choice.kind === "mode") {
+      this.mode = choice.mode;
+      await this.store.setMode(this.mode);
+    } else {
+      this.layout = choice.layout;
+      await this.store.setLayout(this.layout);
+    }
     this.changeEmitter.fire();
   }
 
@@ -2506,6 +2484,77 @@ export function selectCommentFile(
  * once several Git roots are open — it need not name anything in the others — so the window falls
  * back to the default branch there.
  */
+export type ViewModeChoice =
+  | { kind: "mode"; mode: ChangesMode }
+  | { kind: "layout"; layout: FileLayout };
+
+export type ViewModeItem = vscode.QuickPickItem & { choice?: ViewModeChoice };
+
+const MODE_OPTIONS: { mode: ChangesMode; label: string; detail: string }[] = [
+  {
+    mode: "staging",
+    label: "Staging",
+    detail: "Changes grouped into Committed, Staged and Working Tree",
+  },
+  {
+    mode: "delta",
+    label: "Delta",
+    detail: "One row per file against Compare To, with stage and unstage controls",
+  },
+  {
+    mode: "review",
+    label: "Review",
+    detail: "One row per file against Compare To, marked off as you review it",
+  },
+];
+
+const LAYOUT_OPTIONS: { layout: FileLayout; label: string; detail: string }[] = [
+  { layout: "tree", label: "Tree", detail: "Files nested in their folders" },
+  { layout: "flat", label: "Flat", detail: "Files in one list, with their folder beside the name" },
+];
+
+export function viewModeItems(mode: ChangesMode, layout: FileLayout): ViewModeItem[] {
+  const mark = (current: boolean): string => (current ? "$(check)" : "$(blank)");
+  return [
+    { label: "View", kind: vscode.QuickPickItemKind.Separator },
+    ...MODE_OPTIONS.map((option): ViewModeItem => ({
+      label: `${mark(option.mode === mode)} ${option.label}`,
+      detail: option.detail,
+      choice: { kind: "mode", mode: option.mode },
+    })),
+    { label: "Layout", kind: vscode.QuickPickItemKind.Separator },
+    ...LAYOUT_OPTIONS.map((option): ViewModeItem => ({
+      label: `${mark(option.layout === layout)} ${option.label}`,
+      detail: option.detail,
+      choice: { kind: "layout", layout: option.layout },
+    })),
+  ];
+}
+
+export function chooseViewMode(
+  mode: ChangesMode,
+  layout: FileLayout,
+): Promise<ViewModeChoice | undefined> {
+  const items = viewModeItems(mode, layout);
+  const pick = vscode.window.createQuickPick<ViewModeItem>();
+  pick.title = "View Modes";
+  pick.items = items;
+  pick.activeItems = items.filter(
+    (item) => item.choice?.kind === "mode" && item.choice.mode === mode,
+  );
+  return new Promise((resolve) => {
+    pick.onDidAccept(() => {
+      resolve(pick.selectedItems[0]?.choice);
+      pick.hide();
+    });
+    pick.onDidHide(() => {
+      resolve(undefined);
+      pick.dispose();
+    });
+    pick.show();
+  });
+}
+
 export function sharedCompareToHolds(rootCount: number, compareTo: CompareTo): boolean {
   return rootCount <= 1 || compareTo.kind !== "ref";
 }

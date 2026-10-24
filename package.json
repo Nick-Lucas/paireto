@@ -147,14 +147,9 @@
         "icon": "$(git-compare)"
       },
       {
-        "command": "paireto.review.toggleLayout",
-        "title": "Paireto: Toggle Flat / Tree View",
+        "command": "paireto.review.pickViewMode",
+        "title": "Paireto: View Modes…",
         "icon": "$(list-tree)"
-      },
-      {
-        "command": "paireto.review.pickMode",
-        "title": "Paireto: Switch Changed Files View…",
-        "icon": "$(eye)"
       },
       {
         "command": "paireto.review.openDelta",
@@ -543,14 +538,9 @@
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.toggleLayout",
+          "command": "paireto.review.pickViewMode",
           "when": "view == paireto.main && viewItem =~ /^section:files/",
           "group": "inline@2"
-        },
-        {
-          "command": "paireto.review.pickMode",
-          "when": "view == paireto.main && viewItem =~ /^section:files/",
-          "group": "inline@3"
         },
         {
           "command": "paireto.review.unstageAll",
@@ -564,13 +554,13 @@
         },
         {
           "command": "paireto.review.markAllUnseen",
-          "when": "view == paireto.main && viewItem =~ /^section:files:review/",
+          "when": "view == paireto.main && viewItem =~ /^section:files:review:allSeen$/",
           "group": "inline@4"
         },
         {
           "command": "paireto.review.markAllSeen",
-          "when": "view == paireto.main && viewItem =~ /^section:files:review/",
-          "group": "inline@5"
+          "when": "view == paireto.main && viewItem =~ /^section:files:review$/",
+          "group": "inline@4"
         },
         {
           "command": "paireto.review.unstage",

@@ -10,13 +10,16 @@ import { Commands } from "../config.js";
 import { DiffService, type NetChange } from "../git/DiffService.js";
 import { BulkTargetArg, DeltaArg, FileArg, FilesArg } from "../review/commandArgs.js";
 import { buildDelta, type DeltaFile } from "../review/delta.js";
-import type {
-  RepoChangedFile,
-  RepositoryReviewState,
-  ReviewState,
+import {
+  ReviewController,
+  viewModeItems,
+  type RepoChangedFile,
+  type RepositoryReviewState,
+  type ReviewState,
+  type ViewModeItem,
 } from "../review/ReviewController.js";
 import { SeenFiles } from "../review/SeenFiles.js";
-import type { ChangesMode, FileGroup } from "../types.js";
+import type { ChangesMode, FileGroup, FileLayout } from "../types.js";
 import { buildFileTree } from "../views/fileTree.js";
 import { deltaFileItem, MainTreeProvider } from "../views/MainTreeProvider.js";
 
@@ -286,6 +289,16 @@ suite("Delta view — rows", () => {
     assert.strictEqual(item.checkboxState, undefined, "Delta mode has no seen checkbox");
   });
 
+  test("in Review mode a seen row is greyed out like a staged row", () => {
+    const row = deltaRow("committed");
+
+    assert.strictEqual(
+      iconFile(deltaFileItem(row, "review", true, EXTENSION)),
+      "m-staged-dark.svg",
+    );
+    assert.strictEqual(iconFile(deltaFileItem(row, "review", false, EXTENSION)), "m-dark.svg");
+  });
+
   test("in Review mode a row has a seen checkbox and no stage actions", () => {
     const row = deltaRow("unstaged");
     const seen = deltaFileItem(row, "review", true, EXTENSION);
@@ -407,6 +420,20 @@ suite("Review mode — tree", () => {
     assert.strictEqual(filesSection(tree).description, "HEAD · 2/3 seen");
   });
 
+  test("the section offers Mark All Seen until every file is seen, then Mark All Unseen", async () => {
+    const seen = new SeenFiles(new MemoryMemento());
+    const tree = treeIn("review", seen, repo);
+    const sectionContext = (): string | undefined =>
+      tree.getTreeItem(filesSection(tree)).contextValue;
+    const rows = buildDelta(REPO, repo.changes);
+
+    assert.strictEqual(sectionContext(), "section:files:review");
+    await seen.setSeen(rows.slice(0, 1), true);
+    assert.strictEqual(sectionContext(), "section:files:review");
+    await seen.setSeen(rows, true);
+    assert.strictEqual(sectionContext(), "section:files:review:allSeen");
+  });
+
   test("Delta mode lists one row per file and offers bulk stage and unstage on the section", () => {
     const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo);
     const section = filesSection(tree);
@@ -416,5 +443,140 @@ suite("Review mode — tree", () => {
       ["deltaFolder", "deltaFile"],
     );
     assert.strictEqual(tree.getTreeItem(section).contextValue, "section:files:delta:stage:unstage");
+  });
+});
+
+interface ViewModePicker {
+  pickViewMode(): Promise<void>;
+}
+
+function controllerWith(
+  mode: ChangesMode,
+  layout: FileLayout,
+): {
+  controller: ViewModePicker;
+  saved: { mode?: ChangesMode; layout?: FileLayout };
+  fired: () => number;
+} {
+  const saved: { mode?: ChangesMode; layout?: FileLayout } = {};
+  let fires = 0;
+  const controller = Object.assign(Object.create(ReviewController.prototype), {
+    mode,
+    layout,
+    store: {
+      setMode: (value: ChangesMode) => {
+        saved.mode = value;
+        return Promise.resolve();
+      },
+      setLayout: (value: FileLayout) => {
+        saved.layout = value;
+        return Promise.resolve();
+      },
+    },
+    changeEmitter: { fire: () => (fires += 1) },
+  }) as ViewModePicker;
+  return { controller, saved, fired: () => fires };
+}
+
+async function pickWith(
+  controller: ViewModePicker,
+  choose: (pick: vscode.QuickPick<ViewModeItem>) => Promise<void>,
+): Promise<string[]> {
+  const original = vscode.window.createQuickPick;
+  let opened: vscode.QuickPick<ViewModeItem> | undefined;
+  let activeOnOpen: string[] = [];
+  vscode.window.createQuickPick = (<T extends vscode.QuickPickItem>() => {
+    const pick = original<ViewModeItem>();
+    const show = pick.show.bind(pick);
+    pick.show = () => {
+      show();
+      activeOnOpen = pick.activeItems.map((item) => item.label);
+      opened = pick;
+    };
+    return pick as unknown as vscode.QuickPick<T>;
+  }) as typeof vscode.window.createQuickPick;
+  try {
+    const done = controller.pickViewMode();
+    assert.ok(opened, "the View Modes picker must open");
+    await choose(opened);
+    await done;
+  } finally {
+    vscode.window.createQuickPick = original;
+  }
+  return activeOnOpen;
+}
+
+async function accept(
+  pick: vscode.QuickPick<ViewModeItem>,
+  label: (text: string) => boolean,
+): Promise<void> {
+  for (let step = 0; step < pick.items.length && !label(pick.activeItems[0]?.label ?? ""); step++) {
+    const moved = new Promise((resolve) => {
+      const sub = pick.onDidChangeActive(() => {
+        sub.dispose();
+        resolve(undefined);
+      });
+    });
+    await vscode.commands.executeCommand("workbench.action.quickOpenSelectNext");
+    await moved;
+  }
+  assert.ok(label(pick.activeItems[0]?.label ?? ""), "the picker must reach the choice");
+  await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
+}
+
+suite("View Modes control", () => {
+  test("one picker offers the view and the layout, with the current ones ticked", () => {
+    assert.deepStrictEqual(
+      viewModeItems("delta", "flat").map((item) => item.label),
+      [
+        "View",
+        "$(blank) Staging",
+        "$(check) Delta",
+        "$(blank) Review",
+        "Layout",
+        "$(blank) Tree",
+        "$(check) Flat",
+      ],
+    );
+  });
+
+  test("the picker opens with the current view highlighted", async () => {
+    const { controller } = controllerWith("review", "tree");
+
+    const active = await pickWith(controller, (pick) => {
+      pick.hide();
+      return Promise.resolve();
+    });
+
+    assert.deepStrictEqual(active, ["$(check) Review"]);
+  });
+
+  test("picking a view switches the view and keeps the layout", async () => {
+    const { controller, saved, fired } = controllerWith("staging", "tree");
+
+    await pickWith(controller, (pick) => accept(pick, (label) => label.endsWith("Review")));
+
+    assert.deepStrictEqual(saved, { mode: "review" });
+    assert.strictEqual(fired(), 1);
+  });
+
+  test("picking a layout switches the layout and keeps the view", async () => {
+    const { controller, saved } = controllerWith("delta", "tree");
+
+    await pickWith(controller, (pick) => accept(pick, (label) => label.endsWith("Flat")));
+
+    assert.deepStrictEqual(saved, { layout: "flat" });
+  });
+
+  test("dismissing the picker changes nothing", async () => {
+    const { controller, saved, fired } = controllerWith("delta", "tree");
+
+    await pickWith(controller, (pick) => {
+      pick.hide();
+      return Promise.resolve();
+    });
+
+    assert.deepStrictEqual(saved, {});
+    assert.strictEqual(fired(), 0);
   });
 });

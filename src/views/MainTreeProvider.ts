@@ -694,7 +694,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   private filesSectionContext(): string {
     const { mode } = this.review.getState();
     const files = mode === "staging" ? [] : this.allDeltaFiles();
-    return deltaContainerContext("section:files", mode, files);
+    const context = deltaContainerContext("section:files", mode, files);
+    return mode === "review" && this.checkboxFor(files) === vscode.TreeItemCheckboxState.Checked
+      ? `${context}:allSeen`
+      : context;
   }
 
   private checkboxFor(files: DeltaFile[]): vscode.TreeItemCheckboxState {
@@ -903,7 +906,10 @@ export function deltaFileItem(
 ): vscode.TreeItem {
   const item = new vscode.TreeItem(path.basename(delta.path), vscode.TreeItemCollapsibleState.None);
   item.id = `deltaFile:${repoKey(delta.repoRoot)}:${delta.path}`;
-  item.iconPath = stageIcon(delta, extensionUri);
+  item.iconPath =
+    mode === "review"
+      ? statusIcon(extensionUri, delta.status, seen ? "staged" : "worktree")
+      : stageIcon(delta, extensionUri);
   const dir = path.dirname(delta.path);
   const counts = `+${delta.additions} -${delta.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
