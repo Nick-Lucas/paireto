@@ -187,7 +187,7 @@ export class OpenCodeDriver implements HarnessDriver {
       );
       return;
     }
-    copyTreeSync(source, path.join(configDir, "node_modules"));
+    stagePluginSdkInstall(source, configDir);
     this.log(`staged OpenCode plugin SDK from ${source}`);
   }
 
@@ -293,20 +293,26 @@ export class OpenCodeDriver implements HarnessDriver {
 }
 
 /**
- * A `node_modules` holding `@opencode-ai/plugin`, for mock runs to resolve offline. The Docker image
+ * An npm install of `@opencode-ai/plugin`, for mock runs to resolve offline. The Docker image
  * pre-installs one at PAIRETO_OPENCODE_SDK; natively the user's own opencode config already has it,
  * from OpenCode's own runtime install.
  */
 function pluginSdkSource(): string | undefined {
-  const candidates = [
-    process.env.PAIRETO_OPENCODE_SDK
-      ? path.join(process.env.PAIRETO_OPENCODE_SDK, "node_modules")
-      : undefined,
-    path.join(realOpenCodeConfigDir(), "node_modules"),
-  ];
+  const candidates = [process.env.PAIRETO_OPENCODE_SDK, realOpenCodeConfigDir()];
   return candidates.find(
-    (dir) => dir !== undefined && fs.existsSync(path.join(dir, "@opencode-ai", "plugin")),
+    (dir) =>
+      dir !== undefined && fs.existsSync(path.join(dir, "node_modules", "@opencode-ai", "plugin")),
   );
+}
+
+export function stagePluginSdkInstall(installRoot: string, configDir: string): void {
+  copyTreeSync(path.join(installRoot, "node_modules"), path.join(configDir, "node_modules"));
+  for (const manifest of ["package.json", "package-lock.json"]) {
+    const from = path.join(installRoot, manifest);
+    if (fs.existsSync(from)) {
+      fs.copyFileSync(from, path.join(configDir, manifest));
+    }
+  }
 }
 
 /** The user's real opencode config dir (READ-only source for the free-model plugin). */

@@ -21,6 +21,7 @@ suite("E2E machine-local proxy certificates", () => {
       assert.match(ca.subject, /CN=Paireto-E2E-Test-CA/);
       assert.match(leaf.subjectAltName ?? "", /DNS:api\.anthropic\.com/);
       assert.match(leaf.subjectAltName ?? "", /DNS:chatgpt\.com/);
+      assert.match(leaf.subjectAltName ?? "", /DNS:prod\.us-east-1\.auth\.desktop\.kiro\.dev/);
       assert.strictEqual(leaf.verify(ca.publicKey), true);
       assert.strictEqual(leaf.checkPrivateKey(leafKey), true);
       assert.ok(Date.parse(leaf.validTo) > Date.now() + 9 * 365 * 24 * 60 * 60 * 1_000);

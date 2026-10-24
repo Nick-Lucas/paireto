@@ -628,17 +628,22 @@ async function until(probe: () => boolean, what: string): Promise<void> {
 
 const labels = (items: readonly ViewModeItem[]): string[] => items.map((item) => item.label);
 
+async function settled(pick: vscode.QuickPick<ViewModeItem>): Promise<void> {
+  let changedAt = Date.now();
+  const sub = pick.onDidChangeActive(() => (changedAt = Date.now()));
+  try {
+    await until(() => Date.now() - changedAt >= 150, "the picker must settle");
+  } finally {
+    sub.dispose();
+  }
+}
+
 async function accept(pick: vscode.QuickPick<ViewModeItem>, name: string): Promise<void> {
   const reached = (): boolean => pick.activeItems[0]?.label.endsWith(` ${name}`) ?? false;
+  await settled(pick);
   for (let step = 0; step < pick.items.length && !reached(); step++) {
-    const moved = new Promise((resolve) => {
-      const sub = pick.onDidChangeActive(() => {
-        sub.dispose();
-        resolve(undefined);
-      });
-    });
     await vscode.commands.executeCommand("workbench.action.quickOpenSelectNext");
-    await moved;
+    await settled(pick);
   }
   assert.ok(reached(), `the picker must reach ${name}`);
   await vscode.commands.executeCommand("workbench.action.acceptSelectedQuickOpenItem");
@@ -648,7 +653,9 @@ async function accept(pick: vscode.QuickPick<ViewModeItem>, name: string): Promi
   );
 }
 
-suite("View Modes control", () => {
+suite("View Modes control", function () {
+  this.timeout(30_000);
+
   test("one picker offers the view and the layout, with the current ones ticked", () => {
     assert.deepStrictEqual(labels(viewModeItems("delta", "flat")), [
       "View",
