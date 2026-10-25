@@ -293,8 +293,16 @@ pad(END, END + 2.6, [50, 57, 62, 66], 0.02);
   }
 }
 
-const HOOK_NOTES = [74, 77, 81, 79, 77, 72, 74, 76, 81, 84, 86];
-TL.hook.forEach(([, t], k) => pluck(t, HOOK_NOTES[k], k >= 8 ? 0.07 : 0.06, (k % 3 - 1) * 0.3, 0.35, 0.3, 1.2));
+const HOOK_NOTES = [74, 77, 81, 79, 77, [72, 74, 76], 81, 84, 86];
+TL.hook.forEach(([, t, , , d], k) => {
+  const m = HOOK_NOTES[k];
+  if (Array.isArray(m)) {
+    m.forEach((n, j) => pluck(t + j * 0.05, n, 0.045, (j - 1) * 0.4, 0.35, 0.35, 1.4));
+    whoosh(t + d * 0.45, 0.035, d * 0.45, d * 0.55);
+    return;
+  }
+  pluck(t, m, k >= 6 ? 0.07 : 0.06, (k % 3 - 1) * 0.3, 0.35, 0.3, 1.2);
+});
 bell(TL.hookAttr, 86, 0.045, -0.2, 2.0);
 bell(TL.hookAttr, 93, 0.03, 0.2, 2.0);
 riser(DROP - 2 * BEAT, DROP, 0.045);
@@ -409,13 +417,40 @@ for (let i = 0; i < N; i++) {
 const g = 0.89 / peak2;
 console.log("peak", peak2.toFixed(3), "rms dBFS", (20 * Math.log10(Math.sqrt(sumSq / (2 * N)) * g)).toFixed(1));
 
-const buf = Buffer.alloc(44 + N * 4);
-buf.write("RIFF", 0); buf.writeUInt32LE(36 + N * 4, 4); buf.write("WAVE", 8);
+const P = Math.round(TL.intro * SR), NT = N + P;
+const IL = new Float32Array(NT), IR = new Float32Array(NT);
+{
+  const rel = 0.5, len = Math.min(NT, P + Math.floor(rel * SR));
+  const nf = biquad("bp", 300, 1.1);
+  for (let i = 0; i < len; i++) {
+    const t = i / SR;
+    const env = t < TL.intro ? (t / TL.intro) ** 2.4 : Math.exp(-(t - TL.intro) / rel * 4);
+    if (i % 32 === 0) retune(nf, "bp", 300 + 4200 * Math.min(1, t / TL.intro) ** 2, 1.1);
+    const n = bq(nf, rnd()) * 0.5;
+    let l = 0, r = 0;
+    for (const [m, pan] of [[50, 0], [57, -0.5], [62, 0.5], [69, -0.2], [76, 0.3]]) {
+      const f = mtof(m);
+      let v = 0;
+      for (let h = 1; h <= 3; h++) v += Math.sin(2 * Math.PI * f * h * t * (1 + 0.002 * pan)) / (h * h);
+      const a = (pan + 1) * Math.PI / 4;
+      l += v * Math.cos(a); r += v * Math.sin(a);
+    }
+    IL[i] = (l * 0.06 + n) * env * 0.38;
+    IR[i] = (r * 0.06 + n) * env * 0.38;
+  }
+}
+
+const buf = Buffer.alloc(44 + NT * 4);
+buf.write("RIFF", 0); buf.writeUInt32LE(36 + NT * 4, 4); buf.write("WAVE", 8);
 buf.write("fmt ", 12); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(2, 22);
 buf.writeUInt32LE(SR, 24); buf.writeUInt32LE(SR * 4, 28); buf.writeUInt16LE(4, 32); buf.writeUInt16LE(16, 34);
-buf.write("data", 36); buf.writeUInt32LE(N * 4, 40);
-for (let i = 0; i < N; i++) {
-  buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, L[i] * g)) * 32767), 44 + i * 4);
-  buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, R[i] * g)) * 32767), 46 + i * 4);
+buf.write("data", 36); buf.writeUInt32LE(NT * 4, 40);
+let ipk = 0;
+for (let i = 0; i < NT; i++) {
+  const l = (i >= P ? L[i - P] * g : 0) + IL[i], r = (i >= P ? R[i - P] * g : 0) + IR[i];
+  if (i < P) ipk = Math.max(ipk, Math.abs(l), Math.abs(r));
+  buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, l)) * 32767), 44 + i * 4);
+  buf.writeInt16LE(Math.round(Math.max(-1, Math.min(1, r)) * 32767), 46 + i * 4);
 }
+console.log("intro peak", ipk.toFixed(3));
 writeFileSync(new URL("./music.wav", import.meta.url), buf);

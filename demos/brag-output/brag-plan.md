@@ -31,11 +31,14 @@ App Store feature tour. Each card has a blue eyebrow, a short headline and one s
 
 The hook has only the piano. The drums enter filtered in bar 3 and open up on the drop at the reveal. The outro resolves to Dmaj9. The effects (clicks, key thocks, typing ticks, whooshes, approve chime) are tuned to the key and quantized to the grid. Every cut is on a beat.
 
-## Storyboard (45 s)
+## Storyboard (46 s)
+
+The times below are music times. The video starts with a 1 s intro, so add 1 s to get the video time.
 
 | # | Time | Beats | Scene | Content |
 |---|---|---|---|---|
-| 1 | 0.0–7.5 | 12 | Hook | "Agents do **80%** of the work. What's left is" builds word by word, then **understanding, / judgement, / and coherence.** land one per beat. Attribution "— Paireto (the Parrot)". |
+| 0 | −1.0–0.0 | — | Intro | The settled outro frame (the poster) holds, then fades out. A soft D swell rises into the first beat. |
+| 1 | 0.0–7.5 | 12 | Hook | "Agents do **80%** of the work." builds word by word. "What's left is" comes in as one line that tracks in from wide letter spacing over the same 2 beats, then **understanding / judgement / coherence** land one per beat. Attribution "— Paireto (the Parrot)". |
 | 2 | 7.5–11.25 | 6 | Reveal (drop) | The parrot slides up and the wordmark wipes in. "Pair-programming for your TUI coding agents, in VS Code." Agent chips: Claude Code · Codex · OpenCode · Kiro · Pi. |
 | 3 | 11.25–21.25 | 16 | Plan Review — "Iterate on plans." | A comment types into the plan. On save, the Approve tick swaps for Send Feedback, in the tab and in the view title. The cursor clicks Send Feedback and the agent thinks. Round two: the plan reopens as `PLAN: … (revised)`, an inline diff of the previous plan against the revised one. Approve is back; the cursor clicks it and the agent starts work. |
 | 4 | 21.25–28.75 | 12 | Code Review — "Review code in your editor." | The agent's diff calls a vague `policy.check(attempt)`. The user clicks it and presses ⇧F2. The rename box opens, "shouldRetry" types in, and ⏎ renames it everywhere: the changed files flash. The user clicks Approve in the Paireto view title and the agent goes idle. |
@@ -43,4 +46,4 @@ The hook has only the piano. The drums enter filtered in bar 3 and open up on th
 | 6 | 35.0–41.25 | 10 | Git Native Views — "Git diffs with super powers." | Staging view at HEAD. Compare To → Merge base adds the Committed group. View Modes → Delta, then Review, with seen checkboxes ticked (2/7 seen). |
 | 7 | 41.25–45.0 | 6 | Outro | Parrot and wordmark, "Pair-program with your agents, in VS Code.", "Install “Paireto” from the VS Code Marketplace". The final Dmaj9 rings out. |
 
-Poster: the settled outro frame.
+Poster: the settled outro frame, which is also frame 0.
