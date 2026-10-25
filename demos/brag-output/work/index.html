@@ -1,0 +1,948 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Paireto launch</title>
+<style>
+@font-face { font-family: codicon; src: url(assets/codicon.ttf) format("truetype"); }
+:root {
+  --bg: #191a1e;
+  --blue: rgb(0,159,255);
+  --coral: rgb(255,118,86);
+  --ink: #f2f3f6;
+  --mute: #a3a6b0;
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --mono: "SF Mono", Menlo, monospace;
+  --vs-bg: #1f1f1f;
+  --vs-side: #181818;
+  --vs-border: #2b2b2b;
+  --vs-fg: #cccccc;
+  --vs-desc: #9d9d9d;
+  --vs-focus: #0078d4;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); }
+body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antialiased; position: relative; }
+.ci { font-family: codicon; font-style: normal; font-weight: normal; line-height: 1; display: inline-block; }
+#glow { position: absolute; inset: 0; pointer-events: none; }
+#grain { position: absolute; inset: 0; pointer-events: none; z-index: 60; background: url(assets/grain.png); opacity: 0.045; mix-blend-mode: overlay; }
+#glow::before { content: ""; position: absolute; width: 1400px; height: 1400px; left: -300px; top: -700px; background: radial-gradient(closest-side, rgba(0,159,255,0.16), rgba(0,159,255,0)); }
+#glow::after { content: ""; position: absolute; width: 1200px; height: 1200px; right: -400px; bottom: -700px; background: radial-gradient(closest-side, rgba(255,118,86,0.08), rgba(255,118,86,0)); }
+.scene { position: absolute; inset: 0; display: none; }
+
+#s1 .lines { position: absolute; left: 0; right: 0; top: 176px; text-align: center; }
+#s1 .line { font-weight: 700; font-size: 80px; letter-spacing: -0.025em; line-height: 1.15; color: #e9eaef; white-space: nowrap; }
+#s1 .line.big { font-size: 108px; font-weight: 800; line-height: 1.06; letter-spacing: -0.035em; color: var(--ink); }
+#s1 #hl2 { margin-top: 30px; }
+#s1 .w { display: inline-block; margin: 0 0.12em; }
+#s1 .hi { color: var(--blue); }
+#s1 .attr { position: absolute; left: 0; right: 0; top: 840px; text-align: center; font-size: 30px; color: #8b8e98; display: flex; justify-content: center; align-items: center; gap: 14px; }
+#s1 .attr img { height: 40px; }
+
+#s2 .logo { position: absolute; left: 490px; top: 230px; width: 941px; height: 300px; }
+#s2 .parrot { position: absolute; left: 0; top: 0; height: 300px; }
+#s2 .word { position: absolute; left: 280px; top: 61px; width: 661px; }
+#s2 .tag { position: absolute; left: 0; right: 0; top: 600px; text-align: center; font-size: 48px; font-weight: 600; letter-spacing: -0.015em; color: #e9eaef; }
+#s2 .tag b { color: var(--blue); font-weight: 700; }
+#s2 .chips { position: absolute; left: 0; right: 0; top: 715px; display: flex; justify-content: center; gap: 18px; }
+.chip { font-size: 26px; font-weight: 600; color: #d8dae0; padding: 12px 26px; border-radius: 999px; border: 1.5px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.04); }
+
+.copy { position: absolute; left: 120px; top: 0; width: 540px; height: 1080px; display: flex; flex-direction: column; justify-content: center; }
+.eyebrow { font-size: 22px; font-weight: 700; letter-spacing: 0.16em; color: var(--blue); display: flex; align-items: center; gap: 12px; }
+.eyebrow img { height: 30px; }
+.copy h2 { font-size: 60px; font-weight: 750; line-height: 1.08; letter-spacing: -0.03em; color: var(--ink); margin: 22px 0 26px; }
+.copy p { font-size: 29px; line-height: 1.38; color: var(--mute); }
+.copy p b { color: #e2e4ea; font-weight: 600; }
+.copy p code { font-family: var(--mono); font-size: 25px; color: #e2e4ea; background: rgba(0,159,255,0.14); border: 1px solid rgba(0,159,255,0.3); padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+
+.win { position: absolute; left: 700px; top: 170px; width: 1150px; height: 740px; border-radius: 12px; overflow: hidden; background: var(--vs-bg); box-shadow: 0 50px 120px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.09); display: flex; flex-direction: column; font-family: var(--ui); font-size: 14px; color: var(--vs-fg); }
+.tb { height: 38px; flex: none; background: var(--vs-side); border-bottom: 1px solid var(--vs-border); display: flex; align-items: center; position: relative; }
+.lights { display: flex; gap: 8px; margin-left: 14px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; display: block; }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.tb .search { position: absolute; left: 50%; transform: translateX(-50%); width: 420px; height: 24px; border-radius: 6px; background: #2a2a2a; border: 1px solid #3a3a3a; display: flex; align-items: center; justify-content: center; gap: 8px; color: #b8b8b8; font-size: 13px; }
+.mid { flex: 1; display: flex; min-height: 0; }
+.ab { width: 52px; flex: none; background: var(--vs-side); border-right: 1px solid var(--vs-border); display: flex; flex-direction: column; align-items: center; padding-top: 6px; }
+.ab .ci, .ab img { font-size: 24px; color: #868686; height: 48px; width: 52px; display: flex; align-items: center; justify-content: center; }
+.ab .on { color: #d7d7d7; box-shadow: inset 2px 0 0 var(--vs-focus); }
+.ab .on img { width: 26px; height: 26px; }
+.sb { width: 400px; flex: none; background: var(--vs-side); border-right: 1px solid var(--vs-border); display: flex; flex-direction: column; }
+.sbh { height: 36px; display: flex; align-items: center; padding: 0 12px 0 20px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; color: #cccccc; justify-content: space-between; }
+.sbh .acts { display: flex; gap: 2px; color: #c5c5c5; font-size: 16px; align-items: center; }
+.sbh .ta { width: 24px; height: 24px; }
+.sbh .ta img { width: 16px; height: 16px; }
+.ta { border-radius: 5px; display: flex; align-items: center; justify-content: center; color: #c5c5c5; position: relative; }
+.slot { display: flex; }
+.row .inl { margin-left: auto; display: flex; gap: 2px; color: #c5c5c5; font-size: 16px; }
+.row .inl .ta { width: 22px; height: 22px; }
+.row.hov { background: #2a2d2e; }
+.cb { width: 15px; height: 15px; border: 1px solid #6b6b6b; border-radius: 3px; margin-right: 6px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; color: transparent; }
+.cb.on { background: var(--vs-focus); border-color: var(--vs-focus); color: #fff; }
+.rn { position: absolute; background: #252526; border: 1px solid #454545; border-radius: 4px; padding: 5px; width: 300px; box-shadow: 0 6px 20px rgba(0,0,0,0.55); z-index: 5; }
+.rn .in { height: 28px; border: 1px solid var(--vs-focus); background: #313131; border-radius: 2px; display: flex; align-items: center; padding: 0 6px; font-family: var(--mono); font-size: 15px; color: #e6e6e6; white-space: pre; }
+.rn .in .sl { background: #264f78; }
+.rn .hint { font-size: 12px; color: #9d9d9d; padding: 5px 2px 1px; }
+.code.layer { position: absolute; left: 0; right: 0; top: 38px; bottom: 180px; background: var(--vs-bg); }
+.panel { position: absolute; left: 0; right: 0; bottom: 0; height: 180px; border-top: 1px solid var(--vs-border); background: var(--vs-bg); }
+.panel .ph { height: 34px; display: flex; gap: 24px; align-items: center; padding-left: 18px; font-size: 11.5px; letter-spacing: 0.04em; color: #9d9d9d; }
+.panel .ph .on { color: #e7e7e7; box-shadow: inset 0 -1px 0 #e7e7e7; padding: 8px 0; }
+.term { padding: 4px 18px; font-family: var(--mono); font-size: 14.5px; color: #cccccc; }
+.term .tl { height: 24px; line-height: 24px; white-space: pre; }
+.term .pr { color: #8b8b8b; }
+.term .tbox { margin-top: 6px; height: 38px; border: 1px solid #5a5a5a; border-radius: 6px; display: flex; align-items: center; padding: 0 12px; white-space: pre; }
+.term .star { color: var(--coral); display: inline-block; }
+.term .ok { color: #2ea043; }
+.row { height: 26px; display: flex; align-items: center; white-space: nowrap; overflow: hidden; padding-right: 10px; position: relative; }
+.row .chev { width: 16px; font-size: 16px; color: #c5c5c5; flex: none; }
+.row .ic { width: 18px; font-size: 16px; flex: none; margin-right: 6px; display: flex; align-items: center; justify-content: center; }
+.row .ic img { width: 16px; height: 16px; }
+.row .lb { color: #cccccc; flex: none; }
+.row .ds { color: var(--vs-desc); margin-left: 8px; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+.row.sec .lb { font-weight: 600; }
+.row.sel { background: #04395e; box-shadow: inset 0 0 0 1px var(--vs-focus); }
+.row.ph .lb { color: var(--vs-desc); font-style: italic; }
+.ed { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--vs-bg); position: relative; }
+.tabs { height: 38px; flex: none; background: var(--vs-side); display: flex; align-items: stretch; border-bottom: 1px solid var(--vs-border); }
+.tab { display: flex; align-items: center; gap: 7px; padding: 0 12px; background: var(--vs-bg); color: #ffffff; font-size: 13.5px; box-shadow: inset 0 1px 0 var(--vs-focus); border-right: 1px solid var(--vs-border); white-space: nowrap; }
+.tab .ci { font-size: 15px; }
+.tab .x { color: #c5c5c5; font-size: 14px; margin-left: 4px; width: 14px; text-align: center; }
+.tab .dot { width: 8px; height: 8px; border-radius: 50%; background: #ffffff; margin: 0 3px 0 7px; display: none; }
+.tacts { margin-left: auto; display: flex; align-items: center; gap: 4px; padding-right: 10px; }
+.tacts .ta { width: 28px; height: 28px; font-size: 16px; }
+.tacts .ta img { width: 18px; height: 18px; }
+.crumbs { height: 26px; flex: none; display: flex; align-items: center; padding-left: 18px; color: #a9a9a9; font-size: 13px; gap: 6px; }
+.code { flex: 1; overflow: hidden; font-family: var(--mono); font-size: 15px; position: relative; padding-top: 4px; }
+.ln { display: block; height: 25px; line-height: 25px; white-space: pre; }
+.ln .n { display: inline-block; width: 52px; text-align: right; padding-right: 20px; color: #6e7681; }
+.ln .n2 { width: 40px; padding-right: 12px; }
+.ln .sg { display: inline-block; width: 18px; color: #8a8a8a; }
+.ln.add { background: rgba(155,185,85,0.16); }
+.ln.add .sg { color: #8fbf6a; }
+.ln.del { background: rgba(255,60,60,0.15); }
+.ln.del .sg { color: #ff8080; }
+.k { color: #569cd6; } .c { color: #c586c0; } .f { color: #dcdcaa; } .v { color: #9cdcfe; } .t { color: #4ec9b0; } .s { color: #ce9178; } .nm { color: #b5cea8; }
+.mh { color: #569cd6; font-weight: 700; } .mc { color: #ce9178; } .ml { color: #6796e6; } .mb { color: #569cd6; font-weight: 700; } .mt { color: #cccccc; }
+.sq { text-decoration: underline wavy #f14c4c; text-decoration-skip-ink: none; text-underline-offset: 4px; text-decoration-thickness: 1.5px; }
+.caret { display: inline-block; width: 2px; height: 19px; background: #aeafad; vertical-align: -4px; margin: 0 -1px; }
+.stb { height: 26px; flex: none; background: var(--vs-side); border-top: 1px solid var(--vs-border); display: flex; align-items: center; font-size: 12.5px; color: #cccccc; gap: 6px; }
+.stb .remote { background: var(--vs-focus); color: white; height: 100%; width: 40px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+.stb .it { display: flex; align-items: center; gap: 5px; padding: 0 8px; white-space: nowrap; }
+.stb .ci { font-size: 14px; }
+
+.thread { margin: 4px 14px 4px 52px; border-top: 2px solid #3794ff; border-bottom: 2px solid #3794ff; background: #1e1e1e; overflow: hidden; font-family: var(--ui); position: relative; }
+.thread .th { height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 12px; color: #cccccc; font-size: 13px; }
+.thread .th .sp { margin-left: auto; display: flex; gap: 10px; color: #c5c5c5; font-size: 15px; }
+.thread .box { margin: 4px 12px 0; height: 62px; border: 1px solid var(--vs-focus); background: #313131; border-radius: 3px; padding: 8px 10px; font-size: 14.5px; color: #e6e6e6; }
+.thread .btns { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px; }
+.btn { font-size: 13px; padding: 6px 14px; border-radius: 3px; background: #313131; color: #cccccc; border: 1px solid #3c3c3c; }
+.btn.pri { background: var(--vs-focus); color: white; border-color: var(--vs-focus); }
+.saved { display: flex; gap: 10px; padding: 10px 14px 14px; align-items: flex-start; }
+.av { width: 26px; height: 26px; border-radius: 50%; background: linear-gradient(135deg, #ff9982, #ff7656); flex: none; display: flex; align-items: center; justify-content: center; color: #1b1c20; font-weight: 700; font-size: 13px; }
+.saved .who { font-weight: 600; font-size: 13.5px; color: #e6e6e6; margin-bottom: 3px; }
+.saved .body { font-size: 14.5px; color: #d4d4d4; }
+
+.tip { position: absolute; background: #202020; border: 1px solid #454545; color: #cccccc; font-size: 13px; padding: 5px 9px; border-radius: 4px; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,0.5); z-index: 5; }
+.hover { position: absolute; background: #202020; border: 1px solid #454545; color: #cccccc; font-family: var(--ui); font-size: 14px; padding: 10px 12px; border-radius: 4px; width: 520px; line-height: 1.45; box-shadow: 0 6px 20px rgba(0,0,0,0.55); z-index: 5; }
+.hover .src { color: #8b8b8b; margin-left: 4px; }
+.hover code { font-family: var(--mono); font-size: 13.5px; color: #9cdcfe; }
+.ring { position: absolute; border-radius: 50%; border: 2px solid rgba(255,255,255,0.9); pointer-events: none; }
+.flash { position: absolute; inset: 0; border-radius: 5px; }
+
+.doc { padding: 6px 0 0; }
+
+.qp { position: absolute; left: 50%; top: 10px; width: 640px; margin-left: -320px; background: #222222; border: 1px solid #454545; border-radius: 8px; box-shadow: 0 10px 40px rgba(0,0,0,0.6); overflow: hidden; z-index: 4; font-family: var(--ui); }
+.qp .qt { text-align: center; font-size: 13px; color: #cccccc; padding: 8px 0 6px; font-weight: 600; }
+.qp .qi { margin: 0 8px 6px; height: 30px; border: 1px solid var(--vs-focus); border-radius: 4px; background: #313131; display: flex; align-items: center; padding: 0 10px; color: #8b8b8b; font-size: 14px; }
+.qp .sep { display: flex; justify-content: flex-end; font-size: 12px; color: #9d9d9d; padding: 6px 14px 2px; border-top: 1px solid #333; margin-top: 2px; }
+.qp .sep:first-of-type { border-top: none; }
+.qp .qr { display: flex; align-items: center; gap: 10px; padding: 5px 14px; margin: 0 6px; border-radius: 4px; }
+.qp .qr .ci { font-size: 16px; color: #c5c5c5; width: 18px; }
+.qp .qr .l1 { font-size: 14.5px; color: #e6e6e6; }
+.qp .qr .l1 span { color: #9d9d9d; font-size: 13px; margin-left: 8px; }
+.qp .qr .l1 span .ci { font-size: 13px; width: auto; color: #9d9d9d; }
+.qp .qr .l2 { font-size: 12px; color: #8b8b8b; margin-top: 1px; }
+.qp .qr.on { background: #04395e; box-shadow: inset 0 0 0 1px var(--vs-focus); }
+.keys { position: absolute; left: 0; right: 0; bottom: 70px; display: flex; justify-content: center; gap: 16px; z-index: 6; }
+.key.sm { font-size: 36px; }
+.key { width: 92px; height: 92px; border-radius: 18px; background: linear-gradient(#3a3c44, #2a2c32); box-shadow: 0 6px 0 #16171b, 0 14px 30px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: center; font-size: 44px; font-weight: 600; color: #f2f3f6; }
+
+#s7 .logo { position: absolute; left: 595px; top: 250px; width: 731px; height: 233px; }
+#s7 .parrot { position: absolute; left: 0; top: 0; height: 233px; }
+#s7 .word { position: absolute; left: 218px; top: 47px; width: 513px; }
+#s7 .cta { position: absolute; left: 0; right: 0; top: 570px; text-align: center; font-size: 50px; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+#s7 .cta b { color: var(--blue); }
+#s7 .sub { position: absolute; left: 0; right: 0; top: 660px; text-align: center; font-size: 30px; color: var(--mute); }
+#s7 .mk { position: absolute; left: 50%; top: 750px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; font-size: 24px; color: #d8dae0; padding: 14px 28px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1.5px solid rgba(255,255,255,0.12); }
+
+#cursor { position: absolute; left: 0; top: 0; width: 30px; height: 40px; z-index: 50; display: none; transform-origin: 3px 3px; filter: drop-shadow(0 3px 5px rgba(0,0,0,0.5)); }
+#ring { z-index: 49; display: none; }
+</style>
+</head>
+<body>
+<div id="glow"></div>
+
+<section class="scene" id="s1">
+  <div class="lines">
+    <div class="line" id="hl0"></div>
+    <div class="line" id="hl1"></div>
+    <div class="line big" id="hl2"></div>
+    <div class="line big" id="hl3"></div>
+    <div class="line big" id="hl4"></div>
+  </div>
+  <div class="attr" id="hattr"><img src="assets/ThePairotSvg.svg">— Paireto (the Parrot)</div>
+</section>
+
+<section class="scene" id="s2">
+  <div class="logo"><img class="parrot" src="assets/ThePairotSvg.svg"><img class="word" src="assets/wordmark.png"></div>
+  <div class="tag">Pair-programming for your <b>TUI coding agents</b>, in VS Code.</div>
+  <div class="chips"><div class="chip">Claude Code</div><div class="chip">Codex</div><div class="chip">OpenCode</div><div class="chip">Kiro</div><div class="chip">Pi</div></div>
+</section>
+
+<section class="scene card" id="s3">
+  <div class="copy">
+    <div class="eyebrow"><span class="ci">&#xeac7;</span>PLAN REVIEW</div>
+    <h2>Iterate<br>on plans.</h2>
+    <p>Plans open in your editor. Comment inline and <b>send feedback</b> to your agent.</p>
+  </div>
+  <div class="win">
+    <div class="tb"><div class="lights"><i></i><i></i><i></i></div><div class="search"><span class="ci">&#xea6d;</span>webhooks-service</div></div>
+    <div class="mid">
+      <div class="ab"><span class="ci">&#xeaf0;</span><span class="ci">&#xea6d;</span><span class="ci">&#xea68;</span><span class="ci">&#xeae6;</span><span class="on"><img src="assets/paireto-white.svg"></span></div>
+      <div class="sb">
+        <div class="sbh">PAIRETO<div class="acts"><span class="ta ci">&#xeb37;</span><span class="slot"><span class="ta" id="s3vApprove"><img src="assets/approve.svg"></span><span class="ta" id="s3vSend"><img src="assets/send-feedback.svg"></span></span><span class="ta ci">&#xea7c;</span></div></div>
+        <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Agents</span><span class="ds">1</span></div>
+        <div class="row" style="padding-left:28px"><span class="ic ci" id="s3agIc">&#xebb4;</span><span class="lb">Claude (a1b2c3d4)</span><span class="ds" id="s3agDs">awaiting plan review · active</span></div>
+        <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Changed Files</span></div>
+        <div class="row ph" style="padding-left:28px"><span class="lb">No changes</span></div>
+        <div class="row sec" style="padding-left:6px" id="s3planSec"><span class="chev ci">&#xeab4;</span><span class="lb">Plan Review</span></div>
+        <div class="row ph" style="padding-left:28px" id="s3ph"><span class="lb">No comments — Approve, or add feedback on the plan</span></div>
+        <div class="row" style="padding-left:28px" id="s3pc"><span class="ic ci">&#xea6b;</span><span class="lb">Line 8</span><span class="ds">Use exponential backoff, max 5 tries.</span></div>
+      </div>
+      <div class="ed">
+        <div class="tabs"><div class="tab"><span class="ci" style="color:#519aba">&#xeb1d;</span><span id="s3tabname">PLAN: Retry webhook delivery - 2026-10-25 14:32</span><span class="x ci">&#xea76;</span></div>
+          <div class="tacts" id="s3acts"><span class="slot" id="s3slot"><span class="ta" id="s3approve"><span class="flash" id="s3approveF"></span><img src="assets/approve.svg"></span><span class="ta" id="s3send"><span class="flash"></span><img src="assets/send-feedback.svg"></span></span><span class="ta ci">&#xeb56;</span><span class="ta ci">&#xea7c;</span></div></div>
+        <div class="code">
+          <div class="ln"><span class="n">1</span><span class="mh"># Retry webhook delivery</span></div>
+          <div class="ln"><span class="n">2</span></div>
+          <div class="ln"><span class="n">3</span><span class="mh">## Context</span></div>
+          <div class="ln"><span class="n">4</span><span class="mt">Failed deliveries are dropped after one attempt.</span></div>
+          <div class="ln"><span class="n">5</span></div>
+          <div class="ln"><span class="n">6</span><span class="mh">## Steps</span></div>
+          <div class="ln"><span class="n">7</span><span class="ml">1.</span><span class="mt"> Add </span><span class="mc">`RetryPolicy`</span><span class="mt"> to </span><span class="mc">`policy.ts`</span></div>
+          <div class="ln" id="s3line8"><span class="n">8</span><span class="ml">2.</span><span class="mt"> Retry </span><span class="mc">`deliver()`</span><span class="mt"> with a fixed 2s delay</span></div>
+          <div class="ln add" id="s3line8b"><span class="n">8</span><span class="ml">2.</span><span class="mt"> Retry </span><span class="mc">`deliver()`</span><span class="mt"> with exponential backoff, max 5 tries</span></div>
+          <div class="thread" id="s3thread">
+            <div class="th"><span class="ci">&#xea6b;</span><span id="s3thTitle">Start discussion</span><span class="sp"><span class="ci">&#xeab4;</span><span class="ci">&#xea76;</span></span></div>
+            <div id="s3form">
+              <div class="box"><span id="s3typed"></span><span class="caret" id="s3caret"></span></div>
+              <div class="btns"><span class="btn">Question</span><span class="btn pri" id="s3commentBtn">Comment</span></div>
+            </div>
+            <div class="saved" id="s3saved"><div class="av">Y</div><div><div class="who">You</div><div class="body">Use exponential backoff, max 5 tries.</div></div></div>
+          </div>
+          <div class="ln"><span class="n">9</span><span class="ml">3.</span><span class="mt"> Store the attempt count on </span><span class="mc">`DeliveryRecord`</span></div>
+          <div class="ln"><span class="n">10</span><span class="ml">4.</span><span class="mt"> Test the retry and give-up paths</span></div>
+          <div class="ln"><span class="n">11</span></div>
+          <div class="ln"><span class="n">12</span><span class="mh">## Verification</span></div>
+          <div class="ln"><span class="n">13</span><span class="ml">-</span><span class="mt"> </span><span class="mc">`pnpm test src/delivery`</span></div>
+        </div>
+        <div class="tip" id="s3tip">Paireto: Send Feedback</div>
+      </div>
+    </div>
+    <div class="stb"><span class="remote ci">&#xebf3;</span><span class="it"><span class="ci">&#xea62;</span>webhooks-service · feat/webhook-retry <span class="ci" id="s3stIc">&#xeac7;</span><span id="s3stTx">plan review</span></span></div>
+  </div>
+</section>
+
+<section class="scene card" id="s4">
+  <div class="copy">
+    <div class="eyebrow"><span class="ci">&#xeafd;</span>CODE REVIEW</div>
+    <h2>Review code<br>in your editor.</h2>
+    <p>Diffs keep your <b>LSP and linters</b>. Explore, understand, and make edits yourself, or send <b>batched feedback</b> to your agent.</p>
+  </div>
+  <div class="win">
+    <div class="tb"><div class="lights"><i></i><i></i><i></i></div><div class="search"><span class="ci">&#xea6d;</span>webhooks-service</div></div>
+    <div class="mid">
+      <div class="ab"><span class="ci">&#xeaf0;</span><span class="ci">&#xea6d;</span><span class="ci">&#xea68;</span><span class="ci">&#xeae6;</span><span class="on"><img src="assets/paireto-white.svg"></span></div>
+      <div class="sb">
+        <div class="sbh">PAIRETO<div class="acts"><span class="ta ci">&#xeb37;</span><span class="ta" id="s4approve"><span class="flash"></span><img src="assets/approve.svg"></span><span class="ta ci">&#xea7c;</span></div></div>
+        <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Agents</span><span class="ds">1</span></div>
+        <div class="row" style="padding-left:28px"><span class="ic ci" id="s4agIc">&#xebb4;</span><span class="lb">Claude (a1b2c3d4)</span><span class="ds" id="s4agDs">awaiting code review · active</span></div>
+        <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Changed Files</span><span class="ds">HEAD</span></div>
+        <div class="row" style="padding-left:28px" id="s4r0"><span class="ic"><img src="assets/m-dark.svg"></span><span class="lb">deliver.ts</span><span class="ds">src/delivery  +9 -2</span></div>
+        <div class="row" style="padding-left:28px" id="s4r1"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">policy.ts</span><span class="ds">src/delivery  +24</span></div>
+        <div class="row" style="padding-left:28px" id="s4r2"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">policy.test.ts</span><span class="ds">src/delivery  +41</span></div>
+        <div class="row" style="padding-left:28px"><span class="ic"><img src="assets/m-dark.svg"></span><span class="lb">DeliveryRecord.ts</span><span class="ds">src/db  +3</span></div>
+        <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Feedback</span></div>
+        <div class="row ph" style="padding-left:28px"><span class="lb">No comments yet — add them on the diff</span></div>
+      </div>
+      <div class="ed">
+        <div class="tabs"><div class="tab"><span class="ci" style="color:#519aba">&#xeae1;</span>deliver.ts (Working Tree)<span class="x ci">&#xea76;</span></div>
+          <div class="tacts"><span class="ta ci">&#xeb56;</span><span class="ta ci">&#xea7c;</span></div></div>
+        <div class="crumbs">src <span class="ci">&#xeab6;</span> delivery <span class="ci">&#xeab6;</span> deliver.ts</div>
+        <div class="code">
+          <div class="ln"><span class="n n2">11</span><span class="n n2">11</span><span class="sg"> </span><span class="k">import</span> { <span class="v">retryPolicy</span> } <span class="k">from</span> <span class="s">"./policy"</span>;</div>
+          <div class="ln"><span class="n n2">12</span><span class="n n2">12</span><span class="sg"> </span></div>
+          <div class="ln"><span class="n n2">13</span><span class="n n2">13</span><span class="sg"> </span><span class="k">export</span> <span class="k">async</span> <span class="k">function</span> <span class="f">deliver</span>(<span class="v">hook</span>: <span class="t">Webhook</span>, <span class="v">body</span>: <span class="t">Body</span>) {</div>
+          <div class="ln del"><span class="n n2">14</span><span class="n n2"></span><span class="sg">-</span>  <span class="k">const</span> <span class="v">res</span> = <span class="c">await</span> <span class="f">post</span>(<span class="v">hook</span>.<span class="v">url</span>, <span class="v">body</span>);</div>
+          <div class="ln del"><span class="n n2">15</span><span class="n n2"></span><span class="sg">-</span>  <span class="c">return</span> <span class="f">record</span>(<span class="v">hook</span>, <span class="v">res</span>);</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">14</span><span class="sg">+</span>  <span class="k">const</span> <span class="v">policy</span> = <span class="f">retryPolicy</span>({ <span class="v">attempts</span>: <span class="nm">5</span> });</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">15</span><span class="sg">+</span>  <span class="c">for</span> (<span class="k">let</span> <span class="v">attempt</span> = <span class="nm">1</span>; ; <span class="v">attempt</span>++) {</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">16</span><span class="sg">+</span>    <span class="k">const</span> <span class="v">res</span> = <span class="c">await</span> <span class="f">post</span>(<span class="v">hook</span>.<span class="v">url</span>, <span class="v">body</span>);</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">17</span><span class="sg">+</span>    <span class="c">if</span> (<span class="v">res</span>.<span class="v">ok</span> || !<span class="v">policy</span>.<span class="f" id="s4word"><span id="s4w1">che</span><span class="caret" id="s4caret"></span><span id="s4w2">ck</span></span>(<span class="v">attempt</span>)) {</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">18</span><span class="sg">+</span>      <span class="c">return</span> <span class="f">record</span>(<span class="v">hook</span>, <span class="v">res</span>, <span class="v">attempt</span>);</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">19</span><span class="sg">+</span>    }</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">20</span><span class="sg">+</span>    <span class="c">await</span> <span class="f">sleep</span>(<span class="v">policy</span>.<span class="f">delay</span>(<span class="v">attempt</span>));</div>
+          <div class="ln add"><span class="n n2"></span><span class="n n2">21</span><span class="sg">+</span>  }</div>
+          <div class="ln"><span class="n n2">16</span><span class="n n2">22</span><span class="sg"> </span>}</div>
+        </div>
+        <div class="rn" id="s4rn"><div class="in" id="s4in"></div><div class="hint">Enter to Rename, ⇧Enter to Preview</div></div>
+      </div>
+    </div>
+    <div class="stb"><span class="remote ci">&#xebf3;</span><span class="it"><span class="ci">&#xea62;</span>webhooks-service · feat/webhook-retry <span class="ci" id="s4stIc">&#xeac7;</span><span id="s4stTx">code review</span></span><span class="it"><span class="ci">&#xea87;</span>0 <span class="ci">&#xea6c;</span>0</span></div>
+    <div class="tip" id="s4tip">Paireto: Approve</div>
+    <div class="keys" id="s4keysA"><div class="key">⇧</div><div class="key sm">F2</div></div>
+    <div class="keys" id="s4keysB"><div class="key">⏎</div></div>
+  </div>
+</section>
+
+<section class="scene card" id="s5">
+  <div class="copy">
+    <div class="eyebrow"><span class="ci">&#xebd2;</span>GUIDED REVIEW</div>
+    <h2>Follow<br>the thread.</h2>
+    <p>Run <code>/paireto:guided-review</code> and your agent splits the branch into <b>changesets</b>, each with a description and its files in order.</p>
+  </div>
+  <div class="win">
+    <div class="tb"><div class="lights"><i></i><i></i><i></i></div><div class="search"><span class="ci">&#xea6d;</span>webhooks-service</div></div>
+    <div class="mid">
+      <div class="ab"><span class="ci">&#xeaf0;</span><span class="ci">&#xea6d;</span><span class="ci">&#xea68;</span><span class="ci">&#xeae6;</span><span class="on"><img src="assets/paireto-white.svg"></span></div>
+      <div class="sb" id="s5sb">
+        <div class="sbh">PAIRETO<div class="acts"><span class="ta ci">&#xeb37;</span><span class="ta" id="s5approve"><img src="assets/approve.svg"></span><span class="ta ci">&#xea7c;</span></div></div>
+        <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Agents</span><span class="ds">1</span></div>
+        <div class="row" style="padding-left:28px"><span class="ic ci" id="s5agIc">&#xeabc;</span><span class="lb">Claude (a1b2c3d4)</span><span class="ds" id="s5agDs">idle</span></div>
+        <div id="s5pre">
+          <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Changed Files</span><span class="ds">main</span></div>
+          <div class="row" style="padding-left:28px"><span class="ic"><img src="assets/m-dark.svg"></span><span class="lb">deliver.ts</span><span class="ds">src/delivery  +9 -2</span></div>
+          <div class="row" style="padding-left:28px"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">policy.ts</span><span class="ds">src/delivery  +24</span></div>
+          <div class="row" style="padding-left:28px"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">policy.test.ts</span><span class="ds">src/delivery  +41</span></div>
+          <div class="row" style="padding-left:28px"><span class="ic"><img src="assets/m-dark.svg"></span><span class="lb">DeliveryRecord.ts</span><span class="ds">src/db  +3</span></div>
+          <div class="row" style="padding-left:28px"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">sleep.ts</span><span class="ds">src/delivery  +4</span></div>
+        </div>
+        <div id="s5plan">
+          <div class="row sec" style="padding-left:6px" id="s5planSec"><span class="chev ci">&#xeab4;</span><span class="lb">Review Plan</span><span class="ds">3 changesets · 7 files</span></div>
+          <div class="row g" style="padding-left:22px" id="s5cs1"><span class="chev ci">&#xeab4;</span><span class="ic ci">&#xebd2;</span><span class="lb">Retry policy</span><span class="ds">2 files</span></div>
+          <div class="row g" style="padding-left:44px"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">policy.ts</span><span class="ds">src/delivery  +24</span></div>
+          <div class="row g" style="padding-left:44px"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">policy.test.ts</span><span class="ds">src/delivery  +41</span></div>
+          <div class="row g" style="padding-left:22px"><span class="chev ci">&#xeab4;</span><span class="ic ci">&#xebd2;</span><span class="lb">Delivery loop</span><span class="ds">3 files</span></div>
+          <div class="row g" style="padding-left:44px"><span class="ic"><img src="assets/m-dark.svg"></span><span class="lb">deliver.ts</span><span class="ds">src/delivery  +9 -2</span></div>
+          <div class="row g" style="padding-left:44px"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">sleep.ts</span><span class="ds">src/delivery  +4</span></div>
+          <div class="row g" style="padding-left:44px"><span class="ic"><img src="assets/m-dark.svg"></span><span class="lb">deliver.test.ts</span><span class="ds">src/delivery  +38 -6</span></div>
+          <div class="row g" style="padding-left:22px"><span class="chev ci">&#xeab4;</span><span class="ic ci">&#xebd2;</span><span class="lb">Persist attempts</span><span class="ds">2 files</span></div>
+          <div class="row g" style="padding-left:44px"><span class="ic"><img src="assets/m-dark.svg"></span><span class="lb">DeliveryRecord.ts</span><span class="ds">src/db  +3</span></div>
+          <div class="row g" style="padding-left:44px"><span class="ic"><img src="assets/a-dark.svg"></span><span class="lb">0007_attempts.sql</span><span class="ds">migrations  +2</span></div>
+        </div>
+      </div>
+      <div class="ed">
+        <div class="tabs"><div class="tab"><span class="ci" id="s5tabIc" style="color:#519aba">&#xeb1d;</span><span id="s5tabname">deliver.ts</span><span class="x ci">&#xea76;</span></div>
+          <div class="tacts"><span class="ta ci">&#xeb56;</span><span class="ta ci">&#xea7c;</span></div></div>
+        <div class="code layer" id="s5docPre" style="opacity:0.6">
+          <div class="ln"><span class="n">13</span><span class="k">export</span> <span class="k">async</span> <span class="k">function</span> <span class="f">deliver</span>(<span class="v">hook</span>: <span class="t">Webhook</span>, <span class="v">body</span>: <span class="t">Body</span>) {</div>
+          <div class="ln"><span class="n">14</span>  <span class="k">const</span> <span class="v">policy</span> = <span class="f">retryPolicy</span>({ <span class="v">attempts</span>: <span class="nm">5</span> });</div>
+          <div class="ln"><span class="n">15</span>  <span class="c">for</span> (<span class="k">let</span> <span class="v">attempt</span> = <span class="nm">1</span>; ; <span class="v">attempt</span>++) {</div>
+          <div class="ln"><span class="n">16</span>    <span class="k">const</span> <span class="v">res</span> = <span class="c">await</span> <span class="f">post</span>(<span class="v">hook</span>.<span class="v">url</span>, <span class="v">body</span>);</div>
+          <div class="ln"><span class="n">17</span>    <span class="c">if</span> (<span class="v">res</span>.<span class="v">ok</span> || !<span class="v">policy</span>.<span class="f">shouldRetry</span>(<span class="v">attempt</span>)) {</div>
+          <div class="ln"><span class="n">18</span>      <span class="c">return</span> <span class="f">record</span>(<span class="v">hook</span>, <span class="v">res</span>, <span class="v">attempt</span>);</div>
+          <div class="ln"><span class="n">19</span>    }</div>
+          <div class="ln"><span class="n">20</span>    <span class="c">await</span> <span class="f">sleep</span>(<span class="v">policy</span>.<span class="f">delay</span>(<span class="v">attempt</span>));</div>
+          <div class="ln"><span class="n">21</span>  }</div>
+          <div class="ln"><span class="n">22</span>}</div>
+        </div>
+        <div class="code layer" id="s5docA">
+          <div class="ln"><span class="n">1</span><span class="mh"># Review plan</span></div>
+          <div class="ln"><span class="n">2</span></div>
+          <div class="ln"><span class="n">3</span><span class="mt">Retries webhook delivery with backoff and</span></div>
+          <div class="ln"><span class="n">4</span><span class="mt">records how many attempts each one took.</span></div>
+          <div class="ln"><span class="n">5</span></div>
+          <div class="ln"><span class="n">6</span><span class="mt">Compared against main.</span></div>
+          <div class="ln"><span class="n">7</span></div>
+          <div class="ln"><span class="n">8</span><span class="mh">## Changesets</span></div>
+          <div class="ln"><span class="n">9</span></div>
+          <div class="ln"><span class="n">10</span><span class="ml">1.</span><span class="mb"> **Retry policy**</span><span class="mt"> · 2 files</span></div>
+          <div class="ln"><span class="n">11</span><span class="ml">2.</span><span class="mb"> **Delivery loop**</span><span class="mt"> · 3 files</span></div>
+          <div class="ln"><span class="n">12</span><span class="ml">3.</span><span class="mb"> **Persist attempts**</span><span class="mt"> · 2 files</span></div>
+          <div class="ln"><span class="n">13</span></div>
+          <div class="ln"><span class="n">14</span><span class="mt">---</span></div>
+        </div>
+        <div class="code layer" id="s5docB">
+          <div class="ln"><span class="n">1</span><span class="mh"># Retry policy</span></div>
+          <div class="ln"><span class="n">2</span></div>
+          <div class="ln"><span class="n">3</span><span class="mt">A small policy object that decides whether to</span></div>
+          <div class="ln"><span class="n">4</span><span class="mt">retry and how long to wait. Read it first: the</span></div>
+          <div class="ln"><span class="n">5</span><span class="mt">delivery loop builds on it.</span></div>
+          <div class="ln"><span class="n">6</span></div>
+          <div class="ln"><span class="n">7</span><span class="mh">## Files, in reading order</span></div>
+          <div class="ln"><span class="n">8</span></div>
+          <div class="ln"><span class="n">9</span><span class="ml">1.</span><span class="mt"> </span><span class="mc">`src/delivery/policy.ts`</span><span class="mt"> · </span><span class="mc">`unstaged`</span></div>
+          <div class="ln"><span class="n">10</span><span class="ml">2.</span><span class="mt"> </span><span class="mc">`src/delivery/policy.test.ts`</span><span class="mt"> · </span><span class="mc">`unstaged`</span></div>
+          <div class="ln"><span class="n">11</span></div>
+          <div class="ln"><span class="n">12</span><span class="mt">---</span></div>
+        </div>
+        <div class="panel">
+          <div class="ph"><span>PROBLEMS</span><span>OUTPUT</span><span class="on">TERMINAL</span></div>
+          <div class="term">
+            <div class="tl" id="s5hist"><span class="pr">&gt;</span> /paireto:guided-review</div>
+            <div class="tl" id="s5status"><span class="star" id="s5star">✻</span> <span id="s5stx">Reading the branch…</span></div>
+            <div class="tbox"><span class="pr">&gt; </span><span id="s5typed"></span><span class="caret" id="s5caret"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="stb"><span class="remote ci">&#xebf3;</span><span class="it"><span class="ci">&#xea62;</span>webhooks-service · feat/webhook-retry <span id="s5st"><span class="ci">&#xebd2;</span> guided review</span></span></div>
+  </div>
+</section>
+
+<section class="scene card" id="s6">
+  <div class="copy">
+    <div class="eyebrow"><span class="ci">&#xeafd;</span>GIT NATIVE VIEWS</div>
+    <h2>Git diffs with<br>super powers.</h2>
+    <p>Choose between <b>Staging</b>, <b>Delta</b>, and <b>Review</b> views. Compare to any git ref.</p>
+  </div>
+  <div class="win">
+    <div class="tb"><div class="lights"><i></i><i></i><i></i></div><div class="search"><span class="ci">&#xea6d;</span>webhooks-service</div></div>
+    <div class="mid">
+      <div class="ab"><span class="ci">&#xeaf0;</span><span class="ci">&#xea6d;</span><span class="ci">&#xea68;</span><span class="ci">&#xeae6;</span><span class="on"><img src="assets/paireto-white.svg"></span></div>
+      <div class="sb">
+        <div class="sbh">PAIRETO<div class="acts"><span class="ta ci">&#xeb37;</span><span class="ta ci">&#xea7c;</span></div></div>
+        <div class="row sec" style="padding-left:6px"><span class="chev ci">&#xeab4;</span><span class="lb">Agents</span><span class="ds">1</span></div>
+        <div class="row" style="padding-left:28px"><span class="ic ci">&#xeabc;</span><span class="lb">Claude (a1b2c3d4)</span><span class="ds">idle</span></div>
+        <div class="row sec" style="padding-left:6px" id="s6sec"><span class="chev ci">&#xeab4;</span><span class="lb">Changed Files</span><span class="ds" id="s6desc">HEAD</span><span class="inl" id="s6inl"><span class="ta ci" id="s6cmp"><span class="flash"></span>&#xeafd;</span><span class="ta ci" id="s6vm"><span class="flash"></span>&#xeb86;</span></span></div>
+        <div id="s6files"></div>
+      </div>
+      <div class="ed">
+        <div class="tabs"><div class="tab"><span class="ci" style="color:#519aba">&#xea7b;</span>deliver.ts<span class="x ci">&#xea76;</span></div></div>
+        <div class="code" style="opacity:0.55">
+          <div class="ln"><span class="n">13</span><span class="k">export</span> <span class="k">async</span> <span class="k">function</span> <span class="f">deliver</span>(<span class="v">hook</span>: <span class="t">Webhook</span>, <span class="v">body</span>: <span class="t">Body</span>) {</div>
+          <div class="ln"><span class="n">14</span>  <span class="k">const</span> <span class="v">policy</span> = <span class="f">retryPolicy</span>({ <span class="v">attempts</span>: <span class="nm">5</span> });</div>
+          <div class="ln"><span class="n">15</span>  <span class="c">for</span> (<span class="k">let</span> <span class="v">attempt</span> = <span class="nm">1</span>; ; <span class="v">attempt</span>++) {</div>
+          <div class="ln"><span class="n">16</span>    <span class="k">const</span> <span class="v">res</span> = <span class="c">await</span> <span class="f">post</span>(<span class="v">hook</span>.<span class="v">url</span>, <span class="v">body</span>);</div>
+          <div class="ln"><span class="n">17</span>    <span class="c">if</span> (<span class="v">res</span>.<span class="v">ok</span> || !<span class="v">policy</span>.<span class="f">shouldRetry</span>(<span class="v">attempt</span>)) {</div>
+          <div class="ln"><span class="n">18</span>      <span class="c">return</span> <span class="f">record</span>(<span class="v">hook</span>, <span class="v">res</span>, <span class="v">attempt</span>);</div>
+          <div class="ln"><span class="n">19</span>    }</div>
+          <div class="ln"><span class="n">20</span>    <span class="c">await</span> <span class="f">sleep</span>(<span class="v">policy</span>.<span class="f">delay</span>(<span class="v">attempt</span>));</div>
+          <div class="ln"><span class="n">21</span>  }</div>
+          <div class="ln"><span class="n">22</span>}</div>
+        </div>
+      </div>
+    </div>
+    <div class="stb"><span class="remote ci">&#xebf3;</span><span class="it"><span class="ci">&#xea62;</span>webhooks-service · feat/webhook-retry</span></div>
+    <div class="qp" id="s6qpC">
+      <div class="qt">Compare To</div>
+      <div class="qi"><span class="caret"></span></div>
+      <div class="qr" data-i="0"><span class="ci">&#xeafc;</span><div><div class="l1">HEAD<span>working changes only</span></div></div></div>
+      <div class="qr" data-i="1"><span class="ci">&#xebd2;</span><div><div class="l1">Stack base<span>since the branch below in the stack</span></div></div></div>
+      <div class="qr" data-i="2"><span class="ci">&#xea64;</span><div><div class="l1">Merge base<span>since the default branch</span></div></div></div>
+      <div class="qr" data-i="3"><span class="ci">&#xec6f;</span><div><div class="l1">main<span>default branch</span></div></div></div>
+      <div class="sep"></div>
+      <div class="qr" data-i="4"><span class="ci">&#xec6f;</span><div><div class="l1">Branch/Ref…<span>pick any branch or ref</span></div></div></div>
+    </div>
+    <div class="qp" id="s6qpV">
+      <div class="qt">View Modes</div>
+      <div class="qi"><span class="caret"></span></div>
+      <div class="sep">View</div>
+      <div class="qr" data-i="0"><span class="ci mk"></span><div><div class="l1">Staging</div><div class="l2">Changes grouped into Committed, Staged and Working Tree</div></div></div>
+      <div class="qr" data-i="1"><span class="ci mk"></span><div><div class="l1">Delta</div><div class="l2">One row per file against Compare To, with stage and unstage controls</div></div></div>
+      <div class="qr" data-i="2"><span class="ci mk"></span><div><div class="l1">Review</div><div class="l2">One row per file against Compare To, marked off as you review it</div></div></div>
+      <div class="sep">Layout</div>
+      <div class="qr" data-i="3"><span class="ci">&#xec03;</span><div><div class="l1">Tree</div><div class="l2">Files nested in their folders</div></div></div>
+      <div class="qr" data-i="4"><span class="ci">&#xeab2;</span><div><div class="l1">Flat</div><div class="l2">Files in one list, with their folder beside the name</div></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="scene" id="s7">
+  <div class="logo"><img class="parrot" src="assets/ThePairotSvg.svg"><img class="word" src="assets/wordmark.png"></div>
+  <div class="cta">Pair-program with your agents, <b>in VS Code.</b></div>
+  <div class="sub">Claude Code · Codex · OpenCode · Kiro · Pi</div>
+  <div class="mk"><span class="ci" style="font-size:26px">&#xeae6;</span>Install “Paireto” from the VS Code Marketplace</div>
+</section>
+
+<div id="grain"></div>
+<div class="ring" id="ring"></div>
+<svg id="cursor" viewBox="0 0 30 40"><path d="M3 3 L3 31 L10 24.5 L14.5 35 L19 33 L14.6 22.8 L24 22.8 Z" fill="#000" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/></svg>
+
+<script src="timeline.cjs"></script>
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const cl = (x, a = 0, b = 1) => Math.max(a, Math.min(b, x));
+const seg = (t, a, b) => cl((t - a) / (b - a));
+const eo = (x) => 1 - Math.pow(1 - x, 3);
+const eio = (x) => (x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2);
+const eback = (x) => { const c1 = 1.5, c3 = c1 + 1; return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2); };
+const S = TL.scenes;
+
+function setIn(el, p, dx = 0, dy = 0, extra = "") {
+  el.style.opacity = p;
+  el.style.transform = `translate(${(1 - p) * dx}px, ${(1 - p) * dy}px) ${extra}`;
+}
+function vis(el, on) { el.style.display = on ? "" : "none"; }
+
+(function buildHook() {
+  const lines = [$("#hl0"), $("#hl1"), $("#hl2"), $("#hl3"), $("#hl4")];
+  for (const [li, t, word, cls] of TL.hook) {
+    const s = document.createElement("span");
+    s.className = "w" + (cls ? " " + cls : "");
+    s.textContent = word;
+    s.dataset.t = t;
+    lines[li].appendChild(s);
+  }
+})();
+
+function renderHook(t) {
+  const [a, b] = S.s1;
+  const out = eio(seg(t, b - 0.45, b));
+  for (const w of $$("#s1 .w")) {
+    const p = eo(seg(t, +w.dataset.t, +w.dataset.t + 0.32));
+    const big = w.parentElement.classList.contains("big");
+    const sc = big ? 0.6 + 0.4 * eback(seg(t, +w.dataset.t, +w.dataset.t + 0.4)) : 1;
+    w.style.opacity = p;
+    w.style.filter = `blur(${(1 - p) * 10}px)`;
+    w.style.transform = `translateY(${(1 - p) * 38}px) scale(${sc})`;
+  }
+  setIn($("#hattr"), eo(seg(t, TL.hookAttr, TL.hookAttr + 0.5)), 0, 20);
+  const lines = $("#s1 .lines");
+  lines.style.opacity = 1 - out;
+  lines.style.transform = `translateY(${-60 * out}px)`;
+  $("#hattr").style.opacity = Math.min(+$("#hattr").style.opacity, 1 - out);
+}
+
+function renderReveal(t) {
+  const [a, b] = S.s2;
+  const out = eio(seg(t, b - 0.45, b));
+  const pp = eo(seg(t, TL.s2.parrot, TL.s2.parrot + 0.7));
+  const parrot = $("#s2 .parrot");
+  parrot.style.opacity = cl(pp * 1.6);
+  parrot.style.transform = `translateY(${(1 - eback(seg(t, TL.s2.parrot, TL.s2.parrot + 0.7))) * 120}px) rotate(${(1 - pp) * -8}deg)`;
+  const wp = eio(seg(t, TL.s2.word, TL.s2.word + 0.6));
+  const word = $("#s2 .word");
+  word.style.clipPath = `inset(0 ${(1 - wp) * 100}% 0 0)`;
+  word.style.transform = `translateX(${(1 - wp) * -30}px)`;
+  setIn($("#s2 .tag"), eo(seg(t, TL.s2.tag, TL.s2.tag + 0.5)), 0, 30);
+  $$("#s2 .chip").forEach((c, i) => {
+    const t0 = TL.s2.chips + i * 0.125;
+    const p = seg(t, t0, t0 + 0.4);
+    c.style.opacity = eo(p);
+    c.style.transform = `translateY(${(1 - eback(p)) * 30}px)`;
+  });
+  const sc = $("#s2");
+  sc.style.opacity = 1 - out;
+  sc.style.transform = `translateX(${-140 * out}px)`;
+}
+
+function renderCard(id, t) {
+  const [a, b] = S[id];
+  const sc = $("#" + id);
+  const out = eio(seg(t, b - 0.45, b));
+  const parts = [$(".eyebrow", sc), $("h2", sc), $("p", sc)];
+  parts.forEach((el, i) => {
+    const p = eo(seg(t, a + 0.15 + i * 0.1, a + 0.75 + i * 0.1));
+    setIn(el, p, 90, 0);
+  });
+  const w = $(".win", sc);
+  const wp = eo(seg(t, a, a + 0.8));
+  w.style.opacity = cl(wp * 1.4);
+  w.style.transform = `translateX(${(1 - wp) * 320}px)`;
+  sc.style.opacity = 1 - out;
+  sc.style.transform = `translateX(${-150 * out}px)`;
+}
+
+function pressFlash(el, t, tc, color) {
+  const f = $(".flash", el);
+  const p = seg(t, tc, tc + 0.5);
+  f.style.background = p > 0 && p < 1 ? color : "transparent";
+  f.style.opacity = 1 - p;
+  el.style.background = t >= tc - 0.5 && t < tc + 0.1 ? "rgba(90,93,94,0.31)" : "transparent";
+}
+
+function placeTip(tip, target, win, t, t0, t1) {
+  const p = seg(t, t0, t0 + 0.15) * (1 - seg(t, t1, t1 + 0.1));
+  tip.style.display = p > 0 ? "" : "none";
+  tip.style.opacity = p;
+  const wr = win.getBoundingClientRect();
+  const r = target.getBoundingClientRect();
+  if (p <= 0) return;
+  const er = tip.parentElement.getBoundingClientRect();
+  tip.style.left = r.left + r.width / 2 - er.left - tip.offsetWidth / 2 + "px";
+  tip.style.top = r.bottom - er.top + 8 + "px";
+}
+
+function renderS3(t) {
+  renderCard("s3", t);
+  const T3 = TL.s3;
+  const thread = $("#s3thread");
+  const open = eio(seg(t, T3.clickLine, T3.clickLine + 0.3));
+  const saved = t >= T3.clickSave;
+  const fullH = saved ? 96 : 144;
+  const shrink = eio(seg(t, T3.clickSave, T3.clickSave + 0.25));
+  const h = saved ? 144 + (96 - 144) * shrink : 144 * open;
+  thread.style.height = h + "px";
+  thread.style.marginTop = thread.style.marginBottom = (open > 0 ? 4 * open : 0) + "px";
+  thread.style.borderWidth = open > 0 ? "2px 0" : "0";
+  vis($("#s3form"), !saved);
+  vis($("#s3saved"), saved);
+  $("#s3saved").style.opacity = shrink;
+  $("#s3thTitle").textContent = saved ? "1 comment" : "Start discussion";
+  const n = Math.floor(cl((t - T3.typeStart) / T3.step + 1e-6, 0, T3.comment.length));
+  $("#s3typed").textContent = t >= T3.typeStart ? T3.comment.slice(0, n) : "";
+  $("#s3caret").style.opacity = Math.floor(t * 2.5) % 2 === 0 || (t >= T3.typeStart && t < T3.typeStart + T3.comment.length * T3.step + 0.2) ? 1 : 0;
+  $("#s3line8").style.background = t >= T3.clickLine - 0.05 ? "rgba(255,255,255,0.05)" : "transparent";
+  const pc = eo(seg(t, T3.clickSave + 0.25, T3.clickSave + 0.55));
+  vis($("#s3ph"), pc === 0);
+  vis($("#s3pc"), pc > 0);
+  $("#s3pc").style.opacity = pc;
+  $("#s3pc").style.background = pc > 0 ? `rgba(0,120,212,${0.35 * (1 - seg(t, T3.clickSave + 0.6, T3.clickSave + 1.4))})` : "transparent";
+  pressFlash($("#s3send"), t, T3.clickSend, "rgba(209,121,20,0.5)");
+  placeTip($("#s3tip"), $("#s3slot"), $("#s3 .win"), t, T3.tipSend, T3.clickSend);
+  const sent = t >= T3.clickSend + 0.15;
+  const hasFb = t >= T3.swap;
+  const pop = eback(seg(t, T3.swap, T3.swap + 0.35));
+  const gone = 1 - seg(t, T3.clickSend + 0.25, T3.clickSend + 0.5);
+  for (const [ap, sd] of [["#s3approve", "#s3send"], ["#s3vApprove", "#s3vSend"]]) {
+    vis($(ap), !hasFb);
+    vis($(sd), hasFb);
+    $(sd).style.transform = `scale(${0.5 + 0.5 * pop})`;
+    $(ap).style.opacity = gone;
+    $(sd).style.opacity = gone;
+  }
+  const r2 = t >= T3.revised;
+  const approved = t >= T3.clickApprove + 0.15;
+  const busy = (sent && !r2) || approved;
+  const ic = $("#s3agIc");
+  ic.innerHTML = busy ? "&#xeb19;" : "&#xebb4;";
+  ic.style.transform = busy ? `rotate(${t * 400}deg)` : "none";
+  $("#s3agDs").textContent = busy ? "thinking" : "awaiting plan review · active";
+  $("#s3stIc").innerHTML = busy ? "&#xeb19;" : "&#xeac7;";
+  $("#s3stIc").style.transform = busy ? `rotate(${t * 400}deg)` : "none";
+  $("#s3stTx").textContent = busy ? "thinking" : "plan review";
+  const agRow = ic.parentElement;
+  const flashAt = approved ? T3.clickApprove : r2 ? T3.revised : T3.clickSend;
+  const flashCol = approved ? "46,160,67" : "0,159,255";
+  agRow.style.background = sent ? `rgba(${flashCol},${0.3 * (1 - seg(t, flashAt + 0.2, flashAt + 1.2))})` : "transparent";
+  if (r2) {
+    const rp = eo(seg(t, T3.revised, T3.revised + 0.3));
+    $("#s3tabname").textContent = "PLAN: Retry webhook delivery - 2026-10-25 14:32 (revised)";
+    vis(thread, false);
+    $("#s3line8").className = "ln del";
+    $("#s3line8").style.background = "";
+    vis($("#s3line8b"), true);
+    $(".code", $("#s3")).style.opacity = 0.4 + 0.6 * rp;
+    vis($("#s3ph"), true);
+    vis($("#s3pc"), false);
+    const ag = 1 - seg(t, T3.clickApprove + 0.25, T3.clickApprove + 0.5);
+    for (const [ap, sd] of [["#s3approve", "#s3send"], ["#s3vApprove", "#s3vSend"]]) {
+      vis($(ap), true);
+      vis($(sd), false);
+      $(ap).style.opacity = ag;
+      $(ap).style.transform = `scale(${0.5 + 0.5 * eback(seg(t, T3.revised, T3.revised + 0.35))})`;
+    }
+    $("#s3tip").textContent = "Paireto: Approve";
+    pressFlash($("#s3approveF").parentElement, t, T3.clickApprove, "rgba(46,160,67,0.6)");
+    placeTip($("#s3tip"), $("#s3slot"), $("#s3 .win"), t, T3.tipApprove, T3.clickApprove);
+  } else {
+    $("#s3tabname").textContent = "PLAN: Retry webhook delivery - 2026-10-25 14:32";
+    $("#s3line8").className = "ln";
+    vis(thread, true);
+    vis($("#s3line8b"), false);
+    $(".code", $("#s3")).style.opacity = 1;
+    $("#s3tip").textContent = "Paireto: Send Feedback";
+    for (const ap of ["#s3approve", "#s3vApprove"]) $(ap).style.transform = "none";
+  }
+}
+
+function blink(t, t0) { return Math.floor((t - t0) * 2.5) % 2 === 0; }
+
+function keycaps(group, t, pressAt, showFrom, hideAt) {
+  const out = seg(t, hideAt, hideAt + 0.3);
+  $$(".key", group).forEach((k, i) => {
+    const t0 = pressAt[i];
+    const p = seg(t, showFrom + i * 0.08, showFrom + i * 0.08 + 0.17);
+    const press = seg(t, t0, t0 + 0.08) * (1 - seg(t, hideAt - 0.15, hideAt));
+    k.style.opacity = eo(p) * (1 - out);
+    k.style.transform = `translateY(${(1 - eo(p)) * 30 + press * 6}px) scale(${1 - press * 0.04})`;
+    k.style.boxShadow = press > 0.5 ? "0 0 0 #16171b, 0 8px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.12)" : "";
+  });
+  group.style.display = t >= showFrom && out < 1 ? "flex" : "none";
+}
+
+function renderS4(t) {
+  renderCard("s4", t);
+  const T4 = TL.s4;
+  const renamed = t >= T4.enter;
+  $("#s4w1").textContent = renamed ? T4.name : "che";
+  $("#s4w2").textContent = renamed ? "" : "ck";
+  const caretOn = t >= T4.clickWord && t < T4.open;
+  $("#s4caret").style.display = caretOn ? "" : "none";
+  $("#s4caret").style.opacity = blink(t, T4.clickWord) ? 1 : 0;
+  $("#s4word").style.background = renamed ? `rgba(0,120,212,${0.45 * (1 - seg(t, T4.enter + 0.1, T4.enter + 1.2))})` : "transparent";
+  const rn = $("#s4rn");
+  const rp = eo(seg(t, T4.open, T4.open + 0.15)) * (1 - seg(t, T4.enter, T4.enter + 0.1));
+  rn.style.display = rp > 0 ? "block" : "none";
+  rn.style.opacity = rp;
+  if (rp > 0) {
+    const wr = $("#s4word").getBoundingClientRect();
+    const er = rn.parentElement.getBoundingClientRect();
+    rn.style.left = wr.left - er.left - 6 + "px";
+    rn.style.top = wr.bottom - er.top + 6 + "px";
+    const n = Math.floor(cl((t - T4.typeStart) / T4.step + 1e-6, 0, T4.name.length));
+    const typing = t >= T4.typeStart;
+    const caret = typing && (t < T4.typeStart + T4.name.length * T4.step + 0.2 || blink(t, T4.typeStart)) ? '<span class="caret"></span>' : "";
+    $("#s4in").innerHTML = typing ? T4.name.slice(0, n) + caret : '<span class="sl">check</span>';
+  }
+  keycaps($("#s4keysA"), t, T4.keys, T4.keys[0] - 0.15, T4.open + 0.55);
+  keycaps($("#s4keysB"), t, [T4.enter], T4.enter - 0.15, T4.enter + 0.55);
+  ["#s4r0", "#s4r1", "#s4r2"].forEach((id, i) => {
+    const t0 = T4.enter + 0.1 + i * 0.08;
+    $(id).style.background = t >= t0 ? `rgba(0,120,212,${0.4 * (1 - seg(t, t0 + 0.2, t0 + 1.1))})` : "transparent";
+  });
+  pressFlash($("#s4approve"), t, T4.clickApprove, "rgba(46,160,67,0.6)");
+  placeTip($("#s4tip"), $("#s4approve"), $("#s4 .win"), t, T4.tipApprove, T4.clickApprove);
+  const done = t >= T4.clickApprove + 0.15;
+  $("#s4approve").style.opacity = 1 - seg(t, T4.clickApprove + 0.25, T4.clickApprove + 0.5);
+  $("#s4agIc").innerHTML = done ? "&#xeabc;" : "&#xebb4;";
+  $("#s4agDs").textContent = done ? "idle" : "awaiting code review · active";
+  $("#s4stIc").innerHTML = done ? "&#xeabc;" : "&#xeac7;";
+  $("#s4stTx").textContent = done ? "" : "code review";
+  $("#s4agIc").parentElement.style.background = done ? `rgba(46,160,67,${0.35 * (1 - seg(t, T4.clickApprove + 0.2, T4.clickApprove + 1.3))})` : "transparent";
+}
+
+function renderS5(t) {
+  renderCard("s5", t);
+  const T5 = TL.s5;
+  const sent = t >= T5.enter;
+  const planIn = t >= T5.rows[0];
+  const n = Math.floor(cl((t - T5.typeStart) / T5.step + 1e-6, 0, T5.cmd.length));
+  $("#s5typed").textContent = !sent && t >= T5.typeStart ? T5.cmd.slice(0, n) : "";
+  $("#s5caret").style.opacity = (t >= T5.typeStart && t < T5.enter + 0.1) || blink(t, 0) ? 1 : 0;
+  vis($("#s5hist"), sent);
+  vis($("#s5status"), sent);
+  $("#s5star").style.transform = planIn ? "none" : `rotate(${t * 300}deg)`;
+  $("#s5star").textContent = planIn ? "⏺" : "✻";
+  $("#s5star").className = planIn ? "ok" : "star";
+  $("#s5stx").textContent = planIn ? "Sent a review plan to VS Code: 3 changesets." : "Reading the branch…";
+  const ic = $("#s5agIc");
+  const thinking = sent && !planIn;
+  ic.innerHTML = thinking ? "&#xeb19;" : planIn ? "&#xebb4;" : "&#xeabc;";
+  ic.style.transform = thinking ? `rotate(${t * 400}deg)` : "none";
+  $("#s5agDs").textContent = thinking ? "thinking" : planIn ? "awaiting guided review · active" : "idle";
+  ic.parentElement.style.background = planIn ? `rgba(0,159,255,${0.3 * (1 - seg(t, T5.rows[0] + 0.1, T5.rows[0] + 1.1))})` : "transparent";
+  vis($("#s5pre"), !planIn);
+  vis($("#s5plan"), planIn);
+  vis($("#s5approve"), planIn);
+  vis($("#s5st"), planIn);
+  $("#s5planSec").style.opacity = eo(seg(t, T5.rows[0], T5.rows[0] + 0.25));
+  $$("#s5 .row.g").forEach((r, i) => {
+    const p = eo(seg(t, T5.rows[i], T5.rows[i] + 0.3));
+    r.style.opacity = p;
+    r.style.transform = `translateX(${(1 - p) * 24}px)`;
+  });
+  const sel = t >= T5.clickCs;
+  $("#s5cs1").classList.toggle("sel", sel);
+  vis($("#s5docPre"), !planIn);
+  const ap = eo(seg(t, T5.rows[0], T5.rows[0] + 0.3));
+  vis($("#s5docA"), planIn);
+  $("#s5docA").style.opacity = ap;
+  const dp = eo(seg(t, T5.clickCs, T5.clickCs + 0.3));
+  vis($("#s5docB"), dp > 0);
+  $("#s5docB").style.opacity = dp;
+  $("#s5tabname").textContent = sel ? "Retry policy.md" : planIn ? "Review plan.md" : "deliver.ts";
+  $("#s5tabIc").innerHTML = planIn ? "&#xeb1d;" : "&#xea7b;";
+}
+
+const S6F = [
+  ["committed", "a", "policy.ts", "src/delivery", "+24"],
+  ["committed", "a", "policy.test.ts", "src/delivery", "+41"],
+  ["committed", "m", "DeliveryRecord.ts", "src/db", "+3"],
+  ["committed", "a", "0007_attempts.sql", "migrations", "+2"],
+  ["staged", "a", "sleep.ts", "src/delivery", "+4"],
+  ["unstaged", "m", "deliver.ts", "src/delivery", "+9 -2"],
+  ["unstaged", "m", "deliver.test.ts", "src/delivery", "+38 -6"],
+];
+const S6G = { committed: ["Committed", "&#xeafc;", "4 files · +70 -0"], staged: ["Staged", "&#xeadc;", "1 file · +4 -0"], unstaged: ["Working Tree", "&#xeade;", "2 files · +47 -8"] };
+const S6ORDER = ["0007_attempts.sql", "DeliveryRecord.ts", "deliver.test.ts", "deliver.ts", "policy.test.ts", "policy.ts", "sleep.ts"];
+let s6key = "";
+
+function s6state(t) {
+  const T6 = TL.s6;
+  const merge = t >= T6.pickMerge;
+  const mode = t >= T6.pickReview ? "review" : t >= T6.pickDelta ? "delta" : "staging";
+  const seen = T6.checks.filter((c) => t >= c).length;
+  const changed = Math.max(...[T6.pickMerge, T6.pickDelta, T6.pickReview].filter((c) => t >= c), -1);
+  return { merge, mode, seen, changed };
+}
+
+function s6row(f, pad, icon, extra = "") {
+  return `<div class="row" style="padding-left:${pad}px" data-c="${f[0] === "committed" ? 1 : 0}">${extra}<span class="ic">${icon}</span><span class="lb">${f[2]}</span><span class="ds">${f[3]}  ${f[4]}</span></div>`;
+}
+
+function s6html(st) {
+  const files = st.merge ? S6F : S6F.filter((f) => f[0] !== "committed");
+  const svg = (f, staged) => `<img src="assets/${f[1]}${staged ? "-staged" : ""}-dark.svg">`;
+  if (st.mode === "staging") {
+    return ["committed", "staged", "unstaged"].filter((g) => files.some((f) => f[0] === g)).map((g) => {
+      const [label, ic, ds] = S6G[g];
+      const head = `<div class="row" style="padding-left:22px" data-c="${g === "committed" ? 1 : 0}"><span class="chev ci">&#xeab4;</span><span class="ic ci" style="color:#3794ff">${ic}</span><span class="lb">${label}</span><span class="ds">${ds}</span></div>`;
+      return head + files.filter((f) => f[0] === g).map((f) => s6row(f, 44, svg(f, g === "staged"))).join("");
+    }).join("");
+  }
+  const sorted = S6ORDER.map((name) => files.find((f) => f[2] === name)).filter(Boolean);
+  if (st.mode === "delta") {
+    return sorted.map((f) => s6row(f, 28, f[0] === "committed" ? '<span class="ci" style="color:#3794ff;font-size:16px">&#xeafc;</span>' : svg(f, f[0] === "staged"))).join("");
+  }
+  return sorted.map((f, i) => s6row(f, 28, svg(f, i < st.seen), `<span class="cb${i < st.seen ? " on" : ""}" id="s6cb${i}">&#xeab2;</span>`)).join("");
+}
+
+function renderS6(t) {
+  renderCard("s6", t);
+  const T6 = TL.s6;
+  const st = s6state(t);
+  const key = `${st.merge}|${st.mode}|${st.seen}`;
+  if (key !== s6key) { $("#s6files").innerHTML = s6html(st); s6key = key; }
+  const rp = st.changed >= 0 ? eo(seg(t, st.changed + 0.05, st.changed + 0.3)) : 1;
+  $$("#s6files .row").forEach((r) => {
+    const fresh = st.changed !== T6.pickMerge || r.dataset.c === "1";
+    r.style.opacity = fresh ? rp : 1;
+    r.style.transform = fresh ? `translateX(${(1 - rp) * 16}px)` : "none";
+  });
+  const total = st.merge ? 7 : 3;
+  const base = st.merge ? "merge-base(main)" : "HEAD";
+  $("#s6desc").textContent = st.mode === "review" ? `${base} · ${st.seen}/${total} seen` : base;
+  const hov = t >= T6.clickCompare - 0.55 && t < T6.closeModes + 0.3;
+  $("#s6sec").classList.toggle("hov", hov);
+  $("#s6inl").style.visibility = hov ? "visible" : "hidden";
+  pressFlash($("#s6cmp"), t, T6.clickCompare, "rgba(255,255,255,0.15)");
+  pressFlash($("#s6vm"), t, T6.clickModes, "rgba(255,255,255,0.15)");
+  const qc = $("#s6qpC");
+  const cp = eo(seg(t, T6.clickCompare, T6.clickCompare + 0.15)) * (1 - seg(t, T6.pickMerge + 0.05, T6.pickMerge + 0.15));
+  vis(qc, cp > 0);
+  qc.style.opacity = cp;
+  qc.style.transform = `translateY(${(1 - cp) * -8}px)`;
+  const cActive = t >= T6.pickMerge - 0.3 ? 2 : 0;
+  $$("#s6qpC .qr").forEach((r) => r.classList.toggle("on", +r.dataset.i === cActive));
+  const qv = $("#s6qpV");
+  const vp = eo(seg(t, T6.clickModes, T6.clickModes + 0.15)) * (1 - seg(t, T6.closeModes, T6.closeModes + 0.12));
+  vis(qv, vp > 0);
+  qv.style.opacity = vp;
+  qv.style.transform = `translateY(${(1 - vp) * -8}px)`;
+  const modeIdx = { staging: 0, delta: 1, review: 2 }[st.mode];
+  const vActive = t >= T6.pickReview - 0.3 ? 2 : t >= T6.pickDelta - 0.3 ? 1 : 0;
+  $$("#s6qpV .qr").forEach((r) => {
+    const i = +r.dataset.i;
+    r.classList.toggle("on", i === vActive);
+    const mk = $(".mk", r);
+    if (mk) mk.innerHTML = i === modeIdx ? "&#xeab2;" : "&#xec03;";
+  });
+}
+
+function renderOutro(t) {
+  const T7 = TL.s7;
+  const pp = seg(t, T7.logo, T7.logo + 0.7);
+  const parrot = $("#s7 .parrot");
+  parrot.style.opacity = cl(eo(pp) * 1.6);
+  parrot.style.transform = `translateY(${(1 - eback(pp)) * 90}px)`;
+  const wp = eio(seg(t, T7.logo + 0.2, T7.logo + 0.75));
+  $("#s7 .word").style.clipPath = `inset(0 ${(1 - wp) * 100}% 0 0)`;
+  setIn($("#s7 .cta"), eo(seg(t, T7.line, T7.line + 0.5)), 0, 30);
+  setIn($("#s7 .sub"), eo(seg(t, T7.sub, T7.sub + 0.5)), 0, 24);
+  const mk = $("#s7 .mk");
+  const mp = eo(seg(t, T7.sub + 0.25, T7.sub + 0.75));
+  mk.style.opacity = mp;
+  mk.style.transform = `translateX(-50%) translateY(${(1 - mp) * 24}px)`;
+}
+
+const CURSOR = {
+  s3: { start: TL.s3.moveLine - 0.6, moves: [[TL.s3.clickLine, "#s3line8 .n", 30, -2], [TL.s3.clickSave, "#s3commentBtn", 0, 0], [TL.s3.tipSend, "#s3slot", 0, 0], [TL.s3.tipApprove, "#s3slot", 0, 0]], clicks: [TL.s3.clickLine, TL.s3.clickSave, TL.s3.clickSend, TL.s3.clickApprove] },
+  s4: { start: TL.s4.clickWord - 0.75, moves: [[TL.s4.clickWord, "#s4word", 0, 0], [TL.s4.open, "#s4word", 130, -70], [TL.s4.tipApprove, "#s4approve", 0, 0]], clicks: [TL.s4.clickWord, TL.s4.clickApprove] },
+  s5: { start: TL.s5.clickCs - 0.9, moves: [[TL.s5.clickCs, "#s5cs1 .lb", 40, 0]], clicks: [TL.s5.clickCs] },
+  s6: { start: TL.s6.clickCompare - 0.75, moves: [[TL.s6.clickCompare, "#s6cmp", 0, 0], [TL.s6.pickMerge, "#s6qpC .qr[data-i='2'] .l1", -20, 0], [TL.s6.clickModes, "#s6vm", 0, 0], [TL.s6.pickDelta, "#s6qpV .qr[data-i='1'] .l1", 0, 0], [TL.s6.pickReview, "#s6qpV .qr[data-i='2'] .l1", 0, 0], [TL.s6.checks[0], "#s6cb0", 0, 0], [TL.s6.checks[1], "#s6cb1", 0, 0]], clicks: [TL.s6.clickCompare, TL.s6.pickMerge, TL.s6.clickModes, TL.s6.pickDelta, TL.s6.pickReview, ...TL.s6.checks] },
+};
+
+function targetPoint(sel, dx, dy) {
+  const el = $(sel);
+  const r = el.getBoundingClientRect();
+  const lb = el.classList.contains("l1") ? el.firstChild : null;
+  if (lb) {
+    const range = document.createRange();
+    range.selectNodeContents(lb);
+    const rr = range.getBoundingClientRect();
+    return [rr.left + rr.width / 2 + dx, rr.top + rr.height / 2 + dy];
+  }
+  return [r.left + r.width / 2 + dx, r.top + r.height / 2 + dy];
+}
+
+function renderCursor(t, id) {
+  const cur = $("#cursor"), ring = $("#ring");
+  const spec = CURSOR[id];
+  if (!spec) { cur.style.display = "none"; ring.style.display = "none"; return; }
+  const [a, b] = S[id];
+  const fadeOut = 1 - seg(t, b - 0.45, b - 0.2);
+  const fadeIn = seg(t, spec.start, spec.start + 0.25);
+  if (!spec.pts) { cur.style.display = "none"; ring.style.display = "none"; return; }
+  const pts = spec.pts;
+  let x, y;
+  x = pts[0][1]; y = pts[0][2];
+  for (let i = 1; i < pts.length; i++) {
+    const [t1, x1, y1] = pts[i];
+    const t0 = Math.max(pts[i - 1][0], t1 - 0.5);
+    const p = eio(seg(t, t0, t1));
+    if (t >= t0) { x = pts[i - 1][1] + (x1 - pts[i - 1][1]) * p; y = pts[i - 1][2] + (y1 - pts[i - 1][2]) * p; }
+  }
+  const o = fadeIn * fadeOut;
+  cur.style.display = o > 0 ? "block" : "none";
+  cur.style.opacity = o;
+  let press = 0, rp = -1;
+  for (const c of spec.clicks) {
+    press = Math.max(press, seg(t, c - 0.06, c) * (1 - seg(t, c + 0.04, c + 0.14)));
+    if (t >= c && t < c + 0.45) rp = seg(t, c, c + 0.45);
+  }
+  cur.style.transform = `translate(${x - 3}px, ${y - 3}px) scale(${1 - press * 0.15})`;
+  ring.style.display = rp >= 0 && o > 0 ? "block" : "none";
+  if (rp >= 0) {
+    const r = 8 + eo(rp) * 30;
+    ring.style.width = ring.style.height = r * 2 + "px";
+    ring.style.left = x - r + "px";
+    ring.style.top = y - r + "px";
+    ring.style.opacity = (1 - rp) * 0.8 * o;
+  }
+}
+
+function sceneAt(t) {
+  for (const [id, [a, b]] of Object.entries(S)) if (t >= a && t < b) return id;
+  return "s7";
+}
+
+window.render = function (t) {
+  const id = sceneAt(t);
+  for (const k of Object.keys(S)) $("#" + k).style.display = k === id ? "block" : "none";
+  ({ s1: renderHook, s2: renderReveal, s3: renderS3, s4: renderS4, s5: renderS5, s6: renderS6, s7: renderOutro })[id](t);
+  renderCursor(t, id);
+};
+
+window.ready = (async () => {
+  await document.fonts.load('16px codicon');
+  await document.fonts.ready;
+  await Promise.all($$("img").map((i) => (i.complete ? 0 : new Promise((r) => (i.onload = i.onerror = r)))));
+  for (const [id, spec] of Object.entries(CURSOR)) {
+    const [a, b] = S[id];
+    render(b - 0.6);
+    const winR = $(`#${id} .win`).getBoundingClientRect();
+    const pts = [[spec.start, winR.left + winR.width * 0.7, winR.top + winR.height * 0.75]];
+    for (const [tt, sel, dx, dy] of spec.moves) {
+      render(tt);
+      pts.push([tt, ...targetPoint(sel, dx, dy)]);
+    }
+    spec.pts = pts;
+  }
+  render(0);
+  return true;
+})();
+</script>
+</body>
+</html>

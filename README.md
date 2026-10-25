@@ -6,6 +6,9 @@
 
 Paireto brings pair-programming to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
 
+<video src="./demos/brag.mp4" width="320" height="240" controls></video>
+
+
 # Contents
 
 - [Contents](#contents)

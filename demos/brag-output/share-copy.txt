@@ -1,0 +1,1 @@
+Agents do 80% of the work. What's left is understanding, judgement, and coherence. Paireto keeps that part in VS Code: review your agent's plan before it writes code, fix its diffs in a real editor with your LSP still on, and follow the thread of a branch with /paireto:guided-review. Works with Claude Code, Codex, OpenCode, Kiro and Pi.
