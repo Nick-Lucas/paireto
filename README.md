@@ -18,11 +18,14 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 - [Why Paireto?](#why-paireto)
 - [Agent support](#agent-support)
 - [Workflows](#workflows)
-  - [Plan Mode](#plan-mode)
-  - [Review Mode](#review-mode)
-  - [Guided Review](#guided-review)
+  - [Plan Review](#plan-review)
+  - [Code Review](#code-review)
   - [Changed Files view](#changed-files-view)
   - [Switch repo or worktree](#switch-repo-or-worktree)
+- [Skills](#skills)
+  - [`/paireto:review`](#pairetoreview)
+  - [`/paireto:guided-review [optional guidance]`](#pairetoguided-review-optional-guidance)
+  - [`/paireto-plan <prompt>` (Pi only)](#paireto-plan-prompt-pi-only)
 - [Troubleshooting](#troubleshooting)
 
 # Features at a glance
@@ -88,23 +91,17 @@ Paireto's architecture is agent-agnostic, but currently focused on agent TUIs. W
 
 # Workflows
 
-## Plan Mode
+## Plan Review
 
 When your agent finishes planning, the plan opens in Paireto. You can leave inline comments from the VS Code editor, then click **Approve** or **Send Feedback** to instruct the agent. When the revision comes back, you'll get a diff so you only need to re-read what actually changed.
 
-**Pi has no plan mode of its own, so Paireto adds one.** To use it, start with `/paireto-plan <what you want>`.
+**Pi has no plan mode of its own, so Paireto adds one.** To use it, start with [`/paireto-plan`](#paireto-plan-prompt-pi-only).
 
-## Review Mode
+## Code Review
 
-By default, when your agent tries to end its turn after making changes, a review starts automatically. You can also start a review at any time with the `/paireto:review` skill. (Note: on Kiro, reviews do not start automatically because of harness limitations.)
+By default, when your agent tries to end its turn after making changes, a review starts automatically. You can also start one at any time with the [`/paireto:review`](#pairetoreview) skill. (Note: on Kiro, reviews do not start automatically because of harness limitations.)
 
 Diffs are fully functional editors with LSPs and linters working as normal. Add inline comments from VS Code editor or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish.
-
-## Guided Review
-
-Ask your agent for a **Guided Review** with `/paireto:guided-review`. It studies the changes, then populates the Changed Files list with a structured review plan that guides you through the changes in a more linear and organized manner.
-
-Comment on a file diff, or on a changeset's body to give feedback on the overall implementation. Finish with the usual **Approve** or **Send Feedback**.
 
 ## Changed Files view
 
@@ -121,6 +118,30 @@ Use the **View Modes** button to pick one of three views or toggle between a tre
 ## Switch repo or worktree
 
 Hit **`Cmd+Shift+K`** to view all your worktrees and their agent state. You can switch to another open window or replace your current window with a different worktree.
+
+# Skills
+
+The Paireto plugin adds these skills and commands to your agent. These docs cover the Claude Code format since other harnesses use their own syntax, for example: 
+
+- **Claude Code, OpenCode, Kiro:** `/paireto-review`
+- **Codex:** `$paireto-review`
+- **Pi:** `/skill:paireto-review`
+
+## `/paireto:review`
+
+Start a [Review](#review-mode) at any time with this skill. Use it to pick up comments you've left outside of review mode or start an ad-hoc review.
+
+With Kiro, reviews do not start automatically so you need to use this skill to initiate them manually.
+
+## `/paireto:guided-review [optional guidance]`
+
+Ask your agent for a **Guided Review** with this skill. It studies the changes, then populates the Changed Files list with a structured review plan that guides you through the changes in a more linear and organized manner.
+
+Comment on a file diff, or on a changeset's body to give feedback on the overall implementation. Finish with the usual **Approve** or **Send Feedback**.
+
+## `/paireto-plan <prompt>` (Pi only)
+
+Start a planning turn in Pi. Pi has no plan mode of its own, so this command adds one. The `write` and `edit` tools stay blocked until you approve the plan. When the plan is ready, it opens in Paireto for [Plan Review](#plan-mode).
 
 # Troubleshooting
 
