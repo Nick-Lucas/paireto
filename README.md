@@ -24,7 +24,7 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 
 # Why I Built Paireto
 
-Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening. [Agents create decoherent systems](https://maevyn.codes/decoherence) over time when not properly critiqued, and human understanding and real engineering standards are still required for complex systems.
+Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening. [Agents create decoherent systems](https://maevyn.codes/decoherence) over time, when not properly guided, and human understanding and real engineering standards are still required for complex systems.
 
 We have ADEs, Agent GUIs, TUIs, and plugins like Plannotator. There are a lot of good ideas out there, but I don't want to jump between apps just to get an inferior version of tools my editor already has, like diffs without the LSP features and editing which my editor was built to provide for exploration and quick iteration.
 
