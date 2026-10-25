@@ -28,7 +28,7 @@ Agentic coding changed software over-night. But for high-craft engineering, the 
 
 I’m an engineer working with engineers. My code still has to meet a human standard. I don’t need a vibe-coding tool.
 
-I tried the Conductor immitators, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of features my editor already had.
+I tried ADE, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of features my editor already had.
 
 I tried GUI agents, but they pulled me toward more mouse-driven workflows or a new editor ecosystem.
 
