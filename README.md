@@ -8,9 +8,8 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 
 [![Launch Video](https://github.com/user-attachments/assets/f78450d7-caba-42cb-b248-82e7f18e6df5)](https://github.com/user-attachments/assets/f78450d7-caba-42cb-b248-82e7f18e6df5)
 
-# Contents
+---
 
-- [Contents](#contents)
 - [Features at a glance](#features-at-a-glance)
 - [Installation](#installation)
     - [Agent harness setup](#agent-harness-setup)
