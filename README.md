@@ -1,10 +1,22 @@
-<!-- <p align="center">
-  <img src="media/PairetoHeader2x.png" alt="Paireto" width="420" />
-</p> -->
+<a href="https://marketplace.visualstudio.com/items?itemName=Paireto.paireto" target="_blank" rel="noopener">
+  <img alt="Paireto" src="media/PairetoHeader2x.png" />
+</a>
 
 > "Agents do 80% of the work; what's left to us is understanding, judgement, and coherence" - Paireto (the Parrot)
 
-Paireto brings pair-programming to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
+<div align="center">
+<br/>
+  <a href="https://github.com/Nick-Lucas/paireto/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/Nick-Lucas/paireto/actions/workflows/ci.yml/badge.svg?branch=main" />
+  </a>
+  <a href="https://marketplace.visualstudio.com/items?itemName=Paireto.paireto">
+    <img alt="VS Code Marketplace version" src="https://vsmarketplacebadges.dev/version/Paireto.paireto.svg?label=VS%20Code%20Marketplace" />
+  </a>
+  
+  <h4>Pair-programming for your TUI coding agents in VS Code.<br />Planning, review, editing, and worktree management, in one engineer-grade workflow.</h4>
+</div>
+
+<br />
 
 [![Launch Video](https://github.com/user-attachments/assets/f78450d7-caba-42cb-b248-82e7f18e6df5)](https://github.com/user-attachments/assets/f78450d7-caba-42cb-b248-82e7f18e6df5)
 
