@@ -24,7 +24,7 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
   - [Switch repo or worktree](#switch-repo-or-worktree)
 - [Skills](#skills)
   - [`/paireto:review`](#pairetoreview)
-  - [`/paireto:guided-review [optional guidance]`](#pairetoguided-review-optional-guidance)
+  - [`/paireto:guided-review [optional-guidance]`](#pairetoguided-review-optional-guidance)
   - [`/paireto-plan <prompt>` (Pi only)](#paireto-plan-prompt-pi-only)
 - [Troubleshooting](#troubleshooting)
 
@@ -133,7 +133,7 @@ Start a [Review](#review-mode) at any time with this skill. Use it to pick up co
 
 With Kiro, reviews do not start automatically so you need to use this skill to initiate them manually.
 
-## `/paireto:guided-review [optional guidance]`
+## `/paireto:guided-review [optional-guidance]`
 
 Ask your agent for a **Guided Review** with this skill. It studies the changes, then populates the Changed Files list with a structured review plan that guides you through the changes in a more linear and organized manner.
 
