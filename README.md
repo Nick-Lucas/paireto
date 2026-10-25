@@ -2,7 +2,7 @@
   <img src="media/PairetoHeader2x.png" alt="Paireto" width="420" />
 </p> -->
 
-> "Agents do 80% of the work, what's left to us is understanding, judgement, and coherence" - Paireto (the Parrot)
+> "Agents do 80% of the work; what's left to us is understanding, judgement, and coherence" - Paireto (the Parrot)
 
 Paireto brings pair-programming to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
 
@@ -14,6 +14,7 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 - [Features at a glance](#features-at-a-glance)
 - [Installation](#installation)
     - [Agent harness setup](#agent-harness-setup)
+    - [Keyboard Shortcuts](#keyboard-shortcuts)
 - [Why Paireto?](#why-paireto)
 - [Agent support](#agent-support)
 - [Workflows](#workflows)
@@ -29,46 +30,61 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 | Feature | What it does |
 | --- | --- |
 | 🤖 **Agent status** | Live status and notifications from your agent |
-| 👩🏽‍💻 **Changed Files** | Edit from any git comparison and multiple view modes |
-| 📋 **Plan review** | Feed back on agent plans before implementation |
+| 👩🏽‍💻 **Changed Files** | Edit from any git comparison, in multiple view modes |
+| 📋 **Plan review** | Give feedback on agent plans before implementation |
 | 🔍 **Code review** | Review completed agent code before accepting it |
 | 🧭 **Guided review** | Your agent groups a branch's changes into described changesets to read in order |
-| 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visiblity |
+| 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visibility |
 
 # Installation
 
 Paireto comes in two parts:
 
 1. The [**VS Code extension**](https://marketplace.visualstudio.com/items?itemName=Paireto.paireto)
-2. An agent plugins (focused on TUI agents)
+2. Agent plugins (focused on TUI agents)
 
 ### Agent harness setup
 
-On first install a **Welcome** wizard will take you through setup of your agents. You can return to
-this screen at any time from the Command Palette by opening `Paireto: Open Welcome`.
+On first install, a **Welcome** wizard takes you through the setup of your agents. You can return to this screen at any time from the Command Palette by opening `Paireto: Open Welcome`.
 
 After plugin setup, **restart your agent** to load the Paireto integration. Open a repo in VS Code, start the agent in its terminal, and the agent appears in the Paireto sidebar.
 
+### Keyboard Shortcuts
+
+The Welcome screen also recommends keyboard shortcuts for common actions. Not all of them are Paireto actions, but they include shortcuts that VS Code does not map by default:
+
+| Action | Shortcut |
+| --- | --- |
+| Open Welcome | `Cmd+Shift+P` → `Paireto: Open Welcome` |
+| Focus Paireto | `Cmd+Shift+C` |
+| Worktree Switcher | `Cmd+Shift+K` |
+| Focus terminal | `Cmd+'` |
+| Toggle bottom bar | `Cmd+J` |
+| Toggle fullscreen terminal | `Cmd+Shift+=` |
+| Previous terminal tab | `Cmd+Shift+[` |
+| Next terminal tab | `Cmd+Shift+]` |
+| Quick-launch a TUI agent with a terminal profile | ``Ctrl+Shift+` `` |
+
 # Why Paireto?
 
-Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening. [Agents create decoherent systems](https://maevyn.codes/decoherence) over time, when not properly guided, and human understanding and real engineering standards are still required for complex systems.
+Agentic coding changed software overnight. But for high-craft engineering, the gap between agentic tools and the reality of engineering work keeps widening. [Agents create decoherent systems](https://maevyn.codes/decoherence) over time when not properly guided, and complex systems still require human understanding and real engineering standards.
 
-We have ADEs, Agent GUIs, TUIs, and plugins like Plannotator. There are a lot of good ideas out there, but I don't want to jump between apps just to get an inferior version of tools my editor already has, like diffs without the LSP features and editing which my editor was built to provide for exploration and quick iteration.
+We have ADEs, Agent GUIs, TUIs, and plugins like Plannotator. There are a lot of good ideas out there, but jumping between apps just to get an inferior version of tools an editor already has is cumbersome: for example, diffs without LSP features, or without the editing that IDEs were built to provide for exploration and quick iteration.
 
 I didn't need a second app, I needed a tighter integration between my agent and editor. So I built this...
 
 # Agent support
 
-Paireto's architecture is agent-agnostic, but still in development. We currently support
+Paireto's architecture is agent-agnostic, but currently focused on agent TUIs. We support:
 
 | Agent | Status |
 | --- | --- |
 | **Claude Code** | ✅ Supported |
 | **Codex TUI** | ✅ Supported |
-| **Kiro CLI v3** | ✅ Supported (V3+ only) |
+| **Kiro CLI v3** | ✅ Supported (v3+ only) |
 | **OpenCode TUI** | ✅ Supported |
 | **Pi** | ✅ Supported |
-| Others? | ＃ Open an Issue |
+| Others? | ❗️ Open an Issue |
 
 # Workflows
 
@@ -76,47 +92,38 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 
 When your agent finishes planning, the plan opens in Paireto. You can leave inline comments from the VS Code editor, then click **Approve** or **Send Feedback** to instruct the agent. When the revision comes back, you'll get a diff so you only need to re-read what actually changed.
 
-**Pi has no plan mode of its own, so Paireto adds one.** Start the turn with `/paireto-plan <what you want>` to use this.
+**Pi has no plan mode of its own, so Paireto adds one.** To use it, start with `/paireto-plan <what you want>`.
 
 ## Review Mode
 
-When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill. (Note: Kiro is not automatic due to harness limitations)
+By default, when your agent tries to end its turn after making changes, a review starts automatically. You can also start a review at any time with the `/paireto:review` skill. (Note: on Kiro, reviews do not start automatically because of harness limitations.)
 
-Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish. 
+Diffs are fully functional editors with LSPs and linters working as normal. Add inline comments from VS Code editor or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish.
 
 ## Guided Review
 
-**Guided Review** populates the Changed Files list with a structured review plan, guiding you through the changes in a more linear and organized manner. Ask your agent for a guided review `/paireto:guided-review` and it studies the changes, then hands over to Paireto.
+Ask your agent for a **Guided Review** with `/paireto:guided-review`. It studies the changes, then populates the Changed Files list with a structured review plan that guides you through the changes in a more linear and organized manner.
 
-Comment on a file diff as usual, or on a changeset's description to give feedback on the grouping
-itself. Finish with the usual **Approve** or **Send Feedback**.
+Comment on a file diff, or on a changeset's body to give feedback on the overall implementation. Finish with the usual **Approve** or **Send Feedback**.
 
 ## Changed Files view
 
-**Changed Files** is the like native git panel but on steroids: pick what to **Compare To** (HEAD, merge-base, stack-base, default branch, or any other ref), add review comments for your agent, and step in manually to fix code. You can even use it on other people's PRs to leave feedback via the GitHub extension.
+**Changed Files** is like the native git panel, but on steroids: pick what to **Compare To**, add review comments for your agent, and step in manually to fix code. You can even use it on other people's PRs to leave feedback via the GitHub extension.
 
-The **Compare To** button lets you choose any git ref to compare against: HEAD, merge-base, stack-base, default branch, or enter a ref of your choosing.
+The **Compare To** button lets you choose any git ref to compare against: HEAD, merge-base, stack-base, default branch, or a ref of your choosing.
 
-Use the **View Modes** button on the section to pick the layout (tree or flat) and one of three views. The picker stays open, so you can change both in one go:
+Use the **View Modes** button to pick one of three views or toggle between a tree and a flat layout.
 
-- **Staging** groups the changes into Committed, Staged and Working Tree, like the native git panel.
-- **Delta** shows each file once, with its net change against Compare To. The status letter shows the
-  stage state: full colour is not staged, half grey is partly staged, grey is staged, and a commit icon
-  is committed. Stage and unstage a file, a folder, or everything from its row.
-- **Review** shows the same rows with a checkbox. Tick a file when you have read it, or tick a folder,
-  repository, or the Changed Files row to mark all the files below it. A seen file has a grey status
-  letter. A file you marked becomes unseen again when its content changes.
+- **Staging** groups the changes into Committed, Staged and Working Tree, similar to the native git panel.
+- **Delta** shows each file once, with its net change against Compare To. You can stage and unstage files without them moving around.
+- **Review** shows the same rows with a checkbox. Tick a file when you've read it. This is useful when you review changes that are already committed.
 
 ## Switch repo or worktree
 
-Hit **`Cmd+Shift+K`** for the switcher: current window, worktrees, and recent repos, each showing
-its agent activity. Manage all your VS Code windows and worktrees from any other window.
-
+Hit **`Cmd+Shift+K`** to view all your worktrees and their agent state. You can switch to another open window or replace your current window with a different worktree.
 
 # Troubleshooting
 
-- **Agent doesn't appear in the sidebar.** Make sure you restarted the agent after installing, and that
-  the repo is open in VS Code. Set `paireto.logLevel` to `debug` and check the *Paireto* output channel.
+- **Agent doesn't appear in the sidebar.** Make sure you restarted the agent after installing, and that the repo is open in VS Code. Set `paireto.logLevel` to `debug` and check the *Paireto* output channel.
 - **Plugin didn't register.** Open `Paireto: Open Welcome`, run setup again, then restart the agent.
-- **No sound on notifications.** Confirm `paireto.notify.type` is `sound` and `paireto.notify.sound`
-  names a valid system sound or file path.
+- **No sound on notifications.** Confirm `paireto.notify.type` is `sound` and `paireto.notify.sound` names a valid system sound or file path.
