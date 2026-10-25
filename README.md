@@ -2,7 +2,7 @@
   <img src="media/PairetoHeader2x.png" alt="Paireto" width="420" />
 </p>
 
-> "When agents write 80% of your code in 20% of the time, engineering is 80% judgment" - Paireto (the Parrot)
+> "Agents do 80% of the work, what's left to us is understanding, judgement, and coherence" - Paireto (the Parrot)
 
 Paireto brings pair-programming to your TUI coding agents in VS Code: planning, review, editing, and worktree management, in one engineer-grade workflow.
 
@@ -38,7 +38,7 @@ I increasingly found myself editing code from Git Diff tabs, so I could track wh
 
 I tried Plannotator, and it clicked: planning and review are two missing pieces in my workflow. But I still had to jump between apps, and work outside my editor during code review, losing LSP features which I depend on to understand code.
 
-I didn't need a second app, I needed a tighter integration between my TUI and editor. So I built this...
+I didn't need a second app, I needed a tighter integration between my agent and editor. So I built this...
 
 # Features at a glance
 
