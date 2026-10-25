@@ -24,19 +24,9 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 
 # Why I Built Paireto
 
-Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening.
+Agentic coding changed software over-night. But for high-craft engineering, the direction between tools and the reality of engineering work keeps widening. [Agents create decoherent systems](https://maevyn.codes/decoherence) over time when not properly critiqued, and human understanding and real engineering standards are still required for complex systems.
 
-I’m an engineer working with engineers. My code still has to meet a human standard. I don’t need a vibe-coding tool.
-
-I tried ADE, with worktrees, git diffs, and agent sessions alongside my editor. They were useful, but high-friction. The moment I needed LSP feedback, linter errors, or a quick manual edit, I was back in VS Code. They were a second app with weaker versions of features my editor already had.
-
-I tried GUI agents, but they pulled me toward more mouse-driven workflows or a new editor ecosystem.
-
-I tried TUI agents, and loved the ease they integrated with my editor workflows, but they struggle with structured planning, review, editor integration, and human reading comprehension.
-
-I increasingly found myself editing code from Git Diff tabs, so I could track what the agent had changed and refine. But had no way to prepare agent feedback easily.
-
-I tried Plannotator, and it clicked: planning and review are two missing pieces in my workflow. But I still had to jump between apps, and work outside my editor during code review, losing LSP features which I depend on to understand code.
+We have ADEs, Agent GUIs, TUIs, and plugins like Plannotator. There are a lot of good ideas out there, but I don't want to jump between apps just to get an inferior version of tools my editor already has, such as diffs without the LSP features which I depend on to understand and explore code.
 
 I didn't need a second app, I needed a tighter integration between my agent and editor. So I built this...
 
@@ -45,19 +35,18 @@ I didn't need a second app, I needed a tighter integration between my agent and 
 | Feature | What it does |
 | --- | --- |
 | 🤖 **Agent status** | Live status and notifications from your agent |
-| 👩🏽‍💻 **Changed Filers** | Edit from git diffs and compare to any git ref |
+| 👩🏽‍💻 **Changed Files** | Edit from any git comparison and multiple view modes |
 | 📋 **Plan review** | Feed back on agent plans before implementation |
 | 🔍 **Code review** | Review completed agent code before accepting it |
 | 🧭 **Guided review** | Your agent groups a branch's changes into described changesets to read in order |
 | 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visiblity |
-| 🚀 **More to come** | See [TODO.md](./TODO.md) |
 
 # Installation
 
 Paireto comes in two parts:
 
 1. The [**VS Code extension**](https://marketplace.visualstudio.com/items?itemName=Paireto.paireto)
-2. An agent-harness integration
+2. An agent plugins (focused on TUI agents)
 
 ### Agent harness setup
 
@@ -83,44 +72,28 @@ Paireto's architecture is agent-agnostic, but still in development. We currently
 
 ## Plan Mode
 
-When your agent finishes planning, the plan opens in VS Code and the agent waits. You may leave inline
-comments from the VS Code editor, then click **Approve** or **Send Feedback** to instruct the agent
+When your agent finishes planning, the plan opens in Paireto. You can leave inline comments from the VS Code editor, then click **Approve** or **Send Feedback** to instruct the agent. When the revision comes back, you'll get a diff so you only need to re-read what actually changed.
 
-**Pi has no plan mode of its own, so Paireto adds one.** Start the turn with
-`/paireto-plan <what you want>`: while it is on, Pi's `write` and `edit` tools are blocked and the
-agent submits its plan for review instead. Approving the plan lifts the block, and Pi implements it
-in the same turn.
+**Pi has no plan mode of its own, so Paireto adds one.** Start the turn with `/paireto-plan <what you want>` to use this.
 
 ## Review Mode
 
-When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill (`/skill:paireto-review` in Pi).
-
-**Kiro is the exception: it has no automatic review.** Kiro runs its Stop hooks once per agent run,
-so the one pass is usually spent before the work is finished and a review gated on it opens late or
-not at all. With Kiro, ask for the review yourself — `/paireto-review`, or `/paireto-guided-review`
-for a guided one. Plan Mode is unaffected and still opens on its own.
+When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill. (Note: Kiro is not automatic due to harness limitations)
 
 Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish. 
 
 ## Guided Review
 
-Ask your agent for a guided review (`/paireto:guided-review`, `$paireto-guided-review`,
-`/paireto-guided-review`, or `/skill:paireto-guided-review` in Pi) and it studies the changes, then hands VS Code a **review plan**: the changed
-files grouped into named changesets, each with a description and its files in the order you should read
-them.
-
-A **Review Plan** section replaces the Changed Files list while it is open. Work through it changeset by
-changeset: click a changeset to read a description of what it does, click a file to open its diff, and
-stage or unstage a whole changeset from its row. Each file row shows which git layer it sits in
-(committed, staged, or working tree). Anything the plan did not name is collected under **Other
-changes**, so nothing is hidden.
+**Guided Review** populates the Changed Files list with a structured review plan, guiding you through the changes in a more linear and organized manner. Ask your agent for a guided review `/paireto:guided-review` and it studies the changes, then hands over to Paireto.
 
 Comment on a file diff as usual, or on a changeset's description to give feedback on the grouping
 itself. Finish with the usual **Approve** or **Send Feedback**.
 
 ## Changed Files view
 
-**Changed Files** is the native git panel with extras: pick what to **Compare To** (HEAD, merge-base, stack-base, default branch, or any other ref), add review comments for your agent, and step in manually to fix code. 
+**Changed Files** is the like native git panel but on steroids: pick what to **Compare To** (HEAD, merge-base, stack-base, default branch, or any other ref), add review comments for your agent, and step in manually to fix code. You can even use it on other people's PRs to leave feedback via the GitHub extension.
+
+The **Compare To** button lets you choose any git ref to compare against: HEAD, merge-base, stack-base, default branch, or enter a ref of your choosing.
 
 Use the **View Modes** button on the section to pick the layout (tree or flat) and one of three views. The picker stays open, so you can change both in one go:
 
