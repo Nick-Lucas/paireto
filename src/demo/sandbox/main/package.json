@@ -1,0 +1,9 @@
+{
+  "name": "acme-checkout",
+  "version": "1.4.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/"
+  }
+}

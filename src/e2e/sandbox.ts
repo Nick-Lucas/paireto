@@ -85,6 +85,8 @@ const FIXED_MOCK_NAMES = new Set([
   "pai-e2e-opencode-home",
   "pai-e2e-kiro-home",
   "pai-e2e-pi-home",
+  "acme-checkout",
+  "pai-demo-claude-home",
 ]);
 
 /** A fixed, cross-platform-stable path for a mock run's sandbox or harness home. */

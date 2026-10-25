@@ -12,3 +12,4 @@ src/e2e/proxy/.paireto-certs-*/
 .pnpm-store
 # Shim match-key dumps (PAIRETO_SHIM_DUMP), written when debugging a strict-VCR miss.
 .shimdump/
+demo-out/

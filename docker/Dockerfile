@@ -41,6 +41,10 @@ RUN sed -i 's|URIs: http://|URIs: https://|' /etc/apt/sources.list.d/debian.sour
       libatspi2.0-0 \
       libxshmfence1 \
       libx11-xcb1 \
+      ffmpeg \
+      fonts-inter \
+      fonts-jetbrains-mono \
+      fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # Keep the container on the version declared in package.json and used by CI.

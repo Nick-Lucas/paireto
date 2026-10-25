@@ -11,7 +11,10 @@ import * as path from "node:path";
 
 import { normalizeRequestBody, scrubIdentity } from "../e2e/proxy/normalize.js";
 
-const FIXTURES_DIR = path.resolve(__dirname, "../../src/e2e/fixtures");
+const FIXTURE_DIRS = [
+  path.resolve(__dirname, "../../src/e2e/fixtures"),
+  path.resolve(__dirname, "../../src/demo/cassettes"),
+];
 
 /** Placeholders the scrubber writes — these are the only "identity-shaped" strings allowed through. */
 const PLACEHOLDERS = [
@@ -70,10 +73,12 @@ interface CassetteExpectation {
 }
 
 function fixtureFiles(): string[] {
-  return fs
-    .readdirSync(FIXTURES_DIR)
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => path.join(FIXTURES_DIR, name));
+  return FIXTURE_DIRS.flatMap((dir) =>
+    fs
+      .readdirSync(dir)
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => path.join(dir, name)),
+  );
 }
 
 /** Every cassette's bytes, read once. Each scan below walks all of them, and a re-record that grows
@@ -115,7 +120,10 @@ suite("fixture privacy", function () {
 
   test("every committed cassette exists and is scanned", () => {
     const files = fixtureFiles();
-    assert.ok(files.length >= 3, `expected the three per-driver cassettes, found ${files.length}`);
+    assert.ok(
+      files.length >= 4,
+      `expected the three per-driver cassettes and the demo cassette, found ${files.length}`,
+    );
   });
 
   test("no cassette contains a personal email address", () => {
