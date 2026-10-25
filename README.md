@@ -10,11 +10,11 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 
 ---
 
+- [Why Paireto?](#why-paireto)
 - [Features at a glance](#features-at-a-glance)
 - [Installation](#installation)
     - [Agent harness setup](#agent-harness-setup)
     - [Keyboard Shortcuts](#keyboard-shortcuts)
-- [Why Paireto?](#why-paireto)
 - [Agent support](#agent-support)
 - [Workflows](#workflows)
   - [Plan Review](#plan-review)
@@ -26,6 +26,14 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
   - [`/paireto:guided-review [optional-guidance]`](#pairetoguided-review-optional-guidance)
   - [`/paireto-plan <prompt>` (Pi only)](#paireto-plan-prompt-pi-only)
 - [Troubleshooting](#troubleshooting)
+
+# Why Paireto?
+
+Agentic coding changed software overnight. But for high-craft engineering, the gap between agentic tools and the reality of engineering work keeps widening. [Agents create decoherent systems](https://maevyn.codes/decoherence) over time when not properly guided, and complex systems still require human understanding and real engineering standards.
+
+We have ADEs, Agent GUIs, TUIs, and plugins like Plannotator. There are a lot of good ideas out there, but jumping between apps just to get an inferior version of tools an editor already has is cumbersome: for example, diffs without LSP features, or without the editing that IDEs were built to provide for exploration and quick iteration.
+
+I didn't need a second app, I needed a tighter integration between my agent and editor. So I built this...
 
 # Features at a glance
 
@@ -66,14 +74,6 @@ The Welcome screen also recommends keyboard shortcuts for common actions. Not al
 | Previous terminal tab | `Cmd+Shift+[` |
 | Next terminal tab | `Cmd+Shift+]` |
 | Quick-launch a TUI agent with a terminal profile | ``Ctrl+Shift+` `` |
-
-# Why Paireto?
-
-Agentic coding changed software overnight. But for high-craft engineering, the gap between agentic tools and the reality of engineering work keeps widening. [Agents create decoherent systems](https://maevyn.codes/decoherence) over time when not properly guided, and complex systems still require human understanding and real engineering standards.
-
-We have ADEs, Agent GUIs, TUIs, and plugins like Plannotator. There are a lot of good ideas out there, but jumping between apps just to get an inferior version of tools an editor already has is cumbersome: for example, diffs without LSP features, or without the editing that IDEs were built to provide for exploration and quick iteration.
-
-I didn't need a second app, I needed a tighter integration between my agent and editor. So I built this...
 
 # Agent support
 
