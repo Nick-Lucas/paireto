@@ -1,6 +1,6 @@
-<a href="https://marketplace.visualstudio.com/items?itemName=Paireto.paireto" target="_blank" rel="noopener">
-  <img alt="Paireto" src="media/PairetoHeader2x.png" width="420" />
-</a>
+<p align="center">
+  <img src="media/PairetoHeader2x.png" alt="Paireto" width="420" />
+</p>
 
 > "Agents do 80% of the work; what's left to us is understanding, judgement, and coherence" - Paireto (the Parrot)
 
