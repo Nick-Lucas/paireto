@@ -13,7 +13,6 @@ src/e2e/proxy/.paireto-certs-*/
 # Shim match-key dumps (PAIRETO_SHIM_DUMP), written when debugging a strict-VCR miss.
 .shimdump/
 # Launch video build output; rebuilt from index.html, timeline.cjs and synth.mjs.
-demos/brag-output/work/chrome-profile-*/
 demos/brag-output/work/frames/
 demos/brag-output/work/stills/
 demos/brag-output/work/music.wav

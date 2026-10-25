@@ -1,6 +1,7 @@
 import { spawn } from "node:child_process";
-import { writeFileSync, mkdirSync } from "node:fs";
-import { resolve } from "node:path";
+import { writeFileSync, mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const [, , outDir, fromArg, toArg, stepArg] = process.argv;
 const html = resolve(import.meta.dirname, "index.html");
@@ -13,8 +14,10 @@ const port = 9333 + Math.floor(Math.random() * 500);
 const chrome = spawn("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", [
   "--headless=new", `--remote-debugging-port=${port}`, "--window-size=1920,1080", "--hide-scrollbars",
   "--force-device-scale-factor=1", "--allow-file-access-from-files", "--disable-gpu-vsync",
-  `--user-data-dir=${resolve(import.meta.dirname, "chrome-profile-" + port)}`, "--no-first-run", "--mute-audio", "about:blank",
+  `--user-data-dir=${mkdtempSync(join(tmpdir(), "brag-chrome-"))}`, "--no-first-run", "--mute-audio", "about:blank",
 ], { stdio: "ignore" });
+process.on("exit", () => chrome.kill());
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => process.exit(1));
 
 let targets;
 for (let i = 0; i < 100; i++) {
@@ -44,4 +47,5 @@ for (const t of list) {
   writeFileSync(resolve(outDir, name), Buffer.from(shot.result.data, "base64"));
   if (++k % 100 === 0) console.log(k, "frames");
 }
-ws.close(); chrome.kill();
+ws.close();
+process.exit(0);
