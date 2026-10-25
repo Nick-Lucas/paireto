@@ -20,6 +20,10 @@ import { RECORDED_FEEDBACK_ID } from "../../review/feedbackId.js";
 const SYSTEM_REMINDER = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 /** The per-run random plan-file path; only the slug varies (the home dir is pinned). */
 const PLAN_SLUG = /\/plans\/plan-[a-zA-Z0-9._-]+\.md/g;
+const CLAUDE_CURRENT_DATE = /Today's date is \d{4}-\d{2}-\d{2}\./g;
+const CLAUDE_PLAN_FILE_LOCATION = / The plan file is located at \S+ if you need to reference it\./g;
+const NODE_TEST_DURATION = / \(\d+(?:\.\d+)?ms\)/g;
+const NODE_TEST_TOTAL_DURATION = /duration_ms \d+(?:\.\d+)?/g;
 /** `mockTmpRoot` prefers `/private/tmp` but falls back to `/tmp`, and macOS resolves one to the other,
  *  so the same sandbox can still be spelled either way across machines. Collapsing the alias keeps a
  *  cassette replayable whichever root the recording used. */
@@ -205,7 +209,13 @@ function scrubValue(value: unknown): unknown {
  * byte-identical keys. Non-JSON / unexpected shapes pass through with just the string-level scrubs.
  */
 export function normalizeClaudeBody(raw: string): string {
-  const scrubbed = raw.replace(SYSTEM_REMINDER, "").replace(PLAN_SLUG, "/plans/plan-NORMALIZED.md");
+  const scrubbed = raw
+    .replace(SYSTEM_REMINDER, "")
+    .replace(PLAN_SLUG, "/plans/plan-NORMALIZED.md")
+    .replace(CLAUDE_CURRENT_DATE, "Today's date is NORMALIZED.")
+    .replace(CLAUDE_PLAN_FILE_LOCATION, "")
+    .replace(NODE_TEST_DURATION, " (NORMALIZEDms)")
+    .replace(NODE_TEST_TOTAL_DURATION, "duration_ms NORMALIZED");
   let obj: unknown;
   try {
     obj = JSON.parse(scrubbed);
@@ -226,6 +236,9 @@ export function normalizeClaudeBody(raw: string): string {
   // new value on every run. Blanked whole, so a later field added beside it cannot break replay.
   if ("diagnostics" in body) {
     body.diagnostics = null;
+  }
+  if ("safeguards" in body) {
+    body.safeguards = null;
   }
   if ("system" in body) {
     body.system = null;
@@ -456,6 +469,10 @@ function normalizeClaudeWorkflowToolResults(body: Record<string, unknown>): void
     const name = toolNames.get(object.tool_use_id);
     if (name === "Write" || name === "Edit" || name === "ExitPlanMode") {
       object.content = `${name.toUpperCase()}_RESULT_NORMALIZED`;
+      return;
+    }
+    if ((name === "Grep" || name === "Glob") && typeof object.content === "string") {
+      object.content = object.content.split("\n").sort().join("\n");
       return;
     }
     // Paths and file metadata stay in the key. Host-dependent order and timestamps do not.

@@ -766,6 +766,125 @@ suite("provider-replay: fixture normalization", () => {
     assert.ok(normalizeClaudeBody(body(null)).includes("keep me"));
   });
 
+  test("blanks Claude's safeguards classifier context", () => {
+    const body = (homeDir: string, allow: string[]): string =>
+      JSON.stringify({
+        messages: [{ role: "user", content: "keep me" }],
+        safeguards: [
+          {
+            type: "dangerous_tool_use",
+            classifier_context: {
+              home_dir: homeDir,
+              rules: { allow: allow.map((rule) => ({ rule, source: "cliArg" })) },
+            },
+          },
+        ],
+      });
+
+    assert.strictEqual(
+      normalizeClaudeBody(body("/home/sam", ["Read"])),
+      normalizeClaudeBody(body("/root", ["Read", "Edit(//tmp/home/plans/**)"])),
+    );
+    assert.ok(normalizeClaudeBody(body("/root", [])).includes("keep me"));
+  });
+
+  test("normalizes the date Claude states in its plan-mode instructions", () => {
+    const body = (date: string): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "text", text: `Plan it.\n\nToday's date is ${date}.` }],
+          },
+        ],
+      });
+
+    assert.strictEqual(
+      normalizeClaudeBody(body("2026-10-24")),
+      normalizeClaudeBody(body("2026-10-25")),
+    );
+    assert.ok(normalizeClaudeBody(body("2026-10-24")).includes("Plan it."));
+  });
+
+  test("normalizes the timings in Node test runner output", () => {
+    const body = (test: string, total: string): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "tool_result",
+                tool_use_id: "toolu_1",
+                content: `▶ applyDiscount\n  ✔ takes a percentage off (${test}ms)\n✔ applyDiscount (1.4ms)\nℹ pass 1\nℹ duration_ms ${total}`,
+              },
+            ],
+          },
+        ],
+      });
+
+    assert.strictEqual(
+      normalizeClaudeBody(body("0.537709", "135.659207")),
+      normalizeClaudeBody(body("36.837829", "92")),
+    );
+    assert.ok(normalizeClaudeBody(body("1", "2")).includes("takes a percentage off"));
+  });
+
+  test("ignores the order of Claude's Grep and Glob results", () => {
+    const body = (name: string, lines: string[]): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "assistant",
+            content: [{ type: "tool_use", id: "toolu_1", name, input: { pattern: "MAX" } }],
+          },
+          {
+            role: "user",
+            content: [{ type: "tool_result", tool_use_id: "toolu_1", content: lines.join("\n") }],
+          },
+        ],
+      });
+    const grep = ["test/discounts.test.ts:5:  MAX,", "src/discounts.ts:3:export const MAX = 40;"];
+    const glob = ["/tmp/acme/test/a.test.ts", "/tmp/acme/src/a.ts"];
+
+    assert.strictEqual(
+      normalizeClaudeBody(body("Grep", grep)),
+      normalizeClaudeBody(body("Grep", [...grep].reverse())),
+    );
+    assert.strictEqual(
+      normalizeClaudeBody(body("Glob", glob)),
+      normalizeClaudeBody(body("Glob", [...glob].reverse())),
+    );
+    assert.ok(normalizeClaudeBody(body("Grep", grep)).includes("export const MAX = 40;"));
+  });
+
+  test("ignores whether Claude found the plan file under this run's random name", () => {
+    const body = (planLine: string): string =>
+      JSON.stringify({
+        messages: [
+          {
+            role: "system",
+            content: [
+              {
+                type: "text",
+                text: `## Exited Plan Mode\n\nYou have exited plan mode.${planLine}\n\n<total_tokens>1 tokens left</total_tokens>`,
+              },
+            ],
+          },
+        ],
+      });
+
+    assert.strictEqual(
+      normalizeClaudeBody(
+        body(
+          " The plan file is located at /tmp/home/plans/plan-lazy-gadget.md if you need to reference it.",
+        ),
+      ),
+      normalizeClaudeBody(body("")),
+    );
+    assert.ok(normalizeClaudeBody(body("")).includes("You have exited plan mode."));
+  });
+
   test("normalizes timestamps in Codex directory listings", () => {
     const body = (time: string, name = "src"): string =>
       JSON.stringify({

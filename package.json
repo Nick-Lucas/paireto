@@ -34,6 +34,9 @@
     "e2e:check": "pnpm run compile && pnpm run compile-tests && PAIRETO_E2E_MODE=check node out/e2e/runE2E.js",
     "e2e:check:docker": "bash docker/e2e.sh check",
     "e2e:record:docker": "bash docker/e2e.sh record",
+    "demo:record": "bash docker/demo.sh record",
+    "demo:replay": "bash docker/demo.sh replay",
+    "demo:render": "bash docker/demo.sh render",
     "docker:build": "docker compose -f docker/docker-compose.yml build",
     "docker:down": "docker compose -f docker/docker-compose.yml down --remove-orphans",
     "docker:shell": "docker compose -f docker/docker-compose.yml up -d --wait && docker compose -f docker/docker-compose.yml exec tests bash",
@@ -54,6 +57,9 @@
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.1",
+    "@remotion/bundler": "4.0.538",
+    "@remotion/cli": "4.0.538",
+    "@remotion/renderer": "4.0.538",
     "@types/mocha": "^10.0.10",
     "@types/node": "~26.6.5",
     "@types/react": "^19.3.0",
@@ -68,6 +74,8 @@
     "npm-run-all": "^4.1.5",
     "oxfmt": "^0.74.0",
     "oxlint": "^1.89.0",
+    "playwright-core": "1.64.1",
+    "remotion": "4.0.538",
     "typescript": "^7.0.2",
     "zod": "^4.6.7"
   },
