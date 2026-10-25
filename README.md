@@ -1,6 +1,6 @@
-<p align="center">
+<!-- <p align="center">
   <img src="media/PairetoHeader2x.png" alt="Paireto" width="420" />
-</p>
+</p> -->
 
 > "Agents do 80% of the work, what's left to us is understanding, judgement, and coherence" - Paireto (the Parrot)
 
