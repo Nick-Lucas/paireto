@@ -36,7 +36,7 @@ export function prepareAgentShell(options: {
     "--session-id",
     agent.sessionId,
     "--allowedTools",
-    [...agent.allowedTools, `Edit(/${path.join(configDir, "plans")}/**)`].join(","),
+    agent.allowedTools.join(","),
   ];
   const rcFile = path.join(options.profileDir, "demo.bashrc");
   fs.mkdirSync(options.profileDir, { recursive: true });

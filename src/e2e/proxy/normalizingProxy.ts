@@ -16,6 +16,7 @@ import { isFixtureRequest, type FixtureRoute } from "../mockserver/fixtureRoutes
 import type { E2EDriver } from "../mockserver/mode.js";
 import { recordReplayMiss } from "../replayMiss.js";
 import { normalizeRequestBody } from "./normalize.js";
+import { livePlanPath, rewritePlanPath } from "./planPath.js";
 
 /** MockServer's catch-all status for a request no cassette entry matched. */
 const STRICT_MISS_STATUS = 599;
@@ -138,6 +139,7 @@ async function handleRequest(
     host,
     body: hasBody ? body : undefined,
     bodyDigest,
+    planPath: opts.normalizeDriver === "claudecode" ? livePlanPath(raw) : undefined,
     headers,
     req,
     res,
@@ -152,6 +154,7 @@ function forwardThroughMockServer(args: {
   host: string;
   body: string | undefined;
   bodyDigest: string;
+  planPath: string | undefined;
   headers: Record<string, string>;
   req: http.IncomingMessage;
   res: http.ServerResponse;
@@ -187,6 +190,19 @@ function forwardThroughMockServer(args: {
         // preserves the body yet Codex/OpenCode reject it unless the shim restores the media type.
         if (!outHeaders["content-type"] && /\/responses(?:\?|$)/.test(args.req.url ?? "")) {
           outHeaders["content-type"] = "text/event-stream";
+        }
+        const { planPath } = args;
+        if (planPath && isEventStreamContentType(outHeaders["content-type"])) {
+          delete outHeaders["content-length"];
+          args.res.writeHead(upstreamRes.statusCode ?? 502, outHeaders);
+          const chunks: Buffer[] = [];
+          upstreamRes.on("data", (chunk: Buffer) => chunks.push(chunk));
+          upstreamRes.on("end", () => {
+            args.res.end(rewritePlanPath(Buffer.concat(chunks).toString("utf8"), planPath));
+            resolve();
+          });
+          upstreamRes.on("error", reject);
+          return;
         }
         args.res.writeHead(upstreamRes.statusCode ?? 502, outHeaders);
         if (

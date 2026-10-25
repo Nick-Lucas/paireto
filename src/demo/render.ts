@@ -5,6 +5,7 @@ import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 
 import { demoConfig } from "./config.js";
+import type { Music } from "./style.js";
 import type { Timeline } from "./timeline.js";
 
 const repoRoot = path.resolve(__dirname, "..", "..");
@@ -17,6 +18,7 @@ async function main(): Promise<void> {
     path.join(repoRoot, "media", demoConfig.video.logo),
     path.join(outDir, demoConfig.video.logo),
   );
+  const style = { ...demoConfig.video, music: publishMusic(outDir) };
 
   console.log("[demo] bundling the composition");
   const serveUrl = await bundle({
@@ -30,7 +32,7 @@ async function main(): Promise<void> {
       },
     }),
   });
-  const inputProps = { timeline, style: demoConfig.video };
+  const inputProps = { timeline, style };
   const composition = await selectComposition({ serveUrl, id: "PairetoDemo", inputProps });
   const outputLocation = path.join(outDir, demoConfig.outputFile);
   console.log(
@@ -56,6 +58,18 @@ async function main(): Promise<void> {
     },
   });
   console.log(`[demo] wrote ${path.relative(repoRoot, outputLocation)}`);
+}
+
+function publishMusic(outDir: string): Music | undefined {
+  const { music } = demoConfig.video;
+  const source = path.join(repoRoot, music.file);
+  if (!fs.existsSync(source)) {
+    console.warn(`[demo] no music: ${music.file} does not exist, so the video has no audio`);
+    return undefined;
+  }
+  const file = path.basename(source);
+  fs.copyFileSync(source, path.join(outDir, file));
+  return { ...music, file };
 }
 
 main().then(

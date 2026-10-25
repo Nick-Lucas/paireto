@@ -72,7 +72,14 @@ export async function launchWorkbench(options: WorkbenchOptions): Promise<Workbe
     app,
     page,
     close: async () => {
-      await app.close().catch(() => undefined);
+      const closed = app.close().then(
+        () => true,
+        () => false,
+      );
+      const timedOut = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000));
+      if (!(await Promise.race([closed, timedOut]))) {
+        app.process().kill("SIGKILL");
+      }
     },
   };
 }

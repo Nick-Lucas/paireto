@@ -33,6 +33,23 @@ export class Workbench {
     return rectOf(this.part(name));
   }
 
+  async sidebarRect(minWidth = 0): Promise<Rect> {
+    const sidebar = await this.partRect("sidebar");
+    const rows = await this.page
+      .locator(".part.sidebar .monaco-list-row")
+      .evaluateAll((nodes) =>
+        nodes.map((node) =>
+          (node as unknown as { getBoundingClientRect(): Rect }).getBoundingClientRect(),
+        ),
+      );
+    const sidebarBottom = sidebar.y + sidebar.height;
+    const rowBottoms = rows
+      .filter((box) => box.height > 0 && box.y < sidebarBottom)
+      .map((box) => box.y + box.height);
+    const bottom = Math.min(sidebarBottom, Math.max(sidebar.y + 240, ...rowBottoms) + 24);
+    return { x: 0, y: 0, width: Math.max(sidebar.x + sidebar.width, minWidth), height: bottom };
+  }
+
   async headerRect(): Promise<Rect> {
     const editor = await this.partRect("editor");
     return { x: editor.x + editor.width - 520, y: editor.y, width: 520, height: 160 };
@@ -341,9 +358,11 @@ export class Workbench {
   }
 
   async answerPermissionPrompts(): Promise<boolean> {
-    if (!PERMISSION_PROMPT.test(await this.terminalText())) {
+    const text = await this.terminalText();
+    if (!PERMISSION_PROMPT.test(text)) {
       return false;
     }
+    console.warn(`[demo] answered a manual permission prompt:\n${text}`);
     await this.page.keyboard.press("1");
     await this.page.waitForTimeout(1500);
     return true;

@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import {
   AbsoluteFill,
+  Audio,
   Freeze,
   Img,
   interpolate,
@@ -25,7 +26,7 @@ import {
   sourceToOutput,
   toStage,
 } from "../edit";
-import type { VideoStyle } from "../style";
+import type { Music, VideoStyle } from "../style";
 import type { Timeline } from "../timeline";
 
 export interface DemoProps extends Record<string, unknown> {
@@ -76,7 +77,27 @@ export function Demo({ timeline, style }: DemoProps) {
       <ChapterCards edit={edit} fps={fps} style={style} />
       <Intro style={style} edit={edit} fps={fps} />
       <Outro style={style} edit={edit} fps={fps} />
+      {style.music ? <Soundtrack music={style.music} fps={fps} /> : null}
     </AbsoluteFill>
+  );
+}
+
+function Soundtrack({ music, fps }: { music: Music; fps: number }) {
+  const { durationInFrames } = useVideoConfig();
+  const fadeIn = toFrames(music.fadeInMs, fps);
+  const fadeOut = durationInFrames - toFrames(music.fadeOutMs, fps);
+  return (
+    <Audio
+      src={staticFile(music.file)}
+      trimBefore={toFrames(music.startAtMs, fps)}
+      volume={(f) =>
+        music.volume *
+        interpolate(f, [0, fadeIn, fadeOut, durationInFrames], [0, 1, 1, 0], {
+          extrapolateLeft: "clamp",
+          extrapolateRight: "clamp",
+        })
+      }
+    />
   );
 }
 

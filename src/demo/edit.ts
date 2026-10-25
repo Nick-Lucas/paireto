@@ -309,7 +309,7 @@ export function cameraFor(
   const width = rect.width * frame.scale * style.focusPadding;
   const height = rect.height * frame.scale * style.focusPadding;
   const fit = Math.min(style.width / width, style.height / height);
-  const zoom = clamp(zoomOverride ?? fit, 1, style.maxZoom);
+  const zoom = clamp(Math.min(zoomOverride ?? fit, fit), 1, style.maxZoom);
   const halfWidth = style.width / (2 * zoom);
   const halfHeight = style.height / (2 * zoom);
   return {

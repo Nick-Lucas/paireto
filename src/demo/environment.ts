@@ -94,7 +94,7 @@ export async function startEnvironment(
         ...config.vscode.settings,
         "paireto.notify.type": "disabled",
         "paireto.review.mode": "automatic",
-        "paireto.planApprove.mode.claudecode": "acceptEdits",
+        "paireto.planApprove.mode.claudecode": "auto",
         "terminal.integrated.defaultProfile.linux": "agent",
         "terminal.integrated.profiles.linux": {
           agent: { path: "bash", args: ["--rcfile", shell.rcFile] },

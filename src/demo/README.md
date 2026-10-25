@@ -21,7 +21,7 @@ event timeline (`timeline.json`) that the renderer edits.
 
 | You changed                                                                   | Run                |
 | ----------------------------------------------------------------------------- | ------------------ |
-| Video style: zoom, timing, chapter titles, colours, intro, outro              | `pnpm demo:render` |
+| Video style: zoom, timing, chapter titles, colours, intro, outro, music       | `pnpm demo:render` |
 | Something the agent does not see: pacing, camera focus, hover or peek targets | `pnpm demo:replay` |
 | Something the agent sees: prompts, comment text, edits, the sample project    | `pnpm demo:record` |
 
@@ -69,6 +69,13 @@ line number. For example `planning.comment.anchor` is the plan line the comment 
 pattern to a name the spec in `sandbox/main/docs/specs/discount-codes.md` asks for, so it exists in
 every run. Steps that only show something off (the type hover, the peek, the review checkboxes) are
 skipped with a warning if their target is missing. Steps that the agent sees fail the run.
+
+## Music
+
+`video.music` in `config.ts` sets the soundtrack: the file (relative to the repository root), where in
+the file to start, the volume, and the fade in and fade out. The music file is not in git, because the
+repository is public. Put the file at `music.mp3` in the repository root. Without it, the render warns
+and the video has no audio.
 
 ## Licences
 

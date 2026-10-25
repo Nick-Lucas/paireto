@@ -43,7 +43,7 @@ async function planning({ ui, config }: Scenario): Promise<void> {
   const editor = ui.activeEditor();
   await d.focus(await ui.partRect("editor"), () => d.read(1400), 1.2);
   const line = await ui.scrollTo(editor, config.planning.comment.anchor, 0.3);
-  await d.focus(await around(line, 70, 260), async () => {
+  await d.focus(await around(ui, line, 70, 260), async () => {
     await d.read(900);
     await commentOn(ui, editor, line, config.planning.comment.text);
   });
@@ -84,7 +84,7 @@ async function development({ ui, config }: Scenario): Promise<void> {
   await watchAgentUntil(ui, "Awaiting code review");
   await d.pause(800);
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.read(1300);
       await d.click(ui.fileRow(step.files.rules));
@@ -96,7 +96,7 @@ async function development({ ui, config }: Scenario): Promise<void> {
   await d.optional("the type hover", async () => {
     const signature = await ui.scrollTo(rules, step.hover.line, 0.45);
     const symbol = await ui.firstToken(signature, step.hover.symbols);
-    await d.focus(await around(signature, 120, 160), async () => {
+    await d.focus(await around(ui, signature, 120, 160), async () => {
       await d.hover(symbol);
       await d.read(2400);
       await d.moveTo(await ui.awayFrom(signature));
@@ -106,7 +106,7 @@ async function development({ ui, config }: Scenario): Promise<void> {
 
   const constant = await ui.scrollTo(rules, step.edit.find, 0.35);
   const current = step.edit.find.exec(await ui.text(constant))?.[1];
-  await d.focus(await around(constant, 60, 240), async () => {
+  await d.focus(await around(ui, constant, 60, 240), async () => {
     if (current) {
       await d.click(ui.token(constant, current), { count: 2 });
       await d.type(step.edit.replaceWith);
@@ -118,7 +118,7 @@ async function development({ ui, config }: Scenario): Promise<void> {
   });
 
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.click(ui.fileRow(step.files.wiring));
     },
@@ -127,7 +127,7 @@ async function development({ ui, config }: Scenario): Promise<void> {
   await d.optional("the peek definition", async () => {
     const wiring = ui.modifiedEditor();
     const call = await ui.scrollTo(wiring, step.peek.line, 0.35);
-    await d.focus(await around(call, 60, 360), async () => {
+    await d.focus(await around(ui, call, 60, 360), async () => {
       await d.click(ui.token(call, step.peek.symbol));
       await d.press("Control+Shift+F10", "Peek Definition");
       await d.read(2800);
@@ -138,7 +138,7 @@ async function development({ ui, config }: Scenario): Promise<void> {
 
   const resumed = ui.watchAgentState((state) => !state.includes("Awaiting"));
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.click(await ui.rowAction(ui.fileRow(step.files.rules), /^Stage Changes/));
       await d.read(900);
@@ -151,7 +151,7 @@ async function development({ ui, config }: Scenario): Promise<void> {
   await watchAgentUntil(ui, "Awaiting code review");
   await d.read(1500);
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.read(900);
       await d.click(ui.viewAction(/Approve/));
@@ -166,7 +166,7 @@ async function viewModes({ ui, config }: Scenario): Promise<void> {
   const { viewModes: step } = config;
   d.chapter(config.chapters.viewModes);
   const section = ui.row(/^Changed Files/);
-  const area = widen(await ui.partRect("sidebar"), 760, 420);
+  const area = await ui.sidebarRect(1120);
   await d.focus(
     area,
     async () => {
@@ -199,7 +199,7 @@ async function viewModes({ ui, config }: Scenario): Promise<void> {
     1.35,
   );
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.click(ui.fileRow(step.openFile));
     },
@@ -216,7 +216,7 @@ async function guidedReview({ ui, config }: Scenario): Promise<void> {
   await watchAgentUntil(ui, "Awaiting guided review");
   await d.pause(800);
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.read(1500);
       await d.click(ui.row(/^Review Plan/));
@@ -228,7 +228,7 @@ async function guidedReview({ ui, config }: Scenario): Promise<void> {
   const changesets = await ui.changesets();
   for (const changeset of changesets.slice(0, config.guidedReview.changesets)) {
     await d.focus(
-      await ui.partRect("sidebar"),
+      await ui.sidebarRect(),
       async () => {
         await d.click(ui.row(changeset.title));
       },
@@ -236,7 +236,7 @@ async function guidedReview({ ui, config }: Scenario): Promise<void> {
     );
     await d.focus(await ui.partRect("editor"), () => d.read(2200), 1.2);
     await d.focus(
-      await ui.partRect("sidebar"),
+      await ui.sidebarRect(),
       async () => {
         await d.click(ui.fileRow(changeset.files[0]));
       },
@@ -244,7 +244,7 @@ async function guidedReview({ ui, config }: Scenario): Promise<void> {
     );
     await d.focus(await ui.partRect("editor"), () => d.read(1800), 1.05);
     await d.focus(
-      await ui.partRect("sidebar"),
+      await ui.sidebarRect(),
       async () => {
         await d.click(await ui.rowAction(ui.row(changeset.title), /Stage All/));
         await d.read(900);
@@ -253,7 +253,7 @@ async function guidedReview({ ui, config }: Scenario): Promise<void> {
     );
   }
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.click(ui.viewAction(/Approve/));
       await d.read(1500);
@@ -286,7 +286,7 @@ async function watchAgentUntil(
 async function focusAgent(ui: Workbench): Promise<void> {
   const { d } = ui;
   await d.focus(
-    await ui.partRect("sidebar"),
+    await ui.sidebarRect(),
     async () => {
       await d.click(await ui.rowAction(ui.agentRow(), /Focus Agent/));
     },
@@ -336,17 +336,8 @@ async function runCommand(ui: Workbench, command: string): Promise<void> {
   await page.waitForTimeout(400);
 }
 
-async function around(line: Locator, above: number, below: number): Promise<Rect> {
+async function around(ui: Workbench, line: Locator, above: number, below: number): Promise<Rect> {
   const box = await rectOf(line);
-  const x = Math.max(0, box.x - 90);
-  return { x, y: box.y - above, width: Math.min(box.width + 90, 1050), height: above + below };
-}
-
-function widen(rect: Rect, width: number, height: number): Rect {
-  return {
-    x: rect.x,
-    y: rect.y,
-    width: Math.max(rect.width, width),
-    height: Math.min(rect.height, height),
-  };
+  const editor = await ui.partRect("editor");
+  return { x: editor.x, y: box.y - above, width: editor.width, height: above + below };
 }

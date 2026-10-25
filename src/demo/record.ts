@@ -35,6 +35,7 @@ async function main(): Promise<void> {
     await d.pause(1500);
     succeeded = true;
   } catch (err) {
+    console.error(`[demo] failed: ${err instanceof Error ? err.message : String(err)}`);
     await page.screenshot({ path: path.join(env.outDir, "failure.png") }).catch(() => undefined);
     const miss = env.replayMiss();
     if (miss) {

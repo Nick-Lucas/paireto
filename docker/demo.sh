@@ -17,6 +17,9 @@ if [ "$mode" = "record" ]; then
   files+=(-f docker/docker-compose.e2e.yml)
   env_args+=(-e ANTHROPIC_API_KEY)
 fi
+if [ -n "${DEBUG:-}" ]; then
+  env_args+=(-e DEBUG)
+fi
 if [ -n "${PAIRETO_SHIM_DUMP:-}" ]; then
   env_args+=(-e "PAIRETO_SHIM_DUMP=/workspace/$PAIRETO_SHIM_DUMP")
 fi

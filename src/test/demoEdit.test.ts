@@ -81,6 +81,21 @@ suite("demo edit", () => {
     assert.strictEqual(cameraAt(camera, sourceToOutput(edit, 15_000)).zoom, 1);
   });
 
+  test("keeps the whole focused area in view when a step asks for a closer zoom", () => {
+    const rect = { x: 100, y: 50, width: 300, height: 800 };
+    const events: TimelineEvent[] = [{ kind: "focus", start: 4000, end: 8000, rect, zoom: 1.5 }];
+    const edit = buildEdit(timeline(events), style);
+    const camera = buildCamera(timeline(events), edit, style);
+    const view = cameraAt(camera, sourceToOutput(edit, 6000));
+    const scale = style.width / 1600;
+    const halfWidth = style.width / (2 * view.zoom);
+    const halfHeight = style.height / (2 * view.zoom);
+    assert.ok(view.x - halfWidth <= rect.x * scale);
+    assert.ok(view.x + halfWidth >= (rect.x + rect.width) * scale);
+    assert.ok(view.y - halfHeight <= rect.y * scale);
+    assert.ok(view.y + halfHeight >= (rect.y + rect.height) * scale);
+  });
+
   test("holds the wide shot over a chapter card even inside a focus span", () => {
     const events: TimelineEvent[] = [
       { kind: "focus", start: 1000, end: 9000, rect: { x: 0, y: 0, width: 400, height: 225 } },

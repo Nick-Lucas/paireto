@@ -11,4 +11,13 @@ export interface VideoStyle extends EditStyle {
   readonly logo: string;
   readonly intro: { readonly tagline: string };
   readonly outro: { readonly headline: string; readonly subline: string };
+  readonly music?: Music;
+}
+
+export interface Music {
+  readonly file: string;
+  readonly startAtMs: number;
+  readonly volume: number;
+  readonly fadeInMs: number;
+  readonly fadeOutMs: number;
 }

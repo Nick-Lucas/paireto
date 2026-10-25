@@ -96,7 +96,7 @@ export const demoConfig = {
   chapters: {
     planning: "Plan your work",
     development: "Review agent changes with your editor's Language Server features",
-    viewModes: "Understand and judge your work",
+    viewModes: "Judge your work your way with Views",
     guidedReview: "Do real engineering",
   },
 
@@ -170,6 +170,13 @@ export const demoConfig = {
     outro: {
       headline: "Engineering is judgment.",
       subline: "Paireto for VS Code",
+    },
+    music: {
+      file: "music.mp3",
+      startAtMs: 102_000,
+      volume: 0.6,
+      fadeInMs: 800,
+      fadeOutMs: 3000,
     },
   } satisfies VideoStyle,
 };
