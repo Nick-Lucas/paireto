@@ -36,7 +36,7 @@ import { buildDelta, stagingFlags, type DeltaFile, type StageState } from "../re
 import type { SeenFiles } from "../review/SeenFiles.js";
 import { repoKey } from "../protocol/paths.js";
 import { describeCompareTo } from "../protocol/guidedReview.js";
-import { buildFileTree, filesInEntry, type TreeEntry } from "./fileTree.js";
+import { buildFileTree, filesInEntry, sortByDirectory, type TreeEntry } from "./fileTree.js";
 
 // Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
 // per-status SVG so the colour stays on the indicator only (a FileDecoration would tint the whole
@@ -710,7 +710,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return [placeholder("No changes")];
       }
       return layout === "flat"
-        ? deltas.map((delta) => ({ kind: "deltaFile", delta }) as Node)
+        ? sortByDirectory(deltas).map((delta) => ({ kind: "deltaFile", delta }) as Node)
         : buildFileTree(deltas).map((e) => deltaEntryToNode(e, repository.repoRoot));
     }
     const { changes, repoRoot } = repository;
@@ -732,7 +732,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const changes = this.repository(repoRoot)?.changes ?? emptyChanges();
     const files = changes[group];
     if (layout === "flat") {
-      return files.map((file) => ({ kind: "file", file }) as Node);
+      return sortByDirectory(files).map((file) => ({ kind: "file", file }) as Node);
     }
     return buildFileTree(files).map((e) => entryToNode(e, repoRoot, group));
   }
