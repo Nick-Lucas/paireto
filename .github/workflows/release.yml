@@ -66,7 +66,7 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   publish:
-    name: Publish to the Marketplace
+    name: Publish to the Marketplace and Open VSX
     needs: bump
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -95,6 +95,7 @@ jobs:
       - name: Show the Marketplace identity ID
         run: az rest --method get --url https://app.vssps.visualstudio.com/_apis/profile/profiles/me --resource 499b84ac-1321-427f-aa17-267ca6975798 --query id --output tsv
       - run: pnpm exec vsce publish --azure-credential --packagePath dist/paireto.vsix --skip-duplicate
+      - run: pnpm exec ovsx publish --trusted-publishing --packagePath dist/paireto.vsix --skip-duplicate
       - name: Create the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -102,7 +103,7 @@ jobs:
         run: gh release create "$TAG" dist/paireto.vsix --verify-tag --generate-notes --title "$TAG"
 
   prerelease:
-    name: Publish a pre-release to the Marketplace
+    name: Publish a pre-release to the Marketplace and Open VSX
     if: >-
       github.event_name == 'workflow_run' &&
       github.event.workflow_run.conclusion == 'success' &&
@@ -135,3 +136,4 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           allow-no-subscriptions: true
       - run: pnpm exec vsce publish --pre-release --azure-credential --packagePath dist/paireto.vsix --skip-duplicate
+      - run: pnpm exec ovsx publish --trusted-publishing --packagePath dist/paireto.vsix --skip-duplicate
