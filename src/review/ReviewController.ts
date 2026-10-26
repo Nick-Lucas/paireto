@@ -213,9 +213,6 @@ export class ReviewController implements vscode.Disposable {
   private activeRequestId?: string;
   /** Owning agent session of the active review (best-effort; drives the Agents panel). */
   private activeSessionId?: string;
-  /** Whether the sidebar shows the guided review cached for the current branch. The plan lives in
-   *  the store, outside `repositoryStates` which `refresh()` rebuilds wholesale, so it stores paths
-   *  and resolves them fresh on every read. */
   private showGuided: boolean;
   /** The open plan's comparison point, scoped to the repository it describes. The window's shared
    *  Compare To cannot hold a raw ref while several Git roots are open, so a multi-root window would
