@@ -8,10 +8,12 @@ import * as vscode from "vscode";
 
 import { StateKeys } from "../config.js";
 import type { ChangesMode, CompareTo, FileLayout } from "../types.js";
+import type { CachedGuidedReview } from "../review/guidedPlan.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 
 const DEFAULT_COMPARE_TO: CompareTo = { kind: "head" };
 const MAX_RECENT_REFS = 3;
+const MAX_GUIDED_REVIEWS = 20;
 
 export class ReviewStore {
   constructor(private readonly memento: vscode.Memento) {}
@@ -48,6 +50,32 @@ export class ReviewStore {
   async addRecentRef(ref: string): Promise<void> {
     const next = [ref, ...this.getRecentRefs().filter((r) => r !== ref)].slice(0, MAX_RECENT_REFS);
     await this.memento.update(StateKeys.recentRefs, next);
+  }
+
+  getGuidedReviews(): CachedGuidedReview[] {
+    return this.memento.get<CachedGuidedReview[]>(StateKeys.guidedReviews, []);
+  }
+
+  /** Put a review at the front of the list, replacing the one kept for the same repository and branch. */
+  async saveGuidedReview(entry: CachedGuidedReview): Promise<void> {
+    const kept = this.getGuidedReviews().filter(
+      (saved) =>
+        saved.plan.repoRoot !== entry.plan.repoRoot ||
+        saved.ref.kind !== entry.ref.kind ||
+        saved.ref.value !== entry.ref.value,
+    );
+    await this.memento.update(
+      StateKeys.guidedReviews,
+      [entry, ...kept].slice(0, MAX_GUIDED_REVIEWS),
+    );
+  }
+
+  getGuidedView(): boolean {
+    return this.memento.get<boolean>(StateKeys.guidedView, false);
+  }
+
+  async setGuidedView(value: boolean): Promise<void> {
+    await this.memento.update(StateKeys.guidedView, value);
   }
 
   async export(

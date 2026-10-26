@@ -243,9 +243,9 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
       });
     });
 
-    test("approving the follow-up clears the plan", async () => {
+    test("approving the follow-up keeps the plan", async () => {
       // A harness that opens no turn-end review raises no second gate to approve — acting on the
-      // feedback IS the end of the flow there, so the plan just has to clear.
+      // feedback IS the end of the flow there, so the plan just has to stay.
       if (driver.caps.opensTurnEndReview) {
         const followUp = await wait("the follow-up turn's gate to open", async () => {
           const snap = await inspect();
@@ -258,7 +258,7 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
           "the follow-up gate to resolve on approve",
         );
       }
-      await wait("all gates to resolve and the guided plan to clear", async () => {
+      await wait("all gates to resolve while the guided plan stays", async () => {
         const snap = await inspect();
         const settled = snap.sessions.some((s) => s.state === "stopped" || s.state === "idle");
         // Approving the follow-up is what retires the feedback, so only a harness that raises one
@@ -266,14 +266,11 @@ driversForSharedSpec(__dirname, CASE).forEach((harness) => {
         // stays behind resolved — the previous test is what asserts the agent got that far.
         return (
           snap.gates.length === 0 &&
-          snap.guided === undefined &&
+          snap.guided !== undefined &&
           (!driver.caps.opensTurnEndReview || snap.feedback.length === 0) &&
           settled
         );
       });
-      if (tabsOnScheme("paireto-changeset").length > 0) {
-        throw new Error("the changeset description tabs must close when the review plan clears");
-      }
       const screen = await driver.screen();
       if (screen.includes("AGENT LOOP ERROR")) {
         throw new Error(`driver reported an agent-loop error\n${screen}`);
