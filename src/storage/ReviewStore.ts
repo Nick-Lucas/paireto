@@ -56,7 +56,6 @@ export class ReviewStore {
     return this.memento.get<CachedGuidedReview[]>(StateKeys.guidedReviews, []);
   }
 
-  /** Put a review at the front of the list, replacing the one kept for the same repository and branch. */
   async saveGuidedReview(entry: CachedGuidedReview): Promise<void> {
     const kept = this.getGuidedReviews().filter(
       (saved) =>

@@ -37,14 +37,12 @@ export interface GuidedPlan {
   changesets: ParsedChangeset[];
 }
 
-/** A plan kept for the branch it was made on, with the time the agent generated it. */
 export interface CachedGuidedReview {
   ref: FeedbackRef;
   generatedAt: string;
   plan: GuidedPlan;
 }
 
-/** The newest cached plan whose branch is still the one its repository has checked out. */
 export function latestGuidedReview(
   entries: readonly CachedGuidedReview[],
   refs: ReadonlyMap<string, FeedbackRef>,
