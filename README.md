@@ -134,7 +134,7 @@ Hit **`Cmd+Shift+K`** to view all your worktrees and their agent state. You can 
 
 The Paireto plugin adds these skills and commands to your agent. These docs cover the Claude Code format since other harnesses use their own syntax, for example: 
 
-- **Claude Code, OpenCode, Kiro:** `/paireto-review`
+- **OpenCode, Kiro:** `/paireto-review`
 - **Codex:** `$paireto-review`
 - **Pi:** `/skill:paireto-review`
 
