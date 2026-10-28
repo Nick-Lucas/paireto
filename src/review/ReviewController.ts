@@ -82,6 +82,7 @@ import {
   unresolveThread,
 } from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
+import { predictIndexWrite, RepoWriteQueue, type IndexWrite } from "./indexWrites.js";
 import {
   contextKey,
   FeedbackSession,
@@ -242,6 +243,7 @@ export class ReviewController implements vscode.Disposable {
     fullRefresh: (reason) => this.refresh(reason),
     fireChange: () => this.changeEmitter.fire(),
   };
+  private readonly indexWrites = new RepoWriteQueue();
   /** Per-reason refresh() tally, read by the env-gated test control plane (nothing else). */
   private readonly refreshCounts = new Map<string, number>();
 
@@ -855,6 +857,7 @@ export class ReviewController implements vscode.Disposable {
         }
         if (
           this.refreshSeq.get(root.repoRoot) !== seq ||
+          this.indexWrites.isBusy(root.repoRoot) ||
           !this.roots.gitRoots.some((candidate) => candidate.repoRoot === root.repoRoot)
         ) {
           this.debug(`refresh(${reason}) ${root.repoRoot} #${seq}: superseded`);
@@ -1078,26 +1081,7 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.confirmStageConflicts(files))) {
       return;
     }
-    const byRoot = [...filesByRoot(files)];
-    try {
-      for (const [repoRoot, repoFiles] of byRoot) {
-        await this.diff.stage(
-          repoRoot,
-          repoFiles.map((f) => f.path),
-        );
-      }
-    } finally {
-      // One scan after every repository is written. The tab reconcile below reads that model, and
-      // a write that throws part way still leaves the repositories before it described correctly.
-      await this.refresh("write-op");
-    }
-    for (const [repoRoot, repoFiles] of byRoot) {
-      await this.reconcileOpenDiffsAfterWrite(
-        repoRoot,
-        repoFiles.map((f) => f.path),
-        "staged",
-      );
-    }
+    await this.writeIndex(files, "stage");
   }
 
   /**
@@ -1136,23 +1120,45 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async unstageFiles(files: RepoChangedFile[]): Promise<void> {
-    const byRoot = [...filesByRoot(files)];
+    await this.writeIndex(files, "unstage");
+  }
+
+  private async writeIndex(files: RepoChangedFile[], write: IndexWrite): Promise<void> {
+    const byRoot = [...filesByRoot(files)].map(
+      ([repoRoot, repoFiles]) => [repoRoot, repoFiles.map((f) => f.path)] as const,
+    );
+    for (const [repoRoot, paths] of byRoot) {
+      const state = this.repositoryStates.get(repoRoot);
+      if (state) {
+        this.refreshSeq.set(repoRoot, (this.refreshSeq.get(repoRoot) ?? 0) + 1);
+        this.repositoryStates.set(repoRoot, {
+          ...state,
+          changes: predictIndexWrite(state.changes, paths, write),
+        });
+      }
+    }
+    this.changeEmitter.fire();
     try {
-      for (const [repoRoot, repoFiles] of byRoot) {
-        await this.diff.unstage(
+      await Promise.all(
+        byRoot.map(([repoRoot, paths]) =>
+          this.indexWrites.run(repoRoot, () =>
+            write === "stage"
+              ? this.diff.stage(repoRoot, paths)
+              : this.diff.unstage(repoRoot, paths),
+          ),
+        ),
+      );
+      for (const [repoRoot, paths] of byRoot) {
+        await this.reconcileOpenDiffsAfterWrite(
           repoRoot,
-          repoFiles.map((f) => f.path),
+          paths,
+          write === "stage" ? "staged" : "unstaged",
         );
       }
     } finally {
-      await this.refresh("write-op");
-    }
-    for (const [repoRoot, repoFiles] of byRoot) {
-      await this.reconcileOpenDiffsAfterWrite(
-        repoRoot,
-        repoFiles.map((f) => f.path),
-        "unstaged",
-      );
+      if (byRoot.some(([repoRoot]) => !this.indexWrites.isBusy(repoRoot))) {
+        await this.refresh("write-op");
+      }
     }
   }
 
