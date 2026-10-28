@@ -80,8 +80,6 @@ export const ContextKeys = {
   /** True when the foreground gate has ≥1 actionable comment — shows Send Feedback, hides Approve. */
   gateHasFeedback: "paireto.gateHasFeedback",
   gateAnswered: "paireto.gateAnswered",
-  /** True while a review plan is open; it replaces the Changed Files list in the sidebar. */
-  guidedReviewDiffActive: "paireto.guidedReviewDiffActive",
 } as const;
 
 export const StateKeys = {
@@ -93,4 +91,6 @@ export const StateKeys = {
   changesMode: "paireto.changesMode",
   seenFiles: "paireto.seenFiles",
   recentRefs: "paireto.recentRefs",
+  guidedReviews: "paireto.guidedReviews",
+  guidedView: "paireto.guidedView",
 } as const;

@@ -63,9 +63,11 @@ import {
 import {
   buildGuidedState,
   GuidedPlanError,
+  latestGuidedReview,
   parseChangesets,
   toGuidedPlan,
   verifyGuidedCompareTo,
+  type CachedGuidedReview,
   type GuidedChangesetState,
   type GuidedFileRow,
   type GuidedPlan,
@@ -211,14 +213,12 @@ export class ReviewController implements vscode.Disposable {
   private activeRequestId?: string;
   /** Owning agent session of the active review (best-effort; drives the Agents panel). */
   private activeSessionId?: string;
-  /** The agent's changeset plan for the active guided review. Held OUTSIDE `repositoryStates`, which
-   *  `refresh()` rebuilds wholesale — so it stores paths and resolves them fresh on every read. */
-  private guidedPlan?: GuidedPlan;
+  private showGuided: boolean;
   /** The open plan's comparison point, scoped to the repository it describes. The window's shared
    *  Compare To cannot hold a raw ref while several Git roots are open, so a multi-root window would
    *  otherwise resolve the plan against the default branch instead of what the agent diffed. */
   private guidedCompareTo?: { repoRoot: string; compareTo: CompareTo };
-  /** Read-only markdown for each changeset the reviewer has opened; cleared with the plan. */
+  /** Read-only markdown for each changeset the reviewer has opened; cleared when a new plan replaces the old one. */
   private readonly changesetDocs = new ChangesetDocProvider();
   /** The review slot: held while a review is in progress. A second agent review waits in
    *  `reviewWaiters` until the one ahead resolves (at most one review pending at a time). */
@@ -257,6 +257,7 @@ export class ReviewController implements vscode.Disposable {
     this.compareTo = store.getCompareTo();
     this.layout = store.getLayout();
     this.mode = store.getMode();
+    this.showGuided = store.getGuidedView();
     this.turns = new TurnReviewState(() => this.roots.gitRoots.map((root) => root.repoRoot));
     // Commenting is always available on the Changes diffs — on the review-scheme side of a locked
     // diff AND on the editable working-tree (file:) side of an editable one, so it works regardless
@@ -477,16 +478,24 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.acquireReviewSlot(signal))) {
       return { status: "cancelled", feedback: "" }; // connection dropped while queued
     }
-    this.guidedPlan = guidedPlan;
-    this.guidedCompareTo = { repoRoot: guidedPlan.repoRoot, compareTo: guidedPlan.compareTo };
-    await this.setGuidedContext(true);
-    // Align the window to what the agent actually diffed against. Otherwise the two disagree and
-    // every change between the two points arrives as an unclaimed "Other changes" row. Where the
-    // shared Compare To cannot hold the plan's comparison, the scoped one above is the alignment,
-    // and the other repositories keep the point the user chose.
-    if (sharedCompareToHolds(this.roots.gitRoots.length, guidedPlan.compareTo)) {
-      await this.applyCompareTo(guidedPlan.compareTo, "guided review");
+    const ref = await currentFeedbackRef(repoRoot);
+    if (!ref) {
+      log.error(`guided review for agent ${who} has no branch to keep its plan under`);
+      this.releaseReviewSlot();
+      return { status: "cancelled", feedback: "" };
     }
+    // Feedback left on a changeset description outlives the plan, and that document is the only home
+    // its thread has — without the content the row would open nothing. The render puts the saved
+    // copy back, and it must run before a rebuild the refresh starts can read the provider.
+    this.changesetDocs.clear();
+    this.feedback?.render();
+    await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
+    await this.store.saveGuidedReview({
+      ref,
+      generatedAt: new Date().toISOString(),
+      plan: guidedPlan,
+    });
+    await this.enterGuidedView(guidedPlan);
     const fileCount = changesets.reduce((total, c) => total + c.files.length, 0);
     log.info(
       `guided review opened for agent ${who}: ${changesets.length} changeset(s), ${fileCount} file(s)`,
@@ -659,17 +668,8 @@ export class ReviewController implements vscode.Disposable {
     }
     this.activeRequestId = undefined;
     this.activeSessionId = undefined;
-    this.guidedPlan = undefined;
-    this.guidedCompareTo = undefined;
     this.agentRepliedOrResolvedComment = false;
-    // Feedback left on a changeset description outlives the plan, and that document is the only home
-    // its thread has — without the content the row would open nothing. The render puts the saved
-    // copy back, and it must run before a rebuild the refresh starts can read the provider.
-    this.changesetDocs.clear();
-    this.feedback?.render();
     await this.refresh("review-ended");
-    await this.setGuidedContext(false);
-    await closeTabsWhere((tab) => tabUriScheme(tab.input) === Schemes.changeset);
     await this.setReviewContext(false);
     await this.coordinator.unregister(requestId);
     this.releaseReviewSlot();
@@ -727,9 +727,27 @@ export class ReviewController implements vscode.Disposable {
     await this.store.setCompareTo(compareTo);
   }
 
-  /** Drives whether the sidebar shows the Review Plan in place of the raw Changed Files list. */
-  private async setGuidedContext(active: boolean): Promise<void> {
-    await vscode.commands.executeCommand("setContext", ContextKeys.guidedReviewDiffActive, active);
+  private cachedGuided(): CachedGuidedReview | undefined {
+    return latestGuidedReview(this.store.getGuidedReviews(), this.lastFeedbackRef);
+  }
+
+  private async enterGuidedView(plan: GuidedPlan): Promise<void> {
+    this.showGuided = true;
+    await this.store.setGuidedView(true);
+    this.guidedCompareTo = { repoRoot: plan.repoRoot, compareTo: plan.compareTo };
+    // Align the window to what the agent actually diffed against. Otherwise the two disagree and
+    // every change between the two points arrives as an unclaimed "Other changes" row. Where the
+    // shared Compare To cannot hold the plan's comparison, the scoped one above is the alignment,
+    // and the other repositories keep the point the user chose.
+    if (sharedCompareToHolds(this.roots.gitRoots.length, plan.compareTo)) {
+      await this.applyCompareTo(plan.compareTo, "guided review");
+    }
+  }
+
+  private async leaveGuidedView(): Promise<void> {
+    this.showGuided = false;
+    await this.store.setGuidedView(false);
+    this.guidedCompareTo = undefined;
   }
 
   private async setReviewContext(foreground: boolean): Promise<void> {
@@ -781,12 +799,13 @@ export class ReviewController implements vscode.Disposable {
           changes: scopedChanges(root.repoRoot, EMPTY_CHANGES),
         },
     );
+    const cached = this.showGuided ? this.cachedGuided() : undefined;
     return {
       compareTo: this.compareTo,
       layout: this.layout,
       mode: this.mode,
       repositories,
-      guided: this.guidedPlan && this.buildGuided(this.guidedPlan, repositories),
+      guided: cached && this.buildGuided(cached.plan, repositories),
     };
   }
 
@@ -1051,15 +1070,35 @@ export class ReviewController implements vscode.Disposable {
 
   private pickViewMode(): void {
     openViewModePicker(
-      () => ({ mode: this.mode, layout: this.layout }),
+      () => {
+        const cached = this.cachedGuided();
+        return {
+          mode: this.mode,
+          layout: this.layout,
+          guided: cached && { shown: this.showGuided, generatedAt: cached.generatedAt },
+        };
+      },
       (choice) => this.applyViewMode(choice),
     );
   }
 
   private async applyViewMode(choice: ViewModeChoice): Promise<void> {
-    if (choice.kind === "mode") {
+    if (choice.kind === "guided") {
+      const cached = this.cachedGuided();
+      if (cached && !this.showGuided) {
+        await this.enterGuidedView(cached.plan);
+        await this.refresh("compare-to");
+      }
+    } else if (choice.kind === "mode") {
+      const wasGuided = this.showGuided;
+      if (wasGuided) {
+        await this.leaveGuidedView();
+      }
       this.mode = choice.mode;
       await this.store.setMode(this.mode);
+      if (wasGuided) {
+        await this.refresh("compare-to");
+      }
     } else {
       this.layout = choice.layout;
       await this.store.setLayout(this.layout);
@@ -2543,7 +2582,14 @@ export function selectCommentFile(
  */
 export type ViewModeChoice =
   | { kind: "mode"; mode: ChangesMode }
+  | { kind: "guided" }
   | { kind: "layout"; layout: FileLayout };
+
+export interface ViewModeSnapshot {
+  mode: ChangesMode;
+  layout: FileLayout;
+  guided?: { shown: boolean; generatedAt: string };
+}
 
 export type ViewModeItem = vscode.QuickPickItem & { choice?: ViewModeChoice };
 
@@ -2570,15 +2616,25 @@ const LAYOUT_OPTIONS: { layout: FileLayout; label: string; detail: string }[] = 
   { layout: "flat", label: "Flat", detail: "Files in one list, with their folder beside the name" },
 ];
 
-export function viewModeItems(mode: ChangesMode, layout: FileLayout): ViewModeItem[] {
+export function viewModeItems({ mode, layout, guided }: ViewModeSnapshot): ViewModeItem[] {
   const mark = (current: boolean): string => (current ? "$(check)" : "$(blank)");
+  const guidedShown = guided?.shown ?? false;
   return [
     { label: "View", kind: vscode.QuickPickItemKind.Separator },
     ...MODE_OPTIONS.map((option): ViewModeItem => ({
-      label: `${mark(option.mode === mode)} ${option.label}`,
+      label: `${mark(!guidedShown && option.mode === mode)} ${option.label}`,
       detail: option.detail,
       choice: { kind: "mode", mode: option.mode },
     })),
+    ...(guided
+      ? [
+          {
+            label: `${mark(guided.shown)} Guided Review`,
+            detail: `Generated ${new Date(guided.generatedAt).toLocaleString()}`,
+            choice: { kind: "guided" },
+          } satisfies ViewModeItem,
+        ]
+      : []),
     { label: "Layout", kind: vscode.QuickPickItemKind.Separator },
     ...LAYOUT_OPTIONS.map((option): ViewModeItem => ({
       label: `${mark(option.layout === layout)} ${option.label}`,
@@ -2589,25 +2645,31 @@ export function viewModeItems(mode: ChangesMode, layout: FileLayout): ViewModeIt
 }
 
 function sameChoice(a: ViewModeChoice | undefined, b: ViewModeChoice): boolean {
-  return (
-    a?.kind === b.kind &&
-    (a.kind === "mode"
-      ? a.mode === (b as typeof a).mode
-      : a.layout === (b as Extract<ViewModeChoice, { kind: "layout" }>).layout)
-  );
+  if (a?.kind !== b.kind) {
+    return false;
+  }
+  if (a.kind === "mode") {
+    return a.mode === (b as typeof a).mode;
+  }
+  if (a.kind === "layout") {
+    return a.layout === (b as typeof a).layout;
+  }
+  return true;
 }
 
 export function openViewModePicker(
-  current: () => { mode: ChangesMode; layout: FileLayout },
+  current: () => ViewModeSnapshot,
   apply: (choice: ViewModeChoice) => Promise<void>,
 ): vscode.QuickPick<ViewModeItem> {
   const pick = vscode.window.createQuickPick<ViewModeItem>();
   pick.title = "View Modes";
   pick.keepScrollPosition = true;
   const render = (active?: ViewModeChoice): void => {
-    const { mode, layout } = current();
-    const items = viewModeItems(mode, layout);
-    const focus = active ?? { kind: "mode", mode };
+    const snapshot = current();
+    const items = viewModeItems(snapshot);
+    const focus: ViewModeChoice =
+      active ??
+      (snapshot.guided?.shown ? { kind: "guided" } : { kind: "mode", mode: snapshot.mode });
     pick.items = items;
     pick.activeItems = items.filter((item) => sameChoice(item.choice, focus));
   };

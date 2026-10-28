@@ -295,7 +295,6 @@ suite("review controller feedback", () => {
         set() {},
         clear: () => order.push("clear-docs"),
       },
-      setGuidedContext: async () => {},
       setReviewContext: async () => {},
       coordinator: { unregister: async () => {} },
       releaseReviewSlot: () => order.push("release"),
@@ -312,7 +311,7 @@ suite("review controller feedback", () => {
 
     await c.cleanupReview("review");
 
-    assert.deepStrictEqual(order, ["clear-docs", "render", "refresh", "release"]);
+    assert.deepStrictEqual(order, ["refresh", "release"]);
   });
 
   test("revealing a relocated comment saves its new line", async () => {

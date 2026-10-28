@@ -553,20 +553,39 @@ interface ViewModePicker {
   pickViewMode(): void;
 }
 
+const GENERATED_AT = "2026-02-03T04:05:06.000Z";
+
 function controllerWith(
   mode: ChangesMode,
   layout: FileLayout,
+  guided?: { shown: boolean },
 ): {
   controller: ViewModePicker;
-  saved: { mode?: ChangesMode; layout?: FileLayout };
+  saved: { mode?: ChangesMode; layout?: FileLayout; guided?: boolean };
   fired: () => number;
 } {
-  const saved: { mode?: ChangesMode; layout?: FileLayout } = {};
+  const saved: { mode?: ChangesMode; layout?: FileLayout; guided?: boolean } = {};
   let fires = 0;
+  const cached = guided && {
+    ref: { kind: "branch" as const, value: "main" },
+    generatedAt: GENERATED_AT,
+    plan: { repoRoot: REPO, compareTo: { kind: "head" as const }, changesets: [] },
+  };
   const controller = Object.assign(Object.create(ReviewController.prototype), {
     mode,
     layout,
+    showGuided: guided?.shown ?? false,
+    lastFeedbackRef: new Map([[REPO, { kind: "branch", value: "main" }]]),
+    roots: { gitRoots: [{ repoRoot: REPO, displayName: "repo", workspaceIndex: 0 }] },
+    compareTo: { kind: "head" },
+    refresh: () => Promise.resolve(),
     store: {
+      getGuidedReviews: () => (cached ? [cached] : []),
+      setGuidedView: (value: boolean) => {
+        saved.guided = value;
+        return Promise.resolve();
+      },
+      setCompareTo: () => Promise.resolve(),
       setMode: (value: ChangesMode) => {
         saved.mode = value;
         return Promise.resolve();
@@ -657,7 +676,7 @@ suite("View Modes control", function () {
   this.timeout(30_000);
 
   test("one picker offers the view and the layout, with the current ones ticked", () => {
-    assert.deepStrictEqual(labels(viewModeItems("delta", "flat")), [
+    assert.deepStrictEqual(labels(viewModeItems({ mode: "delta", layout: "flat" })), [
       "View",
       "$(blank) Staging",
       "$(check) Delta",
@@ -666,6 +685,68 @@ suite("View Modes control", function () {
       "$(blank) Tree",
       "$(check) Flat",
     ]);
+  });
+
+  test("a cached guided review adds a fourth view that names when it was generated", () => {
+    const shown = viewModeItems({
+      mode: "delta",
+      layout: "flat",
+      guided: { shown: true, generatedAt: GENERATED_AT },
+    });
+    assert.deepStrictEqual(labels(shown), [
+      "View",
+      "$(blank) Staging",
+      "$(blank) Delta",
+      "$(blank) Review",
+      "$(check) Guided Review",
+      "Layout",
+      "$(blank) Tree",
+      "$(check) Flat",
+    ]);
+    assert.strictEqual(
+      shown.find((item) => item.label.endsWith("Guided Review"))?.detail,
+      `Generated ${new Date(GENERATED_AT).toLocaleString()}`,
+    );
+
+    const hidden = viewModeItems({
+      mode: "delta",
+      layout: "flat",
+      guided: { shown: false, generatedAt: GENERATED_AT },
+    });
+    assert.deepStrictEqual(labels(hidden).slice(1, 5), [
+      "$(blank) Staging",
+      "$(check) Delta",
+      "$(blank) Review",
+      "$(blank) Guided Review",
+    ]);
+  });
+
+  test("the picker opens on the guided review when it is the view in use", async () => {
+    await withPicker(
+      controllerWith("review", "tree", { shown: true }).controller,
+      async ({ activeOnOpen }) => {
+        assert.deepStrictEqual(activeOnOpen, ["$(check) Guided Review"]);
+      },
+    );
+  });
+
+  test("picking the guided review shows it, and picking a file view leaves it", async () => {
+    const { controller, saved } = controllerWith("review", "tree", { shown: false });
+
+    await withPicker(controller, async ({ pick, hidden }) => {
+      await accept(pick, "Guided Review");
+
+      assert.strictEqual(saved.guided, true);
+      assert.strictEqual(hidden(), false, "the picker must stay open after a pick");
+      assert.deepStrictEqual(labels(pick.activeItems), ["$(check) Guided Review"]);
+      assert.ok(labels(pick.items).includes("$(blank) Review"), "no file view stays ticked");
+
+      await accept(pick, "Staging");
+
+      assert.strictEqual(saved.guided, false);
+      assert.deepStrictEqual(saved.mode, "staging");
+      assert.ok(labels(pick.items).includes("$(blank) Guided Review"));
+    });
   });
 
   test("the picker opens with the current view highlighted", async () => {
