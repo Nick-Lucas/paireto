@@ -12,6 +12,9 @@
   <a href="https://marketplace.visualstudio.com/items?itemName=Paireto.paireto">
     <img alt="VS Code Marketplace version" src="https://vsmarketplacebadges.dev/version/Paireto.paireto.svg?label=VS%20Code%20Marketplace" />
   </a>
+  <a href="https://open-vsx.org/extension/Paireto/paireto">
+    <img alt="Open VSX version" src="https://img.shields.io/open-vsx/v/Paireto/paireto?label=Open%20VSX" />
+  </a>
   
   <h4>Pair-programming for your TUI coding agents in VS Code.<br />Planning, review, editing, and worktree management, in one engineer-grade workflow.</h4>
 </div>
@@ -62,7 +65,7 @@ I didn't need a second app, I needed a tighter integration between my agent and 
 
 Paireto comes in two parts:
 
-1. The [**VS Code extension**](https://marketplace.visualstudio.com/items?itemName=Paireto.paireto)
+1. The **VS Code extension**, from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=Paireto.paireto) or [Open VSX](https://open-vsx.org/extension/Paireto/paireto)
 2. Agent plugins (focused on TUI agents)
 
 ### Agent harness setup
