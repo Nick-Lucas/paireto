@@ -11,12 +11,12 @@ function diskUri(target: DiskPath): vscode.Uri {
   return vscode.Uri.file(join(target.repoRoot, target.path));
 }
 
-async function exists(fsPath: string): Promise<boolean> {
+async function identity(fsPath: string): Promise<string | undefined> {
   try {
-    await fs.stat(fsPath);
-    return true;
+    const stat = await fs.stat(fsPath);
+    return `${stat.dev}:${stat.ino}`;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
@@ -32,7 +32,8 @@ async function nameProblem(
   if (isAbsolute(name)) {
     return "The name must be relative to the folder.";
   }
-  if (name !== current && (await exists(join(parent, name)))) {
+  const existing = await identity(join(parent, name));
+  if (existing && (!current || existing !== (await identity(join(parent, current))))) {
     return `A file or folder ${name} already exists at this location.`;
   }
   return undefined;

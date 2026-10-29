@@ -509,8 +509,8 @@ suite("guided review — sidebar rows", () => {
       ],
     );
     const uri = vscode.Uri.file("/ext");
-    const first = changesetFileItem(REPO, state.changesets[0].files[0], uri);
-    const second = changesetFileItem(REPO, state.changesets[1].files[0], uri);
+    const first = changesetFileItem(REPO, state.changesets[0].files[0], uri, false);
+    const second = changesetFileItem(REPO, state.changesets[1].files[0], uri, false);
     assert.notStrictEqual(first.id, second.id);
     assert.strictEqual(first.contextValue, "changedFile:unstaged:planned");
   });
@@ -522,7 +522,7 @@ suite("guided review — sidebar rows", () => {
         [changed("a.ts", group)],
         [{ title: "T", description: "d", files: [{ path: "a.ts" }] }],
       );
-      return changesetFileItem(REPO, state.changesets[0].files[0], uri).iconPath;
+      return changesetFileItem(REPO, state.changesets[0].files[0], uri, false).iconPath;
     };
     // Committed gets the commit glyph; the other two keep the status letter, muted once staged.
     assert.ok(iconOf("committed") instanceof vscode.ThemeIcon);
@@ -534,7 +534,12 @@ suite("guided review — sidebar rows", () => {
 
   test("a planned file with no live change renders as an explicit missing row", () => {
     const state = guidedFor([], [{ title: "T", description: "d", files: [{ path: "gone.ts" }] }]);
-    const item = changesetFileItem(REPO, state.changesets[0].files[0], vscode.Uri.file("/ext"));
+    const item = changesetFileItem(
+      REPO,
+      state.changesets[0].files[0],
+      vscode.Uri.file("/ext"),
+      false,
+    );
     assert.strictEqual(item.description, "no longer in the changes");
     assert.strictEqual(item.contextValue, "changesetFile:missing");
     assert.strictEqual(item.command, undefined, "a missing row has nothing to open");
@@ -612,7 +617,7 @@ suite("guided review — a planned row follows the file through the layers", () 
       [{ repoRoot: repo, displayName: "repo", changes: scoped(repo, changes) }],
       resolve,
     );
-    return changesetFileItem(repo, state.changesets[0].files[0], vscode.Uri.file("/ext"));
+    return changesetFileItem(repo, state.changesets[0].files[0], vscode.Uri.file("/ext"), false);
   };
 
   test("committed, then edited, then staged, then restored", async () => {
