@@ -207,6 +207,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       exposeTestControlPlane({
         agents,
         coordinator,
+        mainTree,
         planReview,
         reviewController,
         repoService,

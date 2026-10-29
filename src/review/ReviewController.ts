@@ -229,6 +229,7 @@ export class ReviewController implements vscode.Disposable {
   private openDiffFile?: OpenDiffState;
   /** Each open diff's state, keyed by its virtual tab URI — lets a tab switch re-select its row. */
   private readonly openDiffs = new Map<string, OpenDiffState>();
+  private unrevealedDiff?: OpenDiffState;
   private openDiffSeq = 0;
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private readonly refreshSeq = new Map<string, number>();
@@ -1426,7 +1427,11 @@ export class ReviewController implements vscode.Disposable {
     if (target) {
       this.openDiffFile = target;
     }
-    if (target && getAutoRevealSetting()) {
+    const unrevealed = target !== undefined && target === this.unrevealedDiff;
+    if (!unrevealed) {
+      this.unrevealedDiff = undefined;
+    }
+    if (target && !unrevealed && getAutoRevealSetting()) {
       this.activeDiffEmitter.fire(target);
     }
   }
@@ -1511,6 +1516,7 @@ export class ReviewController implements vscode.Disposable {
       /** Set when silently re-pointing an already-open tab after a git write (stage/unstage/
        *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
       suppressActiveDiffEvent?: boolean;
+      keepTreeSelection?: boolean;
       ignoreSizeLimit?: boolean;
     },
   ): Promise<OpenedReviewFile | undefined> {
@@ -1547,7 +1553,7 @@ export class ReviewController implements vscode.Disposable {
       if (superseded()) {
         return;
       }
-      if (!show?.suppressActiveDiffEvent) {
+      if (!show?.suppressActiveDiffEvent && !show?.keepTreeSelection) {
         this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
       }
       if (bothSides) {
@@ -1580,7 +1586,10 @@ export class ReviewController implements vscode.Disposable {
       baseLabel,
     };
     const publish = () => {
-      if (!show?.suppressActiveDiffEvent) {
+      if (show?.keepTreeSelection) {
+        this.unrevealedDiff = open;
+      } else if (!show?.suppressActiveDiffEvent) {
+        this.unrevealedDiff = undefined;
         this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
       }
       this.openDiffFile = open;
@@ -2000,6 +2009,7 @@ export class ReviewController implements vscode.Disposable {
             }
           : undefined,
         skipRefresh: true,
+        keepTreeSelection: true,
       });
       if (opened) {
         revealSurface = "review";
