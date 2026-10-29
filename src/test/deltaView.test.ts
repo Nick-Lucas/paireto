@@ -315,6 +315,25 @@ suite("Delta view — rows", () => {
     assert.strictEqual((committed.iconPath as vscode.ThemeIcon).id, "git-commit");
   });
 
+  test("a committed row colours its commit icon by the change status", () => {
+    const colours = (["A", "M", "D", "R"] as const).map((status) => {
+      const [row] = buildDelta(
+        REPO,
+        repository([layer("src/a.ts", "committed", { status })], [net("src/a.ts", { status })])
+          .changes,
+      );
+      const icon = deltaFileItem(row, "delta", false, EXTENSION).iconPath as vscode.ThemeIcon;
+      return [icon.id, icon.color?.id];
+    });
+
+    assert.deepStrictEqual(colours, [
+      ["git-commit", "gitDecoration.addedResourceForeground"],
+      ["git-commit", "gitDecoration.modifiedResourceForeground"],
+      ["git-commit", "gitDecoration.deletedResourceForeground"],
+      ["git-commit", "gitDecoration.renamedResourceForeground"],
+    ]);
+  });
+
   test("a row offers stage and unstage only where that would do work", () => {
     assert.deepStrictEqual(
       (["unstaged", "partial", "staged", "committed"] as const).map(

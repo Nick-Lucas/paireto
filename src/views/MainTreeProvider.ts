@@ -67,6 +67,23 @@ function statusIcon(
   };
 }
 
+const COMMITTED_STATUS_COLOR: Record<FileStatus, string> = {
+  A: "gitDecoration.addedResourceForeground",
+  M: "gitDecoration.modifiedResourceForeground",
+  D: "gitDecoration.deletedResourceForeground",
+  R: "gitDecoration.renamedResourceForeground",
+  C: "gitDecoration.renamedResourceForeground",
+  U: "gitDecoration.untrackedResourceForeground",
+  "!": "gitDecoration.conflictingResourceForeground",
+};
+
+function committedIcon(status: FileStatus): vscode.ThemeIcon {
+  return new vscode.ThemeIcon(
+    GROUP_ICON.committed.icon,
+    new vscode.ThemeColor(COMMITTED_STATUS_COLOR[status]),
+  );
+}
+
 type SectionId = "agents" | "plan" | "changesets" | "files" | "feedback";
 
 type Node =
@@ -881,10 +898,7 @@ export function stageIcon(
 ): vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri } {
   switch (delta.stage) {
     case "committed":
-      return new vscode.ThemeIcon(
-        GROUP_ICON.committed.icon,
-        new vscode.ThemeColor(GROUP_ICON.committed.color),
-      );
+      return committedIcon(delta.status);
     case "staged":
       return statusIcon(extensionUri, delta.status, "staged");
     case "partial":
@@ -1106,14 +1120,12 @@ export function changesetFileItem(
   item.contextValue = `changedFile:${row.file.group}:planned`;
   // The plan lists a file wherever it currently sits, so the row itself has to say which git layer
   // that is — unlike Changed Files, where the group header already does. A committed change gets the
-  // commit glyph; the working tree keeps the usual coloured status letter, and the index the same
-  // letter muted, so staged reads as "already dealt with" without losing what changed.
+  // commit glyph in its status colour; the working tree keeps the usual coloured status letter, and
+  // the index the same letter muted, so staged reads as "already dealt with" without losing what
+  // changed.
   item.iconPath =
     row.file.group === "committed"
-      ? new vscode.ThemeIcon(
-          GROUP_ICON.committed.icon,
-          new vscode.ThemeColor(GROUP_ICON.committed.color),
-        )
+      ? committedIcon(row.file.status)
       : statusIcon(
           extensionUri,
           row.file.status,
