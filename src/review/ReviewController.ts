@@ -48,7 +48,9 @@ import {
   DeltaArg,
   FileArg,
   FilesArg,
+  FolderArg,
   GuidedRowArg,
+  PathArg,
   withArg,
   withSelection,
 } from "./commandArgs.js";
@@ -72,6 +74,7 @@ import {
   type GuidedReviewState,
 } from "./guidedPlan.js";
 import { serialiseRejectedReviewFeedback } from "./reviewFeedback.js";
+import { deleteFiles, newFile, rename } from "./fileOperations.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
 import { getOpeningComment, type ReviewThread } from "./reviewTypes.js";
@@ -301,10 +304,15 @@ export class ReviewController implements vscode.Disposable {
       ),
       reg(
         Commands.reviewCopyPath,
-        withSelection(FileArg, (files) =>
-          vscode.env.clipboard.writeText([...new Set(files.map((file) => file.path))].join("\n")),
+        withSelection(PathArg, (targets) =>
+          vscode.env.clipboard.writeText(
+            [...new Set(targets.map((target) => target.path))].join("\n"),
+          ),
         ),
       ),
+      reg(Commands.reviewNewFile, withArg(FolderArg, newFile)),
+      reg(Commands.reviewRename, withArg(PathArg, rename)),
+      reg(Commands.reviewDelete, withSelection(FileArg, deleteFiles)),
       reg(
         Commands.reviewRevealInExplorer,
         withArg(FileArg, (file) =>

@@ -49,6 +49,29 @@ export const FileArg = z.union([
 ]);
 export type FileArg = z.infer<typeof FileArg>;
 
+export const FolderArg = z
+  .object({
+    kind: z.enum(["folder", "deltaFolder"]),
+    repoRoot: z.string(),
+    entry: z.object({ path: z.string() }),
+  })
+  .transform((node) => ({
+    repoRoot: node.repoRoot,
+    path: node.entry.path,
+    type: "folder" as const,
+  }));
+export type FolderArg = z.infer<typeof FolderArg>;
+
+export const PathArg = z.union([
+  FolderArg,
+  FileArg.transform((file) => ({
+    repoRoot: file.repoRoot,
+    path: file.path,
+    type: "file" as const,
+  })),
+]);
+export type PathArg = z.infer<typeof PathArg>;
+
 /** Every changed file a git action should act on: a folder row means all its descendants, matching
  *  the native git panel; anything else is the one file it names. */
 export const FilesArg = z.union([
