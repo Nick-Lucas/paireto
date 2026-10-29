@@ -5,7 +5,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { canonicalize } from "../protocol/paths.js";
-import type { DeltaFile } from "../review/delta.js";
+import { deletedFromDisk, type DeltaFile } from "../review/delta.js";
 import type { RepoChangedFile } from "../review/ReviewController.js";
 import { changesetFileItem, deltaFileItem, fileItem } from "../views/MainTreeProvider.js";
 
@@ -163,20 +163,45 @@ suite("changed file context menu", () => {
     }
   });
 
-  test("marks the row of a deleted file so Rename and Delete stay hidden", () => {
-    const deleted = changedFile({ status: "D" });
-    assert.strictEqual(fileItem(deleted, EXTENSION).contextValue, "changedFile:unstaged:deleted");
-    assert.strictEqual(fileItem(changedFile(), EXTENSION).contextValue, "changedFile:unstaged");
+  test("a file is gone from disk only when its newest layer deletes it", () => {
+    const at = (
+      filePath: string,
+      group: RepoChangedFile["group"],
+      status: RepoChangedFile["status"],
+    ) => changedFile({ path: filePath, group, status });
+    const gone = deletedFromDisk({
+      unstaged: [
+        at("staged-then-deleted.txt", "unstaged", "D"),
+        at("recreated.txt", "unstaged", "A"),
+      ],
+      staged: [at("staged-then-deleted.txt", "staged", "M"), at("recreated.txt", "staged", "D")],
+      committed: [
+        at("deleted-in-commit.txt", "committed", "D"),
+        at("edited.txt", "committed", "M"),
+      ],
+    });
+    assert.deepStrictEqual([...gone].sort(), ["deleted-in-commit.txt", "staged-then-deleted.txt"]);
+  });
+
+  test("marks the row of a file gone from disk so Rename and Delete stay hidden", () => {
+    const staged = changedFile({ group: "staged" });
+    assert.strictEqual(
+      fileItem(staged, EXTENSION, true).contextValue,
+      "changedFile:staged:deleted",
+    );
+    assert.strictEqual(fileItem(staged, EXTENSION, false).contextValue, "changedFile:staged");
     assert.strictEqual(
       changesetFileItem(
-        deleted.repoRoot,
-        { changesetId: "c", path: deleted.path, file: deleted },
+        staged.repoRoot,
+        { changesetId: "c", path: staged.path, file: staged },
         EXTENSION,
+        true,
       ).contextValue,
-      "changedFile:unstaged:planned:deleted",
+      "changedFile:staged:planned:deleted",
     );
     assert.strictEqual(
-      deltaFileItem(deltaFile(deleted), "delta", false, EXTENSION).contextValue,
+      deltaFileItem(deltaFile(changedFile({ status: "D" })), "delta", false, EXTENSION)
+        .contextValue,
       "deltaFile:delta:stage:deleted",
     );
   });
@@ -292,6 +317,22 @@ suite("changed file operations", () => {
     assert.deepStrictEqual(input.seen[0]?.valueSelection, [0, 1]);
     assert.ok(!fs.existsSync(path.join(root, dir, "a.txt")), "the old name must be gone");
     assert.strictEqual(fs.readFileSync(path.join(root, dir, "b.txt"), "utf8"), "a\n");
+  });
+
+  test("Rename accepts a change to the letter case of the name", async function () {
+    this.timeout(30_000);
+    const input = stubInputBox(undefined);
+    try {
+      await vscode.commands.executeCommand("paireto.review.rename", {
+        kind: "file",
+        file: fileIn("a.txt"),
+      });
+    } finally {
+      input.restore();
+    }
+    const validate = input.seen[0]?.validateInput;
+    assert.ok(validate, "the name prompt must validate its input");
+    assert.ok(!(await validate("A.txt")), "a case only rename must be accepted");
   });
 
   test("Rename on a delta file row refuses a name that is already taken", async function () {

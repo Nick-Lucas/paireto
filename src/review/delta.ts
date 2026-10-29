@@ -69,6 +69,20 @@ export function buildDelta(repoRoot: string, changes: RepositoryChangesModel): D
   return rows.sort((a, b) => a.path.localeCompare(b.path));
 }
 
+export function deletedFromDisk(changes: Pick<RepositoryChangesModel, FileGroup>): Set<string> {
+  const newest = new Map<string, RepoChangedFile>();
+  for (const group of LAYER_ORDER) {
+    for (const file of changes[group]) {
+      if (!newest.has(file.path)) {
+        newest.set(file.path, file);
+      }
+    }
+  }
+  return new Set(
+    [...newest.values()].filter((file) => file.status === "D").map((file) => file.path),
+  );
+}
+
 export function stagingFlags(files: DeltaFile[]): string {
   const layers = files.flatMap((file) => file.layers);
   const stage = layers.some((layer) => layer.group === "unstaged") ? ":stage" : "";
