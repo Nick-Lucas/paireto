@@ -172,6 +172,19 @@
         "title": "Focus in Explorer"
       },
       {
+        "command": "paireto.review.newFile",
+        "title": "New File...",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "paireto.review.rename",
+        "title": "Rename..."
+      },
+      {
+        "command": "paireto.review.delete",
+        "title": "Delete"
+      },
+      {
         "command": "paireto.review.stage",
         "title": "Stage Changes",
         "icon": "$(add)"
@@ -360,6 +373,18 @@
         },
         {
           "command": "paireto.review.revealInExplorer",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.newFile",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.rename",
+          "when": "false"
+        },
+        {
+          "command": "paireto.review.delete",
           "when": "false"
         },
         {
@@ -657,9 +682,34 @@
           "group": "3_copy@1"
         },
         {
+          "command": "paireto.review.copyPath",
+          "when": "view == paireto.main && viewItem =~ /^(folder|deltaFolder)(:|$)/",
+          "group": "3_copy@1"
+        },
+        {
           "command": "paireto.review.revealInExplorer",
           "when": "view == paireto.main && viewItem =~ /^(changedFile|deltaFile):/",
           "group": "4_reveal@1"
+        },
+        {
+          "command": "paireto.review.newFile",
+          "when": "view == paireto.main && viewItem =~ /^(folder|deltaFolder)(:|$)/",
+          "group": "0_new@1"
+        },
+        {
+          "command": "paireto.review.rename",
+          "when": "view == paireto.main && viewItem =~ /^(folder|deltaFolder)(:|$)/",
+          "group": "5_modify@1"
+        },
+        {
+          "command": "paireto.review.rename",
+          "when": "view == paireto.main && viewItem =~ /^(changedFile|deltaFile):(?!.*:deleted)/",
+          "group": "5_modify@1"
+        },
+        {
+          "command": "paireto.review.delete",
+          "when": "view == paireto.main && viewItem =~ /^(changedFile|deltaFile):(?!.*:deleted)/",
+          "group": "5_modify@2"
         },
         {
           "command": "paireto.review.stage",

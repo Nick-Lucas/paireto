@@ -905,6 +905,10 @@ const STAGE_LABEL: Record<StageState, string> = {
   committed: "Committed",
 };
 
+function deletedFlag(status: ChangedFile["status"]): string {
+  return status === "D" ? ":deleted" : "";
+}
+
 export function stageIcon(
   delta: DeltaFile,
   extensionUri: vscode.Uri,
@@ -937,7 +941,7 @@ export function deltaFileItem(
   const counts = `+${delta.additions} -${delta.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${delta.path}\n${statusWord(delta.status)} · ${counts}\n${STAGE_LABEL[delta.stage]}`;
-  item.contextValue = deltaContainerContext("deltaFile", mode, [delta]);
+  item.contextValue = `${deltaContainerContext("deltaFile", mode, [delta])}${deletedFlag(delta.status)}`;
   item.command = { command: Commands.reviewOpenDelta, title: "Open Changes", arguments: [delta] };
   if (mode === "review") {
     item.checkboxState = seen
@@ -1036,7 +1040,7 @@ function agentItem(
 
 /** `scope` namespaces the row id. The same file can legitimately appear under two changesets and in
  *  Changed Files, and VS Code rejects a tree with a duplicate TreeItem.id. */
-function fileItem(
+export function fileItem(
   file: RepoChangedFile,
   extensionUri: vscode.Uri,
   scope = "changes",
@@ -1050,7 +1054,7 @@ function fileItem(
   const counts = `+${file.additions} -${file.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${file.path}\n${statusWord(file.status)} · ${counts}`;
-  item.contextValue = `changedFile:${file.group}`;
+  item.contextValue = `changedFile:${file.group}${deletedFlag(file.status)}`;
   item.command = { command: Commands.reviewOpenDiff, title: "Open Diff", arguments: [file] };
   return item;
 }
@@ -1130,7 +1134,7 @@ export function changesetFileItem(
     return item;
   }
   const item = fileItem(row.file, extensionUri, row.changesetId);
-  item.contextValue = `changedFile:${row.file.group}:planned`;
+  item.contextValue = `changedFile:${row.file.group}:planned${deletedFlag(row.file.status)}`;
 
   item.iconPath =
     row.file.group === "committed"
