@@ -33,11 +33,19 @@ export type ChangedFileArg = z.infer<typeof ChangedFileArg>;
 /** The changed file a command argument names: the file itself, a Changed Files node wrapping one, or
  *  a Review Plan row wrapping one a level further down. A planned row whose path has no live change
  *  carries no file, and resolves to nothing — correct, there is nothing to act on. */
-const DeltaLayersArg = z.object({ layers: z.array(ChangedFileArg).min(1) });
+const DeltaLayersArg = z.object({
+  oldPath: z.string().optional(),
+  layers: z.array(ChangedFileArg).min(1),
+});
+
+const topLayer = (delta: z.infer<typeof DeltaLayersArg>): z.infer<typeof ChangedFileArg> => ({
+  ...delta.layers[0],
+  oldPath: delta.oldPath ?? delta.layers[0].oldPath,
+});
 
 export const DeltaArg = z.union([
-  DeltaLayersArg.transform((delta) => delta.layers[0]),
-  z.object({ delta: DeltaLayersArg }).transform((node) => node.delta.layers[0]),
+  DeltaLayersArg.transform(topLayer),
+  z.object({ delta: DeltaLayersArg }).transform((node) => topLayer(node.delta)),
 ]);
 export type DeltaArg = z.infer<typeof DeltaArg>;
 

@@ -228,6 +228,122 @@ suite("Delta view — merge conflicts", () => {
   });
 });
 
+suite("Delta view — renames", () => {
+  function rowShapes(rows: DeltaFile[]): object[] {
+    return rows.map((row) => ({
+      path: row.path,
+      oldPath: row.oldPath,
+      status: row.status,
+      layers: row.layers.map((l) => `${l.group}:${l.status}`),
+    }));
+  }
+
+  test("a staged rename is one renamed row when unstaged edits hide the rename from Compare To", async () => {
+    const { root, git, write } = makeRepo();
+    try {
+      write("old.txt", "a\nb\nc\nd\ne\nf\ng\nh\n");
+      git(["add", "."]);
+      git(["commit", "-q", "-m", "old"]);
+      git(["mv", "old.txt", "new.txt"]);
+      write("new.txt", "x\ny\n");
+
+      const changes = await new DiffService().getChanges(root, { kind: "head" });
+      const withRoot = (files: typeof changes.staged): RepoChangedFile[] =>
+        files.map((file) => ({ ...file, repoRoot: root }));
+      const rows = buildDelta(root, {
+        ...changes,
+        staged: withRoot(changes.staged),
+        unstaged: withRoot(changes.unstaged),
+        committed: withRoot(changes.committed),
+      });
+
+      assert.deepStrictEqual(rowShapes(rows), [
+        {
+          path: "new.txt",
+          oldPath: "old.txt",
+          status: "R",
+          layers: ["unstaged:M", "staged:R"],
+        },
+      ]);
+      assert.deepStrictEqual(
+        { additions: rows[0].additions, deletions: rows[0].deletions },
+        { additions: 2, deletions: 8 },
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a committed change to the old path joins the renamed row", () => {
+    const rows = buildDelta(
+      REPO,
+      repository(
+        [
+          layer("old.ts", "committed"),
+          layer("new.ts", "staged", { status: "R", oldPath: "old.ts" }),
+        ],
+        [net("new.ts", { status: "R", oldPath: "old.ts" })],
+      ).changes,
+    );
+
+    assert.deepStrictEqual(rowShapes(rows), [
+      { path: "new.ts", oldPath: "old.ts", status: "R", layers: ["staged:R", "committed:M"] },
+    ]);
+  });
+
+  test("the deleted old path joins the row that Compare To sees as a rename", () => {
+    const rows = buildDelta(
+      REPO,
+      repository(
+        [layer("old.ts", "unstaged", { status: "D" }), layer("new.ts", "staged", { status: "A" })],
+        [net("new.ts", { status: "R", oldPath: "old.ts" })],
+      ).changes,
+    );
+
+    assert.deepStrictEqual(rowShapes(rows), [
+      { path: "new.ts", oldPath: "old.ts", status: "R", layers: ["unstaged:D", "staged:A"] },
+    ]);
+  });
+
+  test("a new file at the old path of a rename keeps its own row", () => {
+    const rows = buildDelta(
+      REPO,
+      repository(
+        [
+          layer("new.ts", "staged", { status: "R", oldPath: "old.ts" }),
+          layer("old.ts", "unstaged", { status: "U" }),
+        ],
+        [net("new.ts", { status: "R", oldPath: "old.ts" }), net("old.ts", { status: "U" })],
+      ).changes,
+    );
+
+    assert.deepStrictEqual(rowShapes(rows), [
+      { path: "new.ts", oldPath: "old.ts", status: "R", layers: ["staged:R"] },
+      { path: "old.ts", oldPath: undefined, status: "U", layers: ["unstaged:U"] },
+    ]);
+  });
+
+  test("a renamed row opens against the old path even when its topmost layer is an edit", () => {
+    const [row] = buildDelta(
+      REPO,
+      repository(
+        [
+          layer("new.ts", "unstaged"),
+          layer("new.ts", "staged", { status: "R", oldPath: "old.ts" }),
+        ],
+        [net("new.ts", { status: "A" }), net("old.ts", { status: "D" })],
+      ).changes,
+    );
+
+    const opened = DeltaArg.parse({ kind: "deltaFile", delta: row });
+
+    assert.deepStrictEqual(
+      { path: opened.path, oldPath: opened.oldPath, group: opened.group },
+      { path: "new.ts", oldPath: "old.ts", group: "unstaged" },
+    );
+  });
+});
+
 suite("Delta view — one row per file", () => {
   test("each row says how much of the change is staged", () => {
     const rows = buildDelta(
