@@ -271,6 +271,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     return this.view;
   }
 
+  selectedFilePaths(): string[] {
+    return (this.view?.selection ?? []).flatMap((node) => {
+      switch (node.kind) {
+        case "file":
+          return [node.file.path];
+        case "deltaFile":
+          return [node.delta.path];
+        default:
+          return [];
+      }
+    });
+  }
+
   /** Refresh the activity-bar badge: the changed-file count, like the Git tab. */
   private updateBadge(): void {
     if (!this.view) {
