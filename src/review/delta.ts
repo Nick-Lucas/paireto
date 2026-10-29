@@ -1,4 +1,4 @@
-import type { FileStatus } from "../git/DiffService.js";
+import type { FileStatus, NetChange } from "../git/DiffService.js";
 import type { FileGroup } from "../types.js";
 import type { RepoChangedFile, RepositoryChangesModel } from "./ReviewController.js";
 
@@ -27,28 +27,38 @@ export function stageState(layers: RepoChangedFile[]): StageState {
 }
 
 export function buildDelta(repoRoot: string, changes: RepositoryChangesModel): DeltaFile[] {
+  const rowPath = renameTargets(changes);
   const layersByPath = new Map<string, RepoChangedFile[]>();
   for (const group of LAYER_ORDER) {
     for (const file of changes[group]) {
-      layersByPath.set(file.path, [...(layersByPath.get(file.path) ?? []), file]);
+      const key = rowPath(file.path);
+      layersByPath.set(key, [...(layersByPath.get(key) ?? []), file]);
     }
+  }
+  const netByPath = new Map<string, NetChange[]>();
+  for (const net of changes.net) {
+    const key = rowPath(net.path);
+    netByPath.set(key, [...(netByPath.get(key) ?? []), net]);
   }
   const base = changes.compareRef ?? "HEAD";
   const rows: DeltaFile[] = [];
-  for (const net of changes.net) {
-    const layers = layersByPath.get(net.path);
+  for (const [path, nets] of netByPath) {
+    const layers = layersByPath.get(path);
     if (!layers) {
       continue;
     }
-    layersByPath.delete(net.path);
+    layersByPath.delete(path);
+    const own = nets.find((net) => net.path === path);
+    const moved = nets.find((net) => net.path !== path);
+    const main = own ?? nets[0];
     rows.push({
       repoRoot,
-      path: net.path,
-      oldPath: net.oldPath,
-      status: layers.some((layer) => layer.status === "!") ? "!" : net.status,
-      additions: net.additions,
-      deletions: net.deletions,
-      contentId: net.contentId && `${base}:${net.contentId}`,
+      path,
+      oldPath: own?.oldPath ?? moved?.path,
+      status: layers.some((layer) => layer.status === "!") ? "!" : own && moved ? "R" : main.status,
+      additions: nets.reduce((sum, net) => sum + net.additions, 0),
+      deletions: nets.reduce((sum, net) => sum + net.deletions, 0),
+      contentId: main.contentId && `${base}:${main.contentId}`,
       stage: stageState(layers),
       layers,
     });
@@ -57,7 +67,7 @@ export function buildDelta(repoRoot: string, changes: RepositoryChangesModel): D
     rows.push({
       repoRoot,
       path,
-      oldPath: layers[0].oldPath,
+      oldPath: layers.find((layer) => layer.oldPath !== undefined)?.oldPath,
       status: layers[0].status,
       additions: 0,
       deletions: 0,
@@ -67,6 +77,27 @@ export function buildDelta(repoRoot: string, changes: RepositoryChangesModel): D
     });
   }
   return rows.sort((a, b) => a.path.localeCompare(b.path));
+}
+
+function renameTargets(changes: RepositoryChangesModel): (path: string) => string {
+  const livePaths = new Set(changes.net.filter((net) => net.status !== "D").map((net) => net.path));
+  const renamedTo = new Map<string, string>();
+  for (const entry of [...LAYER_ORDER.flatMap((group) => changes[group]), ...changes.net]) {
+    if (entry.oldPath !== undefined && !livePaths.has(entry.oldPath)) {
+      renamedTo.set(entry.oldPath, entry.path);
+    }
+  }
+  return (path) => {
+    const visited = new Set([path]);
+    let current = path;
+    let next = renamedTo.get(current);
+    while (next !== undefined && !visited.has(next)) {
+      visited.add(next);
+      current = next;
+      next = renamedTo.get(current);
+    }
+    return current;
+  };
 }
 
 export function stagingFlags(files: DeltaFile[]): string {
