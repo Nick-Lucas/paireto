@@ -688,10 +688,10 @@ suite("guided review — command arguments", () => {
   });
 
   test("a feedback row resolves to its comment id, from the node or the model itself", () => {
-    // The Feedback rows carry the model on a `comment` field. The row's own click command passes that
+    // The Feedback rows carry the model on a `thread` field. The row's own click command passes that
     // model, but the inline Delete button is a view/item/context menu — VS Code hands those the NODE.
     const model = { id: "c0", body: "why?" };
-    assert.strictEqual(readArg(CommentIdArg, { kind: "reviewComment", comment: model }), "c0");
+    assert.strictEqual(readArg(CommentIdArg, { kind: "reviewComment", thread: model }), "c0");
     assert.strictEqual(readArg(CommentIdArg, model), "c0");
     assert.strictEqual(readArg(CommentIdArg, { kind: "file" }), undefined);
   });
