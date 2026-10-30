@@ -109,8 +109,8 @@ export type BulkTargetArg = z.infer<typeof BulkTargetArg>;
 
 export const CommentIdArg = z.union([
   z
-    .object({ kind: z.literal("reviewComment"), comment: z.object({ id: z.string() }) })
-    .transform((node) => node.comment.id),
+    .object({ kind: z.literal("reviewComment"), thread: z.object({ id: z.string() }) })
+    .transform((node) => node.thread.id),
   z.object({ id: z.string() }).transform((comment) => comment.id),
 ]);
 export type CommentIdArg = z.infer<typeof CommentIdArg>;
