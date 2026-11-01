@@ -11,7 +11,14 @@ import { DiffService, type NetChange } from "../git/DiffService.js";
 import { BulkTargetArg, DeltaArg, FileArg, FilesArg } from "../review/commandArgs.js";
 import { buildDelta, type DeltaFile } from "../review/delta.js";
 import {
+  buildGuidedState,
+  parseChangesets,
+  toGuidedPlan,
+  type GuidedReviewState,
+} from "../review/guidedPlan.js";
+import {
   ReviewController,
+  selectCommentFile,
   viewModeItems,
   type RepoChangedFile,
   type RepositoryReviewState,
@@ -467,6 +474,7 @@ suite("Review mode — seen files", () => {
 interface TreeUnderTest {
   getChildren(node?: unknown): Array<{ kind: string }>;
   getTreeItem(node: unknown): vscode.TreeItem;
+  getParent(node: unknown): { kind: string; id?: string } | undefined;
   onCheckboxes(items: ReadonlyArray<[unknown, vscode.TreeItemCheckboxState]>): Promise<void>;
 }
 
@@ -475,12 +483,14 @@ function treeIn(
   seen: SeenFiles,
   repo: RepositoryReviewState,
   layout: FileLayout = "tree",
+  guided?: GuidedReviewState,
 ): TreeUnderTest {
   const state: ReviewState = {
     compareTo: { kind: "head" },
     layout,
     mode,
     repositories: [repo],
+    guided,
   };
   return Object.assign(Object.create(MainTreeProvider.prototype), {
     review: { getState: () => state, isSessionActive: () => false, hasComments: () => false },
@@ -614,6 +624,64 @@ suite("Flat layout order", () => {
 
     assert.deepStrictEqual(tree.getChildren(filesSection(tree)).map(rowPath), ordered);
   });
+});
+
+interface MenuItem {
+  command: string;
+  when?: string;
+  group?: string;
+}
+
+const manifest = JSON.parse(
+  fs.readFileSync(path.join(__dirname, "../../package.json"), "utf8"),
+) as { contributes: { menus: Record<string, MenuItem[]> } };
+
+function inlineShows(command: string, contextValue: string | undefined): boolean {
+  return manifest.contributes.menus["view/item/context"]
+    .filter((item) => item.command === command && item.group?.startsWith("inline"))
+    .some((item) => {
+      const pattern = /viewItem =~ \/(.+)\/$/.exec(item.when ?? "");
+      const exact = /viewItem == (\S+)$/.exec(item.when ?? "");
+      assert.ok(pattern || exact, `${command} must be keyed on viewItem, got ${item.when}`);
+      return pattern
+        ? new RegExp(pattern[1]).test(contextValue ?? "")
+        : exact?.[1] === contextValue;
+    });
+}
+
+suite("Guided view — tree", () => {
+  const repo = repository([layer("src/a.ts", "unstaged")], [net("src/a.ts")]);
+  const guided = buildGuidedState(
+    toGuidedPlan(
+      REPO,
+      parseChangesets([{ title: "Auth", description: "login", files: ["src/a.ts"] }]),
+      {},
+    ),
+    [repo],
+    (repository, filePath) =>
+      selectCommentFile(repository.changes, filePath) as RepoChangedFile | undefined,
+  );
+
+  for (const mode of ["staging", "delta", "review"] as const) {
+    test(`over ${mode}, the guided review fills the Changed Files section and keeps its view switchers`, () => {
+      const tree = treeIn(mode, new SeenFiles(new MemoryMemento()), repo, "tree", guided);
+      const section = filesSection(tree);
+      const item = tree.getTreeItem(section);
+      const [changeset] = tree.getChildren(section);
+
+      assert.strictEqual(item.id, "section:files");
+      assert.strictEqual(changeset.kind, "changeset");
+      assert.strictEqual(tree.getParent(changeset)?.id, "files");
+      assert.ok(inlineShows(Commands.reviewPickViewMode, item.contextValue), "View Modes");
+      assert.ok(inlineShows(Commands.reviewPickCompareTo, item.contextValue), "Compare To");
+      assert.ok(!inlineShows(Commands.reviewStageAll, item.contextValue), "no section Stage All");
+      assert.ok(
+        !inlineShows(Commands.reviewUnstageAll, item.contextValue),
+        "no section Unstage All",
+      );
+      assert.strictEqual(item.checkboxState, undefined, "no seen checkbox on the plan");
+    });
+  }
 });
 
 interface ViewModePicker {
