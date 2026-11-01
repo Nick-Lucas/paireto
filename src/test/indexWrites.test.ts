@@ -5,7 +5,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { DiffService } from "../git/DiffService.js";
-import { predictIndexWrite, RepoWriteQueue, type IndexWrite } from "../review/indexWrites.js";
+import {
+  indexWritePaths,
+  predictIndexWrite,
+  RepoWriteQueue,
+  type IndexWrite,
+} from "../review/indexWrites.js";
 import type { RepositoryChangesModel } from "../review/ReviewController.js";
 
 interface Repo {
@@ -69,9 +74,16 @@ async function predictionAndTruth(
   const repo = makeRepo();
   try {
     setup(repo);
-    const predicted = predictIndexWrite(await model(repo.root), paths, write);
+    const before = await model(repo.root);
+    const selected = (write === "stage" ? before.unstaged : before.staged).filter((file) =>
+      paths.includes(file.path),
+    );
+    const writePaths = indexWritePaths(selected);
+    const predicted = predictIndexWrite(before, writePaths, write);
     const diff = new DiffService();
-    await (write === "stage" ? diff.stage(repo.root, paths) : diff.unstage(repo.root, paths));
+    await (write === "stage"
+      ? diff.stage(repo.root, writePaths)
+      : diff.unstage(repo.root, writePaths));
     return { predicted, actual: await model(repo.root) };
   } finally {
     fs.rmSync(repo.root, { recursive: true, force: true });
@@ -172,6 +184,23 @@ suite("Optimistic index writes", () => {
       },
       "unstage",
       "tracked.txt",
+    ],
+    [
+      "unstage a renamed file",
+      (r) => {
+        r.git(["mv", "tracked.txt", "moved.txt"]);
+      },
+      "unstage",
+      "moved.txt",
+    ],
+    [
+      "unstage a renamed file edited since",
+      (r) => {
+        r.git(["mv", "tracked.txt", "moved.txt"]);
+        r.write("moved.txt", "one\ntwo\nthree\n");
+      },
+      "unstage",
+      "moved.txt",
     ],
   ];
   for (const [name, setup, write, file] of placed) {
