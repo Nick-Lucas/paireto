@@ -32,7 +32,13 @@ import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
 import type { SetupPrompt } from "../welcome/installStatus.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import type { AgentState, ChangesMode, FileGroup } from "../types.js";
-import { buildDelta, stagingFlags, type DeltaFile, type StageState } from "../review/delta.js";
+import {
+  buildDelta,
+  deletedFromDisk,
+  stagingFlags,
+  type DeltaFile,
+  type StageState,
+} from "../review/delta.js";
 import type { SeenFiles } from "../review/SeenFiles.js";
 import { repoKey } from "../protocol/paths.js";
 import { describeCompareTo } from "../protocol/guidedReview.js";
@@ -220,6 +226,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   readonly onDidChangeTreeData = this.emitter.event;
   private readonly subs: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
+  private readonly deletedPaths = new WeakMap<RepositoryChangesModel, Set<string>>();
 
   constructor(
     private readonly agents: AgentSessionService,
@@ -506,7 +513,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "changeset":
         return changesetItem(node.repoRoot, node.changeset);
       case "changesetFile":
-        return changesetFileItem(node.repoRoot, node.row, this.extensionUri);
+        return changesetFileItem(
+          node.repoRoot,
+          node.row,
+          this.extensionUri,
+          !!node.row.file && this.isDeletedFromDisk(node.row.file),
+        );
       case "repository": {
         const item = new vscode.TreeItem(
           node.repository.displayName,
@@ -565,7 +577,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return item;
       }
       case "file":
-        return fileItem(node.file, this.extensionUri);
+        return fileItem(node.file, this.extensionUri, this.isDeletedFromDisk(node.file));
       case "agent": {
         const entry = this.coordinator.entryForSession(node.session.sessionId);
         const gate = entry
@@ -779,6 +791,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     return compare ? `${compare} · ${progress}` : progress;
   }
 
+  private isDeletedFromDisk(file: RepoChangedFile): boolean {
+    const changes = this.repository(file.repoRoot)?.changes;
+    if (!changes) {
+      return file.status === "D";
+    }
+    let deleted = this.deletedPaths.get(changes);
+    if (!deleted) {
+      deleted = deletedFromDisk(changes);
+      this.deletedPaths.set(changes, deleted);
+    }
+    return deleted.has(file.path);
+  }
+
   private repository(repoRoot: string): RepositoryReviewState | undefined {
     return this.review.getState().repositories.find((repo) => repo.repoRoot === repoRoot);
   }
@@ -905,6 +930,8 @@ const STAGE_LABEL: Record<StageState, string> = {
   committed: "Committed",
 };
 
+const DELETED_FLAG = ":deleted";
+
 export function stageIcon(
   delta: DeltaFile,
   extensionUri: vscode.Uri,
@@ -937,7 +964,7 @@ export function deltaFileItem(
   const counts = `+${delta.additions} -${delta.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${delta.path}\n${statusWord(delta.status)} · ${counts}\n${STAGE_LABEL[delta.stage]}`;
-  item.contextValue = deltaContainerContext("deltaFile", mode, [delta]);
+  item.contextValue = `${deltaContainerContext("deltaFile", mode, [delta])}${delta.status === "D" ? DELETED_FLAG : ""}`;
   item.command = { command: Commands.reviewOpenDelta, title: "Open Changes", arguments: [delta] };
   if (mode === "review") {
     item.checkboxState = seen
@@ -1036,9 +1063,10 @@ function agentItem(
 
 /** `scope` namespaces the row id. The same file can legitimately appear under two changesets and in
  *  Changed Files, and VS Code rejects a tree with a duplicate TreeItem.id. */
-function fileItem(
+export function fileItem(
   file: RepoChangedFile,
   extensionUri: vscode.Uri,
+  deleted: boolean,
   scope = "changes",
 ): vscode.TreeItem {
   // Colour only the status indicator (a coloured letter, like git), leaving the filename default —
@@ -1050,7 +1078,7 @@ function fileItem(
   const counts = `+${file.additions} -${file.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${file.path}\n${statusWord(file.status)} · ${counts}`;
-  item.contextValue = `changedFile:${file.group}`;
+  item.contextValue = `changedFile:${file.group}${deleted ? DELETED_FLAG : ""}`;
   item.command = { command: Commands.reviewOpenDiff, title: "Open Diff", arguments: [file] };
   return item;
 }
@@ -1117,6 +1145,7 @@ export function changesetFileItem(
   repoRoot: string,
   row: GuidedFileRow,
   extensionUri: vscode.Uri,
+  deleted: boolean,
 ): vscode.TreeItem {
   if (!row.file) {
     // The plan named it but it has no change now (already committed away, reverted, or outside the
@@ -1129,8 +1158,8 @@ export function changesetFileItem(
     item.tooltip = `${row.path}\nNot in the current comparison`;
     return item;
   }
-  const item = fileItem(row.file, extensionUri, row.changesetId);
-  item.contextValue = `changedFile:${row.file.group}:planned`;
+  const item = fileItem(row.file, extensionUri, deleted, row.changesetId);
+  item.contextValue = `changedFile:${row.file.group}:planned${deleted ? DELETED_FLAG : ""}`;
 
   item.iconPath =
     row.file.group === "committed"
