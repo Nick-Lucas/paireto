@@ -18,6 +18,8 @@ export interface DeltaFile {
 
 const LAYER_ORDER: FileGroup[] = ["unstaged", "staged", "committed"];
 
+const CREATED: ReadonlySet<FileStatus> = new Set(["A", "R", "C"]);
+
 export function stageState(layers: RepoChangedFile[]): StageState {
   const has = (group: FileGroup): boolean => layers.some((layer) => layer.group === group);
   if (has("unstaged")) {
@@ -64,6 +66,9 @@ export function buildDelta(repoRoot: string, changes: RepositoryChangesModel): D
     });
   }
   for (const [path, layers] of layersByPath) {
+    if (CREATED.has(layers[layers.length - 1].status) && layers[0].status === "D") {
+      continue;
+    }
     rows.push({
       repoRoot,
       path,

@@ -19,7 +19,7 @@ import {
   type ViewModeItem,
 } from "../review/ReviewController.js";
 import { SeenFiles } from "../review/SeenFiles.js";
-import type { ChangesMode, FileGroup, FileLayout } from "../types.js";
+import type { ChangesMode, CompareTo, FileGroup, FileLayout } from "../types.js";
 import { buildFileTree } from "../views/fileTree.js";
 import { deltaFileItem, MainTreeProvider } from "../views/MainTreeProvider.js";
 
@@ -238,6 +238,18 @@ suite("Delta view — renames", () => {
     }));
   }
 
+  async function liveRows(root: string, compareTo: CompareTo): Promise<DeltaFile[]> {
+    const changes = await new DiffService().getChanges(root, compareTo);
+    const withRoot = (files: typeof changes.staged): RepoChangedFile[] =>
+      files.map((file) => ({ ...file, repoRoot: root }));
+    return buildDelta(root, {
+      ...changes,
+      staged: withRoot(changes.staged),
+      unstaged: withRoot(changes.unstaged),
+      committed: withRoot(changes.committed),
+    });
+  }
+
   test("a staged rename is one renamed row when unstaged edits hide the rename from Compare To", async () => {
     const { root, git, write } = makeRepo();
     try {
@@ -247,15 +259,7 @@ suite("Delta view — renames", () => {
       git(["mv", "old.txt", "new.txt"]);
       write("new.txt", "x\ny\n");
 
-      const changes = await new DiffService().getChanges(root, { kind: "head" });
-      const withRoot = (files: typeof changes.staged): RepoChangedFile[] =>
-        files.map((file) => ({ ...file, repoRoot: root }));
-      const rows = buildDelta(root, {
-        ...changes,
-        staged: withRoot(changes.staged),
-        unstaged: withRoot(changes.unstaged),
-        committed: withRoot(changes.committed),
-      });
+      const rows = await liveRows(root, { kind: "head" });
 
       assert.deepStrictEqual(rowShapes(rows), [
         {
@@ -272,6 +276,52 @@ suite("Delta view — renames", () => {
     } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  test("a file added on the branch and then renamed lists only what git diff against Compare To lists", async () => {
+    const { root, git, write } = makeRepo();
+    try {
+      git(["checkout", "-q", "-b", "feature"]);
+      write("old.txt", "a\nb\nc\nd\ne\nf\ng\nh\n");
+      git(["add", "old.txt"]);
+      git(["commit", "-q", "-m", "old"]);
+      git(["mv", "old.txt", "new.txt"]);
+      write("new.txt", "x\ny\n");
+      const main: CompareTo = { kind: "ref", ref: "main" };
+
+      assert.deepStrictEqual(
+        (await liveRows(root, main)).map((row) => [row.status, row.path, row.stage]),
+        [["A", "new.txt", "partial"]],
+      );
+
+      git(["add", "new.txt"]);
+
+      assert.match(git(["diff", "--cached", "--name-status"]), /^D\told\.txt$/m);
+      assert.strictEqual(git(["diff", "main", "--name-status"]), "A\tnew.txt");
+      assert.deepStrictEqual(
+        (await liveRows(root, main)).map((row) => [row.status, row.path, row.stage]),
+        [["A", "new.txt", "staged"]],
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a file that is on neither Compare To nor disk gets no row", () => {
+    const rows = buildDelta(
+      REPO,
+      repository(
+        [
+          layer("gone.ts", "staged", { status: "D" }),
+          layer("gone.ts", "committed", { status: "A" }),
+          layer("dropped.ts", "unstaged", { status: "D" }),
+          layer("dropped.ts", "staged", { status: "A" }),
+        ],
+        [],
+      ).changes,
+    );
+
+    assert.deepStrictEqual(rowShapes(rows), []);
   });
 
   test("a committed change to the old path joins the renamed row", () => {
