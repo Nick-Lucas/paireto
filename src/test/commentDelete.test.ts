@@ -7,6 +7,8 @@ import * as assert from "node:assert";
 import * as vscode from "vscode";
 
 import { Commands } from "../config.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
+import { MainTreeProvider } from "../views/MainTreeProvider.js";
 import {
   activateForFixtureRepo,
   inspect,
@@ -35,7 +37,13 @@ suite("deleting a comment from the sidebar", () => {
 
   /** The tree node VS Code hands a `view/item/context` command — what the Delete button passes. */
   function rowNode(id: string): unknown {
-    return { kind: "reviewComment", comment: { id } };
+    const thread = { id, items: [] } as unknown as ReviewThread;
+    const tree = Object.assign(Object.create(MainTreeProvider.prototype), {
+      review: { getComments: () => [thread] },
+    }) as MainTreeProvider;
+    const [node] = tree.getChildren({ kind: "section", id: "feedback", label: "Feedback" });
+    assert.strictEqual(node?.kind, "reviewComment", "the Feedback section lists the comment row");
+    return node;
   }
 
   /** Queue one file comment and return ITS id. Another suite's comments share this bucket, so the

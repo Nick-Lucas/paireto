@@ -82,6 +82,7 @@ import {
   unresolveThread,
 } from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
+import { predictIndexWrite, RepoWriteQueue, type IndexWrite } from "./indexWrites.js";
 import {
   contextKey,
   FeedbackSession,
@@ -229,6 +230,7 @@ export class ReviewController implements vscode.Disposable {
   private openDiffFile?: OpenDiffState;
   /** Each open diff's state, keyed by its virtual tab URI — lets a tab switch re-select its row. */
   private readonly openDiffs = new Map<string, OpenDiffState>();
+  private unrevealedDiff?: OpenDiffState;
   private openDiffSeq = 0;
   /** Monotonic refresh id so a slow/stale `getChanges` can't overwrite a newer result. */
   private readonly refreshSeq = new Map<string, number>();
@@ -242,6 +244,7 @@ export class ReviewController implements vscode.Disposable {
     fullRefresh: (reason) => this.refresh(reason),
     fireChange: () => this.changeEmitter.fire(),
   };
+  private readonly indexWrites = new RepoWriteQueue();
   /** Per-reason refresh() tally, read by the env-gated test control plane (nothing else). */
   private readonly refreshCounts = new Map<string, number>();
 
@@ -855,6 +858,7 @@ export class ReviewController implements vscode.Disposable {
         }
         if (
           this.refreshSeq.get(root.repoRoot) !== seq ||
+          this.indexWrites.isBusy(root.repoRoot) ||
           !this.roots.gitRoots.some((candidate) => candidate.repoRoot === root.repoRoot)
         ) {
           this.debug(`refresh(${reason}) ${root.repoRoot} #${seq}: superseded`);
@@ -1078,26 +1082,7 @@ export class ReviewController implements vscode.Disposable {
     if (!(await this.confirmStageConflicts(files))) {
       return;
     }
-    const byRoot = [...filesByRoot(files)];
-    try {
-      for (const [repoRoot, repoFiles] of byRoot) {
-        await this.diff.stage(
-          repoRoot,
-          repoFiles.map((f) => f.path),
-        );
-      }
-    } finally {
-      // One scan after every repository is written. The tab reconcile below reads that model, and
-      // a write that throws part way still leaves the repositories before it described correctly.
-      await this.refresh("write-op");
-    }
-    for (const [repoRoot, repoFiles] of byRoot) {
-      await this.reconcileOpenDiffsAfterWrite(
-        repoRoot,
-        repoFiles.map((f) => f.path),
-        "staged",
-      );
-    }
+    await this.writeIndex(files, "stage");
   }
 
   /**
@@ -1136,23 +1121,45 @@ export class ReviewController implements vscode.Disposable {
   }
 
   private async unstageFiles(files: RepoChangedFile[]): Promise<void> {
-    const byRoot = [...filesByRoot(files)];
+    await this.writeIndex(files, "unstage");
+  }
+
+  private async writeIndex(files: RepoChangedFile[], write: IndexWrite): Promise<void> {
+    const byRoot = [...filesByRoot(files)].map(
+      ([repoRoot, repoFiles]) => [repoRoot, repoFiles.map((f) => f.path)] as const,
+    );
+    for (const [repoRoot, paths] of byRoot) {
+      const state = this.repositoryStates.get(repoRoot);
+      if (state) {
+        this.refreshSeq.set(repoRoot, (this.refreshSeq.get(repoRoot) ?? 0) + 1);
+        this.repositoryStates.set(repoRoot, {
+          ...state,
+          changes: predictIndexWrite(state.changes, paths, write),
+        });
+      }
+    }
+    this.changeEmitter.fire();
     try {
-      for (const [repoRoot, repoFiles] of byRoot) {
-        await this.diff.unstage(
+      await Promise.all(
+        byRoot.map(([repoRoot, paths]) =>
+          this.indexWrites.run(repoRoot, () =>
+            write === "stage"
+              ? this.diff.stage(repoRoot, paths)
+              : this.diff.unstage(repoRoot, paths),
+          ),
+        ),
+      );
+      for (const [repoRoot, paths] of byRoot) {
+        await this.reconcileOpenDiffsAfterWrite(
           repoRoot,
-          repoFiles.map((f) => f.path),
+          paths,
+          write === "stage" ? "staged" : "unstaged",
         );
       }
     } finally {
-      await this.refresh("write-op");
-    }
-    for (const [repoRoot, repoFiles] of byRoot) {
-      await this.reconcileOpenDiffsAfterWrite(
-        repoRoot,
-        repoFiles.map((f) => f.path),
-        "unstaged",
-      );
+      if (byRoot.some(([repoRoot]) => !this.indexWrites.isBusy(repoRoot))) {
+        await this.refresh("write-op");
+      }
     }
   }
 
@@ -1426,7 +1433,11 @@ export class ReviewController implements vscode.Disposable {
     if (target) {
       this.openDiffFile = target;
     }
-    if (target && getAutoRevealSetting()) {
+    const unrevealed = target !== undefined && target === this.unrevealedDiff;
+    if (!unrevealed) {
+      this.unrevealedDiff = undefined;
+    }
+    if (target && !unrevealed && getAutoRevealSetting()) {
       this.activeDiffEmitter.fire(target);
     }
   }
@@ -1511,6 +1522,7 @@ export class ReviewController implements vscode.Disposable {
       /** Set when silently re-pointing an already-open tab after a git write (stage/unstage/
        *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
       suppressActiveDiffEvent?: boolean;
+      keepTreeSelection?: boolean;
       ignoreSizeLimit?: boolean;
     },
   ): Promise<OpenedReviewFile | undefined> {
@@ -1547,7 +1559,7 @@ export class ReviewController implements vscode.Disposable {
       if (superseded()) {
         return;
       }
-      if (!show?.suppressActiveDiffEvent) {
+      if (!show?.suppressActiveDiffEvent && !show?.keepTreeSelection) {
         this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
       }
       if (bothSides) {
@@ -1580,7 +1592,10 @@ export class ReviewController implements vscode.Disposable {
       baseLabel,
     };
     const publish = () => {
-      if (!show?.suppressActiveDiffEvent) {
+      if (show?.keepTreeSelection) {
+        this.unrevealedDiff = open;
+      } else if (!show?.suppressActiveDiffEvent) {
+        this.unrevealedDiff = undefined;
         this.activeDiffEmitter.fire({ repoRoot, group: file.group, path: file.path });
       }
       this.openDiffFile = open;
@@ -2000,6 +2015,7 @@ export class ReviewController implements vscode.Disposable {
             }
           : undefined,
         skipRefresh: true,
+        keepTreeSelection: true,
       });
       if (opened) {
         revealSurface = "review";

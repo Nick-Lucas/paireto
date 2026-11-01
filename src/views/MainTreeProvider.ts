@@ -36,7 +36,7 @@ import { buildDelta, stagingFlags, type DeltaFile, type StageState } from "../re
 import type { SeenFiles } from "../review/SeenFiles.js";
 import { repoKey } from "../protocol/paths.js";
 import { describeCompareTo } from "../protocol/guidedReview.js";
-import { buildFileTree, filesInEntry, type TreeEntry } from "./fileTree.js";
+import { buildFileTree, filesInEntry, sortByDirectory, type TreeEntry } from "./fileTree.js";
 
 // Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
 // per-status SVG so the colour stays on the indicator only (a FileDecoration would tint the whole
@@ -65,6 +65,23 @@ function statusIcon(
     light: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-light.svg`),
     dark: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-dark.svg`),
   };
+}
+
+const COMMITTED_STATUS_COLOR: Record<FileStatus, string> = {
+  A: "gitDecoration.addedResourceForeground",
+  M: "gitDecoration.modifiedResourceForeground",
+  D: "gitDecoration.deletedResourceForeground",
+  R: "gitDecoration.renamedResourceForeground",
+  C: "gitDecoration.renamedResourceForeground",
+  U: "gitDecoration.untrackedResourceForeground",
+  "!": "gitDecoration.conflictingResourceForeground",
+};
+
+function committedIcon(status: FileStatus): vscode.ThemeIcon {
+  return new vscode.ThemeIcon(
+    GROUP_ICON.committed.icon,
+    new vscode.ThemeColor(COMMITTED_STATUS_COLOR[status]),
+  );
 }
 
 type SectionId = "agents" | "plan" | "changesets" | "files" | "feedback";
@@ -269,6 +286,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     );
     this.updateBadge();
     return this.view;
+  }
+
+  selectedFilePaths(): string[] {
+    return (this.view?.selection ?? []).flatMap((node) => {
+      switch (node.kind) {
+        case "file":
+          return [node.file.path];
+        case "deltaFile":
+          return [node.delta.path];
+        default:
+          return [];
+      }
+    });
   }
 
   /** Refresh the activity-bar badge: the changed-file count, like the Git tab. */
@@ -710,7 +740,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return [placeholder("No changes")];
       }
       return layout === "flat"
-        ? deltas.map((delta) => ({ kind: "deltaFile", delta }) as Node)
+        ? sortByDirectory(deltas).map((delta) => ({ kind: "deltaFile", delta }) as Node)
         : buildFileTree(deltas).map((e) => deltaEntryToNode(e, repository.repoRoot));
     }
     const { changes, repoRoot } = repository;
@@ -732,7 +762,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const changes = this.repository(repoRoot)?.changes ?? emptyChanges();
     const files = changes[group];
     if (layout === "flat") {
-      return files.map((file) => ({ kind: "file", file }) as Node);
+      return sortByDirectory(files).map((file) => ({ kind: "file", file }) as Node);
     }
     return buildFileTree(files).map((e) => entryToNode(e, repoRoot, group));
   }
@@ -881,10 +911,7 @@ export function stageIcon(
 ): vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri } {
   switch (delta.stage) {
     case "committed":
-      return new vscode.ThemeIcon(
-        GROUP_ICON.committed.icon,
-        new vscode.ThemeColor(GROUP_ICON.committed.color),
-      );
+      return committedIcon(delta.status);
     case "staged":
       return statusIcon(extensionUri, delta.status, "staged");
     case "partial":
@@ -1104,16 +1131,10 @@ export function changesetFileItem(
   }
   const item = fileItem(row.file, extensionUri, row.changesetId);
   item.contextValue = `changedFile:${row.file.group}:planned`;
-  // The plan lists a file wherever it currently sits, so the row itself has to say which git layer
-  // that is — unlike Changed Files, where the group header already does. A committed change gets the
-  // commit glyph; the working tree keeps the usual coloured status letter, and the index the same
-  // letter muted, so staged reads as "already dealt with" without losing what changed.
+
   item.iconPath =
     row.file.group === "committed"
-      ? new vscode.ThemeIcon(
-          GROUP_ICON.committed.icon,
-          new vscode.ThemeColor(GROUP_ICON.committed.color),
-        )
+      ? committedIcon(row.file.status)
       : statusIcon(
           extensionUri,
           row.file.status,

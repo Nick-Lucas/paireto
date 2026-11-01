@@ -315,6 +315,25 @@ suite("Delta view — rows", () => {
     assert.strictEqual((committed.iconPath as vscode.ThemeIcon).id, "git-commit");
   });
 
+  test("a committed row colours its commit icon by the change status", () => {
+    const colours = (["A", "M", "D", "R"] as const).map((status) => {
+      const [row] = buildDelta(
+        REPO,
+        repository([layer("src/a.ts", "committed", { status })], [net("src/a.ts", { status })])
+          .changes,
+      );
+      const icon = deltaFileItem(row, "delta", false, EXTENSION).iconPath as vscode.ThemeIcon;
+      return [icon.id, icon.color?.id];
+    });
+
+    assert.deepStrictEqual(colours, [
+      ["git-commit", "gitDecoration.addedResourceForeground"],
+      ["git-commit", "gitDecoration.modifiedResourceForeground"],
+      ["git-commit", "gitDecoration.deletedResourceForeground"],
+      ["git-commit", "gitDecoration.renamedResourceForeground"],
+    ]);
+  });
+
   test("a row offers stage and unstage only where that would do work", () => {
     assert.deepStrictEqual(
       (["unstaged", "partial", "staged", "committed"] as const).map(
@@ -451,10 +470,15 @@ interface TreeUnderTest {
   onCheckboxes(items: ReadonlyArray<[unknown, vscode.TreeItemCheckboxState]>): Promise<void>;
 }
 
-function treeIn(mode: ChangesMode, seen: SeenFiles, repo: RepositoryReviewState): TreeUnderTest {
+function treeIn(
+  mode: ChangesMode,
+  seen: SeenFiles,
+  repo: RepositoryReviewState,
+  layout: FileLayout = "tree",
+): TreeUnderTest {
   const state: ReviewState = {
     compareTo: { kind: "head" },
-    layout: "tree",
+    layout,
     mode,
     repositories: [repo],
   };
@@ -546,6 +570,49 @@ suite("Review mode — tree", () => {
       ["deltaFolder", "deltaFile"],
     );
     assert.strictEqual(tree.getTreeItem(section).contextValue, "section:files:delta:stage:unstage");
+  });
+});
+
+suite("Flat layout order", () => {
+  const paths = [
+    "src/views/b.ts",
+    "src/a.ts",
+    "README.md",
+    "src/z.ts",
+    "src/views/a.ts",
+    "docs/x.md",
+  ];
+  const ordered = [
+    "README.md",
+    "docs/x.md",
+    "src/a.ts",
+    "src/z.ts",
+    "src/views/a.ts",
+    "src/views/b.ts",
+  ];
+  const rowPath = (node: unknown): string =>
+    (node as { file?: { path: string }; delta?: { path: string } }).file?.path ??
+    (node as { delta: { path: string } }).delta.path;
+
+  test("Staging mode lists a group's files by directory path, then file name", () => {
+    const repo = repository(
+      paths.map((p) => layer(p, "unstaged")),
+      paths.map((p) => net(p)),
+    );
+    const tree = treeIn("staging", new SeenFiles(new MemoryMemento()), repo, "flat");
+    const [group] = tree.getChildren(filesSection(tree));
+
+    assert.deepStrictEqual(tree.getChildren(group).map(rowPath), ordered);
+  });
+
+  test("Delta mode lists files by directory path, then file name", () => {
+    const repo = repository(
+      paths.map((p) => layer(p, "unstaged")),
+      paths.map((p) => net(p)),
+    );
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "flat");
+
+    assert.deepStrictEqual(tree.getChildren(filesSection(tree)).map(rowPath), ordered);
   });
 });
 
