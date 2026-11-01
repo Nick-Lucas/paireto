@@ -1131,11 +1131,7 @@ export function changesetFileItem(
   }
   const item = fileItem(row.file, extensionUri, row.changesetId);
   item.contextValue = `changedFile:${row.file.group}:planned`;
-  // The plan lists a file wherever it currently sits, so the row itself has to say which git layer
-  // that is — unlike Changed Files, where the group header already does. A committed change gets the
-  // commit glyph in its status colour; the working tree keeps the usual coloured status letter, and
-  // the index the same letter muted, so staged reads as "already dealt with" without losing what
-  // changed.
+
   item.iconPath =
     row.file.group === "committed"
       ? committedIcon(row.file.status)
