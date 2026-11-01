@@ -56,7 +56,9 @@ suite("staging files in quick succession (activated extension)", () => {
       "no stage may fail",
     );
     assert.deepStrictEqual(
-      git(["diff", "--cached", "--name-only", "--", ...NAMES]).split("\n").sort(),
+      git(["diff", "--cached", "--name-only", "--", ...NAMES])
+        .split("\n")
+        .sort(),
       NAMES,
       "every file must be in the index",
     );
