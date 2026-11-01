@@ -24,7 +24,7 @@
     "compile-tests": "rm -rf out && tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
-    "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview",
+    "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview && tsc -p src/uml/webview",
     "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "dedent": "^1.7.2",
+    "elkjs": "^0.12.0",
     "immer": "^11.2.9",
     "jsonc-parser": "^3.3.1",
     "nanoid": "^6.0.2",
@@ -157,6 +158,11 @@
       {
         "command": "paireto.review.openDiff",
         "title": "Open Changes"
+      },
+      {
+        "command": "paireto.review.openUml",
+        "title": "Paireto: Open UML Diff",
+        "icon": "$(type-hierarchy)"
       },
       {
         "command": "paireto.review.openFile",
@@ -454,6 +460,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "paireto.review.openUml",
+          "when": "paireto.reviewDiffActive",
+          "group": "navigation@2"
+        },
+        {
           "command": "paireto.gate.approve",
           "when": "resourceScheme == paireto-plan && !paireto.gateHasFeedback && !paireto.gateAnswered",
           "group": "navigation@1"
@@ -530,6 +541,11 @@
           "command": "paireto.review.pickViewMode",
           "when": "view == paireto.main && viewItem =~ /^section:files/",
           "group": "inline@2"
+        },
+        {
+          "command": "paireto.review.openUml",
+          "when": "view == paireto.main && viewItem =~ /^section:files/",
+          "group": "inline@3"
         },
         {
           "command": "paireto.review.unstageAll",
@@ -728,6 +744,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "paireto.review.openUml",
+          "when": "view == paireto.main",
+          "group": "navigation@2"
+        },
         {
           "command": "paireto.review.refresh",
           "when": "view == paireto.main",

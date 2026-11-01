@@ -1512,6 +1512,7 @@ export class ReviewController implements vscode.Disposable {
        *  discard) — that's not a user-driven focus change, so don't reveal/select its tree row. */
       suppressActiveDiffEvent?: boolean;
       ignoreSizeLimit?: boolean;
+      focus?: { side: "base" | "modified"; line: number };
     },
   ): Promise<OpenedReviewFile | undefined> {
     const seq = show?.suppressActiveDiffEvent ? undefined : ++this.openDiffSeq;
@@ -1620,6 +1621,7 @@ export class ReviewController implements vscode.Disposable {
     const modifiedLabel = editable ? "Working Tree" : GROUP_LABEL[file.group];
     const title = `${name} (${modifiedLabel} vs ${baseLabel})`;
 
+    const lineRange = (line: number) => new vscode.Range(line, 0, line, 0);
     const openSinglePane = async (paneUri: vscode.Uri): Promise<OpenedReviewFile> => {
       publish();
       if (paneUri.scheme === Schemes.review) {
@@ -1629,6 +1631,7 @@ export class ReviewController implements vscode.Disposable {
         preview: show?.preview ?? true,
         viewColumn: show?.viewColumn,
         preserveFocus: show?.preserveFocus,
+        selection: show?.focus ? lineRange(show.focus.line) : undefined,
       });
       this.syncActiveDiffContext();
       void ensureCommentingVisible();
@@ -1694,6 +1697,7 @@ export class ReviewController implements vscode.Disposable {
       preview: show?.preview ?? true,
       viewColumn: show?.viewColumn,
       preserveFocus: show?.preserveFocus,
+      selection: show?.focus?.side === "modified" ? lineRange(show.focus.line) : undefined,
     });
     this.syncActiveDiffContext();
     void ensureCommentingVisible();
@@ -2148,6 +2152,39 @@ export class ReviewController implements vscode.Disposable {
         ? plannedBaseComparison(this.diff.fileSides(file, changes.compareRef), changes)
         : undefined,
     });
+  }
+
+  async openAgainstCompareToAt(
+    file: RepoChangedFile,
+    focus: { side: "base" | "modified"; start: number; end: number },
+  ): Promise<vscode.TextEditor | undefined> {
+    const changes = this.changesFor(file.repoRoot);
+    const opened = await this.openDiff(file, {
+      viewColumn: vscode.ViewColumn.Beside,
+      preserveFocus: true,
+      baseComparison: changes
+        ? plannedBaseComparison(this.diff.fileSides(file, changes.compareRef), changes)
+        : undefined,
+      focus: { side: focus.side, line: focus.start },
+    });
+    if (!opened) {
+      return undefined;
+    }
+    const wanted = (focus.side === "base" ? opened.baseUri : opened.modifiedUri).toString();
+    const target =
+      opened.visibleUris.find((uri) => uri.toString() === wanted) ?? opened.visibleUris[0];
+    const editor = await visibleEditorFor(target, opened.visibleUris.length > 1, focus.start);
+    if (!editor) {
+      return undefined;
+    }
+    const line = Math.min(focus.start, editor.document.lineCount - 1);
+    const column = editor.document.lineAt(line).firstNonWhitespaceCharacterIndex;
+    editor.selection = new vscode.Selection(line, column, line, column);
+    editor.revealRange(
+      new vscode.Range(Math.max(0, line - 2), 0, Math.max(0, line - 2), 0),
+      vscode.TextEditorRevealType.AtTop,
+    );
+    return editor;
   }
 
   /** The changeset an id names, resolved against the live plan. */
@@ -2892,5 +2929,38 @@ function groupEqual(a: ChangedFile[], b: ChangedFile[]): boolean {
       x.additions === y.additions &&
       x.deletions === y.deletions
     );
+  });
+}
+
+async function visibleEditorFor(
+  uri: vscode.Uri,
+  inDiff: boolean,
+  line: number,
+): Promise<vscode.TextEditor | undefined> {
+  const key = uri.toString();
+  const find = (): vscode.TextEditor | undefined => {
+    const candidates = vscode.window.visibleTextEditors.filter(
+      (editor) =>
+        editor.document.uri.toString() === key && (editor.viewColumn === undefined) === inDiff,
+    );
+    return candidates.find((editor) => editor.selection.active.line === line) ?? candidates[0];
+  };
+  const now = find();
+  if (now) {
+    return now;
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      listener.dispose();
+      resolve(find());
+    }, 1000);
+    const listener = vscode.window.onDidChangeVisibleTextEditors(() => {
+      const editor = find();
+      if (editor) {
+        clearTimeout(timer);
+        listener.dispose();
+        resolve(editor);
+      }
+    });
   });
 }

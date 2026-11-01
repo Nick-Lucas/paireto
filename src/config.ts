@@ -24,6 +24,7 @@ export const Commands = {
   reviewPickDiffCompareTo: "paireto.review.pickDiffCompareTo",
   reviewPickViewMode: "paireto.review.pickViewMode",
   reviewOpenDelta: "paireto.review.openDelta",
+  reviewOpenUml: "paireto.review.openUml",
   reviewRefresh: "paireto.review.refresh",
   reviewOpenDiff: "paireto.review.openDiff",
   reviewOpenFile: "paireto.review.openFile",
@@ -92,5 +93,6 @@ export const StateKeys = {
   fileLayout: "paireto.fileLayout",
   changesMode: "paireto.changesMode",
   seenFiles: "paireto.seenFiles",
+  umlView: "paireto.umlView",
   recentRefs: "paireto.recentRefs",
 } as const;

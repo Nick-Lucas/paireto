@@ -13,7 +13,7 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
 - [Contents](#contents)
 - [Features at a glance](#features-at-a-glance)
 - [Installation](#installation)
-    - [Agent harness setup](#agent-harness-setup)
+  - [Agent harness setup](#agent-harness-setup)
 - [Why Paireto?](#why-paireto)
 - [Agent support](#agent-support)
 - [Workflows](#workflows)
@@ -21,19 +21,21 @@ Paireto brings pair-programming to your TUI coding agents in VS Code: planning, 
   - [Review Mode](#review-mode)
   - [Guided Review](#guided-review)
   - [Changed Files view](#changed-files-view)
+  - [UML Diff](#uml-diff)
   - [Switch repo or worktree](#switch-repo-or-worktree)
 - [Troubleshooting](#troubleshooting)
 
 # Features at a glance
 
-| Feature | What it does |
-| --- | --- |
-| 🤖 **Agent status** | Live status and notifications from your agent |
-| 👩🏽‍💻 **Changed Files** | Edit from any git comparison and multiple view modes |
-| 📋 **Plan review** | Feed back on agent plans before implementation |
-| 🔍 **Code review** | Review completed agent code before accepting it |
-| 🧭 **Guided review** | Your agent groups a branch's changes into described changesets to read in order |
-| 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visiblity |
+| Feature                      | What it does                                                                    |
+| ---------------------------- | ------------------------------------------------------------------------------- |
+| 🤖 **Agent status**          | Live status and notifications from your agent                                   |
+| 👩🏽‍💻 **Changed Files**         | Edit from any git comparison and multiple view modes                            |
+| 🧩 **UML Diff**              | See a comparison as a UML class diagram and open each change in the native diff |
+| 📋 **Plan review**           | Feed back on agent plans before implementation                                  |
+| 🔍 **Code review**           | Review completed agent code before accepting it                                 |
+| 🧭 **Guided review**         | Your agent groups a branch's changes into described changesets to read in order |
+| 🗂️ **Repository & Worktree** | Management and switching, with multi-repo agent visiblity                       |
 
 # Installation
 
@@ -61,14 +63,14 @@ I didn't need a second app, I needed a tighter integration between my agent and 
 
 Paireto's architecture is agent-agnostic, but still in development. We currently support
 
-| Agent | Status |
-| --- | --- |
-| **Claude Code** | ✅ Supported |
-| **Codex TUI** | ✅ Supported |
-| **Kiro CLI v3** | ✅ Supported (V3+ only) |
-| **OpenCode TUI** | ✅ Supported |
-| **Pi** | ✅ Supported |
-| Others? | ＃ Open an Issue |
+| Agent            | Status                  |
+| ---------------- | ----------------------- |
+| **Claude Code**  | ✅ Supported            |
+| **Codex TUI**    | ✅ Supported            |
+| **Kiro CLI v3**  | ✅ Supported (V3+ only) |
+| **OpenCode TUI** | ✅ Supported            |
+| **Pi**           | ✅ Supported            |
+| Others?          | ＃ Open an Issue        |
 
 # Workflows
 
@@ -82,7 +84,7 @@ When your agent finishes planning, the plan opens in Paireto. You can leave inli
 
 When your agent tries to end its turn with any changes made, a review is (by default) started automatically. You can also start a review at any time with the `/paireto:review` skill. (Note: Kiro is not automatic due to harness limitations)
 
-Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish. 
+Diffs are fully functional editors with LSPs and linters working as normal. Add inline comment from VS Code edit or diff tabs. Click **Send Feedback** to hand over your comments, or **Approve** to let the agent finish.
 
 ## Guided Review
 
@@ -107,16 +109,68 @@ Use the **View Modes** button on the section to pick the layout (tree or flat) a
   repository, or the Changed Files row to mark all the files below it. A seen file has a grey status
   letter. A file you marked becomes unseen again when its content changes.
 
+## UML Diff
+
+**UML Diff** shows the Compare To comparison as a UML class diagram, so you can see the structure and
+impact of a change before you read the code. Open it with the type-hierarchy button in the Paireto
+view's title bar, on the Changed Files row, or in the title bar of any Paireto diff. You can also run
+`Paireto: Open UML Diff`.
+
+- Classes, interfaces, enums and structs show their fields and methods with UML relationship lines:
+  generalization, realization, association (with multiplicity) and dependency. Files with only
+  top-level functions show as a «module» box.
+- Badges mark each change: **A** added, **D** removed, **M** changed, and **S** for a member whose
+  signature changed. A header pill counts `+added / −removed` lines for the whole type; a number on
+  a row counts that member only.
+- Click a member, a type header or a file frame to select it and follow its links. Double-click it,
+  or press Enter, to open it beside the diagram the same way a Changed Files row opens: the native
+  diff for a changed file, or the file itself for a new one. It opens at that member, with the
+  member's lines marked. Editing, LSP features and inline comments work as normal.
+- Select a type to follow its links: its lines glow and name the field or method that makes them,
+  and everything unrelated fades. Click a line or a linked name to go to the other end. **L** fits
+  the type and everything it links to.
+- The top bar shows where your review is: the comparison, how many files you have seen, and
+  **Next change** (N). Next change selects each change in a file in turn in the diagram, and the
+  bar says which change and file you are at. It does not open the diff; double-click the selection
+  to open it. After the last change it marks the file seen and goes to the next file not seen,
+  largest first. **Start again** marks every file not seen again, after you confirm, so you can
+  review from the start.
+- A floating toolbar at the top of the diagram changes what you see. It has three menus, and each
+  shows its name in grey and its current choice:
+  - **Show** picks the question: All changes, API, Implementation or Fields. Each choice says what
+    it shows. Related types outside the focus stay as grey boxes with a dotted outline: a **U**
+    mark and a "no diff" pill when they have no change, or their grey line counts and an "outside
+    focus" pill when they do.
+  - **Filter** narrows any question to files **Not seen** yet or to types with **Open threads**.
+    The button turns blue while a filter is on. **Clear filters** turns them all off.
+  - **View** picks the layout: **By links**, with lines running left to right, or **By folder**,
+    with one frame for each folder and file.
+  - **Find** (/) goes to a class or file by name.
+
+  When the diagram is narrow, the menus drop their grey names. If the toolbar still does not fit on
+  one line, it changes to two lines: Show and Find on top, Filter and View below.
+  A box shows its six largest changes; "show all" opens the rest. Selecting or opening never moves
+  the boxes.
+- **Where the changes are** sits beside the diagram. It lists the changed types, largest first,
+  with their largest members. Click a row to go to it in the diagram; double-click to open its
+  diff. Drag the left edge to resize the list (double-click the edge to reset it), or fold it away
+  to a thin bar.
+- Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep
+  moving. The centre button centres the selection. **Fit all** (F) zooms out until the whole
+  diagram is on screen.
+
+The structure comes from each language's document symbols in VS Code, so any language with a symbol
+provider works. Relationships come from declaration headers, field types and method signatures.
+
 ## Switch repo or worktree
 
 Hit **`Cmd+Shift+K`** for the switcher: current window, worktrees, and recent repos, each showing
 its agent activity. Manage all your VS Code windows and worktrees from any other window.
 
-
 # Troubleshooting
 
 - **Agent doesn't appear in the sidebar.** Make sure you restarted the agent after installing, and that
-  the repo is open in VS Code. Set `paireto.logLevel` to `debug` and check the *Paireto* output channel.
+  the repo is open in VS Code. Set `paireto.logLevel` to `debug` and check the _Paireto_ output channel.
 - **Plugin didn't register.** Open `Paireto: Open Welcome`, run setup again, then restart the agent.
 - **No sound on notifications.** Confirm `paireto.notify.type` is `sound` and `paireto.notify.sound`
   names a valid system sound or file path.

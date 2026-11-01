@@ -37,6 +37,7 @@ import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
+import { UmlDiffPanel } from "./uml/UmlDiffPanel.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
 import { exposeTestControlPlane } from "./testControlPlane.js";
 
@@ -165,6 +166,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ),
     vscode.commands.registerCommand(Commands.openWelcome, () =>
       WelcomePanel.show(context, installStatus),
+    ),
+    vscode.commands.registerCommand(Commands.reviewOpenUml, () =>
+      UmlDiffPanel.show(context, reviewController, seenFiles),
     ),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
     vscode.commands.registerCommand(Commands.gateApprove, () =>
