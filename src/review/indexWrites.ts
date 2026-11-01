@@ -3,6 +3,12 @@ import type { RepoChangedFile, RepositoryChangesModel } from "./ReviewController
 
 export type IndexWrite = "stage" | "unstage";
 
+export function indexWritePaths(files: readonly RepoChangedFile[]): string[] {
+  return files.flatMap((file) =>
+    file.status === "R" && file.oldPath !== undefined ? [file.path, file.oldPath] : [file.path],
+  );
+}
+
 export function predictIndexWrite(
   changes: RepositoryChangesModel,
   paths: readonly string[],
@@ -11,6 +17,7 @@ export function predictIndexWrite(
   const staged = new Map(changes.staged.map((file) => [file.path, file]));
   const unstaged = new Map(changes.unstaged.map((file) => [file.path, file]));
   const netStatus = new Map<string, FileStatus>();
+  const splitRenames = new Map<string, string>();
   for (const path of paths) {
     const s = staged.get(path);
     const u = unstaged.get(path);
@@ -27,7 +34,12 @@ export function predictIndexWrite(
     }
     if (write === "unstage" && s) {
       staged.delete(path);
-      if (s.status === "A" && u?.status === "D") {
+      if (s.status === "R" && s.oldPath !== undefined) {
+        const { oldPath, ...file } = s;
+        unstaged.set(path, { ...(u ?? file), group: "unstaged", status: "U" });
+        unstaged.set(oldPath, { ...file, path: oldPath, group: "unstaged", status: "D" });
+        splitRenames.set(path, oldPath);
+      } else if (s.status === "A" && u?.status === "D") {
         unstaged.delete(path);
       } else if (s.status === "A") {
         unstaged.set(path, { ...(u ?? s), group: "unstaged", status: "U" });
@@ -41,10 +53,20 @@ export function predictIndexWrite(
     ...changes,
     staged: sortedByPath([...staged.values()]),
     unstaged: sortedByPath([...unstaged.values()]),
-    net: changes.net.map((net): NetChange => {
-      const status = netStatus.get(net.path);
-      return status ? { ...net, status } : net;
-    }),
+    net: sortedByPath(
+      changes.net.flatMap((net): NetChange[] => {
+        const oldPath = splitRenames.get(net.path);
+        if (oldPath !== undefined) {
+          const { oldPath: _, ...file } = net;
+          return [
+            { ...file, path: oldPath, status: "D", contentId: "deleted" },
+            { ...file, status: "U" },
+          ];
+        }
+        const status = netStatus.get(net.path);
+        return status ? [{ ...net, status }] : [net];
+      }),
+    ),
   };
 }
 
@@ -55,7 +77,7 @@ function stagedStatus(status: FileStatus): FileStatus {
   return status === "!" ? "M" : status;
 }
 
-function sortedByPath(files: RepoChangedFile[]): RepoChangedFile[] {
+function sortedByPath<T extends { path: string }>(files: T[]): T[] {
   return files.sort((a, b) => a.path.localeCompare(b.path));
 }
 

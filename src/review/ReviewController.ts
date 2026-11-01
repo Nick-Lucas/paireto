@@ -85,7 +85,12 @@ import {
   unresolveThread,
 } from "./feedbackState.js";
 import { newFeedbackId } from "./feedbackId.js";
-import { predictIndexWrite, RepoWriteQueue, type IndexWrite } from "./indexWrites.js";
+import {
+  indexWritePaths,
+  predictIndexWrite,
+  RepoWriteQueue,
+  type IndexWrite,
+} from "./indexWrites.js";
 import {
   contextKey,
   FeedbackSession,
@@ -1134,7 +1139,7 @@ export class ReviewController implements vscode.Disposable {
 
   private async writeIndex(files: RepoChangedFile[], write: IndexWrite): Promise<void> {
     const byRoot = [...filesByRoot(files)].map(
-      ([repoRoot, repoFiles]) => [repoRoot, repoFiles.map((f) => f.path)] as const,
+      ([repoRoot, repoFiles]) => [repoRoot, indexWritePaths(repoFiles)] as const,
     );
     for (const [repoRoot, paths] of byRoot) {
       const state = this.repositoryStates.get(repoRoot);
