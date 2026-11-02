@@ -129,12 +129,7 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
 - Select a type to follow its links: its lines glow and name the field or method that makes them,
   and everything unrelated fades. Click a line or a linked name to go to the other end. **L** fits
   the type and everything it links to.
-- The top bar shows where your review is: the comparison, how many files you have seen, and
-  **Next change** (N). Next change selects each change in a file in turn in the diagram, and the
-  bar says which change and file you are at. It does not open the diff; double-click the selection
-  to open it. After the last change it marks the file seen and goes to the next file not seen,
-  largest first. **Start again** marks every file not seen again, after you confirm, so you can
-  review from the start.
+- The top bar shows the comparison. Click it to compare with another branch or commit.
 - A floating toolbar at the top of the diagram changes what you see. It has three menus, and each
   shows its name in grey and its current choice:
   - **Show** picks the question: All changes, API, Implementation or Fields. Each choice says what
@@ -155,6 +150,13 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   with their largest members. Click a row to go to it in the diagram; double-click to open its
   diff. Drag the left edge to resize the list (double-click the edge to reset it), or fold it away
   to a thin bar.
+- Your review runs from the top of this list: how many files you have seen, and **Next change**
+  (N). Next change selects each change in a file in turn in the diagram, and the row of that change
+  shows which one it is, for example "2 of 3". It does not open the diff; double-click the
+  selection to open it. After the last change it marks the file seen and goes to the next file not
+  seen, in the order of the list. A seen file has a tick and turns grey. **Start again** marks every
+  file not seen again, after you confirm, so you can review from the start. When the list is folded
+  away, the thin bar keeps a round Next change button and the seen count.
 - Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep
   moving. The centre button centres the selection. **Fit all** (F) zooms out until the whole
   diagram is on screen.

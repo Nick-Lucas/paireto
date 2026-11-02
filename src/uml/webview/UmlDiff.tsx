@@ -427,12 +427,33 @@ function ChangeBar({ share, counts, size }: { share: number; counts: LineCounts;
   );
 }
 
+interface ReviewState {
+  seen: number;
+  total: number;
+  lines: LineCounts;
+  step?: ChangeStop;
+  onNext(): void;
+  onReset(): void;
+}
+
+const NEXT_CHANGE_TITLE =
+  "Select the next change in this file. After the last one, mark the file seen and go to the next file not seen, in the order of this list (N)";
+
+function SeenProgress({ seen, total }: { seen: number; total: number }) {
+  return (
+    <span className="seen-progress" aria-hidden>
+      <span style={{ width: `${(100 * seen) / Math.max(1, total)}%` }} />
+    </span>
+  );
+}
+
 function ChangesPanel({
   spots,
   width,
   room,
   files,
   selection,
+  review,
   onWidth,
   onCollapse,
   onPick,
@@ -443,11 +464,28 @@ function ChangesPanel({
   room(): number;
   files: ReadonlyMap<string, UmlFile>;
   selection?: Target;
+  review: ReviewState;
   onWidth(width: number): void;
   onCollapse(): void;
   onPick(target: Target): void;
   onOpen(target: Target): void;
 }) {
+  const { step } = review;
+  const stepTag = (
+    <span
+      className="step-tag"
+      title={`Change ${(step?.index ?? 0) + 1} of ${step?.count ?? 0} in this file`}
+    >
+      {(step?.index ?? 0) + 1} of {step?.count ?? 0}
+    </span>
+  );
+  const stepAt = (spot: Hotspot, memberId?: string) =>
+    !!step &&
+    step.count > 0 &&
+    step.typeId === spot.typeId &&
+    (memberId
+      ? step.memberId === memberId
+      : !spot.members.some((m) => m.memberId === step.memberId));
   const listRef = useRef<HTMLOListElement>(null);
   const dragRef = useRef<{ x: number; width: number } | undefined>(undefined);
   const [dragWidth, setDragWidth] = useState<number | undefined>();
@@ -472,14 +510,21 @@ function ChangesPanel({
   const typeRow = (spot: Hotspot, className: string) =>
     row(
       { kind: "type", typeId: spot.typeId },
-      className,
+      files.get(spot.fileKey)?.read ? `${className} is-seen` : className,
       `${spot.name}: ${spot.counts.added} lines added, ${spot.counts.removed} removed. Click to go to it, double-click to open its diff.`,
       <>
         <span className={`badge-sample badge-${spot.change}`}>{TYPE_LETTERS[spot.change]}</span>
-        <span className="change-name">{spot.name}</span>
-        {className === "change-row" && !files.get(spot.fileKey)?.read && (
-          <span className="dot" aria-label="Not seen" />
-        )}
+        <span className="change-title">
+          <span className="change-name">{spot.name}</span>
+          {files.get(spot.fileKey)?.read ? (
+            <span className="seen-mark" aria-label="Seen">
+              <Icon name="check" />
+            </span>
+          ) : (
+            <span className="dot" aria-label="Not seen" />
+          )}
+          {stepAt(spot) && stepTag}
+        </span>
         <span className="change-counts">
           <Counts added={spot.counts.added} removed={spot.counts.removed} />
         </span>
@@ -538,6 +583,43 @@ function ChangesPanel({
           <Icon name="right" />
         </button>
       </header>
+      <div className="changes-review">
+        <div
+          className="review-progress"
+          title={`${review.seen} of ${review.total} changed files are marked seen, ${review.lines.added} lines added and ${review.lines.removed} removed. Next change marks a file seen after its last change.`}
+        >
+          <SeenProgress seen={review.seen} total={review.total} />
+          <span>
+            <strong>
+              {review.seen} of {review.total}
+            </strong>{" "}
+            {review.total === 1 ? "file" : "files"} seen
+          </span>
+        </div>
+        <div className="review-actions">
+          <button
+            type="button"
+            className="button next-change"
+            title={NEXT_CHANGE_TITLE}
+            onClick={review.onNext}
+          >
+            Next change
+            <kbd>N</kbd>
+          </button>
+          {review.seen > 0 && (
+            <button
+              type="button"
+              className="icon-button"
+              title="Start again: mark every file not seen, so you can review from the start"
+              aria-label="Start again"
+              onClick={review.onReset}
+            >
+              <Icon name="reset" />
+            </button>
+          )}
+        </div>
+      </div>
+      {spots.length === 0 && <p className="changes-empty muted">No changes in focus.</p>}
       <ol className="changes-list" ref={listRef}>
         {spots.map((spot) => (
           <li key={spot.typeId}>
@@ -554,7 +636,10 @@ function ChangesPanel({
                         <span className={`badge-sample badge-${member.change}`}>
                           {memberGlyph(member.change)}
                         </span>
-                        <code className="change-name">{member.short}</code>
+                        <span className="change-title">
+                          <code className="change-name">{member.short}</code>
+                          {stepAt(spot, member.memberId) && stepTag}
+                        </span>
                         <span className="change-counts">
                           <Counts added={member.counts.added} removed={member.counts.removed} />
                         </span>
@@ -571,9 +656,35 @@ function ChangesPanel({
   );
 }
 
-function ChangesRail({ count, onExpand }: { count: number; onExpand(): void }) {
+function ChangesRail({
+  count,
+  review,
+  onExpand,
+}: {
+  count: number;
+  review: ReviewState;
+  onExpand(): void;
+}) {
   return (
     <aside className="changes-rail">
+      <button
+        type="button"
+        className="rail-next"
+        title={NEXT_CHANGE_TITLE}
+        aria-label="Next change"
+        onClick={review.onNext}
+      >
+        <Icon name="next" />
+      </button>
+      <span
+        className="rail-seen"
+        title={`${review.seen} of ${review.total} changed files are marked seen`}
+      >
+        {review.seen}/{review.total}
+        <span className="rail-progress" aria-hidden>
+          <span style={{ height: `${(100 * review.seen) / Math.max(1, review.total)}%` }} />
+        </span>
+      </span>
       <button
         type="button"
         className="changes-rail-button"
@@ -1388,14 +1499,21 @@ export function UmlDiff() {
   const focusInfo = FOCI.find((f) => f.id === viewState.focus) ?? FOCI[0];
   const changedFiles = model?.files.filter((f) => f.status !== "context") ?? [];
   const seenFiles = changedFiles.filter((f) => f.read).length;
-  const stepFile = model?.files
-    .find((f) => f.key === step?.fileKey)
-    ?.path.split("/")
-    .pop();
   const total = changedFiles.reduce(
     (sum, f) => ({ added: sum.added + f.counts.added, removed: sum.removed + f.counts.removed }),
     { added: 0, removed: 0 },
   );
+  const review: ReviewState = {
+    seen: seenFiles,
+    total: changedFiles.length,
+    lines: total,
+    step,
+    onNext: nextNotSeen,
+    onReset: () => {
+      setStep(undefined);
+      vscode.postMessage({ type: "resetReview" });
+    },
+  };
   const notSeenCount =
     model?.types.filter(
       (t) =>
@@ -1511,60 +1629,7 @@ export function UmlDiff() {
             </span>
             <Icon name="down" />
           </button>
-          {model && (
-            <div
-              className="review-progress"
-              title={`${seenFiles} of ${changedFiles.length} changed files are marked seen. Next change marks a file seen after its last change.`}
-            >
-              <span className="seen-progress" aria-hidden>
-                <span
-                  style={{ width: `${(100 * seenFiles) / Math.max(1, changedFiles.length)}%` }}
-                />
-              </span>
-              <span>
-                <strong>
-                  {seenFiles} of {changedFiles.length}
-                </strong>{" "}
-                <span className="review-files">
-                  {changedFiles.length === 1 ? "file" : "files"}{" "}
-                </span>
-                seen
-              </span>
-              <span className="muted review-lines">
-                · <Counts added={total.added} removed={total.removed} /> lines
-              </span>
-            </div>
-          )}
-          {model && seenFiles > 0 && (
-            <button
-              type="button"
-              className="text-button start-again"
-              title="Mark every file not seen, so you can review from the start"
-              aria-label="Start again"
-              onClick={() => {
-                setStep(undefined);
-                vscode.postMessage({ type: "resetReview" });
-              }}
-            >
-              <Icon name="reset" />
-              <span className="start-again-label">Start again</span>
-            </button>
-          )}
           <span className="spacer" />
-          {step && step.count > 0 && (
-            <span className="muted step-count">
-              Change {step.index + 1} of {step.count} in {stepFile}
-            </span>
-          )}
-          <button
-            type="button"
-            className="button next-change"
-            title="Select the next change in this file in the diagram. After the last one, mark the file seen and go to the next file not seen, largest first (N)"
-            onClick={nextNotSeen}
-          >
-            Next change <Icon name="next" />
-            <kbd>N</kbd>
-          </button>
           <button
             type="button"
             className="icon-button refresh-button"
@@ -1605,7 +1670,7 @@ export function UmlDiff() {
           {legendOpen && <Legend onClose={() => setLegendOpen(false)} />}
         </div>
         {model &&
-          spots.length > 0 &&
+          changedFiles.length > 0 &&
           (viewState.changes ? (
             <ChangesPanel
               spots={spots}
@@ -1613,13 +1678,18 @@ export function UmlDiff() {
               room={() => mainAreaRef.current?.clientWidth ?? window.innerWidth}
               files={files}
               selection={liveSelection}
+              review={review}
               onWidth={(changesWidth) => updateView({ changesWidth })}
               onCollapse={() => updateView({ changes: false })}
               onPick={pick}
               onOpen={open}
             />
           ) : (
-            <ChangesRail count={spots.length} onExpand={() => updateView({ changes: true })} />
+            <ChangesRail
+              count={spots.length}
+              review={review}
+              onExpand={() => updateView({ changes: true })}
+            />
           ))}
       </main>
       {model && (
