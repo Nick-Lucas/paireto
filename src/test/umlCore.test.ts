@@ -10,6 +10,7 @@ import {
   NO_FILTERS,
   type FocusOptions,
   type LayoutMode,
+  type ReviewFocus,
 } from "../uml/core/focus.js";
 import {
   formatCounts,
@@ -1048,9 +1049,10 @@ function reviewModel(): UmlModel {
 }
 
 suite("UML diff — next change", () => {
-  const steps = (count: number) => {
+  const steps = (count: number, focus: ReviewFocus = "all", change?: (model: UmlModel) => void) => {
     const model = reviewModel();
-    const view = applyFocus(model, "all", PLAIN);
+    change?.(model);
+    const view = applyFocus(model, focus, PLAIN);
     const seen: string[] = [];
     const stops: string[] = [];
     let cursor: { fileKey: string; index: number } | undefined;
@@ -1088,9 +1090,34 @@ suite("UML diff — next change", () => {
   });
 
   test("after the last change it marks the file seen and goes to the next file not seen", () => {
-    const { seen, stops } = steps(5);
-    assert.deepStrictEqual(stops.slice(3), ["repo:small.ts 1/2 run", "repo:small.ts 2/2 run"]);
+    const { seen, stops } = steps(4);
+    assert.deepStrictEqual(stops.slice(3), ["repo:small.ts 1/1 run"]);
     assert.deepStrictEqual(seen, ["repo:big.ts"]);
+  });
+
+  test("a member with several changed sections is one change", () => {
+    assert.deepStrictEqual(steps(5).stops.slice(3), ["repo:small.ts 1/1 run", "done"]);
+  });
+
+  test("goes only to the members the focus shows", () => {
+    const { stops } = steps(2, "fields", (model) => {
+      model.types[0].members.push({
+        ...model.types[0].members[0],
+        id: "size",
+        name: "size",
+        compartment: "field",
+        change: "added",
+        span: { side: "modified", start: 30, end: 31 },
+      });
+    });
+    assert.deepStrictEqual(stops, ["repo:big.ts 1/1 size", "done"]);
+  });
+
+  test("goes to the type when the focus shows none of its members", () => {
+    const { stops } = steps(1, "api", (model) => {
+      model.types[0].headerChanged = true;
+    });
+    assert.deepStrictEqual(stops, ["repo:big.ts 1/1 repo:big.ts::Big"]);
   });
 
   test("when every file is seen it says so", () => {

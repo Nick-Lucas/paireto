@@ -858,12 +858,12 @@ function markerFor(edge: EdgeLayout, lit: boolean): string {
     edge.relation.kind === "generalization" || edge.relation.kind === "realization"
       ? "triangle"
       : "arrow";
-  const tone = lit ? "lit" : edge.relation.change === "unchanged" ? "plain" : edge.relation.change;
-  return `url(#m-${shape}-${tone})`;
+  const tone = edge.relation.change === "unchanged" ? "plain" : edge.relation.change;
+  return `url(#m-${shape}-${tone}${lit ? "-lit" : ""})`;
 }
 
 function Markers() {
-  const tones = ["plain", "added", "removed", "lit"];
+  const tones = ["plain", "added", "removed", "plain-lit", "added-lit", "removed-lit"];
   return (
     <defs>
       {tones.map((tone) => (
@@ -1454,6 +1454,7 @@ export function Diagram({
 
   const selectedType = selectedTypeOf(selection);
   const activeHover = hoverEdge ?? hoverRelation;
+  const edgeChanges = new Map(layout.edges.map((edge) => [edge.id, edge.relation.change]));
   const hovered = activeHover ? layout.edges.find((e) => e.id === activeHover) : undefined;
   const hoverEnds = new Set(hovered ? [hovered.relation.source, hovered.relation.target] : []);
   const shownEdges = layout.edges
@@ -1624,7 +1625,10 @@ export function Diagram({
                   ? Math.min(Math.max(anchor.y, place.y), place.y + place.height)
                   : 0;
                 return (
-                  <g key={id} className={`role-label${id === activeHover ? " is-hover" : ""}`}>
+                  <g
+                    key={id}
+                    className={`role-label rel-${edgeChanges.get(id) ?? "unchanged"}${id === activeHover ? " is-hover" : ""}`}
+                  >
                     {anchor && (
                       <>
                         <line

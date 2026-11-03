@@ -12,6 +12,9 @@
   );
   --header-bg: color-mix(in srgb, var(--vscode-foreground, #ccc) 7%, var(--node-bg));
   --edge: color-mix(in srgb, var(--vscode-foreground, #ccc) 55%, var(--canvas-bg));
+  --edge-added: color-mix(in srgb, var(--added) 50%, var(--canvas-bg));
+  --edge-removed: color-mix(in srgb, var(--removed) 60%, var(--canvas-bg));
+  --edge-lit: var(--vscode-foreground, #ccc);
   --focus: var(--vscode-focusBorder, #0078d4);
   --border: var(--vscode-panel-border, var(--vscode-widget-border, #3c3c3c));
   --code-font: var(--vscode-editor-font-family, monospace);
@@ -1649,7 +1652,7 @@ svg text {
 .uml-edge path.edge-line {
   fill: none;
   stroke: var(--edge);
-  stroke-width: 1.5;
+  stroke-width: 1.25;
   stroke-linejoin: round;
 }
 
@@ -1665,11 +1668,11 @@ svg text {
 }
 
 .uml-edge.rel-added path.edge-line {
-  stroke: var(--added);
+  stroke: var(--edge-added);
 }
 
 .uml-edge.rel-removed path.edge-line {
-  stroke: var(--removed);
+  stroke: var(--edge-removed);
 }
 
 .edge-label {
@@ -1697,15 +1700,23 @@ svg text {
 }
 
 .tone-added path {
-  stroke: var(--added);
+  stroke: var(--edge-added);
 }
 
 .tone-removed path {
-  stroke: var(--removed);
+  stroke: var(--edge-removed);
 }
 
-.tone-lit path {
-  stroke: var(--focus);
+.tone-plain-lit path {
+  stroke: var(--edge-lit);
+}
+
+.tone-added-lit path {
+  stroke: var(--added);
+}
+
+.tone-removed-lit path {
+  stroke: var(--removed);
 }
 
 .button kbd {
@@ -1895,9 +1906,24 @@ svg text {
   pointer-events: stroke;
 }
 
+.uml-edge,
+.role-label {
+  --lit: var(--edge-lit);
+}
+
+.uml-edge.rel-added,
+.role-label.rel-added {
+  --lit: var(--added);
+}
+
+.uml-edge.rel-removed,
+.role-label.rel-removed {
+  --lit: var(--removed);
+}
+
 .uml-edge.is-hot path.edge-line,
 .uml-edge.is-hover path.edge-line {
-  stroke: var(--focus);
+  stroke: var(--lit);
   stroke-width: 2.5;
 }
 
@@ -1923,8 +1949,8 @@ svg text {
 }
 
 .role-label rect {
-  fill: color-mix(in srgb, var(--focus) 22%, var(--canvas-bg));
-  stroke: var(--focus);
+  fill: color-mix(in srgb, var(--lit) 22%, var(--canvas-bg));
+  stroke: var(--lit);
 }
 
 .edge-label-leader {
@@ -1934,12 +1960,12 @@ svg text {
 }
 
 .role-leader {
-  stroke: var(--focus);
+  stroke: var(--lit);
   stroke-width: 1;
 }
 
 .role-anchor {
-  fill: var(--focus);
+  fill: var(--lit);
 }
 
 @media (prefers-reduced-motion: reduce) {

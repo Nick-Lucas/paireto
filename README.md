@@ -126,8 +126,9 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   or press Enter, to open it beside the diagram the same way a Changed Files row opens: the native
   diff for a changed file, or the file itself for a new one. It opens at that member, with the
   member's lines marked. Editing, LSP features and inline comments work as normal.
-- Select a type to follow its links: its lines glow and name the field or method that makes them,
-  and everything unrelated fades. Click a line or a linked name to go to the other end. **L** fits
+- Select a type to follow its links: its lines turn bold in their own colour (green for a new link,
+  red for a removed one, grey for one that did not change) and name the field or method that makes
+  them, and everything unrelated fades. Click a line or a linked name to go to the other end. **L** fits
   the type and everything it links to.
 - The top bar shows the comparison. Click it to compare with another branch or commit.
 - A floating toolbar at the top of the diagram changes what you see. It has three menus, and each
@@ -151,10 +152,12 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   diff. Drag the left edge to resize the list (double-click the edge to reset it), or fold it away
   to a thin bar.
 - Your review runs from the top of this list: how many files you have seen, and **Next change**
-  (N). Next change selects each change in a file in turn in the diagram, and the row of that change
-  shows which one it is, for example "2 of 3". It does not open the diff; double-click the
-  selection to open it. After the last change it marks the file seen and goes to the next file not
-  seen, in the order of the list. A seen file has a tick and turns grey. **Start again** marks every
+  (N). Next change selects, in turn, each changed member that the diagram shows for the current
+  Show choice, or the type itself when the diagram shows none of its members. A member with several
+  changed parts is one stop. It goes through every type in a file before the next file, and the row
+  of that change shows which one it is in the file, for example "2 of 3". It does not open the
+  diff; double-click the selection to open it. After the last change it marks the file seen and
+  goes to the next file not seen, in the order of the list. A seen file has a tick and turns grey. **Start again** marks every
   file not seen again, after you confirm, so you can review from the start. When the list is folded
   away, the thin bar keeps a round Next change button and the seen count.
 - Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep

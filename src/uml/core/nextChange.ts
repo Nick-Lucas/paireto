@@ -1,5 +1,5 @@
 import type { FocusedView, VisibleType } from "./focus.js";
-import type { SourceSpan, UmlFile } from "./model.js";
+import type { UmlFile } from "./model.js";
 
 export interface ChangeCursor {
   fileKey: string;
@@ -24,27 +24,17 @@ export interface ChangeFrom {
   fileKey?: string;
 }
 
-function overlaps(a: SourceSpan, b: SourceSpan): boolean {
-  return a.side === b.side && a.start <= b.end && b.start <= a.end;
+interface Spot {
+  typeId: string;
+  memberId?: string;
 }
 
-function holderOf(
-  types: readonly VisibleType[],
-  change: SourceSpan | undefined,
-): { typeId?: string; memberId?: string } {
-  if (change) {
-    for (const { type, members } of types) {
-      const member = members.find((m) => overlaps(m.span, change));
-      if (member) {
-        return { typeId: type.id, memberId: member.id };
-      }
-    }
-    const holder = types.find(({ type }) => type.span && overlaps(type.span, change));
-    if (holder) {
-      return { typeId: holder.type.id };
-    }
-  }
-  return { typeId: types[0]?.type.id };
+function spotsOf(types: readonly VisibleType[]): Spot[] {
+  return types.flatMap(({ type, members }) =>
+    members.length > 0
+      ? members.map((m) => ({ typeId: type.id, memberId: m.id }))
+      : [{ typeId: type.id }],
+  );
 }
 
 export function nextChange(
@@ -56,17 +46,10 @@ export function nextChange(
   const ranked = view.types
     .filter((t) => t.role === "primary")
     .sort((a, b) => (a.rank ?? 0) - (b.rank ?? 0));
+  const spotsIn = (fileKey: string) => spotsOf(ranked.filter((t) => t.type.fileKey === fileKey));
   const stopAt = (fileKey: string, index: number): ChangeStop => {
-    const changes = byKey.get(fileKey)?.changes ?? [];
-    return {
-      fileKey,
-      index,
-      count: changes.length,
-      ...holderOf(
-        ranked.filter((t) => t.type.fileKey === fileKey),
-        changes[index],
-      ),
-    };
+    const spots = spotsIn(fileKey);
+    return { fileKey, index, count: spots.length, ...spots[index] };
   };
   const moveOn = (seen: string | undefined): ChangeStep => {
     const next = ranked.find((t) => t.type.fileKey !== seen && !byKey.get(t.type.fileKey)?.read);
@@ -80,11 +63,14 @@ export function nextChange(
     if (!picked) {
       return undefined;
     }
-    const visible = view.types.find((t) => t.type.id === from.typeId);
-    const span = visible?.members.find((m) => m.id === from.memberId)?.span ?? visible?.type.span;
-    const changes = byKey.get(picked)?.changes ?? [];
-    const index = span ? changes.findIndex((c) => c.side === span.side && c.end >= span.start) : 0;
-    return index >= 0 && index < changes.length ? index : undefined;
+    const spots = spotsIn(picked);
+    const member = spots.findIndex((s) => s.typeId === from.typeId && s.memberId === from.memberId);
+    const index = !from.typeId
+      ? 0
+      : member >= 0
+        ? member
+        : spots.findIndex((s) => s.typeId === from.typeId);
+    return index >= 0 && index < spots.length ? index : undefined;
   };
   const cursor = from.cursor;
   if (cursor && (!picked || picked === cursor.fileKey)) {
@@ -92,7 +78,7 @@ export function nextChange(
     if (start !== undefined && start > cursor.index) {
       return { stop: stopAt(cursor.fileKey, start) };
     }
-    const count = byKey.get(cursor.fileKey)?.changes.length ?? 0;
+    const count = spotsIn(cursor.fileKey).length;
     return cursor.index + 1 < count
       ? { stop: stopAt(cursor.fileKey, cursor.index + 1) }
       : moveOn(cursor.fileKey);
