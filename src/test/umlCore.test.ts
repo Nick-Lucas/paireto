@@ -18,11 +18,13 @@ import {
   measureType,
   METRICS,
   NO_DIFF,
+  NOTE_LINES,
   OUTSIDE_FOCUS,
   simplifyPath,
   type DiagramLayout,
   type Measure,
 } from "../uml/core/layout.js";
+import { diagramAnchor, diagramComments, diagramLink } from "../uml/core/comments.js";
 import { fitStep, READABLE_ZOOM } from "../uml/core/fit.js";
 import { hotspots } from "../uml/core/hotspots.js";
 import { nextChange } from "../uml/core/nextChange.js";
@@ -30,6 +32,8 @@ import { DIAGRAM_MIN_WIDTH, PANEL_MIN_WIDTH, panelWidth } from "../uml/core/pane
 import { diffHunks, diffLines, splitLines } from "../uml/core/lineDiff.js";
 import {
   changeSize,
+  type UmlComment,
+  type UmlCommentLink,
   type UmlFile,
   type UmlMember,
   type UmlModel,
@@ -183,6 +187,7 @@ function sampleModel(): UmlModel {
     ],
     types: entries.map((e) => e.type),
     relations: buildRelations(entries),
+    comments: [],
     notes: [],
   };
 }
@@ -920,6 +925,293 @@ suite("UML diff — ELK layout", () => {
   });
 });
 
+suite("UML diff — comments on the diagram", () => {
+  const SERVICE = "repo:src/users.ts::UserService";
+  const onType = (typeId: string, title: string): UmlCommentLink => ({
+    scope: "type",
+    title,
+    typeIds: [typeId],
+  });
+  const comment = (over: Partial<UmlComment> = {}): UmlComment => ({
+    id: "c1",
+    kind: "comment",
+    body: "Why does this need its own cache?",
+    replies: 0,
+    sent: false,
+    links: [onType(SERVICE, "UserService")],
+    ...over,
+  });
+  const laid = (comments: UmlComment[], mode: LayoutMode = "relationships", model = bigModel()) => {
+    return layoutDiagram(
+      {
+        view: applyFocus(model, "all", PLAIN),
+        files: model.files,
+        mode,
+        aspectRatio: 1.6,
+        repoCount: 1,
+        comments,
+      },
+      measure,
+      new ELK(),
+    );
+  };
+  const onBorder = (
+    point: { x: number; y: number },
+    box: { x: number; y: number; width: number; height: number },
+  ) =>
+    point.x >= box.x - 1 &&
+    point.x <= box.x + box.width + 1 &&
+    point.y >= box.y - 1 &&
+    point.y <= box.y + box.height + 1 &&
+    (Math.abs(point.x - box.x) <= 1 ||
+      Math.abs(point.x - box.x - box.width) <= 1 ||
+      Math.abs(point.y - box.y) <= 1 ||
+      Math.abs(point.y - box.y - box.height) <= 1);
+
+  test("an open diagram thread becomes a note with each of its links", () => {
+    const at = "2026-11-03T00:00:00.000Z";
+    const member = {
+      scope: "member" as const,
+      title: "UserService.get",
+      typeIds: [SERVICE],
+      memberId: "get",
+    };
+    const comments = diagramComments([
+      {
+        id: "d1",
+        delivery: "sent",
+        items: [
+          { kind: "comment", commentKind: "question", body: "Why two caches?", quote: "", at },
+          { id: "d1#1", kind: "reply", author: { kind: "reviewer" }, body: "More", at },
+        ],
+        diagram: {
+          title: "UserService.get and 1 more",
+          links: [
+            { ...member, targets: [] },
+            { scope: "type", title: "User", typeIds: ["x"], targets: [] },
+          ],
+        },
+      },
+      {
+        id: "d2",
+        delivery: "pending",
+        resolvedAt: at,
+        items: [{ kind: "comment", commentKind: "comment", body: "Done", quote: "", at }],
+        diagram: { title: "Not linked", links: [] },
+      },
+      {
+        id: "f1",
+        delivery: "pending",
+        items: [{ kind: "comment", commentKind: "comment", body: "A line", quote: "", at }],
+      },
+    ]);
+    assert.deepStrictEqual(comments, [
+      {
+        id: "d1",
+        kind: "question",
+        body: "Why two caches?",
+        replies: 1,
+        sent: true,
+        links: [
+          { ...member, fileKey: undefined },
+          { scope: "type", title: "User", typeIds: ["x"], memberId: undefined, fileKey: undefined },
+        ],
+      },
+    ]);
+  });
+
+  test("a link to a member records the member's name, file and line for the agent", () => {
+    const model = sampleModel();
+    const service = model.types.find((t) => t.id === SERVICE);
+    const member = service?.members.find((m) => m.change !== "unchanged");
+    assert.ok(service && member);
+    const link = diagramLink(model, {
+      scope: "member",
+      title: "",
+      typeIds: [SERVICE],
+      memberId: member.id,
+    });
+    assert.deepStrictEqual(link, {
+      scope: "member",
+      title: `UserService.${member.name}`,
+      typeIds: [SERVICE],
+      memberId: member.id,
+      fileKey: undefined,
+      targets: [
+        {
+          repoRoot: "/repo",
+          name: `UserService.${member.name}`,
+          filePath: "src/users.ts",
+          line: member.span.start,
+        },
+      ],
+    });
+  });
+
+  test("a link to linked types records each type, in every file it covers", () => {
+    const model = bigModel();
+    const ids = [SERVICE, "repo:a/b/one.ts::T0"];
+    const link = diagramLink(model, { scope: "group", typeIds: ids, title: "Linked" });
+    assert.deepStrictEqual(
+      link?.targets.map((t) => `${t.name} ${t.filePath}`),
+      ["UserService src/users.ts", "AVeryLongTypeNameForTesting0 a/b/one.ts"],
+    );
+    assert.strictEqual(link?.title, "Linked");
+  });
+
+  test("a link to a type or member the model does not have is refused", () => {
+    const model = sampleModel();
+    assert.strictEqual(diagramLink(model, onType("repo:gone.ts::Gone", "Gone")), undefined);
+    assert.strictEqual(
+      diagramLink(model, { scope: "member", title: "", typeIds: [SERVICE], memberId: "nope" }),
+      undefined,
+    );
+  });
+
+  test("a note is named after what it links to", () => {
+    const link = (title: string) => ({ ...onType(title, title), targets: [] });
+    assert.strictEqual(diagramAnchor([]).title, "Not linked");
+    assert.strictEqual(diagramAnchor([link("User")]).title, "User");
+    assert.strictEqual(
+      diagramAnchor([link("User"), link("Role"), link("Team")]).title,
+      "User and 2 more",
+    );
+  });
+
+  test("a note on a type is clear of the boxes, with a line to that type", async () => {
+    for (const mode of MODES) {
+      const result = await laid([comment()], mode);
+      const note = result.notes.find((n) => n.id === "c1");
+      assert.ok(note, `${mode}: the note is drawn`);
+      for (const node of result.nodes) {
+        assert.ok(!overlaps(note, node), `${mode}: the note covers ${node.titleFull}`);
+      }
+      const box = result.nodes.find((n) => n.id === SERVICE);
+      assert.ok(box);
+      assert.strictEqual(note.links.length, 1);
+      const { index, points } = note.links[0];
+      assert.strictEqual(index, 0);
+      assert.ok(onBorder(points[0], note), `${mode}: the line starts on the note`);
+      assert.ok(onBorder(points[points.length - 1], box), `${mode}: the line ends on the type`);
+    }
+  });
+
+  test("a note linked to two types has a line to each of them", async () => {
+    const other = "repo:a/b/one.ts::T0";
+    const result = await laid([
+      comment({ links: [onType(SERVICE, "UserService"), onType(other, "T0")] }),
+    ]);
+    const note = result.notes[0];
+    assert.deepStrictEqual(
+      note.links.map((link) => link.index),
+      [0, 1],
+    );
+    for (const [index, id] of [SERVICE, other].entries()) {
+      const box = result.nodes.find((n) => n.id === id);
+      assert.ok(box);
+      assert.ok(onBorder(note.links[index].points.at(-1) ?? { x: -1, y: -1 }, box));
+    }
+  });
+
+  test("a note on a member ends its line at that member's row", async () => {
+    const model = bigModel();
+    const member = model.types
+      .find((t) => t.id === SERVICE)
+      ?.members.find((m) => m.change !== "unchanged");
+    assert.ok(member);
+    const result = await laid([
+      comment({
+        links: [{ scope: "member", title: "", typeIds: [SERVICE], memberId: member.id }],
+      }),
+    ]);
+    const box = result.nodes.find((n) => n.id === SERVICE);
+    const row = box?.rows.find((r) => r.memberId === member.id);
+    assert.ok(box && row);
+    const end = result.notes[0].links[0].points.at(-1);
+    assert.ok(end);
+    assert.ok(
+      end.y >= box.y + row.y && end.y <= box.y + row.y + METRICS.rowHeight,
+      "the line meets the member's row",
+    );
+  });
+
+  test("a note on linked types sits inside their frame, so it needs no line to it", async () => {
+    const first = await laid([]);
+    const group = first.containers.find((c) => c.kind === "group" && c.typeIds?.includes(SERVICE));
+    assert.ok(group?.typeIds);
+    const result = await laid([
+      comment({ links: [{ scope: "group", title: group.title, typeIds: group.typeIds }] }),
+    ]);
+    const frame = result.containers.find((c) => c.kind === "group" && c.typeIds?.includes(SERVICE));
+    const note = result.notes[0];
+    assert.ok(frame && note);
+    assert.ok(
+      note.x >= frame.x &&
+        note.y >= frame.y &&
+        note.x + note.width <= frame.x + frame.width &&
+        note.y + note.height <= frame.y + frame.height,
+      "the note is inside the frame",
+    );
+    assert.deepStrictEqual(note.links, []);
+  });
+
+  test("a note in a frame that also links to a type outside it has a line to that type", async () => {
+    const withLone = () => {
+      const model = bigModel();
+      const lone = model.types.find((t) => t.id === "repo:z.ts::T3");
+      assert.ok(lone);
+      model.types.push({ ...lone, id: "repo:z.ts::Lone", name: "Lone" });
+      return model;
+    };
+    const first = await laid([], "relationships", withLone());
+    const group = first.containers.find((c) => c.kind === "group" && c.typeIds?.includes(SERVICE));
+    const outside = first.nodes.find((n) => n.id === "repo:z.ts::Lone");
+    assert.ok(group?.typeIds && outside && !group.typeIds.includes(outside.id));
+    const result = await laid(
+      [
+        comment({
+          links: [
+            { scope: "group", title: group.title, typeIds: group.typeIds },
+            onType(outside.id, outside.title),
+          ],
+        }),
+      ],
+      "relationships",
+      withLone(),
+    );
+    const note = result.notes[0];
+    const box = result.nodes.find((n) => n.id === outside.id);
+    assert.ok(box);
+    assert.strictEqual(note.links.length, 1);
+    assert.strictEqual(note.links[0].index, 1);
+    assert.ok(onBorder(note.links[0].points.at(-1) ?? { x: -1, y: -1 }, box));
+  });
+
+  test("a note with no links is drawn on its own, with no lines", async () => {
+    const result = await laid([comment({ links: [] })]);
+    assert.strictEqual(result.notes.length, 1);
+    assert.deepStrictEqual(result.notes[0].links, []);
+    for (const node of result.nodes) {
+      assert.ok(!overlaps(result.notes[0], node), `the note covers ${node.titleFull}`);
+    }
+  });
+
+  test("a note on types the diagram does not show is not drawn", async () => {
+    const result = await laid([comment({ links: [onType("repo:gone.ts::Gone", "Gone")] })]);
+    assert.deepStrictEqual(result.notes, []);
+  });
+
+  test("a long comment wraps and stops after a few lines", async () => {
+    const result = await laid([comment({ body: "word ".repeat(200).trim() })]);
+    const note = result.notes[0];
+    assert.ok(note.lines.length > 1 && note.lines.length <= NOTE_LINES);
+    assert.ok(note.lines[note.lines.length - 1].endsWith("…"));
+    for (const text of note.lines) {
+      assert.ok(measure(text, "small") <= note.width, "each line fits the note");
+    }
+  });
+});
+
 suite("UML diff — changes list", () => {
   test("lists the changed types in focus, largest first, with their share of the largest", () => {
     const view = applyFocus(bigModel(), "all", PLAIN);
@@ -1044,6 +1336,7 @@ function reviewModel(): UmlModel {
       type("repo:done.ts", "Done", [member("old", 4, 6, 40)]),
     ],
     relations: [],
+    comments: [],
     notes: [],
   };
 }

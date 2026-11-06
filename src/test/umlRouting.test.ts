@@ -45,6 +45,7 @@ function tangledModel(seed: number, typeCount: number, relationCount: number): U
     files: [],
     types: [],
     relations: [],
+    comments: [],
     notes: [],
   };
   for (let f = 0; f < Math.ceil(typeCount / 3); f++) {

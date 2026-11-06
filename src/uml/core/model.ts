@@ -80,12 +80,32 @@ export interface UmlRelation {
   roles: string[];
 }
 
+export type CommentScope = "type" | "member" | "group" | "file";
+
+export interface UmlCommentLink {
+  scope: CommentScope;
+  title: string;
+  typeIds: string[];
+  memberId?: string;
+  fileKey?: string;
+}
+
+export interface UmlComment {
+  id: string;
+  kind: "question" | "comment";
+  body: string;
+  replies: number;
+  sent: boolean;
+  links: UmlCommentLink[];
+}
+
 export interface UmlModel {
   comparison: string;
   repoCount: number;
   files: UmlFile[];
   types: UmlType[];
   relations: UmlRelation[];
+  comments: UmlComment[];
   notes: string[];
 }
 

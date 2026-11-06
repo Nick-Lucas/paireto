@@ -13,6 +13,7 @@ import {
   type UmlViewState,
   type WebviewMessage,
 } from "./core/protocol.js";
+import { diagramAnchor, diagramLink, sameLink } from "./core/comments.js";
 import { UmlModelBuilder, type BuiltModel } from "./modelBuilder.js";
 import { resetReview } from "./resetReview.js";
 
@@ -160,6 +161,42 @@ export class UmlDiffPanel {
         return;
       case "open":
         await this.open(msg.typeId, msg.memberId);
+        return;
+      case "addComment": {
+        const model = this.built?.model;
+        if (!model) {
+          return;
+        }
+        const links = msg.links.flatMap((link) => diagramLink(model, link) ?? []);
+        const repoRoot = links[0]?.targets[0]?.repoRoot ?? model.files[0]?.repoRoot;
+        if (repoRoot) {
+          await this.review.addDiagramComment(repoRoot, diagramAnchor(links), msg.kind, msg.body);
+        }
+        return;
+      }
+      case "linkComment": {
+        const anchor = this.review.diagramAnchorOf(msg.id);
+        const link = this.built && diagramLink(this.built.model, msg.link);
+        if (anchor && link && !anchor.links.some((held) => sameLink(held, link))) {
+          this.review.relinkDiagramComment(msg.id, diagramAnchor([...anchor.links, link]));
+        }
+        return;
+      }
+      case "unlinkComment": {
+        const anchor = this.review.diagramAnchorOf(msg.id);
+        if (anchor) {
+          this.review.relinkDiagramComment(
+            msg.id,
+            diagramAnchor(anchor.links.filter((_, index) => index !== msg.index)),
+          );
+        }
+        return;
+      }
+      case "openComment":
+        await this.review.openDiagramComment(msg.id);
+        return;
+      case "resolveComment":
+        this.review.resolveComment(msg.id);
         return;
       case "openFile": {
         const delta = this.built?.deltas.get(msg.fileKey);

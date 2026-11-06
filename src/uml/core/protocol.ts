@@ -1,5 +1,5 @@
 import { NO_FILTERS, type LayoutMode, type ReviewFilters, type ReviewFocus } from "./focus.js";
-import type { UmlModel } from "./model.js";
+import type { UmlCommentLink, UmlModel } from "./model.js";
 
 export interface UmlViewState {
   focus: ReviewFocus;
@@ -31,4 +31,9 @@ export type WebviewMessage =
   | { type: "resetReview" }
   | { type: "pickCompareTo" }
   | { type: "refresh" }
-  | { type: "viewState"; state: UmlViewState };
+  | { type: "viewState"; state: UmlViewState }
+  | { type: "addComment"; kind: "question" | "comment"; body: string; links: UmlCommentLink[] }
+  | { type: "linkComment"; id: string; link: UmlCommentLink }
+  | { type: "unlinkComment"; id: string; index: number }
+  | { type: "openComment"; id: string }
+  | { type: "resolveComment"; id: string };

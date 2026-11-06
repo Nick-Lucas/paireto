@@ -160,6 +160,16 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   goes to the next file not seen, in the order of the list. A seen file has a tick and turns grey. **Start again** marks every
   file not seen again, after you confirm, so you can review from the start. When the list is folded
   away, the thin bar keeps a round Next change button and the seen count.
+- Comment on the design, not only on a line: right-click a member, a type or a frame and choose
+  **Add comment** or **Add question**. A UML note opens beside that part, linked to it. To link
+  the note to more parts, drag the dot on its edge onto a type, a member or a frame. A frame of
+  linked types can cover many files. You can also right-click an empty part of the diagram to
+  add a note with no link. The note shows on the diagram with a dashed line to each part it is
+  linked to; a note on linked types sits inside their frame. It goes to the agent with **Send
+  Feedback**, and the agent gets each part's file and line. Click a note to open its thread
+  beside the diagram, where you can reply, edit or delete it. Right-click a note to link it to
+  more parts or to resolve it, and right-click a dashed line to remove that link. A resolved
+  note leaves the diagram.
 - Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep
   moving. The centre button centres the selection. **Fit all** (F) zooms out until the whole
   diagram is on screen.

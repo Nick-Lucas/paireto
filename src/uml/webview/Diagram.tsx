@@ -13,8 +13,10 @@ import {
 import {
   METRICS,
   NO_DIFF,
+  noteLinks,
   OUTSIDE_FOCUS,
   placeRoleLabels,
+  type Box,
   type ContainerLayout,
   type DiagramLayout,
   type EdgeLayout,
@@ -22,9 +24,24 @@ import {
   type NodeLayout,
   type Point,
 } from "../core/layout";
-import type { UmlFile, UmlMember, UmlModel, UmlType } from "../core/model";
+import { linksTitle, sameLink } from "../core/comments";
+import type { UmlCommentLink, UmlFile, UmlMember, UmlModel, UmlType } from "../core/model";
 import { fitStep, READABLE_ZOOM, type FitStep } from "../core/fit";
 import { Icon, iconPath } from "./icons";
+import {
+  ContextMenu,
+  DRAFT_HEIGHT,
+  DRAFT_WIDTH,
+  DraftNote,
+  draftPlace,
+  linkAt,
+  NoteView,
+  targetLink,
+  type CommentKind,
+  type Draft,
+  type LinkHit,
+  type MenuState,
+} from "./notes";
 import {
   describeMember,
   describeType,
@@ -71,6 +88,22 @@ export interface DiagramProps {
   onFollow(typeId: string): void;
   onExpand(typeId: string): void;
   onOverview(overview: boolean): void;
+  draft?: Draft;
+  noteRequest: number;
+  onDraft(draft: Draft | undefined): void;
+  onAddComment(draft: Draft, body: string): void;
+  onOpenComment(id: string): void;
+  onResolveComment(id: string): void;
+  onLinkComment(id: string, link: UmlCommentLink): void;
+  onUnlinkComment(id: string, index: number): void;
+}
+
+interface Linking {
+  from: string;
+  start: Point;
+  end: Point;
+  sticky: boolean;
+  hit?: LinkHit;
 }
 
 function clampZoom(zoom: number): number {
@@ -668,6 +701,7 @@ function NodeView({
             key={row.memberId}
             className={`focusable uml-row member-${member.change}${selected ? " is-selected" : ""}`}
             transform={`translate(0,${row.y})`}
+            data-member={row.memberId}
             tabIndex={sameTarget(tabTarget, target) ? 0 : -1}
             role="button"
             aria-label={describeMember(member, type)}
@@ -811,6 +845,7 @@ function ContainerView({
     <g
       className={`uml-container kind-${container.kind} depth-${Math.min(container.depth, 3)}`}
       transform={`translate(${container.x},${container.y})`}
+      data-frame={container.id}
     >
       <rect
         className="container-box"
@@ -919,8 +954,19 @@ export function Diagram({
   onFollow,
   onExpand,
   onOverview,
+  draft,
+  noteRequest,
+  onDraft,
+  onAddComment,
+  onOpenComment,
+  onResolveComment,
+  onLinkComment,
+  onUnlinkComment,
 }: DiagramProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
+  const [menu, setMenu] = useState<MenuState | undefined>();
+  const [linking, setLinking] = useState<Linking | undefined>();
   const [zoom, setZoom] = useState(1);
   const [fitView, setFitView] = useState<{ zoom: number; overview: boolean } | undefined>();
   const anchorRef = useRef<{ cx: number; cy: number; fx: number; fy: number } | undefined>(
@@ -1274,11 +1320,200 @@ export function Diagram({
     [onSelect, reveal],
   );
 
+  const toDiagram = useCallback(
+    (client: Point): Point => {
+      const rect = svgRef.current?.getBoundingClientRect();
+      return rect
+        ? { x: (client.x - rect.left) / zoom, y: (client.y - rect.top) / zoom }
+        : { x: 0, y: 0 };
+    },
+    [zoom],
+  );
+
+  const nearBox = useCallback(
+    (hit: LinkHit | undefined): Box | undefined => {
+      if (!hit || (hit.link.scope !== "type" && hit.link.scope !== "member")) {
+        return undefined;
+      }
+      const node = layout.nodes.find((n) => n.id === hit.link.typeIds[0]);
+      return node && { ...node, y: hit.box.y };
+    },
+    [layout],
+  );
+
+  const visibleBox = useCallback((): Box | undefined => {
+    const rect = viewportRef.current?.getBoundingClientRect();
+    if (!rect) {
+      return undefined;
+    }
+    const start = toDiagram({ x: rect.left + 12, y: rect.top + 64 });
+    const end = toDiagram({ x: rect.right - 12, y: rect.bottom - 12 });
+    return { x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y };
+  }, [toDiagram]);
+
+  const newDraft = useCallback(
+    (kind: CommentKind, hit: LinkHit | undefined, point: Point) => {
+      onDraft({
+        kind,
+        links: hit ? [hit.link] : [],
+        ...draftPlace(layout, nearBox(hit), point, visibleBox()),
+      });
+    },
+    [layout, nearBox, onDraft, visibleBox],
+  );
+
+  const addLink = useCallback(
+    (from: string, link: UmlCommentLink) => {
+      if (from !== "draft") {
+        onLinkComment(from, link);
+      } else if (draft && !draft.links.some((held) => sameLink(held, link))) {
+        onDraft({ ...draft, links: [...draft.links, link] });
+      }
+    },
+    [draft, onDraft, onLinkComment],
+  );
+
+  const startLink = useCallback((from: string, start: Point, sticky: boolean) => {
+    setMenu(undefined);
+    setLinking({ from, start, end: start, sticky });
+  }, []);
+
+  const openMenu = (element: Element | null, client: Point) => {
+    const point = toDiagram(client);
+    const lineElement = element?.closest<SVGElement>("[data-note-link]");
+    if (lineElement) {
+      const from = lineElement.dataset.noteLink as string;
+      const index = Number(lineElement.dataset.linkIndex);
+      const links =
+        from === "draft" ? draft?.links : layout.notes.find((n) => n.id === from)?.comment.links;
+      setMenu({
+        ...client,
+        title: `Link to ${links?.[index]?.title ?? "this part"}`,
+        items: [
+          {
+            label: "Remove this link",
+            run: () =>
+              from === "draft"
+                ? draft && onDraft({ ...draft, links: draft.links.filter((_, i) => i !== index) })
+                : onUnlinkComment(from, index),
+          },
+        ],
+      });
+      return;
+    }
+    const noteId = element?.closest<SVGElement>("[data-note]")?.dataset.note;
+    const note = layout.notes.find((n) => n.id === noteId);
+    if (note) {
+      const kind = note.comment.kind === "question" ? "Question" : "Comment";
+      setMenu({
+        ...client,
+        title: `${kind} on ${linksTitle(note.comment.links)}`,
+        items: [
+          { label: "Open thread", run: () => onOpenComment(note.id) },
+          {
+            label: "Link to a type, member or frame…",
+            run: () =>
+              startLink(note.id, { x: note.x + note.width, y: note.y + note.height / 2 }, true),
+          },
+          { label: "Resolve", run: () => onResolveComment(note.id) },
+        ],
+      });
+      return;
+    }
+    const hit = linkAt(element, model, layout);
+    const items = [
+      { label: "Add comment", run: () => newDraft("comment", hit, point) },
+      { label: "Add question", run: () => newDraft("question", hit, point) },
+    ];
+    if (draft && hit && !draft.links.some((held) => sameLink(held, hit.link))) {
+      items.push({ label: "Link the new note here", run: () => addLink("draft", hit.link) });
+    }
+    setMenu({ ...client, title: hit?.link.title, items });
+  };
+  const openMenuRef = useRef(openMenu);
+  useLayoutEffect(() => {
+    openMenuRef.current = openMenu;
+  });
+
+  const linkFrom = linking?.from;
+  const linkSticky = linking?.sticky ?? false;
+  useEffect(() => {
+    if (linkFrom === undefined) {
+      return;
+    }
+    const hitAt = (event: PointerEvent) =>
+      linkAt(document.elementFromPoint(event.clientX, event.clientY), model, layout);
+    const move = (event: PointerEvent) => {
+      const end = toDiagram({ x: event.clientX, y: event.clientY });
+      const hit = hitAt(event);
+      setLinking((current) => current && { ...current, end, hit });
+    };
+    const finish = (event: PointerEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      const hit = hitAt(event);
+      setLinking(undefined);
+      if (hit) {
+        addLink(linkFrom, hit.link);
+      }
+    };
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        setLinking(undefined);
+      }
+    };
+    const end = linkSticky ? "pointerdown" : "pointerup";
+    window.addEventListener("pointermove", move);
+    window.addEventListener(end, finish, true);
+    window.addEventListener("keydown", key, true);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener(end, finish, true);
+      window.removeEventListener("keydown", key, true);
+    };
+  }, [linkFrom, linkSticky, model, layout, toDiagram, addLink]);
+
+  const lastNoteRequest = useRef(noteRequest);
+  useEffect(() => {
+    if (noteRequest === lastNoteRequest.current) {
+      return;
+    }
+    lastNoteRequest.current = noteRequest;
+    const link = selection && targetLink(model, selection);
+    const element = selection && elements.current.get(targetKey(selection));
+    const rect = element?.getBoundingClientRect();
+    const hit = link && rect && linkAt(element ?? null, model, layout);
+    newDraft("comment", hit, toDiagram({ x: rect?.right ?? 0, y: rect?.top ?? 0 }));
+  }, [noteRequest, selection, model, layout, newDraft, toDiagram]);
+
+  const draftBox = draft && {
+    x: draft.x,
+    y: draft.y,
+    width: DRAFT_WIDTH,
+    height: DRAFT_HEIGHT,
+    home: "",
+  };
+  const draftLines = draftBox
+    ? noteLinks(draftBox, draft.links, layout.nodes, layout.containers)
+    : [];
+
   const onKey = useCallback(
     (event: ReactKeyboardEvent, target: Target) => {
       const index = items.findIndex((item) => sameTarget(item.target, target));
       const current = items[index];
       if (!current) {
+        return;
+      }
+      if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+        event.preventDefault();
+        const element = elements.current.get(targetKey(target));
+        const rect = element?.getBoundingClientRect();
+        openMenuRef.current(element ?? null, {
+          x: (rect?.left ?? 0) + 16,
+          y: (rect?.top ?? 0) + 16,
+        });
         return;
       }
       if (event.shiftKey && event.key.startsWith("Arrow")) {
@@ -1410,7 +1645,11 @@ export function Diagram({
     if (event.pointerType !== "mouse" || event.button !== 0) {
       return;
     }
-    if ((event.target as Element).closest(".focusable, .controls, .uml-edge")) {
+    if (
+      (event.target as Element).closest(
+        ".focusable, .controls, .uml-edge, .uml-note, .note-link-hit",
+      )
+    ) {
       return;
     }
     const viewport = viewportRef.current;
@@ -1447,7 +1686,12 @@ export function Diagram({
     if (dragging) {
       setDragging(false);
       viewportRef.current?.releasePointerCapture(event.pointerId);
-    } else if (drag && !(event.target as Element).closest(".focusable, .controls, .uml-edge")) {
+    } else if (
+      drag &&
+      !(event.target as Element).closest(
+        ".focusable, .controls, .uml-edge, .uml-note, .note-link-hit",
+      )
+    ) {
       onSelect(undefined);
     }
   };
@@ -1513,151 +1757,235 @@ export function Diagram({
           dragRef.current = undefined;
           setDragging(false);
         }}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          if (!linking) {
+            openMenu(event.target as Element, { x: event.clientX, y: event.clientY });
+          }
+        }}
       >
         <div className="canvas">
-          <svg
-            width={Math.max(1, layout.width * zoom)}
-            height={Math.max(1, layout.height * zoom)}
-            viewBox={`0 0 ${Math.max(1, layout.width)} ${Math.max(1, layout.height)}`}
-            role="application"
-            aria-roledescription="UML class diagram"
-            aria-label="UML class diagram. Click to select, double-click or press Enter to open the diff. Use the arrow keys to move between types and members, Shift and an arrow key to pan."
-          >
-            <Markers />
-            {layout.containers.map((container) => (
-              <ContainerView
-                key={container.id}
-                container={container}
-                file={container.fileKey ? files.get(container.fileKey) : undefined}
-                measure={measure}
-                selection={selection}
-                tabTarget={tabTarget}
-                onSelect={onSelect}
-                onOpen={onOpen}
-                onKey={onKey}
-                registerRef={registerRef}
-              />
-            ))}
-            <g className="edges">
-              {shownEdges.map(({ edge, level }) => {
-                const d = roundedPath(edge.points);
-                const isHover = edge.id === activeHover;
-                return (
-                  <g
-                    key={edge.id}
-                    className={`uml-edge kind-${edge.relation.kind} rel-${edge.relation.change}${level ? ` is-${level}` : ""}${isHover ? " is-hover" : ""}`}
-                    onPointerEnter={() => setHoverEdge(edge.id)}
-                    onPointerLeave={() => setHoverEdge(undefined)}
-                    onClick={() => follow(edge)}
-                  >
-                    <path className="edge-casing" d={d} />
-                    <path
-                      className="edge-line"
-                      d={d}
-                      markerEnd={markerFor(edge, level === "hot" || isHover)}
-                    />
-                    {edge.label?.anchor && (
-                      <line
-                        className="edge-label-leader"
-                        x1={edge.label.anchor.x}
-                        y1={edge.label.anchor.y}
-                        x2={Math.min(
-                          Math.max(edge.label.anchor.x, edge.label.x),
-                          edge.label.x + edge.label.width,
-                        )}
-                        y2={Math.min(
-                          Math.max(edge.label.anchor.y, edge.label.y),
-                          edge.label.y + edge.label.height,
-                        )}
-                      />
-                    )}
-                    {edge.label && (
-                      <text
-                        x={edge.label.x + edge.label.width / 2}
-                        y={edge.label.y + edge.label.height / 2}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        className="t-small edge-label"
-                      >
-                        {edge.label.text}
-                      </text>
-                    )}
-                    <path className="edge-hit" d={d} />
-                    <title>{`${edgeTitle(edge, types)}. Click to go to the other end.`}</title>
-                  </g>
-                );
-              })}
-            </g>
-            {layout.nodes.map((node) => {
-              const type = types.get(node.id);
-              if (!type) {
-                return null;
-              }
-              return (
-                <NodeView
-                  key={node.id}
-                  node={node}
-                  type={type}
-                  file={files.get(type.fileKey)}
+          <div className={`canvas-stage${linking ? " is-linking" : ""}`}>
+            <svg
+              ref={svgRef}
+              width={Math.max(1, layout.width * zoom)}
+              height={Math.max(1, layout.height * zoom)}
+              viewBox={`0 0 ${Math.max(1, layout.width)} ${Math.max(1, layout.height)}`}
+              role="application"
+              aria-roledescription="UML class diagram"
+              aria-label="UML class diagram. Click to select, double-click or press Enter to open the diff. Use the arrow keys to move between types and members, Shift and an arrow key to pan."
+            >
+              <Markers />
+              {layout.containers.map((container) => (
+                <ContainerView
+                  key={container.id}
+                  container={container}
+                  file={container.fileKey ? files.get(container.fileKey) : undefined}
                   measure={measure}
                   selection={selection}
                   tabTarget={tabTarget}
-                  related={links.ends.has(node.id)}
-                  hotEnd={links.hotEnds.has(node.id)}
-                  dimmed={!!selectedType && node.id !== selectedType && !links.ends.has(node.id)}
-                  endHover={hoverEnds.has(node.id)}
-                  findHit={find !== "" && type.name.toLowerCase().includes(find.toLowerCase())}
                   onSelect={onSelect}
                   onOpen={onOpen}
-                  onExpand={onExpand}
                   onKey={onKey}
                   registerRef={registerRef}
                 />
-              );
-            })}
-            <g className="role-labels">
-              {[...rolePlaces].map(([id, place]) => {
-                const anchor = place.anchor;
-                const endX = anchor
-                  ? Math.min(Math.max(anchor.x, place.x), place.x + place.width)
-                  : 0;
-                const endY = anchor
-                  ? Math.min(Math.max(anchor.y, place.y), place.y + place.height)
-                  : 0;
-                return (
-                  <g
-                    key={id}
-                    className={`role-label rel-${edgeChanges.get(id) ?? "unchanged"}${id === activeHover ? " is-hover" : ""}`}
-                  >
-                    {anchor && (
-                      <>
-                        <line
-                          className="role-leader"
-                          x1={anchor.x}
-                          y1={anchor.y}
-                          x2={endX}
-                          y2={endY}
-                        />
-                        <circle className="role-anchor" cx={anchor.x} cy={anchor.y} r={2.5} />
-                      </>
-                    )}
-                    <g transform={`translate(${place.x},${place.y})`}>
-                      <rect width={place.width} height={place.height} rx={place.height / 2} />
-                      <text
-                        x={place.width / 2}
-                        y={place.height / 2}
-                        textAnchor="middle"
-                        dominantBaseline="central"
-                        className="t-small"
-                      >
-                        {roleTexts.get(id)}
-                      </text>
+              ))}
+              <g className="note-links">
+                {[
+                  ...layout.notes.flatMap((note) =>
+                    note.links.map((line) => ({ from: note.id, kind: note.comment.kind, line })),
+                  ),
+                  ...draftLines.map((line) => ({
+                    from: "draft",
+                    kind: draft?.kind ?? "comment",
+                    line,
+                  })),
+                ].map(({ from, kind, line }, order) => {
+                  const d = roundedPath(line.points);
+                  return (
+                    <g
+                      key={`${from}:${line.index}:${order}`}
+                      className={`note-line kind-${kind}`}
+                      data-note-link={from}
+                      data-link-index={line.index}
+                    >
+                      <path className="note-link" d={d} />
+                      <path className="note-link-hit" d={d} />
+                      <title>Right-click to remove this link</title>
                     </g>
-                  </g>
+                  );
+                })}
+              </g>
+              <g className="edges">
+                {shownEdges.map(({ edge, level }) => {
+                  const d = roundedPath(edge.points);
+                  const isHover = edge.id === activeHover;
+                  return (
+                    <g
+                      key={edge.id}
+                      className={`uml-edge kind-${edge.relation.kind} rel-${edge.relation.change}${level ? ` is-${level}` : ""}${isHover ? " is-hover" : ""}`}
+                      onPointerEnter={() => setHoverEdge(edge.id)}
+                      onPointerLeave={() => setHoverEdge(undefined)}
+                      onClick={() => follow(edge)}
+                    >
+                      <path className="edge-casing" d={d} />
+                      <path
+                        className="edge-line"
+                        d={d}
+                        markerEnd={markerFor(edge, level === "hot" || isHover)}
+                      />
+                      {edge.label?.anchor && (
+                        <line
+                          className="edge-label-leader"
+                          x1={edge.label.anchor.x}
+                          y1={edge.label.anchor.y}
+                          x2={Math.min(
+                            Math.max(edge.label.anchor.x, edge.label.x),
+                            edge.label.x + edge.label.width,
+                          )}
+                          y2={Math.min(
+                            Math.max(edge.label.anchor.y, edge.label.y),
+                            edge.label.y + edge.label.height,
+                          )}
+                        />
+                      )}
+                      {edge.label && (
+                        <text
+                          x={edge.label.x + edge.label.width / 2}
+                          y={edge.label.y + edge.label.height / 2}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          className="t-small edge-label"
+                        >
+                          {edge.label.text}
+                        </text>
+                      )}
+                      <path className="edge-hit" d={d} />
+                      <title>{`${edgeTitle(edge, types)}. Click to go to the other end.`}</title>
+                    </g>
+                  );
+                })}
+              </g>
+              {layout.nodes.map((node) => {
+                const type = types.get(node.id);
+                if (!type) {
+                  return null;
+                }
+                return (
+                  <NodeView
+                    key={node.id}
+                    node={node}
+                    type={type}
+                    file={files.get(type.fileKey)}
+                    measure={measure}
+                    selection={selection}
+                    tabTarget={tabTarget}
+                    related={links.ends.has(node.id)}
+                    hotEnd={links.hotEnds.has(node.id)}
+                    dimmed={!!selectedType && node.id !== selectedType && !links.ends.has(node.id)}
+                    endHover={hoverEnds.has(node.id)}
+                    findHit={find !== "" && type.name.toLowerCase().includes(find.toLowerCase())}
+                    onSelect={onSelect}
+                    onOpen={onOpen}
+                    onExpand={onExpand}
+                    onKey={onKey}
+                    registerRef={registerRef}
+                  />
                 );
               })}
-            </g>
-          </svg>
+              <g className="notes">
+                {layout.notes.map((note) => (
+                  <NoteView
+                    key={note.id}
+                    note={note}
+                    onOpen={onOpenComment}
+                    onResolve={onResolveComment}
+                    onMenu={(target, at) =>
+                      openMenu(
+                        svgRef.current?.querySelector(`[data-note="${CSS.escape(target.id)}"]`) ??
+                          null,
+                        at,
+                      )
+                    }
+                    onStartLink={(id, from) => startLink(id, from, false)}
+                  />
+                ))}
+              </g>
+              <g className="role-labels">
+                {[...rolePlaces].map(([id, place]) => {
+                  const anchor = place.anchor;
+                  const endX = anchor
+                    ? Math.min(Math.max(anchor.x, place.x), place.x + place.width)
+                    : 0;
+                  const endY = anchor
+                    ? Math.min(Math.max(anchor.y, place.y), place.y + place.height)
+                    : 0;
+                  return (
+                    <g
+                      key={id}
+                      className={`role-label rel-${edgeChanges.get(id) ?? "unchanged"}${id === activeHover ? " is-hover" : ""}`}
+                    >
+                      {anchor && (
+                        <>
+                          <line
+                            className="role-leader"
+                            x1={anchor.x}
+                            y1={anchor.y}
+                            x2={endX}
+                            y2={endY}
+                          />
+                          <circle className="role-anchor" cx={anchor.x} cy={anchor.y} r={2.5} />
+                        </>
+                      )}
+                      <g transform={`translate(${place.x},${place.y})`}>
+                        <rect width={place.width} height={place.height} rx={place.height / 2} />
+                        <text
+                          x={place.width / 2}
+                          y={place.height / 2}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          className="t-small"
+                        >
+                          {roleTexts.get(id)}
+                        </text>
+                      </g>
+                    </g>
+                  );
+                })}
+              </g>
+              {linking && (
+                <g className="linking">
+                  {linking.hit && (
+                    <rect
+                      className="link-target"
+                      x={linking.hit.box.x - 2}
+                      y={linking.hit.box.y - 2}
+                      width={linking.hit.box.width + 4}
+                      height={linking.hit.box.height + 4}
+                      rx={6}
+                    />
+                  )}
+                  <line
+                    className="link-drag"
+                    x1={linking.start.x}
+                    y1={linking.start.y}
+                    x2={linking.end.x}
+                    y2={linking.end.y}
+                  />
+                </g>
+              )}
+            </svg>
+            {draft && (
+              <DraftNote
+                draft={draft}
+                zoom={zoom}
+                onKind={(kind) => onDraft({ ...draft, kind })}
+                onDone={(body) => onAddComment(draft, body)}
+                onCancel={() => onDraft(undefined)}
+                onStartLink={(from) => startLink("draft", from, false)}
+              />
+            )}
+          </div>
         </div>
       </div>
       <div className="view-controls">
@@ -1716,6 +2044,14 @@ export function Diagram({
           centreLabel={selection ? "Centre the selection (C)" : "Centre the diagram"}
         />
       </div>
+      {linking && (
+        <div className="link-hint" role="status">
+          {linking.hit
+            ? `Link to ${linking.hit.link.title}`
+            : "Drop on a type, a member or a frame. Esc cancels."}
+        </div>
+      )}
+      {menu && <ContextMenu menu={menu} onClose={() => setMenu(undefined)} />}
     </div>
   );
 }

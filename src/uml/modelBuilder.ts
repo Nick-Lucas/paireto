@@ -9,6 +9,7 @@ import { buildDelta, type DeltaFile } from "../review/delta.js";
 import type { ReviewController } from "../review/ReviewController.js";
 import { ReviewPath } from "../review/ReviewPath.js";
 import type { SeenFiles } from "../review/SeenFiles.js";
+import { diagramComments } from "./core/comments.js";
 import { diffFile, fileType, type DiffedType, type ThreadPosition } from "./core/fileDiff.js";
 import { diffHunks, diffLines, splitLines, type LineDiff } from "./core/lineDiff.js";
 import type { TypeChange, TypeKind, UmlFile, UmlModel, UmlType } from "./core/model.js";
@@ -235,7 +236,7 @@ export class UmlModelBuilder {
     const state = this.review.getState();
     const threads = this.review
       .getComments()
-      .filter((thread) => !thread.resolvedAt && !thread.changeset);
+      .filter((thread) => !thread.resolvedAt && !thread.changeset && !thread.diagram);
     const threadsByFile = new Map<string, ThreadPosition[]>();
     for (const thread of threads) {
       const key = fileKeyOf(thread.repoRoot, thread.filePath);
@@ -374,6 +375,7 @@ export class UmlModelBuilder {
         files,
         types: [...entries.map((e) => e.type), ...contextTypes],
         relations: buildRelations(entries, contextTypes),
+        comments: diagramComments(this.review.getComments()),
         notes,
       },
       deltas,

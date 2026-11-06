@@ -24,7 +24,14 @@ import { hotspots, type Hotspot } from "../core/hotspots";
 import { layoutDiagram, type DiagramLayout } from "../core/layout";
 import { nextChange, type ChangeStop } from "../core/nextChange";
 import { panelWidth } from "../core/panel";
-import type { LineCounts, UmlFile, UmlModel, UmlRelation, UmlType } from "../core/model";
+import type {
+  LineCounts,
+  UmlComment,
+  UmlFile,
+  UmlModel,
+  UmlRelation,
+  UmlType,
+} from "../core/model";
 import {
   DEFAULT_VIEW_STATE,
   type HostMessage,
@@ -32,6 +39,7 @@ import {
   type WebviewMessage,
 } from "../core/protocol";
 import { Diagram } from "./Diagram";
+import type { Draft } from "./notes";
 import { Icon } from "./icons";
 import { createMeasure } from "./measure";
 import {
@@ -54,10 +62,16 @@ const vscode = acquireVsCodeApi();
 const elk = new ELK();
 const TOAST_MS = 7000;
 
-function layoutKey(view: FocusedView, mode: string, overview: boolean): string {
+function layoutKey(
+  view: FocusedView,
+  mode: string,
+  overview: boolean,
+  comments: readonly UmlComment[],
+): string {
   return JSON.stringify([
     mode,
     overview,
+    comments.map((c) => [c.id, c.kind, c.body, c.replies, c.sent, c.links]),
     view.types.map((t) => [
       t.type.id,
       t.role,
@@ -961,6 +975,7 @@ function SelectionBar({
   onFollow,
   onHoverRelation,
   onLegend,
+  onComment,
 }: {
   model: UmlModel;
   selection?: Target;
@@ -972,6 +987,7 @@ function SelectionBar({
   onFollow(typeId: string): void;
   onHoverRelation(relationId: string | undefined): void;
   onLegend(): void;
+  onComment?: () => void;
 }) {
   const barRef = useRef<HTMLElement>(null);
   const [menu, setMenu] = useState<{ key: string; id: LinkMenuId; left: number } | undefined>();
@@ -1163,6 +1179,16 @@ function SelectionBar({
             <span>Seen</span>
           </label>
         )}
+        {onComment && (
+          <button
+            type="button"
+            className="button secondary"
+            title="Add a note on this to the diagram, for the agent. You can also right-click a part of the diagram."
+            onClick={onComment}
+          >
+            <Icon name="comment" /> Comment
+          </button>
+        )}
         {linkCount > 0 && (
           <button
             type="button"
@@ -1223,6 +1249,8 @@ export function UmlDiff() {
   const findRef = useRef<HTMLInputElement>(null);
   const [hoverRelation, setHoverRelation] = useState<string | undefined>();
   const [toast, setToast] = useState<string | undefined>();
+  const [draft, setDraft] = useState<Draft | undefined>();
+  const [noteRequest, setNoteRequest] = useState(0);
   const measure = useMemo(() => createMeasure(), []);
   const mainRef = useRef<HTMLDivElement>(null);
   const mainAreaRef = useRef<HTMLElement>(null);
@@ -1300,7 +1328,7 @@ export function UmlDiff() {
     if (!view || !layoutModel) {
       return;
     }
-    const key = layoutKey(view, viewState.layout, overview);
+    const key = layoutKey(view, viewState.layout, overview, layoutModel.comments);
     if (key === lastKey.current) {
       return;
     }
@@ -1322,6 +1350,7 @@ export function UmlDiff() {
         aspectRatio,
         repoCount: layoutModel.repoCount,
         overview,
+        comments: layoutModel.comments,
       },
       measure,
       elk,
@@ -1475,7 +1504,7 @@ export function UmlDiff() {
         event.metaKey ||
         event.ctrlKey ||
         event.altKey ||
-        target?.closest("input, textarea, select")
+        target?.closest("input, textarea, select, .draft-note, .context-menu")
       ) {
         return;
       }
@@ -1602,6 +1631,18 @@ export function UmlDiff() {
         onFollow={follow}
         onExpand={expand}
         onOverview={onOverview}
+        draft={draft}
+        noteRequest={noteRequest}
+        onDraft={setDraft}
+        onAddComment={(added, body) => {
+          vscode.postMessage({ type: "addComment", kind: added.kind, body, links: added.links });
+          setDraft(undefined);
+          showToast("Note added to the diagram. It goes to the agent with Send Feedback.");
+        }}
+        onOpenComment={(id) => vscode.postMessage({ type: "openComment", id })}
+        onResolveComment={(id) => vscode.postMessage({ type: "resolveComment", id })}
+        onLinkComment={(id, link) => vscode.postMessage({ type: "linkComment", id, link })}
+        onUnlinkComment={(id, index) => vscode.postMessage({ type: "unlinkComment", id, index })}
       />
     );
   } else {
@@ -1704,6 +1745,7 @@ export function UmlDiff() {
           onFollow={follow}
           onHoverRelation={setHoverRelation}
           onLegend={() => setLegendOpen((v) => !v)}
+          onComment={() => setNoteRequest((n) => n + 1)}
         />
       )}
       {toast && (

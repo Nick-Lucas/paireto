@@ -74,7 +74,8 @@ import {
 import { serialiseRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
-import { getOpeningComment, type ReviewThread } from "./reviewTypes.js";
+import { diagramThread, relinkDiagramThread } from "./diagramComments.js";
+import { getOpeningComment, type DiagramAnchor, type ReviewThread } from "./reviewTypes.js";
 import {
   appendFeedbackReply,
   pendingFeedback,
@@ -268,7 +269,8 @@ export class ReviewController implements vscode.Disposable {
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
       (doc) =>
         doc.uri.scheme === Schemes.review ||
-        (doc.uri.scheme === Schemes.changeset && changesetIdFromDocUri(doc.uri) !== PLAN_DOC_ID) ||
+        (doc.uri.scheme === Schemes.changeset &&
+          ![undefined, PLAN_DOC_ID].includes(changesetIdFromDocUri(doc.uri))) ||
         (doc.uri.scheme === "file" && this.isChangedFileDoc(doc.uri)),
     );
 
@@ -1856,6 +1858,68 @@ export class ReviewController implements vscode.Disposable {
     return true;
   }
 
+  async addDiagramComment(
+    repoRoot: string,
+    anchor: DiagramAnchor,
+    kind: CommentKind,
+    body: string,
+  ): Promise<boolean> {
+    if (!body.trim() || !this.holdsFeedbackFor(repoRoot)) {
+      return false;
+    }
+    const id = await newFeedbackId();
+    const uri = vscode.Uri.from({
+      scheme: Schemes.changeset,
+      path: `/${anchor.title.replaceAll("/", "-")}.md`,
+      query: `diagram=${encodeURIComponent(id)}`,
+    });
+    const model = diagramThread({
+      id,
+      at: new Date().toISOString(),
+      kind,
+      body: body.trim(),
+      uri: uri.toString(),
+      repoRoot,
+      anchor,
+    });
+    if (!this.feedback?.add(model)) {
+      this.warnFeedbackClosed();
+      return false;
+    }
+    return true;
+  }
+
+  diagramAnchorOf(id: string): DiagramAnchor | undefined {
+    return this.getComments().find((item) => item.id === id)?.diagram;
+  }
+
+  relinkDiagramComment(id: string, anchor: DiagramAnchor): boolean {
+    return !!this.feedback?.amendThread(id, (thread) => relinkDiagramThread(thread, anchor));
+  }
+
+  async openDiagramComment(id: string): Promise<void> {
+    const model = this.getComments().find((item) => item.id === id);
+    const entry = this.feedback?.commentFor(id);
+    if (!model?.diagram) {
+      return;
+    }
+    const uri = this.feedbackUri(model);
+    const doc = await vscode.workspace.openTextDocument(uri);
+    await vscode.languages.setTextDocumentLanguage(doc, "markdown");
+    await vscode.window.showTextDocument(doc, {
+      viewColumn: vscode.ViewColumn.Beside,
+      preview: true,
+    });
+    if (entry?.thread) {
+      entry.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
+    }
+    void ensureCommentingVisible();
+  }
+
+  resolveComment(id: string): void {
+    this.setResolved(id, true);
+  }
+
   /**
    * Add to a thread that is already open. A reply carries no kind of its own: the comment that
    * opens the thread says whether it is a question or a comment, and a review answers on that.
@@ -2333,7 +2397,9 @@ export class ReviewController implements vscode.Disposable {
   private feedbackLabel(model: ReviewThread): string {
     return model.changeset
       ? `Changeset: ${model.changeset.title}`
-      : this.commentLocationLabel(model.repoRoot, model.filePath, model.line);
+      : model.diagram
+        ? `Class diagram: ${model.diagram.title}`
+        : this.commentLocationLabel(model.repoRoot, model.filePath, model.line);
   }
 
   private feedbackUri(model: ReviewThread): vscode.Uri {
