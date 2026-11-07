@@ -28,7 +28,13 @@ import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffS
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderRejectedPlanFeedback } from "../plan/planFeedback.js";
 import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
-import { diagramThread, relinkDiagramThread } from "../review/diagramComments.js";
+import {
+  diagramThread,
+  editDiagramThread,
+  placeDiagramThread,
+  readDiagramThread,
+  relinkDiagramThread,
+} from "../review/diagramComments.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 import type { CommentKind } from "../comments/kinds.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
@@ -612,6 +618,71 @@ suite("diagram comment threads", () => {
     assert.strictEqual(moved.sourceDocument?.uri, made.sourceDocument?.uri);
     assert.deepStrictEqual(moved.anchor, made.anchor);
     assert.deepStrictEqual(moved.items, made.items);
+  });
+
+  test("editing a note changes its text, kind and links, keeps its place, and makes it ready to send again", () => {
+    const place = { typeId: "repo:src/a.ts::Builder", x: 10, y: 20 };
+    const made = {
+      ...placeDiagramThread(thread([builder]), place),
+      delivery: "sent" as const,
+    };
+    const later = "2026-11-04T00:00:00.000Z";
+    const edited = editDiagramThread(made, {
+      kind: "comment",
+      body: "Share one cache.",
+      anchor: { title: "Builder and 1 more", links: [builder, model] },
+      at: later,
+    });
+    assert.strictEqual(edited.items[0].body, "Share one cache.");
+    assert.strictEqual(edited.items[0].commentKind, "comment");
+    assert.strictEqual(edited.items[0].quote, made.items[0].quote);
+    assert.deepStrictEqual(edited.diagram, {
+      title: "Builder and 1 more",
+      links: [builder, model],
+      place,
+    });
+    assert.ok(edited.sourceDocument?.markdown.includes("- **Model** at `src/b.ts:3`"));
+    assert.strictEqual(edited.delivery, "pending");
+    assert.strictEqual(edited.updatedAt, later);
+    assert.deepStrictEqual(edited.anchor, made.anchor);
+  });
+
+  test("reading a note's thread records when, and a new link or edit keeps it", () => {
+    const later = "2026-11-04T00:00:00.000Z";
+    const read = readDiagramThread(thread([builder]), later);
+    assert.strictEqual(read.diagram?.readAt, later);
+    assert.strictEqual(read.delivery, "pending");
+    assert.deepStrictEqual(read.items, thread([builder]).items);
+    const linked = relinkDiagramThread(read, {
+      title: "Builder and 1 more",
+      links: [builder, model],
+    });
+    assert.strictEqual(linked.diagram?.readAt, later);
+    const edited = editDiagramThread(read, {
+      kind: "comment",
+      body: "Changed",
+      anchor: { title: "Builder", links: [builder] },
+      at: "2026-11-05T00:00:00.000Z",
+    });
+    assert.strictEqual(edited.diagram?.readAt, later);
+  });
+
+  test("a note put in a new place keeps its links and document, and keeps the place when linked again", () => {
+    const made = thread([builder]);
+    const place = { typeId: "repo:src/a.ts::Builder", x: 240, y: -16 };
+    const placed = placeDiagramThread(made, place);
+    assert.deepStrictEqual(placed.diagram, { ...made.diagram, place });
+    assert.deepStrictEqual(placed.sourceDocument, made.sourceDocument);
+    assert.deepStrictEqual(placed.items, made.items);
+    const linked = relinkDiagramThread(placed, {
+      title: "Builder and 1 more",
+      links: [builder, model],
+    });
+    assert.deepStrictEqual(linked.diagram?.place, place);
+    assert.strictEqual(
+      relinkDiagramThread(made, made.diagram ?? { title: "", links: [] }).diagram?.place,
+      undefined,
+    );
   });
 });
 

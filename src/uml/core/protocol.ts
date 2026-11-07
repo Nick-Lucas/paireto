@@ -1,5 +1,5 @@
 import { NO_FILTERS, type LayoutMode, type ReviewFilters, type ReviewFocus } from "./focus.js";
-import type { UmlCommentLink, UmlModel } from "./model.js";
+import type { NotePlace, UmlCommentLink, UmlModel } from "./model.js";
 
 export interface UmlViewState {
   focus: ReviewFocus;
@@ -35,5 +35,15 @@ export type WebviewMessage =
   | { type: "addComment"; kind: "question" | "comment"; body: string; links: UmlCommentLink[] }
   | { type: "linkComment"; id: string; link: UmlCommentLink }
   | { type: "unlinkComment"; id: string; index: number }
+  | { type: "moveComment"; id: string; place: NotePlace }
+  | { type: "replyComment"; id: string; body: string }
+  | { type: "readComment"; id: string }
+  | {
+      type: "editComment";
+      id: string;
+      kind: "question" | "comment";
+      body: string;
+      links: UmlCommentLink[];
+    }
   | { type: "openComment"; id: string }
   | { type: "resolveComment"; id: string };

@@ -1,16 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { linksTitle } from "../core/comments";
+import { linksTitle, noteStatus, timeAgo } from "../core/comments";
 import {
   METRICS,
   NOTE_METRICS,
   type Box,
   type ContainerLayout,
   type DiagramLayout,
+  type Measure,
   type NoteLayout,
   type Point,
 } from "../core/layout";
-import type { UmlCommentLink, UmlModel } from "../core/model";
+import type { UmlComment, UmlCommentLink, UmlModel } from "../core/model";
 import { iconPath } from "./icons";
 import type { Target } from "./targets";
 
@@ -21,6 +22,8 @@ export interface Draft {
   links: UmlCommentLink[];
   x: number;
   y: number;
+  id?: string;
+  body?: string;
 }
 
 export interface MenuItem {
@@ -139,15 +142,36 @@ function foldPath(width: number, height: number): string {
   return `M0,0 H${width - NOTE_FOLD} L${width},${NOTE_FOLD} V${height} H0 Z`;
 }
 
+const ARROWS: Record<string, Point> = {
+  ArrowLeft: { x: -1, y: 0 },
+  ArrowRight: { x: 1, y: 0 },
+  ArrowUp: { x: 0, y: -1 },
+  ArrowDown: { x: 0, y: 1 },
+};
+
+export const THREAD_WIDTH = 340;
+const THREAD_MAX_HEIGHT = 420;
+const BADGE_HEIGHT = 16;
+
 export function NoteView({
   note,
-  onOpen,
+  measure,
+  moving,
+  onShow,
+  onEdit,
+  onStartMove,
+  onNudge,
   onResolve,
   onMenu,
   onStartLink,
 }: {
   note: NoteLayout;
-  onOpen(id: string): void;
+  measure: Measure;
+  moving: boolean;
+  onShow(): void;
+  onEdit(): void;
+  onStartMove(from: Point): void;
+  onNudge(dx: number, dy: number): void;
   onResolve(id: string): void;
   onMenu(note: NoteLayout, at: Point): void;
   onStartLink(id: string, from: Point, pointerId: number): void;
@@ -156,25 +180,50 @@ export function NoteView({
   const headY = NOTE_METRICS.headHeight / 2 + 1;
   const kind = comment.kind === "question" ? "Question" : "Comment";
   const title = linksTitle(comment.links);
-  const meta = [
-    comment.replies > 0 ? `${comment.replies} ${comment.replies === 1 ? "reply" : "replies"}` : "",
-    comment.sent ? "sent" : "not sent",
-  ]
-    .filter(Boolean)
-    .join(" · ");
+  const status = noteStatus(comment);
+  const kindRight = NOTE_METRICS.padX + 18 + measure(kind, "smallBold");
+  const badgeRoom = width - NOTE_FOLD - 30 - (kindRight + 8);
+  const badgeText =
+    status.badge && measure(status.badge, "smallBold") + 22 <= badgeRoom
+      ? status.badge
+      : `${comment.unread} new`;
+  const badgeWidth = status.badge ? measure(badgeText, "smallBold") + 22 : 0;
+  const metaRoom = width - NOTE_FOLD - 30 - (kindRight + 6);
+  const meta = status.badge
+    ? ""
+    : measure(status.meta, "small") <= metaRoom
+      ? status.meta
+      : status.meta.replace(/^\d+ repl(y|ies) · /, "");
   return (
     <g
-      className={`uml-note kind-${comment.kind}${comment.sent ? " is-sent" : ""}`}
+      className={`uml-note kind-${comment.kind}${comment.sent ? " is-sent" : ""}${moving ? " is-moving" : ""}`}
       transform={`translate(${note.x},${note.y})`}
       data-note={comment.id}
       role="button"
       tabIndex={0}
-      aria-label={`${kind} on ${title}: ${comment.body}. Open the thread to reply, edit or delete it. Press the menu key to link it.`}
-      onClick={() => onOpen(comment.id)}
+      aria-label={`${kind} on ${title}: ${comment.body}. ${status.badge ? `${status.badge}. ` : ""}Press Space to show the thread. Press Enter to edit it. Press Alt and an arrow key to move it. Press the menu key to link it or resolve it.`}
+      onClick={onShow}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        onEdit();
+      }}
+      onPointerDown={(event) => {
+        if (event.button === 0 && !(event.target as Element).closest(".note-resolve")) {
+          onStartMove({ x: event.clientX, y: event.clientY });
+        }
+      }}
       onKeyDown={(event) => {
-        if (event.key === "Enter" || event.key === " ") {
+        const arrow = ARROWS[event.key];
+        if (arrow && event.altKey) {
           event.preventDefault();
-          onOpen(comment.id);
+          event.stopPropagation();
+          onNudge(arrow.x, arrow.y);
+        } else if (event.key === " ") {
+          event.preventDefault();
+          onShow();
+        } else if (event.key === "Enter") {
+          event.preventDefault();
+          onEdit();
         } else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
           event.preventDefault();
           const rect = event.currentTarget.getBoundingClientRect();
@@ -182,7 +231,7 @@ export function NoteView({
         }
       }}
     >
-      <title>{`${kind} on ${title}\n\n${comment.body}\n\nClick to open the thread. Drag the dot to link it to a type or a frame.`}</title>
+      <title>{`${kind} on ${title}\n\n${comment.body}\n\nClick to show the thread. Double-click to edit it. Drag the note to move it. Drag the dot to link it to a type or a frame.`}</title>
       <path className="note-box" d={foldPath(width, height)} />
       <path className="note-fold" d={`M${width - NOTE_FOLD},0 V${NOTE_FOLD} H${width}`} />
       <path
@@ -201,6 +250,18 @@ export function NoteView({
           {meta}
         </tspan>
       </text>
+      {status.badge && (
+        <g
+          className="note-badge"
+          transform={`translate(${kindRight + 8},${headY - BADGE_HEIGHT / 2})`}
+        >
+          <rect width={badgeWidth} height={BADGE_HEIGHT} rx={BADGE_HEIGHT / 2} />
+          <circle cx={9} cy={BADGE_HEIGHT / 2} r={3} />
+          <text x={16} y={BADGE_HEIGHT / 2} className="t-small-bold" dominantBaseline="central">
+            {badgeText}
+          </text>
+        </g>
+      )}
       <g
         className="note-resolve"
         role="button"
@@ -251,20 +312,24 @@ export function NoteView({
 
 export function DraftNote({
   draft,
+  moving,
   zoom,
+  onStartMove,
   onKind,
   onDone,
   onCancel,
   onStartLink,
 }: {
   draft: Draft;
+  moving: boolean;
   zoom: number;
+  onStartMove(from: Point): void;
   onKind(kind: CommentKind): void;
   onDone(body: string): void;
   onCancel(): void;
   onStartLink(from: Point, pointerId: number): void;
 }) {
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(draft.body ?? "");
   const textRef = useRef<HTMLTextAreaElement>(null);
   const headY = NOTE_METRICS.headHeight / 2 + 1;
   const done = () => {
@@ -274,9 +339,9 @@ export function DraftNote({
   };
   return (
     <div
-      className={`uml-note draft-note kind-${draft.kind}`}
+      className={`uml-note draft-note kind-${draft.kind}${moving ? " is-moving" : ""}`}
       role="dialog"
-      aria-label="New note on the diagram"
+      aria-label={draft.id ? "Edit the note" : "New note on the diagram"}
       style={{
         left: draft.x * zoom,
         top: draft.y * zoom,
@@ -284,7 +349,13 @@ export function DraftNote({
         height: DRAFT_HEIGHT,
         transform: `scale(${zoom})`,
       }}
-      onPointerDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        if (event.button === 0 && !(event.target as Element).closest("textarea, button")) {
+          event.preventDefault();
+          onStartMove({ x: event.clientX, y: event.clientY });
+        }
+      }}
       onPointerUp={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.stopPropagation()}
       onKeyDown={(event) => {
@@ -354,7 +425,7 @@ export function DraftNote({
           title="Save the note (⌘↵). It goes to the agent with Send Feedback."
           onClick={done}
         >
-          Done
+          {draft.id ? "Save" : "Done"}
         </button>
       </div>
       <button
@@ -371,6 +442,149 @@ export function DraftNote({
           onStartLink({ x: draft.x + DRAFT_WIDTH, y: draft.y + DRAFT_HEIGHT / 2 }, event.pointerId);
         }}
       />
+    </div>
+  );
+}
+
+export function ThreadPopup({
+  comment,
+  left,
+  top,
+  onReply,
+  onRead,
+  onResolve,
+  onOpenEditor,
+  onClose,
+}: {
+  comment: UmlComment;
+  left: number;
+  top: number;
+  onReply(body: string): void;
+  onRead(): void;
+  onResolve(): void;
+  onOpenEditor(): void;
+  onClose(): void;
+}) {
+  const [body, setBody] = useState("");
+  const [now] = useState(() => Date.now());
+  const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
+  const kind = comment.kind === "question" ? "Question" : "Comment";
+  const unread = comment.unread;
+  useEffect(() => {
+    if (unread > 0) {
+      onRead();
+    }
+  }, [unread, onRead]);
+  const count = comment.items.length;
+  useLayoutEffect(() => {
+    const list = listRef.current;
+    if (list && count > 0) {
+      list.scrollTop = list.scrollHeight;
+    }
+    const root = rootRef.current;
+    const view = root?.closest(".viewport")?.getBoundingClientRect();
+    if (!root || !view) {
+      return;
+    }
+    root.style.transform = "";
+    const box = root.getBoundingClientRect();
+    const over = box.bottom - (view.bottom - 12);
+    const room = box.top - (view.top + 64);
+    root.style.transform = over > 0 ? `translateY(${-Math.min(over, Math.max(0, room))}px)` : "";
+  }, [count, top]);
+  useLayoutEffect(() => {
+    textRef.current?.focus({ preventScroll: true });
+  }, []);
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (
+        !rootRef.current?.contains(target) &&
+        !target?.closest(`[data-note="${CSS.escape(comment.id)}"]`) &&
+        !target?.closest(".context-menu")
+      ) {
+        onClose();
+      }
+    };
+    window.addEventListener("pointerdown", outside, true);
+    return () => window.removeEventListener("pointerdown", outside, true);
+  }, [comment.id, onClose]);
+  const reply = () => {
+    if (body.trim()) {
+      onReply(body.trim());
+      setBody("");
+    }
+  };
+  return (
+    <div
+      ref={rootRef}
+      className="thread-popup"
+      role="dialog"
+      aria-label={`${kind} on ${linksTitle(comment.links)}`}
+      style={{ left, top, width: THREAD_WIDTH, maxHeight: THREAD_MAX_HEIGHT }}
+      onPointerDown={(event) => event.stopPropagation()}
+      onPointerUp={(event) => event.stopPropagation()}
+      onContextMenu={(event) => event.stopPropagation()}
+      onDoubleClick={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        } else if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          reply();
+        }
+      }}
+    >
+      <div className="thread-head">
+        <span className="thread-title">{`${kind} on ${linksTitle(comment.links)}`}</span>
+        <button type="button" className="thread-close" aria-label="Close" onClick={onClose}>
+          ×
+        </button>
+      </div>
+      <div className="thread-list" ref={listRef}>
+        {comment.items.map((item, index) => (
+          <div key={index} className={`thread-item from-${item.who}`}>
+            <div className="thread-who">
+              {item.who === "agent" && <span className="thread-dot" aria-hidden />}
+              <span className="thread-name">{item.who === "agent" ? "Agent" : "You"}</span>
+              <span className="thread-time">{timeAgo(item.at, now)}</span>
+            </div>
+            <div className="thread-body">{item.body}</div>
+          </div>
+        ))}
+        {comment.waiting && (
+          <div className="thread-waiting">Sent. The agent has not answered yet.</div>
+        )}
+      </div>
+      <textarea
+        ref={textRef}
+        aria-label="Reply"
+        value={body}
+        placeholder="Reply to the agent…"
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <div className="thread-actions">
+        <button type="button" className="text-button" onClick={onOpenEditor}>
+          Open in editor
+        </button>
+        <span className="thread-gap" />
+        <button type="button" className="text-button" onClick={onResolve}>
+          Resolve
+        </button>
+        <button
+          type="button"
+          className="button"
+          disabled={!body.trim()}
+          title="Send the reply with the next Send Feedback (⌘↵)"
+          onClick={reply}
+        >
+          Reply
+        </button>
+      </div>
     </div>
   );
 }

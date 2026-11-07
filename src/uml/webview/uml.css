@@ -5,6 +5,7 @@
   --signature-change: var(--vscode-charts-blue, #3794ff);
   --muted: var(--vscode-descriptionForeground, #9d9d9d);
   --canvas-bg: var(--vscode-editor-background, #1f1f1f);
+  --agent: var(--vscode-charts-purple, #b180d7);
   --node-bg: var(--vscode-editorWidget-background, #252526);
   --node-border: var(
     --vscode-contrastBorder,
@@ -1934,7 +1935,7 @@ svg text {
   z-index: 5;
   box-sizing: border-box;
   transform-origin: 0 0;
-  cursor: default;
+  cursor: grab;
   filter: drop-shadow(0 4px 10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45)));
 }
 
@@ -2090,6 +2091,15 @@ svg text {
 
 .uml-note {
   cursor: pointer;
+}
+
+.uml-note.is-moving,
+.uml-note.is-moving * {
+  cursor: grabbing !important;
+}
+
+.uml-note.is-moving .note-box {
+  filter: drop-shadow(0 4px 10px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45)));
 }
 
 .uml-note .note-box {
@@ -2460,4 +2470,141 @@ svg text {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.note-badge rect {
+  fill: color-mix(in srgb, var(--agent) 20%, transparent);
+  stroke: color-mix(in srgb, var(--agent) 60%, transparent);
+}
+
+.note-badge circle {
+  fill: var(--agent);
+}
+
+.note-badge text {
+  fill: color-mix(in srgb, var(--agent) 55%, var(--vscode-foreground, #ccc));
+}
+
+.thread-popup {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  padding: 10px 12px 12px;
+  border: 1px solid var(--vscode-widget-border, var(--border));
+  border-radius: 8px;
+  background: var(--vscode-editorWidget-background, var(--canvas-bg));
+  box-shadow: 0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.5));
+  font-size: 12px;
+  cursor: default;
+}
+
+.thread-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.thread-title {
+  flex: 1;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+.thread-close {
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.thread-close:hover {
+  color: var(--vscode-foreground);
+}
+
+.thread-list {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.thread-item {
+  margin-bottom: 8px;
+  padding: 2px 0 2px 9px;
+  border-left: 2px solid var(--node-border);
+}
+
+.thread-item.from-agent {
+  border-left-color: var(--agent);
+}
+
+.thread-who {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.thread-name {
+  font-weight: 600;
+}
+
+.from-agent .thread-name {
+  color: color-mix(in srgb, var(--agent) 55%, var(--vscode-foreground, #ccc));
+}
+
+.thread-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--agent);
+}
+
+.thread-time,
+.thread-waiting {
+  color: var(--muted);
+}
+
+.thread-waiting {
+  margin: 0 0 8px;
+  font-style: italic;
+}
+
+.thread-body {
+  line-height: 17px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.thread-popup textarea {
+  height: 52px;
+  margin-top: 4px;
+  padding: 5px 7px;
+  box-sizing: border-box;
+  border: 1px solid var(--vscode-input-border, var(--node-border));
+  border-radius: 4px;
+  outline: none;
+  background: var(--vscode-input-background, var(--canvas-bg));
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  font: 400 12px/17px var(--vscode-font-family);
+  resize: none;
+}
+
+.thread-popup textarea:focus {
+  border-color: var(--focus);
+}
+
+.thread-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.thread-gap {
+  flex: 1;
 }

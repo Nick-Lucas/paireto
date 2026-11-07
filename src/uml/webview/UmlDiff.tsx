@@ -71,7 +71,17 @@ function layoutKey(
   return JSON.stringify([
     mode,
     overview,
-    comments.map((c) => [c.id, c.kind, c.body, c.replies, c.sent, c.links]),
+    comments.map((c) => [
+      c.id,
+      c.kind,
+      c.body,
+      c.replies,
+      c.sent,
+      c.unread,
+      c.waiting,
+      c.links,
+      c.place,
+    ]),
     view.types.map((t) => [
       t.type.id,
       t.role,
@@ -1504,7 +1514,7 @@ export function UmlDiff() {
         event.metaKey ||
         event.ctrlKey ||
         event.altKey ||
-        target?.closest("input, textarea, select, .draft-note, .context-menu")
+        target?.closest("input, textarea, select, .draft-note, .thread-popup, .context-menu")
       ) {
         return;
       }
@@ -1635,14 +1645,34 @@ export function UmlDiff() {
         noteRequest={noteRequest}
         onDraft={setDraft}
         onAddComment={(added, body) => {
-          vscode.postMessage({ type: "addComment", kind: added.kind, body, links: added.links });
+          if (added.id) {
+            vscode.postMessage({
+              type: "editComment",
+              id: added.id,
+              kind: added.kind,
+              body,
+              links: added.links,
+            });
+          } else {
+            vscode.postMessage({ type: "addComment", kind: added.kind, body, links: added.links });
+          }
           setDraft(undefined);
-          showToast("Note added to the diagram. It goes to the agent with Send Feedback.");
+          showToast(
+            added.id
+              ? "Note saved. It goes to the agent with Send Feedback."
+              : "Note added to the diagram. It goes to the agent with Send Feedback.",
+          );
         }}
         onOpenComment={(id) => vscode.postMessage({ type: "openComment", id })}
         onResolveComment={(id) => vscode.postMessage({ type: "resolveComment", id })}
         onLinkComment={(id, link) => vscode.postMessage({ type: "linkComment", id, link })}
         onUnlinkComment={(id, index) => vscode.postMessage({ type: "unlinkComment", id, index })}
+        onMoveComment={(id, place) => vscode.postMessage({ type: "moveComment", id, place })}
+        onReplyComment={(id, body) => {
+          vscode.postMessage({ type: "replyComment", id, body });
+          showToast("Reply saved. It goes to the agent with Send Feedback.");
+        }}
+        onReadComment={(id) => vscode.postMessage({ type: "readComment", id })}
       />
     );
   } else {

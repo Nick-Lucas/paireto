@@ -90,13 +90,29 @@ export interface UmlCommentLink {
   fileKey?: string;
 }
 
+export interface NotePlace {
+  typeId?: string;
+  x: number;
+  y: number;
+}
+
+export interface UmlCommentItem {
+  who: "you" | "agent";
+  body: string;
+  at: string;
+}
+
 export interface UmlComment {
   id: string;
   kind: "question" | "comment";
   body: string;
   replies: number;
   sent: boolean;
+  items: UmlCommentItem[];
+  unread: number;
+  waiting: boolean;
   links: UmlCommentLink[];
+  place?: NotePlace;
 }
 
 export interface UmlModel {

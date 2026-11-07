@@ -4,12 +4,14 @@ import type { FocusedView, LayoutMode, VisibleType } from "./focus.js";
 import {
   changeSize,
   type LineCounts,
+  type NotePlace,
   type UmlComment,
   type UmlCommentLink,
   type UmlFile,
   type UmlRelation,
   type UmlType,
 } from "./model.js";
+import { ROUTE_GAP, routeLine, type Block, type Port } from "./route.js";
 
 export type FontRole = "title" | "code" | "small" | "smallBold";
 
@@ -626,6 +628,7 @@ interface NoteSpec {
   height: number;
   lines: string[];
   home: string;
+  place?: NotePlace;
 }
 
 function parentsOf(node: ElkNode, parents = new Map<string, ElkNode>()): Map<string, ElkNode> {
@@ -664,9 +667,13 @@ function placeNotes(
     if (comment.links.length > 0 && shown.length === 0) {
       continue;
     }
-    const home = shown.length > 0 ? (parents.get(shown[0]) ?? graph) : graph;
     const id = `note:${comment.id}`;
     const { lines, height } = noteSize(comment.body, measure);
+    const place =
+      comment.place && (comment.place.typeId === undefined || sized.has(comment.place.typeId))
+        ? comment.place
+        : undefined;
+    const home = shown.length > 0 ? (parents.get(shown[0]) ?? graph) : graph;
     home.children = [...(home.children ?? []), { id, width: NOTE_METRICS.width, height }];
     const near = comment.links
       .filter((link) => link.scope === "type" || link.scope === "member")
@@ -677,14 +684,15 @@ function placeNotes(
       ...(home.edges ?? []),
       ...near.map((target) => ({ id: `${id}:${target}`, sources: [id], targets: [target] })),
     ];
-    notes.set(id, { comment, width: NOTE_METRICS.width, height, lines, home: home.id });
+    notes.set(id, { comment, width: NOTE_METRICS.width, height, lines, home: home.id, place });
   }
   return notes;
 }
 
+const clamp = (value: number, low: number, high: number) =>
+  Math.min(Math.max(value, low), Math.max(low, high));
+
 function noteLink(note: Box, box: Box, y: number): Point[] {
-  const clamp = (value: number, low: number, high: number) =>
-    Math.min(Math.max(value, low), Math.max(low, high));
   const startY = clamp(y, note.y + 8, note.y + note.height - 8);
   if (note.x + note.width <= box.x || box.x + box.width <= note.x) {
     const leftOfBox = note.x + note.width <= box.x;
@@ -711,13 +719,65 @@ function linkFrame(
       : undefined;
 }
 
+export type NoteScene = Pick<DiagramLayout, "nodes" | "containers" | "edges" | "notes">;
+
+function notePorts(note: Box, toward: Point): Port[] {
+  const ys = [note.y + note.height / 2, clamp(toward.y, note.y + 8, note.y + note.height - 8)];
+  const xs = [note.x + note.width / 2, clamp(toward.x, note.x + 12, note.x + note.width - 12)];
+  return [
+    ...ys.flatMap((y): Port[] => [
+      { x: note.x, y, side: "left" },
+      { x: note.x + note.width, y, side: "right" },
+    ]),
+    ...xs.flatMap((x): Port[] => [
+      { x, y: note.y, side: "up" },
+      { x, y: note.y + note.height, side: "down" },
+    ]),
+  ];
+}
+
+function targetPorts(box: Box, y: number, toward: number, ends: boolean): Port[] {
+  const x = clamp(toward, box.x + 12, box.x + box.width - 12);
+  return [
+    { x: box.x, y, side: "left" },
+    { x: box.x + box.width, y, side: "right" },
+    { x, y: box.y, side: "up" },
+    ...(ends ? [{ x, y: box.y + box.height, side: "down" as const }] : []),
+  ];
+}
+
 export function noteLinks(
-  note: Box & { home: string },
+  note: Box & { id?: string; home: string },
   links: readonly UmlCommentLink[],
-  nodes: readonly NodeLayout[],
-  containers: readonly ContainerLayout[],
+  scene: NoteScene,
 ): NoteLinkLayout[] {
-  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const byId = new Map(scene.nodes.map((node) => [node.id, node]));
+  const lines = [
+    ...scene.edges.map((edge) => edge.points),
+    ...scene.notes.filter((n) => n.id !== note.id).flatMap((n) => n.links.map((l) => l.points)),
+  ];
+  const soft = scene.edges.flatMap((edge) => (edge.label ? [edge.label] : []));
+  const frames = scene.containers.map((c) => ({
+    x: c.x,
+    y: c.y,
+    width: c.width,
+    height: c.height,
+  }));
+  const route = (target: Box & { id: string }, y: number, ends: boolean): Point[] => {
+    const blocks: Block[] = [
+      { ...boxOf(note), pad: 0 },
+      ...scene.nodes.map((n) => ({ ...boxOf(n), pad: n.id === target.id ? 0 : ROUTE_GAP })),
+      ...scene.notes.filter((n) => n.id !== note.id).map((n) => ({ ...boxOf(n), pad: ROUTE_GAP })),
+    ];
+    const points = routeLine(
+      notePorts(note, { x: target.x + target.width / 2, y }),
+      targetPorts(target, y, note.x + note.width / 2, ends),
+      { blocks, soft, frames, lines },
+    );
+    const result = points ? simplifyPath(points) : noteLink(note, target, y);
+    lines.push(result);
+    return result;
+  };
   return links.flatMap((link, index) => {
     if (link.scope === "type" || link.scope === "member") {
       const node = byId.get(link.typeIds[0]);
@@ -726,24 +786,48 @@ export function noteLinks(
       }
       const row = link.memberId ? node.rows.find((r) => r.memberId === link.memberId) : undefined;
       const y = row ? node.y + row.y + METRICS.rowHeight / 2 : node.y + node.headerHeight / 2;
-      return [{ index, points: noteLink(note, node, y) }];
+      return [{ index, points: route(node, y, !row) }];
     }
-    const frame = linkFrame(link, containers);
+    const frame = linkFrame(link, scene.containers);
     if (frame) {
       return frame.id === note.home
         ? []
-        : [
-            {
-              index,
-              points: noteLink(note, frame, frame.y + METRICS.containerTitleHeight / 2),
-            },
-          ];
+        : [{ index, points: route(frame, frame.y + METRICS.containerTitleHeight / 2, false) }];
     }
     return link.typeIds.flatMap((id) => {
       const node = byId.get(id);
-      return node ? [{ index, points: noteLink(note, node, node.y + node.headerHeight / 2) }] : [];
+      return node ? [{ index, points: route(node, node.y + node.headerHeight / 2, true) }] : [];
     });
   });
+}
+
+function boxOf(item: Box): Box {
+  return { x: item.x, y: item.y, width: item.width, height: item.height };
+}
+
+export function notePlace(
+  note: Point,
+  links: readonly UmlCommentLink[],
+  nodes: readonly NodeLayout[],
+): NotePlace {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const node = links.flatMap((link) => link.typeIds).flatMap((id) => byId.get(id) ?? [])[0];
+  return node
+    ? { typeId: node.id, x: Math.round(note.x - node.x), y: Math.round(note.y - node.y) }
+    : { x: Math.round(note.x), y: Math.round(note.y) };
+}
+
+export function noteHome(note: Box, containers: readonly ContainerLayout[]): string {
+  const holder = containers
+    .filter(
+      (c) =>
+        note.x >= c.x &&
+        note.y >= c.y &&
+        note.x + note.width <= c.x + c.width &&
+        note.y + note.height <= c.y + c.height,
+    )
+    .sort((a, b) => b.depth - a.depth)[0];
+  return holder?.id ?? "root";
 }
 
 export function buildGraph(
@@ -1245,6 +1329,9 @@ export async function layoutDiagram(
     const spec = specById.get(node.id);
     const leaf = sized.get(node.id);
     const note = noteSpecs.get(node.id);
+    if (note?.place) {
+      return;
+    }
     if (note) {
       notes.push({
         id: note.comment.id,
@@ -1321,12 +1408,42 @@ export async function layoutDiagram(
   }
   containers.sort((a, b) => a.depth - b.depth);
   placeLabels(edges, nodes);
-  for (const note of notes) {
-    note.links = noteLinks(note, note.comment.links, nodes, containers);
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  for (const note of noteSpecs.values()) {
+    const place = note.place;
+    if (!place) {
+      continue;
+    }
+    const anchor = place.typeId === undefined ? { x: 0, y: 0 } : byId.get(place.typeId);
+    if (!anchor) {
+      continue;
+    }
+    const at = {
+      x: Math.max(0, anchor.x + place.x),
+      y: Math.max(0, anchor.y + place.y),
+      width: note.width,
+      height: note.height,
+    };
+    notes.push({
+      id: note.comment.id,
+      comment: note.comment,
+      ...at,
+      lines: note.lines,
+      home: noteHome(at, containers),
+      links: [],
+    });
   }
+  const scene = { nodes, containers, edges, notes };
+  for (const note of notes) {
+    note.links = noteLinks(note, note.comment.links, scene);
+  }
+  const reach = notes.flatMap((note) => [
+    { x: note.x + note.width, y: note.y + note.height },
+    ...note.links.flatMap((link) => link.points),
+  ]);
   return {
-    width: Math.ceil(result.width ?? 0),
-    height: Math.ceil(result.height ?? 0),
+    width: Math.ceil(Math.max(result.width ?? 0, ...reach.map((p) => p.x + 16))),
+    height: Math.ceil(Math.max(result.height ?? 0, ...reach.map((p) => p.y + 16))),
     nodes,
     containers,
     edges,

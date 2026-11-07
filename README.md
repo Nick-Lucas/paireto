@@ -166,10 +166,15 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   linked types can cover many files. You can also right-click an empty part of the diagram to
   add a note with no link. The note shows on the diagram with a dashed line to each part it is
   linked to; a note on linked types sits inside their frame. It goes to the agent with **Send
-  Feedback**, and the agent gets each part's file and line. Click a note to open its thread
-  beside the diagram, where you can reply, edit or delete it. Right-click a note to link it to
-  more parts or to resolve it, and right-click a dashed line to remove that link. A resolved
-  note leaves the diagram.
+  Feedback**, and the agent gets each part's file and line. Double-click a note, or select it
+  and press Enter, to edit its text, its kind and its links in place. Drag a note to move it, or
+  select it and press Alt and an arrow key; it stays beside the type it is linked to. The dashed
+  lines go round the boxes and keep off the other lines. When the agent answers, the note shows
+  a badge such as **1 new reply**. Click the note to show its thread beside it: read the
+  replies, reply to the agent, resolve the note, or open the thread in the editor. Your reply
+  goes to the agent with **Send Feedback**. Right-click a note to link it to more parts or to
+  resolve it, and right-click a dashed line to remove that link. A resolved note leaves the
+  diagram.
 - Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep
   moving. The centre button centres the selection. **Fit all** (F) zooms out until the whole
   diagram is on screen.

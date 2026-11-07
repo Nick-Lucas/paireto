@@ -32,6 +32,8 @@ export interface DiagramLink {
 export interface DiagramAnchor {
   title: string;
   links: DiagramLink[];
+  place?: { typeId?: string; x: number; y: number };
+  readAt?: string;
 }
 
 export interface ReviewThread extends ThreadItems {

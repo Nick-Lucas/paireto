@@ -19,12 +19,23 @@ import {
   METRICS,
   NO_DIFF,
   NOTE_LINES,
+  noteLinks,
+  notePlace,
   OUTSIDE_FOCUS,
   simplifyPath,
   type DiagramLayout,
   type Measure,
+  type NoteLayout,
+  type Point,
 } from "../uml/core/layout.js";
-import { diagramAnchor, diagramComments, diagramLink } from "../uml/core/comments.js";
+import {
+  diagramAnchor,
+  diagramComments,
+  diagramLink,
+  noteStatus,
+  timeAgo,
+} from "../uml/core/comments.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 import { fitStep, READABLE_ZOOM } from "../uml/core/fit.js";
 import { hotspots } from "../uml/core/hotspots.js";
 import { nextChange } from "../uml/core/nextChange.js";
@@ -938,6 +949,9 @@ suite("UML diff — comments on the diagram", () => {
     body: "Why does this need its own cache?",
     replies: 0,
     sent: false,
+    items: [],
+    unread: 0,
+    waiting: false,
     links: [onType(SERVICE, "UserService")],
     ...over,
   });
@@ -990,6 +1004,7 @@ suite("UML diff — comments on the diagram", () => {
             { ...member, targets: [] },
             { scope: "type", title: "User", typeIds: ["x"], targets: [] },
           ],
+          place: { typeId: SERVICE, x: 12, y: -30 },
         },
       },
       {
@@ -1016,8 +1031,89 @@ suite("UML diff — comments on the diagram", () => {
           { ...member, fileKey: undefined },
           { scope: "type", title: "User", typeIds: ["x"], memberId: undefined, fileKey: undefined },
         ],
+        place: { typeId: SERVICE, x: 12, y: -30 },
+        items: [
+          { who: "you", body: "Why two caches?", at },
+          { who: "you", body: "More", at },
+        ],
+        unread: 0,
+        waiting: true,
       },
     ]);
+  });
+
+  test("agent replies after the note was last read are new, and a note waits until the agent answers", () => {
+    const at = (minute: number) => `2026-11-03T00:${String(minute).padStart(2, "0")}:00.000Z`;
+    const agent = { kind: "agent" as const, harness: "claudecode" as const };
+    const thread = (readAt?: string) => ({
+      id: "d1",
+      delivery: "sent" as const,
+      items: [
+        {
+          kind: "comment" as const,
+          commentKind: "comment" as const,
+          body: "Share it",
+          quote: "",
+          at: at(1),
+        },
+        { id: "d1#1", kind: "reply" as const, author: agent, body: "Done", at: at(2) },
+        {
+          id: "d1#2",
+          kind: "reply" as const,
+          author: { kind: "reviewer" as const },
+          body: "Thanks",
+          at: at(3),
+        },
+        { id: "d1#3", kind: "reply" as const, author: agent, body: "Also tidied", at: at(4) },
+      ] as ReviewThread["items"],
+      diagram: { title: "Not linked", links: [], ...(readAt ? { readAt } : {}) },
+    });
+    const [unreadAll] = diagramComments([thread()]);
+    assert.deepStrictEqual(
+      unreadAll.items.map((item) => `${item.who}: ${item.body}`),
+      ["you: Share it", "agent: Done", "you: Thanks", "agent: Also tidied"],
+    );
+    assert.strictEqual(unreadAll.unread, 2);
+    assert.strictEqual(unreadAll.waiting, false);
+    assert.strictEqual(diagramComments([thread(at(3))])[0].unread, 1);
+    assert.strictEqual(diagramComments([thread(at(5))])[0].unread, 0);
+    const asked = { ...thread(), items: thread().items.slice(0, 3) as ReviewThread["items"] };
+    assert.strictEqual(diagramComments([asked])[0].waiting, true);
+  });
+
+  test("a note's head says if it is sent, if it waits for the agent, and how many replies are new", () => {
+    const status = (over: Partial<UmlComment>) =>
+      noteStatus(comment({ replies: 0, sent: false, unread: 0, waiting: false, ...over }));
+    assert.deepStrictEqual(status({}), { meta: "not sent", badge: "" });
+    assert.deepStrictEqual(status({ sent: true, waiting: true }), {
+      meta: "sent · waiting",
+      badge: "",
+    });
+    assert.deepStrictEqual(status({ sent: true, replies: 1, unread: 1 }), {
+      meta: "sent",
+      badge: "1 new reply",
+    });
+    assert.deepStrictEqual(status({ sent: true, replies: 3, unread: 2 }), {
+      meta: "sent",
+      badge: "2 new replies",
+    });
+    assert.deepStrictEqual(status({ sent: true, replies: 2 }), {
+      meta: "2 replies · sent",
+      badge: "",
+    });
+    assert.deepStrictEqual(status({ replies: 1 }), { meta: "1 reply · not sent", badge: "" });
+  });
+
+  test("the time of a message is said in words, from now", () => {
+    const now = Date.parse("2026-11-03T12:00:00.000Z");
+    const ago = (ms: number) => timeAgo(new Date(now - ms).toISOString(), now);
+    assert.strictEqual(ago(20 * 1000), "just now");
+    assert.strictEqual(ago(60 * 1000), "1 min ago");
+    assert.strictEqual(ago(59 * 60 * 1000), "59 min ago");
+    assert.strictEqual(ago(60 * 60 * 1000), "1 hour ago");
+    assert.strictEqual(ago(5 * 60 * 60 * 1000), "5 hours ago");
+    assert.strictEqual(ago(24 * 60 * 60 * 1000), "1 day ago");
+    assert.strictEqual(ago(3 * 24 * 60 * 60 * 1000), "3 days ago");
   });
 
   test("a link to a member records the member's name, file and line for the agent", () => {
@@ -1199,6 +1295,154 @@ suite("UML diff — comments on the diagram", () => {
   test("a note on types the diagram does not show is not drawn", async () => {
     const result = await laid([comment({ links: [onType("repo:gone.ts::Gone", "Gone")] })]);
     assert.deepStrictEqual(result.notes, []);
+  });
+
+  test("a note that was moved is drawn where it was put, kept against its type", async () => {
+    for (const mode of MODES) {
+      const first = await laid([], mode);
+      const before = first.nodes.find((n) => n.id === SERVICE);
+      assert.ok(before);
+      const place = { typeId: SERVICE, x: before.width + 60, y: 8 };
+      const result = await laid([comment({ place })], mode);
+      const box = result.nodes.find((n) => n.id === SERVICE);
+      const note = result.notes[0];
+      assert.ok(box && note);
+      assert.strictEqual(note.x, box.x + place.x, `${mode}: across`);
+      assert.strictEqual(note.y, box.y + place.y, `${mode}: down`);
+      assert.deepStrictEqual(notePlace(note, note.comment.links, result.nodes), place);
+    }
+  });
+
+  test("moving a note does not move the boxes", async () => {
+    for (const mode of MODES) {
+      const still = await laid([comment()], mode);
+      const moved = await laid([comment({ place: { typeId: SERVICE, x: 300, y: 200 } })], mode);
+      assert.deepStrictEqual(
+        moved.nodes.map((n) => [n.id, n.x, n.y]),
+        still.nodes.map((n) => [n.id, n.x, n.y]),
+        mode,
+      );
+    }
+  });
+
+  test("the diagram grows to hold a note moved far from the boxes", async () => {
+    const result = await laid([comment({ place: { typeId: SERVICE, x: 4000, y: 3000 } })]);
+    const note = result.notes[0];
+    assert.ok(result.width >= note.x + note.width, "wide enough");
+    assert.ok(result.height >= note.y + note.height, "tall enough");
+    for (const link of note.links) {
+      for (const point of link.points) {
+        assert.ok(point.x <= result.width && point.y <= result.height, "the line is inside");
+      }
+    }
+  });
+
+  test("a note is not put above or left of the diagram", async () => {
+    const result = await laid([comment({ place: { typeId: SERVICE, x: -9000, y: -9000 } })]);
+    const note = result.notes[0];
+    assert.ok(note.x >= 0 && note.y >= 0);
+  });
+
+  test("a note kept against a type the diagram does not show goes back to a clear place", async () => {
+    const result = await laid([comment({ place: { typeId: "repo:gone.ts::Gone", x: 0, y: 0 } })]);
+    const note = result.notes[0];
+    assert.ok(note);
+    for (const node of result.nodes) {
+      assert.ok(!overlaps(note, node), `the note covers ${node.titleFull}`);
+    }
+  });
+
+  test("a note with no links is kept where it was put on the diagram", async () => {
+    const result = await laid([comment({ links: [], place: { x: 40, y: 50 } })]);
+    const note = result.notes[0];
+    assert.strictEqual(note.x, 40);
+    assert.strictEqual(note.y, 50);
+    assert.deepStrictEqual(notePlace(note, [], result.nodes), { x: 40, y: 50 });
+  });
+
+  const crosses = (
+    a: Point,
+    b: Point,
+    box: { x: number; y: number; width: number; height: number },
+  ) =>
+    Math.max(a.x, b.x) > box.x &&
+    Math.min(a.x, b.x) < box.x + box.width &&
+    Math.max(a.y, b.y) > box.y &&
+    Math.min(a.y, b.y) < box.y + box.height;
+  const segmentsOf = (points: readonly Point[]) =>
+    points.slice(1).map((point, index) => [points[index], point] as const);
+
+  test("a note's line goes round a box or a note that is between the note and its type", async () => {
+    const base = (await laid([])).nodes[0];
+    const target = { ...base, id: SERVICE, x: 340 + base.width + 120, y: 200 };
+    const note = {
+      x: 0,
+      y: 200 + base.headerHeight / 2 - 40,
+      width: 220,
+      height: 80,
+      home: "root",
+    };
+    const between = { x: 340, y: 160, width: base.width, height: base.height + 80 };
+    const blocker: NoteLayout = {
+      ...between,
+      id: "other",
+      comment: comment({ id: "other" }),
+      lines: [],
+      home: "root",
+      links: [],
+    };
+    for (const scene of [
+      { nodes: [target, { ...base, ...between, id: "between" }], notes: [] },
+      { nodes: [target], notes: [blocker] },
+    ]) {
+      const lines = noteLinks(note, [onType(SERVICE, "UserService")], {
+        ...scene,
+        containers: [],
+        edges: [],
+      });
+      assert.strictEqual(lines.length, 1);
+      const points = lines[0].points;
+      assert.ok(onBorder(points[0], note), "the line starts on the note");
+      assert.ok(onBorder(points[points.length - 1], target), "the line ends on the type");
+      for (const [a, b] of segmentsOf(points)) {
+        assert.ok(a.x === b.x || a.y === b.y, "the line goes across or down");
+        assert.ok(
+          !crosses(a, b, between),
+          `the line goes through the box: ${JSON.stringify(points)}`,
+        );
+      }
+    }
+  });
+
+  test("a note's line keeps off a line that is already there", async () => {
+    const first = await laid([]);
+    const base = first.nodes[0];
+    const target = { ...base, id: SERVICE, x: 600, y: 200 };
+    const y = target.y + target.headerHeight / 2;
+    const note = { x: 0, y: y - 40, width: 220, height: 80, home: "root" };
+    const edge = {
+      ...first.edges[0],
+      points: [
+        { x: 240, y },
+        { x: 580, y },
+      ],
+    };
+    const lines = noteLinks(note, [onType(SERVICE, "UserService")], {
+      nodes: [target],
+      containers: [],
+      edges: [edge],
+      notes: [],
+    });
+    const points = lines[0].points;
+    assert.ok(onBorder(points[points.length - 1], target), "the line ends on the type");
+    const shared = segmentsOf(points)
+      .filter(([a, b]) => Math.abs(a.y - y) < 1 && Math.abs(b.y - y) < 1)
+      .reduce(
+        (sum, [a, b]) =>
+          sum + Math.max(0, Math.min(Math.max(a.x, b.x), 580) - Math.max(Math.min(a.x, b.x), 240)),
+        0,
+      );
+    assert.ok(shared < 1, `the line runs on the edge for ${shared}px: ${JSON.stringify(points)}`);
   });
 
   test("a long comment wraps and stops after a few lines", async () => {

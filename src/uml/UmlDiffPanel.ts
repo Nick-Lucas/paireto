@@ -192,6 +192,23 @@ export class UmlDiffPanel {
         }
         return;
       }
+      case "editComment": {
+        const model = this.built?.model;
+        if (model) {
+          const links = msg.links.flatMap((link) => diagramLink(model, link) ?? []);
+          this.review.editDiagramComment(msg.id, msg.kind, msg.body, diagramAnchor(links));
+        }
+        return;
+      }
+      case "replyComment":
+        this.review.replyDiagramComment(msg.id, msg.body);
+        return;
+      case "readComment":
+        this.review.readDiagramComment(msg.id);
+        return;
+      case "moveComment":
+        this.review.moveDiagramComment(msg.id, msg.place);
+        return;
       case "openComment":
         await this.review.openDiagramComment(msg.id);
         return;

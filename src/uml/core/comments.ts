@@ -74,6 +74,34 @@ export function sameLink(a: UmlCommentLink, b: UmlCommentLink): boolean {
   );
 }
 
+function counted(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}
+
+export function noteStatus(comment: UmlComment): { meta: string; badge: string } {
+  const sent = comment.sent ? (comment.waiting ? "sent · waiting" : "sent") : "not sent";
+  if (comment.unread > 0) {
+    return { meta: sent, badge: `${counted(comment.unread, "new reply", "new replies")}` };
+  }
+  const replies = comment.replies > 0 ? `${counted(comment.replies, "reply", "replies")} · ` : "";
+  return { meta: `${replies}${sent}`, badge: "" };
+}
+
+export function timeAgo(at: string, now: number): string {
+  const minutes = Math.floor((now - Date.parse(at)) / 60000);
+  if (minutes < 1) {
+    return "just now";
+  }
+  if (minutes < 60) {
+    return `${minutes} min ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${counted(hours, "hour", "hours")} ago`;
+  }
+  return `${counted(Math.floor(hours / 24), "day", "days")} ago`;
+}
+
 export type DiagramThread = Pick<
   ReviewThread,
   "id" | "delivery" | "resolvedAt" | "items" | "diagram"
@@ -86,6 +114,15 @@ export function diagramComments(threads: readonly DiagramThread[]): UmlComment[]
       return [];
     }
     const [opening, ...replies] = thread.items;
+    const items = thread.items.map((item) => ({
+      who:
+        item.kind === "reply" && item.author.kind === "agent"
+          ? ("agent" as const)
+          : ("you" as const),
+      body: item.body,
+      at: item.at,
+    }));
+    const readAt = diagram.readAt ?? "";
     return [
       {
         id: thread.id,
@@ -100,6 +137,10 @@ export function diagramComments(threads: readonly DiagramThread[]): UmlComment[]
           memberId: link.memberId,
           fileKey: link.fileKey,
         })),
+        ...(diagram.place ? { place: diagram.place } : {}),
+        items,
+        unread: items.filter((item) => item.who === "agent" && item.at > readAt).length,
+        waiting: thread.delivery === "sent" && items[items.length - 1].who === "you",
       },
     ];
   });

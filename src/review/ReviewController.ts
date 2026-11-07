@@ -74,7 +74,13 @@ import {
 import { serialiseRejectedReviewFeedback } from "./reviewFeedback.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
-import { diagramThread, relinkDiagramThread } from "./diagramComments.js";
+import {
+  diagramThread,
+  editDiagramThread,
+  placeDiagramThread,
+  readDiagramThread,
+  relinkDiagramThread,
+} from "./diagramComments.js";
 import { getOpeningComment, type DiagramAnchor, type ReviewThread } from "./reviewTypes.js";
 import {
   appendFeedbackReply,
@@ -1895,6 +1901,26 @@ export class ReviewController implements vscode.Disposable {
 
   relinkDiagramComment(id: string, anchor: DiagramAnchor): boolean {
     return !!this.feedback?.amendThread(id, (thread) => relinkDiagramThread(thread, anchor));
+  }
+
+  editDiagramComment(id: string, kind: CommentKind, body: string, anchor: DiagramAnchor): boolean {
+    const at = new Date().toISOString();
+    return !!this.feedback?.amendThread(id, (thread) =>
+      editDiagramThread(thread, { kind, body, anchor, at }),
+    );
+  }
+
+  replyDiagramComment(id: string, body: string): boolean {
+    return this.feedback?.addReply(id, body) ?? false;
+  }
+
+  readDiagramComment(id: string): boolean {
+    const at = new Date().toISOString();
+    return !!this.feedback?.amendThread(id, (thread) => readDiagramThread(thread, at));
+  }
+
+  moveDiagramComment(id: string, place: NonNullable<DiagramAnchor["place"]>): boolean {
+    return !!this.feedback?.amendThread(id, (thread) => placeDiagramThread(thread, place));
   }
 
   async openDiagramComment(id: string): Promise<void> {
