@@ -2,9 +2,9 @@ import * as assert from "node:assert";
 
 import type { Rect } from "../viz/layout/geometry.js";
 import { layoutOverview, type OverviewScene } from "../viz/layout/overview.js";
-import type { VizIndex } from "../viz/model/index.js";
+import { buildVizIndex, type VizIndex } from "../viz/model/index.js";
 import { makeElk } from "./vizElk.js";
-import { multiServiceIndex, singleFrontendIndex } from "./vizFixtures.js";
+import { loadVizFixture, multiServiceIndex, singleFrontendIndex } from "./vizFixtures.js";
 
 function contains(outer: Rect, inner: Rect): boolean {
   return (
@@ -77,6 +77,25 @@ suite("viz overview layout", () => {
       ],
     );
     assert.strictEqual(scene.edges.length, 10);
+  });
+
+  test("keeps a group label that holds a colon", async () => {
+    const viz = loadVizFixture("multiService");
+    for (const node of viz.nodes) {
+      if (node.group === "billing") {
+        node.group = "Billing: retries";
+      }
+    }
+    const index = buildVizIndex(viz);
+    const scene = await layoutOverview(index, makeElk());
+    checkInvariants(index, scene);
+    assert.deepStrictEqual(
+      scene.groups.map((group) => [group.label, group.lane]),
+      [
+        ["Billing: retries", "services"],
+        ["notify", "services"],
+      ],
+    );
   });
 
   test("lays out the single-frontend fixture", async () => {

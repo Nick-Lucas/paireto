@@ -67,7 +67,9 @@ suite("viz rf adapters", () => {
       graph.edges.find((edge) => edge.id === "billing-api>retry-queue")?.data.level,
       "bright",
     );
-    const notifyGroup = graph.nodes.find((node) => node.id === "group:services:notify");
+    const notifyGroup = graph.nodes.find(
+      (node) => node.type === "group" && node.data.kind === "group" && node.data.label === "notify",
+    );
     assert.strictEqual(notifyGroup?.data.kind === "group" && notifyGroup.data.level, "dim");
   });
 

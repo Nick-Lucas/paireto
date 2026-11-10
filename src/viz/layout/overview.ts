@@ -93,13 +93,15 @@ const ROOT_OPTIONS: Record<string, string> = {
   "elk.edgeLabels.placement": "CENTER",
 };
 
-function groupId(lane: string, group: string): string {
-  return `group:${lane}:${group}`;
+interface GroupKey {
+  readonly lane: string;
+  readonly label: string;
 }
 
-function toElk(index: VizIndex): ElkNode {
+function toElk(index: VizIndex): { graph: ElkNode; groupKeys: ReadonlyMap<string, GroupKey> } {
   const children: ElkNode[] = [];
   const groups = new Map<string, ElkNode>();
+  const groupKeys = new Map<string, GroupKey>();
   for (const node of index.nodes) {
     if (node.flowOnly) {
       continue;
@@ -114,9 +116,11 @@ function toElk(index: VizIndex): ElkNode {
       children.push(child);
       continue;
     }
-    const id = groupId(node.lane, node.group);
-    let group = groups.get(id);
+    const key = JSON.stringify([node.lane, node.group]);
+    let group = groups.get(key);
     if (!group) {
+      const id = `group/${groups.size}`;
+      groupKeys.set(id, { lane: node.lane, label: node.group });
       group = {
         id,
         children: [],
@@ -127,7 +131,7 @@ function toElk(index: VizIndex): ElkNode {
           "elk.layered.spacing.nodeNodeBetweenLayers": "64",
         },
       };
-      groups.set(id, group);
+      groups.set(key, group);
       children.push(group);
     }
     group.children?.push(child);
@@ -149,7 +153,7 @@ function toElk(index: VizIndex): ElkNode {
           ]
         : [],
     }));
-  return { id: "root", layoutOptions: ROOT_OPTIONS, children, edges };
+  return { graph: { id: "root", layoutOptions: ROOT_OPTIONS, children, edges }, groupKeys };
 }
 
 function absolutePositions(root: ElkNode): Map<string, Point> {
@@ -166,7 +170,7 @@ function absolutePositions(root: ElkNode): Map<string, Point> {
 }
 
 export async function layoutOverview(index: VizIndex, elk: ElkLike): Promise<OverviewScene> {
-  const graph = toElk(index);
+  const { graph, groupKeys } = toElk(index);
   const laid = await elk.layout(graph);
   const origins = absolutePositions(laid);
   const offset = { x: SCENE.pad, y: SCENE.pad + SCENE.laneHeader };
@@ -178,12 +182,11 @@ export async function layoutOverview(index: VizIndex, elk: ElkLike): Promise<Ove
   const nodes: PlacedNode[] = [];
   const groups: GroupBox[] = [];
   for (const child of laid.children ?? []) {
-    if (child.children) {
-      const [, lane, label] = child.id.split(":");
+    const groupKey = groupKeys.get(child.id);
+    if (child.children && groupKey) {
       groups.push({
         id: child.id,
-        label,
-        lane,
+        ...groupKey,
         members: child.children.map((member) => member.id),
         ...at(child.id),
         width: child.width ?? 0,
