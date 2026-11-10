@@ -20,21 +20,7 @@ import {
   runPlanReview,
 } from "./planReviewTool.js";
 import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTool.js";
-import { VizArgs } from "../../../protocol/viz.js";
-import {
-  GET_CHANGES_TOOL_DESCRIPTION,
-  GET_CHANGES_TOOL_NAME,
-  runGetChanges,
-  runShowViz,
-  SHOW_VIZ_TOOL_DESCRIPTION,
-  SHOW_VIZ_TOOL_NAME,
-} from "./vizTools.js";
-import {
-  FEEDBACK_REPLY_TOOL_DESCRIPTION,
-  FEEDBACK_REPLY_TOOL_NAME,
-  FeedbackReplyArgs,
-  runFeedbackReply,
-} from "./feedbackTools.js";
+import { MUTATION_TOOLS, runMutationTool } from "./mutationTools.js";
 
 /** Everything a harness supplies to the shared core. */
 export interface McpHarnessAdapter {
@@ -96,34 +82,25 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
         ),
     );
   }
-  server.registerTool(
-    FEEDBACK_REPLY_TOOL_NAME,
-    {
-      description: FEEDBACK_REPLY_TOOL_DESCRIPTION,
-      inputSchema: FeedbackReplyArgs.shape,
-    },
-    (args) =>
-      runFeedbackReply(
+  for (const tool of MUTATION_TOOLS) {
+    const run = (args: Record<string, unknown>) =>
+      runMutationTool(
+        tool,
         adapter.resolveReviewTarget(),
         adapter.harness,
         args,
         adapter.noTargetMessage,
-      ),
-  );
-
-  server.registerTool(GET_CHANGES_TOOL_NAME, { description: GET_CHANGES_TOOL_DESCRIPTION }, () =>
-    runGetChanges(adapter.resolveReviewTarget(), adapter.harness, adapter.noTargetMessage),
-  );
-
-  server.registerTool(
-    SHOW_VIZ_TOOL_NAME,
-    {
-      description: SHOW_VIZ_TOOL_DESCRIPTION,
-      inputSchema: VizArgs.shape,
-    },
-    (args) =>
-      runShowViz(adapter.resolveReviewTarget(), adapter.harness, args, adapter.noTargetMessage),
-  );
+      );
+    if (tool.args) {
+      server.registerTool(
+        tool.name,
+        { description: tool.description, inputSchema: tool.args.shape },
+        (args) => run(args),
+      );
+    } else {
+      server.registerTool(tool.name, { description: tool.description }, () => run({}));
+    }
+  }
 
   return server;
 }

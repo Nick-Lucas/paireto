@@ -7,13 +7,10 @@ import type * as net from "node:net";
 import { NO_WINDOW_MESSAGE } from "../plugins/core/mcp/reviewTool.js";
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
 import {
-  GET_CHANGES_TOOL_DESCRIPTION,
-  GET_CHANGES_TOOL_NAME,
-  runGetChanges,
-  runShowViz,
-  SHOW_VIZ_TOOL_DESCRIPTION,
-  SHOW_VIZ_TOOL_NAME,
-} from "../plugins/core/mcp/vizTools.js";
+  GET_CHANGES_TOOL,
+  runMutationTool,
+  SHOW_VIZ_TOOL,
+} from "../plugins/core/mcp/mutationTools.js";
 import { PLUGIN_VERSION } from "../protocol/types.js";
 import { ackWith, type FakeServer, startServer } from "./fakeBridgeServer.js";
 
@@ -49,15 +46,15 @@ function sent(server: FakeServer, tag: string): Record<string, unknown> | undefi
 
 suite("MCP viz tools", () => {
   test("the tool names and descriptions are fixed text", () => {
-    assert.strictEqual(GET_CHANGES_TOOL_NAME, "paireto_get_changes");
-    assert.strictEqual(SHOW_VIZ_TOOL_NAME, "paireto_show_viz");
+    assert.strictEqual(GET_CHANGES_TOOL.name, "paireto_get_changes");
+    assert.strictEqual(SHOW_VIZ_TOOL.name, "paireto_show_viz");
     assert.strictEqual(
-      GET_CHANGES_TOOL_DESCRIPTION,
+      GET_CHANGES_TOOL.description,
       "List what the connected VS Code window compares: its Compare To, each repo, the changed " +
         "files grouped by unit, and a level hint. Call this before paireto_show_viz.",
     );
     assert.strictEqual(
-      SHOW_VIZ_TOOL_DESCRIPTION,
+      SHOW_VIZ_TOOL.description,
       "Show how the changes fit together in the connected VS Code window: an overview graph, flows " +
         "as sequence diagrams, and a walkthrough. Returns at once: accepted with warnings, or every " +
         "error to fix before you call it again.",
@@ -77,11 +74,11 @@ suite("MCP viz tools", () => {
     try {
       const listed = await client.request({ method: "tools/list" }, ListToolsResultSchema);
       const tools = new Map(listed.tools.map((tool) => [tool.name, tool]));
-      assert.deepStrictEqual(tools.get(GET_CHANGES_TOOL_NAME)?.inputSchema, {
+      assert.deepStrictEqual(tools.get(GET_CHANGES_TOOL.name)?.inputSchema, {
         type: "object",
         properties: {},
       });
-      assert.deepStrictEqual(tools.get(SHOW_VIZ_TOOL_NAME)?.inputSchema.required, [
+      assert.deepStrictEqual(tools.get(SHOW_VIZ_TOOL.name)?.inputSchema.required, [
         "title",
         "summary",
         "level",
@@ -89,7 +86,7 @@ suite("MCP viz tools", () => {
         "nodes",
       ]);
       const result = await client.request(
-        { method: "tools/call", params: { name: GET_CHANGES_TOOL_NAME } },
+        { method: "tools/call", params: { name: GET_CHANGES_TOOL.name } },
         CallToolResultSchema,
       );
       assert.strictEqual(result.isError, true);
@@ -103,7 +100,8 @@ suite("MCP viz tools", () => {
     const server = await startServer(answering(true, 'Viz "X" is open in VS Code: 1 node.'));
     try {
       const viz = { title: "X", anything: [1, 2] };
-      const result = await runShowViz(
+      const result = await runMutationTool(
+        SHOW_VIZ_TOOL,
         { target: server.target, cwd: "/work/shop/web", sessionId: "s1" },
         "codex",
         viz,
@@ -124,7 +122,12 @@ suite("MCP viz tools", () => {
   test("a rejected viz passes the window's text through as an error", async () => {
     const server = await startServer(answering(false, "Viz rejected. Fix all 1."));
     try {
-      const result = await runShowViz({ target: server.target, cwd: "/w" }, "kiro", {});
+      const result = await runMutationTool(
+        SHOW_VIZ_TOOL,
+        { target: server.target, cwd: "/w" },
+        "kiro",
+        {},
+      );
       assert.deepStrictEqual(result, {
         content: [{ type: "text", text: "Viz rejected. Fix all 1." }],
         isError: true,
@@ -137,7 +140,12 @@ suite("MCP viz tools", () => {
   test("the changes description passes through", async () => {
     const server = await startServer(answering(true, "Repo shop (this repo)."));
     try {
-      const result = await runGetChanges({ target: server.target, cwd: "/w" }, "claudecode");
+      const result = await runMutationTool(
+        GET_CHANGES_TOOL,
+        { target: server.target, cwd: "/w" },
+        "claudecode",
+        {},
+      );
       assert.deepStrictEqual(result, {
         content: [{ type: "text", text: "Repo shop (this repo)." }],
       });
@@ -150,7 +158,8 @@ suite("MCP viz tools", () => {
   test("a window that never answers reports an error rather than hanging", async () => {
     const server = await startServer(ackWith(true));
     try {
-      const result = await runShowViz(
+      const result = await runMutationTool(
+        SHOW_VIZ_TOOL,
         { target: server.target, cwd: "/w" },
         "codex",
         {},
@@ -165,7 +174,13 @@ suite("MCP viz tools", () => {
   });
 
   test("with no window the tools report it", async () => {
-    const result = await runGetChanges(undefined, "pi", "No Paireto window for this session.");
+    const result = await runMutationTool(
+      GET_CHANGES_TOOL,
+      undefined,
+      "pi",
+      {},
+      "No Paireto window for this session.",
+    );
     assert.deepStrictEqual(result, {
       content: [{ type: "text", text: "No Paireto window for this session." }],
       isError: true,
