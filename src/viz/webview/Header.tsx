@@ -21,6 +21,18 @@ interface HeaderProps {
   onExport: () => void;
 }
 
+function compareTitle(doc: VizDoc, window: VizWindowState): string {
+  const made = `This visualization was made against ${doc.meta.compareLabel}; the window now compares to ${window.compareLabel}.`;
+  switch (window.alignment.kind) {
+    case "aligned":
+      return "Compared against this";
+    case "available":
+      return `${made} Select to align the window.`;
+    case "blocked":
+      return `${made} ${window.alignment.reason}`;
+  }
+}
+
 export function Header({
   doc,
   index,
@@ -42,17 +54,16 @@ export function Header({
           <button
             type="button"
             className="viz-compare"
-            title={
-              window.aligned
-                ? "Compared against this"
-                : `This visualization was made against ${doc.meta.compareLabel}; the window now compares to ${window.compareLabel}`
+            title={compareTitle(doc, window)}
+            onClick={() =>
+              window.alignment.kind === "available" && vscode.postMessage({ type: "align" })
             }
-            onClick={() => !window.aligned && vscode.postMessage({ type: "align" })}
           >
             <span className="viz-compare__label">vs {doc.meta.compareLabel}</span>
-            {!window.aligned && (
+            {window.alignment.kind !== "aligned" && (
               <span className="viz-compare__mismatch">
-                <UiIcon name="warn" size={12} /> window is on {window.compareLabel}. Align
+                <UiIcon name="warn" size={12} /> window is on {window.compareLabel}
+                {window.alignment.kind === "available" && ". Align"}
               </span>
             )}
           </button>

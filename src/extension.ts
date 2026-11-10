@@ -36,7 +36,7 @@ import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
-import { VIZ_VIEW_TYPE } from "./viz/host/VizPanel.js";
+import { VIZ_VIEW_TYPE, VizPanel } from "./viz/host/VizPanel.js";
 import { VizService } from "./viz/host/VizService.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
@@ -95,7 +95,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     extensionUri: context.extensionUri,
     memento: context.workspaceState,
     review: reviewController,
-    getChanges: (repoRoot, compareTo) => diffService.getChanges(repoRoot, compareTo),
+    createPanel: (title, events) => VizPanel.create(context.extensionUri, title, events),
   });
 
   // The buckets and the comment threads of one commenting context. A branch or repository change

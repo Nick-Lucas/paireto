@@ -5,6 +5,7 @@ import {
   levelHint,
   manifestIn,
   renderChanges,
+  uniqueRepoNames,
   type RepoChanges,
 } from "../viz/host/changes.js";
 import type { VizChangedFile } from "../viz/model/types.js";
@@ -132,5 +133,14 @@ suite("viz changes description", () => {
       findUnits("shop", files, () => undefined),
     );
     assert.match(text, /\n {2}M src\/f299\.ts \+3 -1\n {2}\+5 more\n/);
+  });
+
+  test("repo names stay unique when folders share a name", () => {
+    assert.deepStrictEqual(uniqueRepoNames(["app", "api", "app", "app"]), [
+      "app",
+      "api",
+      "app-2",
+      "app-3",
+    ]);
   });
 });

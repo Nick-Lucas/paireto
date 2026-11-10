@@ -7,7 +7,6 @@ import * as vscode from "vscode";
 import type { FeedbackMutationResult } from "../../bridge/types.js";
 import { Commands } from "../../config.js";
 import type { InspectViz } from "../../e2e/inspectTypes.js";
-import type { ChangesModel } from "../../git/DiffService.js";
 import { log } from "../../log.js";
 import type { CompareTo } from "../../protocol/guidedReview.js";
 import { canonicalize } from "../../protocol/paths.js";
@@ -18,9 +17,16 @@ import type { RepoChangedFile, ReviewState } from "../../review/ReviewController
 import { compileViz } from "../model/compile.js";
 import { renderAccepted, renderRejected } from "../model/render.js";
 import { VIZ_DOC_FORMAT, type VizDoc, type VizRepo } from "../model/types.js";
-import type { VizWindowState, WebviewToHost } from "../protocol.js";
-import { findUnits, manifestIn, renderChanges, type RepoChanges, vizStatus } from "./changes.js";
-import { parseWebviewState, VizPanel } from "./VizPanel.js";
+import type { HostToWebview, VizAlignment, VizWindowState, WebviewToHost } from "../protocol.js";
+import {
+  findUnits,
+  manifestIn,
+  renderChanges,
+  type RepoChanges,
+  uniqueRepoNames,
+  vizStatus,
+} from "./changes.js";
+import { parseWebviewState, VizPanel, type VizPanelEvents } from "./VizPanel.js";
 import { VizStore } from "./VizStore.js";
 
 export interface VizReview {
@@ -30,11 +36,18 @@ export interface VizReview {
   setCompareTo(compareTo: CompareTo, by: string): Promise<void>;
 }
 
+export interface VizPanelPort {
+  readonly viewColumn: vscode.ViewColumn | undefined;
+  show(title: string): void;
+  post(message: HostToWebview): void;
+  dispose(): void;
+}
+
 export interface VizServiceDeps {
   extensionUri: vscode.Uri;
   memento: Pick<vscode.Memento, "get" | "update">;
   review: VizReview;
-  getChanges(repoRoot: string, compareTo: CompareTo): Promise<ChangesModel>;
+  createPanel(title: string, events: VizPanelEvents): VizPanelPort;
 }
 
 interface WindowRepo extends RepoChanges {
@@ -51,9 +64,10 @@ export function vizIdFor(repoRoot: string, title: string): string {
 
 export class VizService implements vscode.Disposable {
   private readonly store: VizStore;
-  private panel: VizPanel | undefined;
+  private panel: VizPanelPort | undefined;
   private current: VizDoc | undefined;
   private postedWindow: string | undefined;
+  private webviewReady = false;
   private readonly disposables: vscode.Disposable[] = [];
 
   constructor(private readonly deps: VizServiceDeps) {
@@ -63,7 +77,7 @@ export class VizService implements vscode.Disposable {
 
   async describeChanges(msg: ChangesDescribeRequest): Promise<FeedbackMutationResult> {
     try {
-      const repos = await this.windowRepos(msg.repoRoot);
+      const repos = this.windowRepos(msg.repoRoot);
       if (!repos.some((repo) => repo.isCaller)) {
         return { ok: false, message: notInWindow(msg.repoRoot) };
       }
@@ -85,7 +99,7 @@ export class VizService implements vscode.Disposable {
 
   async show(msg: VizShowRequest): Promise<FeedbackMutationResult> {
     try {
-      const repos = await this.windowRepos(msg.repoRoot);
+      const repos = this.windowRepos(msg.repoRoot);
       const caller = repos.find((repo) => repo.isCaller);
       if (!caller) {
         return { ok: false, message: notInWindow(msg.repoRoot) };
@@ -171,6 +185,7 @@ export class VizService implements vscode.Disposable {
       return;
     }
     this.panel = new VizPanel(webviewPanel, this.deps.extensionUri, this.panelEvents());
+    this.webviewReady = false;
     this.load(doc);
   }
 
@@ -191,7 +206,8 @@ export class VizService implements vscode.Disposable {
 
   private open(doc: VizDoc): void {
     if (!this.panel) {
-      this.panel = VizPanel.create(this.deps.extensionUri, doc.viz.title, this.panelEvents());
+      this.panel = this.deps.createPanel(doc.viz.title, this.panelEvents());
+      this.webviewReady = false;
     }
     this.panel.show(doc.viz.title);
     this.load(doc);
@@ -199,16 +215,20 @@ export class VizService implements vscode.Disposable {
 
   private load(doc: VizDoc): void {
     this.current = doc;
+    if (!this.panel || !this.webviewReady) {
+      return;
+    }
     const window = this.windowState(doc);
     this.postedWindow = JSON.stringify(window);
-    this.panel?.post({ type: "load", doc, history: this.store.history(), window });
+    this.panel.post({ type: "load", doc, history: this.store.history(), window });
   }
 
-  private panelEvents() {
+  private panelEvents(): VizPanelEvents {
     return {
       onMessage: (message: WebviewToHost) => void this.onMessage(message),
       onDispose: () => {
         this.panel = undefined;
+        this.webviewReady = false;
         this.postedWindow = undefined;
       },
     };
@@ -218,6 +238,7 @@ export class VizService implements vscode.Disposable {
     const doc = this.current;
     switch (message.type) {
       case "ready":
+        this.webviewReady = true;
         if (doc) {
           this.load(doc);
         }
@@ -228,7 +249,7 @@ export class VizService implements vscode.Disposable {
         }
         return;
       case "align":
-        if (doc) {
+        if (doc && this.windowState(doc).alignment.kind === "available") {
           await this.deps.review.setCompareTo(doc.meta.compareTo, "viz");
         }
         return;
@@ -243,7 +264,7 @@ export class VizService implements vscode.Disposable {
   }
 
   private postWindow(): void {
-    if (!this.panel || !this.current) {
+    if (!this.panel || !this.webviewReady || !this.current) {
       return;
     }
     const window = this.windowState(this.current);
@@ -255,39 +276,36 @@ export class VizService implements vscode.Disposable {
   }
 
   private windowState(doc: VizDoc): VizWindowState {
-    const repository = this.deps.review
-      .getState()
-      .repositories.find((repo) => sameRoot(repo.repoRoot, doc.meta.repoRoot));
+    const repositories = this.deps.review.getState().repositories;
+    const repository = repositories.find((repo) => sameRoot(repo.repoRoot, doc.meta.repoRoot));
     const compareTo = this.deps.review.compareToFor(repository?.repoRoot ?? doc.meta.repoRoot);
     return {
       compareTo,
       compareLabel: repository?.changes.compareLabel ?? doc.meta.compareLabel,
-      aligned: sameCompareTo(compareTo, doc.meta.compareTo),
+      alignment: alignmentOf(doc.meta.compareTo, compareTo, repositories.length),
     };
   }
 
-  private async windowRepos(callerRoot: string): Promise<WindowRepo[]> {
+  private windowRepos(callerRoot: string): WindowRepo[] {
     const repositories = this.deps.review.getState().repositories;
-    const repos = await Promise.all(
-      repositories.map(async (repository): Promise<WindowRepo> => {
-        const compareTo = this.deps.review.compareToFor(repository.repoRoot);
-        const changes = await this.deps.getChanges(repository.repoRoot, compareTo);
-        return {
-          name: repository.displayName,
-          root: repository.repoRoot,
-          isCaller: sameRoot(repository.repoRoot, callerRoot),
-          compareTo,
-          compareLabel: changes.compareLabel,
-          files: changes.net.map((file) => ({
-            repo: repository.displayName,
-            path: file.path,
-            status: vizStatus(file.status),
-            additions: file.additions,
-            deletions: file.deletions,
-          })),
-        };
-      }),
-    );
+    const names = uniqueRepoNames(repositories.map((repository) => repository.displayName));
+    const repos = repositories.map((repository, at): WindowRepo => {
+      const name = names[at];
+      return {
+        name,
+        root: repository.repoRoot,
+        isCaller: sameRoot(repository.repoRoot, callerRoot),
+        compareTo: this.deps.review.compareToFor(repository.repoRoot),
+        compareLabel: repository.changes.compareLabel,
+        files: repository.changes.net.map((file) => ({
+          repo: name,
+          path: file.path,
+          status: vizStatus(file.status),
+          additions: file.additions,
+          deletions: file.deletions,
+        })),
+      };
+    });
     return repos.sort((a, b) => Number(b.isCaller) - Number(a.isCaller));
   }
 
@@ -370,6 +388,19 @@ function sameRoot(a: string, b: string): boolean {
 
 function sameCompareTo(a: CompareTo, b: CompareTo): boolean {
   return a.kind === b.kind && (a.kind !== "ref" || a.ref === b.ref);
+}
+
+function alignmentOf(snapshot: CompareTo, window: CompareTo, repoCount: number): VizAlignment {
+  if (sameCompareTo(snapshot, window)) {
+    return { kind: "aligned" };
+  }
+  if (snapshot.kind === "ref" && repoCount > 1) {
+    return {
+      kind: "blocked",
+      reason: `This window holds ${repoCount} repos, and Align would set the ref ${snapshot.ref} as the Compare To of every one of them.`,
+    };
+  }
+  return { kind: "available" };
 }
 
 function notInWindow(repoRoot: string): string {

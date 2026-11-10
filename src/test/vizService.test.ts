@@ -5,15 +5,21 @@ import * as path from "node:path";
 
 import * as vscode from "vscode";
 
-import type { ChangesModel } from "../git/DiffService.js";
+import type { ChangesModel, FileStatus } from "../git/DiffService.js";
 import type { CompareTo } from "../protocol/guidedReview.js";
 import type { VizShowRequest } from "../protocol/types.js";
 import type { VizArgs } from "../protocol/viz.js";
 import type { ReviewState } from "../review/ReviewController.js";
-import { parseWebviewMessage, parseWebviewState } from "../viz/host/VizPanel.js";
+import {
+  parseWebviewMessage,
+  parseWebviewState,
+  VizPanel,
+  type VizPanelEvents,
+} from "../viz/host/VizPanel.js";
 import { vizIdFor, VizService, type VizReview } from "../viz/host/VizService.js";
 import { VIZ_STORE_LIMIT, VizStore } from "../viz/host/VizStore.js";
 import { VIZ_DOC_FORMAT, type VizDoc } from "../viz/model/types.js";
+import type { HostToWebview, VizWindowState } from "../viz/protocol.js";
 import { changedFilesFor, loadVizFixture } from "./vizFixtures.js";
 
 function memento(): Pick<vscode.Memento, "get" | "update"> & { data: Map<string, unknown> } {
@@ -27,34 +33,72 @@ function memento(): Pick<vscode.Memento, "get" | "update"> & { data: Map<string,
   } as Pick<vscode.Memento, "get" | "update"> & { data: Map<string, unknown> };
 }
 
+interface FakePanel {
+  posts: HostToWebview[];
+  events: VizPanelEvents;
+}
+
+interface OtherRepo {
+  name: string;
+  files: string[];
+}
+
+interface HarnessOptions {
+  others?: OtherRepo[];
+  fakePanels?: boolean;
+}
+
 interface Harness {
   root: string;
+  roots: string[];
   service: VizService;
   aligned: CompareTo[];
+  panels: FakePanel[];
+  setCompareTo(next: CompareTo): void;
   request(viz: unknown, repoRoot?: string): VizShowRequest;
 }
 
-function harness(viz: VizArgs): Harness {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-viz-"));
-  fs.mkdirSync(path.join(root, "web"));
-  fs.writeFileSync(path.join(root, "web", "package.json"), "{}");
-  const changes: ChangesModel = {
+function changesOf(paths: { path: string; status: FileStatus }[]): ChangesModel {
+  return {
     staged: [],
     unstaged: [],
     committed: [],
-    net: changedFilesFor(viz).map((file) => ({ ...file, contentId: file.path })),
+    net: paths.map((file) => ({
+      ...file,
+      additions: 1,
+      deletions: file.status === "A" ? 0 : 1,
+      contentId: file.path,
+    })),
     compareLabel: "merge-base(main)",
     compareRef: "abc123",
   };
+}
+
+function harness(viz: VizArgs, options: HarnessOptions = {}): Harness {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-viz-"));
+  fs.mkdirSync(path.join(root, "web"));
+  fs.writeFileSync(path.join(root, "web", "package.json"), "{}");
+  const others = (options.others ?? []).map((other) => ({
+    ...other,
+    root: fs.mkdtempSync(path.join(os.tmpdir(), "paireto-viz-other-")),
+  }));
+  const repositories = [
+    {
+      repoRoot: root,
+      displayName: "shop",
+      changes: changesOf(changedFilesFor(viz)),
+    },
+    ...others.map((other) => ({
+      repoRoot: other.root,
+      displayName: other.name,
+      changes: changesOf(other.files.map((file) => ({ path: file, status: "M" as const }))),
+    })),
+  ];
   const emitter = new vscode.EventEmitter<void>();
   let compareTo: CompareTo = { kind: "mergeBase" };
   const aligned: CompareTo[] = [];
   const review: VizReview = {
-    getState: () =>
-      ({
-        compareTo,
-        repositories: [{ repoRoot: root, displayName: "shop", changes }],
-      }) as unknown as ReviewState,
+    getState: () => ({ compareTo, repositories }) as unknown as ReviewState,
     onDidChangeState: emitter.event,
     compareToFor: () => compareTo,
     setCompareTo: async (next) => {
@@ -63,16 +107,34 @@ function harness(viz: VizArgs): Harness {
       emitter.fire();
     },
   };
+  const panels: FakePanel[] = [];
   const service = new VizService({
     extensionUri: vscode.Uri.file(root),
     memento: memento(),
     review,
-    getChanges: async () => changes,
+    createPanel: options.fakePanels
+      ? (_title, events) => {
+          const panel: FakePanel = { posts: [], events };
+          panels.push(panel);
+          return {
+            viewColumn: vscode.ViewColumn.Two,
+            show: () => undefined,
+            post: (message) => panel.posts.push(message),
+            dispose: () => events.onDispose(),
+          };
+        }
+      : (title, events) => VizPanel.create(vscode.Uri.file(root), title, events),
   });
   return {
     root,
+    roots: [root, ...others.map((other) => other.root)],
     service,
     aligned,
+    panels,
+    setCompareTo: (next) => {
+      compareTo = next;
+      emitter.fire();
+    },
     request: (payload, repoRoot = root) => ({
       t: "viz.show.request",
       v: "test",
@@ -86,6 +148,14 @@ function harness(viz: VizArgs): Harness {
   };
 }
 
+function loads(panel: FakePanel | undefined): VizDoc[] {
+  return (panel?.posts ?? []).flatMap((message) => (message.type === "load" ? [message.doc] : []));
+}
+
+function lastWindow(panel: FakePanel | undefined): VizWindowState | undefined {
+  return (panel?.posts ?? []).map((message) => message.window).slice(-1)[0];
+}
+
 async function closePanels(): Promise<void> {
   await vscode.commands.executeCommand("workbench.action.closeAllEditors");
 }
@@ -95,8 +165,8 @@ suite("viz service", () => {
 
   teardown(async () => {
     current?.service.dispose();
-    if (current) {
-      fs.rmSync(current.root, { recursive: true, force: true });
+    for (const root of current?.roots ?? []) {
+      fs.rmSync(root, { recursive: true, force: true });
     }
     current = undefined;
     await closePanels();
@@ -185,6 +255,83 @@ suite("viz service", () => {
     );
     assert.strictEqual(lines[1], "Units: web [package.json] 7");
     assert.ok(lines.includes("Level hint: component (1 unit changed)."));
+  });
+
+  test("two repos with one folder name get distinct names everywhere", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz, { others: [{ name: "shop", files: ["api/server.go"] }] });
+    const described = await current.service.describeChanges({
+      ...current.request(undefined),
+      t: "changes.describe.request",
+    });
+    assert.strictEqual(described.ok, true, described.message);
+    assert.match(described.message, /^Repo shop \(this repo/);
+    assert.match(described.message, /\nRepo shop-2 \(file refs use repo "shop-2"\)/);
+    viz.nodes[viz.nodes.length - 1].files = [{ path: "api/server.go", repo: "shop-2" }];
+    const result = await current.service.show(current.request(viz));
+    assert.strictEqual(result.ok, true, result.message);
+  });
+
+  test("the viz tools read the changes the window holds and scan no repo", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz, { others: [{ name: "infra", files: ["main.tf"] }] });
+    const described = await current.service.describeChanges({
+      ...current.request(undefined),
+      t: "changes.describe.request",
+    });
+    assert.strictEqual(described.ok, true, described.message);
+    assert.match(described.message, /\nRepo infra \(file refs use repo "infra"\)/);
+    assert.match(described.message, /\n  M main\.tf \+1 -1/);
+    const result = await current.service.show(current.request(viz));
+    assert.strictEqual(result.ok, true, result.message);
+  });
+
+  test("the webview gets one load per viz, after it is ready", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz, { fakePanels: true });
+    await current.service.show(current.request(viz));
+    const panel = current.panels[0];
+    assert.strictEqual(loads(panel).length, 0);
+    panel.events.onMessage({ type: "ready" });
+    assert.deepStrictEqual(
+      loads(panel).map((doc) => doc.viz.title),
+      [viz.title],
+    );
+    await current.service.show(current.request({ ...viz, title: "Second view" }));
+    assert.deepStrictEqual(
+      loads(panel).map((doc) => doc.viz.title),
+      [viz.title, "Second view"],
+    );
+  });
+
+  test("align sets the window Compare To back to the snapshot", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz, { fakePanels: true });
+    current.setCompareTo({ kind: "ref", ref: "release" });
+    await current.service.show(current.request(viz));
+    const panel = current.panels[0];
+    panel.events.onMessage({ type: "ready" });
+    current.setCompareTo({ kind: "head" });
+    assert.deepStrictEqual(lastWindow(panel)?.alignment, { kind: "available" });
+    panel.events.onMessage({ type: "align" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepStrictEqual(current.aligned, [{ kind: "ref", ref: "release" }]);
+  });
+
+  test("align is refused when a ref snapshot would reach every repo", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz, { fakePanels: true, others: [{ name: "infra", files: [] }] });
+    current.setCompareTo({ kind: "ref", ref: "release" });
+    await current.service.show(current.request(viz));
+    const panel = current.panels[0];
+    panel.events.onMessage({ type: "ready" });
+    current.setCompareTo({ kind: "head" });
+    const window = lastWindow(panel);
+    assert.strictEqual(window?.alignment.kind, "blocked");
+    assert.match(window.alignment.kind === "blocked" ? window.alignment.reason : "", /2 repos/);
+    panel.events.onMessage({ type: "align" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.deepStrictEqual(current.aligned, []);
   });
 });
 

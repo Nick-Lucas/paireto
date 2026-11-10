@@ -2,10 +2,15 @@ import type { CompareTo } from "../protocol/guidedReview.js";
 import type { VizFileRef } from "../protocol/viz.js";
 import type { VizDoc } from "./model/types.js";
 
+export type VizAlignment =
+  | { kind: "aligned" }
+  | { kind: "available" }
+  | { kind: "blocked"; reason: string };
+
 export interface VizWindowState {
   compareTo: CompareTo;
   compareLabel: string;
-  aligned: boolean;
+  alignment: VizAlignment;
 }
 
 export interface VizHistoryEntry {

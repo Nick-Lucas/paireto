@@ -49,6 +49,18 @@ export function vizStatus(status: FileStatus): ChangedFileStatus {
   return STATUS[status];
 }
 
+export function uniqueRepoNames(names: readonly string[]): string[] {
+  const taken = new Set<string>();
+  return names.map((name) => {
+    let candidate = name;
+    for (let n = 2; taken.has(candidate); n++) {
+      candidate = `${name}-${n}`;
+    }
+    taken.add(candidate);
+    return candidate;
+  });
+}
+
 export function manifestIn(entries: string[]): string | undefined {
   return (
     UNIT_MANIFESTS.find((manifest) => entries.includes(manifest)) ??
