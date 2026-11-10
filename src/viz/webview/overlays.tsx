@@ -2,6 +2,7 @@ import type { VizIndex } from "../model/index";
 import { KEY_BINDINGS } from "../model/keymap";
 import type { UiAction, UiState } from "../model/ui";
 import { UiIcon } from "./icons";
+import "./overlays.css";
 
 interface OverlayProps {
   index: VizIndex;

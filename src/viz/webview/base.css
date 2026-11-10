@@ -1,0 +1,234 @@
+:root {
+  --viz-added: var(--vscode-gitDecoration-addedResourceForeground, #81b88b);
+  --viz-changed: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+  --viz-deleted: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
+  --viz-unchanged: var(--vscode-descriptionForeground, #9d9d9d);
+  --viz-bg: var(--vscode-editor-background, #1f1f1f);
+  --viz-fg: var(--vscode-foreground, #ccc);
+  --viz-muted: var(--vscode-descriptionForeground, #9d9d9d);
+  --viz-border: var(--vscode-widget-border, var(--vscode-panel-border, #313131));
+  --viz-panel: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #202020));
+  --viz-accent: var(--vscode-focusBorder, #0078d4);
+  --viz-link: var(--vscode-textLink-foreground, #4daafc);
+  --viz-hover: var(--vscode-list-hoverBackground, #2a2d2e);
+  --viz-mono: var(--vscode-editor-font-family, Menlo, Monaco, monospace);
+  --viz-radius: 8px;
+  --viz-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.16);
+  --viz-card-bg: color-mix(in srgb, var(--viz-panel) 78%, var(--viz-bg));
+  --viz-lane-even: color-mix(in srgb, var(--viz-fg) 3%, transparent);
+  --viz-lane-odd: transparent;
+  --viz-duration: 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --viz-duration: 0ms;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--vscode-font-family, system-ui, sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+  color: var(--viz-fg);
+  background: var(--viz-bg);
+  line-height: 1.45;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 1.5px solid var(--viz-accent);
+  outline-offset: 2px;
+}
+
+kbd {
+  font-family: var(--viz-mono);
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+  border: 1px solid var(--viz-border);
+  background: color-mix(in srgb, var(--viz-fg) 6%, transparent);
+  color: var(--viz-muted);
+}
+
+.viz-icon {
+  flex: none;
+  vertical-align: -2px;
+}
+
+.viz-app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.viz-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.viz-stage {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.viz-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--vscode-button-foreground, #fff);
+  background: var(--vscode-button-background, #0078d4);
+  transition: background var(--viz-duration);
+}
+
+.viz-btn:hover {
+  background: var(--vscode-button-hoverBackground, #026ec1);
+}
+
+.viz-btn--secondary {
+  color: var(--vscode-button-secondaryForeground, var(--viz-fg));
+  background: var(--vscode-button-secondaryBackground, #313131);
+}
+
+.viz-btn--secondary:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
+}
+
+.viz-btn--active {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--viz-accent) 45%, transparent);
+}
+
+.viz-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  color: var(--viz-muted);
+  transition:
+    background var(--viz-duration),
+    color var(--viz-duration);
+}
+
+.viz-iconbtn:hover:not(:disabled),
+.viz-iconbtn--active {
+  color: var(--viz-fg);
+  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+}
+
+.viz-iconbtn--primary {
+  color: var(--vscode-button-foreground, #fff);
+  background: var(--vscode-button-background, #0078d4);
+}
+
+.viz-iconbtn--primary:hover:not(:disabled) {
+  color: var(--vscode-button-foreground, #fff);
+  background: var(--vscode-button-hoverBackground, #026ec1);
+}
+
+.viz-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.viz-delta__glyph {
+  font-family: var(--viz-mono);
+  font-weight: 700;
+}
+
+.viz-delta--added {
+  color: var(--viz-added);
+}
+.viz-delta--changed {
+  color: var(--viz-changed);
+}
+.viz-delta--deleted {
+  color: var(--viz-deleted);
+}
+.viz-delta--unchanged {
+  color: var(--viz-unchanged);
+}
+
+.viz-kind-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--vscode-badge-foreground, #f8f8f8);
+  background: var(--vscode-badge-background, #616161);
+}
+
+.viz-kind-chip--muted {
+  color: var(--viz-muted);
+  background: color-mix(in srgb, var(--viz-fg) 8%, transparent);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.viz-kind-chip--level {
+  color: var(--viz-accent);
+  background: color-mix(in srgb, var(--viz-accent) 16%, transparent);
+}
+
+.viz-kind-chip--hero {
+  color: var(--viz-bg);
+  background: var(--viz-added);
+}
+
+.viz-level--dim {
+  opacity: 0.22;
+}
+
+.viz-canvas--veiled .viz-level--dim {
+  opacity: 0.12;
+}
+
+.viz-level--normal,
+.viz-level--bright,
+.viz-level--dim {
+  transition: opacity 260ms ease;
+}

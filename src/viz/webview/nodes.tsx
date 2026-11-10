@@ -10,6 +10,8 @@ import type {
   PhaseData,
 } from "../model/rf";
 import { DeltaBadge, DELTA_GLYPH, KindIcon } from "./icons";
+import "./cards.css";
+import "./sequence.css";
 
 const levelClass = (level: string) => `viz-level--${level}`;
 

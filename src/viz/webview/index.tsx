@@ -1,8 +1,8 @@
 import { createRoot } from "react-dom/client";
 
-import { App } from "./App";
 import "@xyflow/react/dist/style.css";
-import "./viz.css";
+import "./base.css";
+import { App } from "./App";
 
 const container = document.getElementById("root");
 if (container) {

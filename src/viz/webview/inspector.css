@@ -1,0 +1,249 @@
+.viz-inspector {
+  position: relative;
+  flex: none;
+  width: 300px;
+  padding: 14px 16px 24px;
+  overflow-y: auto;
+  border-left: 1px solid var(--viz-border);
+  background: var(--viz-panel);
+  font-size: 12.5px;
+}
+
+.viz-inspector h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.viz-inspector h4 {
+  margin: 0 0 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--viz-muted);
+}
+
+.viz-inspector__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+.viz-inspector__head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-right: 28px;
+  margin-bottom: 8px;
+}
+
+.viz-inspector__head .viz-card__icon {
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+}
+
+.viz-inspector__sub {
+  margin-top: 2px;
+  font-family: var(--viz-mono);
+  font-size: 11px;
+  color: var(--viz-muted);
+  word-break: break-word;
+}
+
+.viz-inspector__arrow {
+  margin: 0 6px;
+  color: var(--viz-muted);
+}
+
+.viz-inspector__role {
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+
+.viz-inspector__hint {
+  margin: 10px 0 0;
+  color: var(--viz-muted);
+  font-size: 11.5px;
+}
+
+.viz-inspector__section {
+  margin-top: 16px;
+}
+
+.viz-struck {
+  text-decoration: line-through;
+  text-decoration-color: var(--viz-deleted);
+}
+
+.viz-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.viz-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--viz-link);
+  background: color-mix(in srgb, var(--viz-link) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--viz-link) 30%, transparent);
+  transition: background var(--viz-duration);
+}
+
+.viz-chip-btn:hover {
+  background: color-mix(in srgb, var(--viz-link) 22%, transparent);
+}
+
+.viz-files,
+.viz-links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.viz-file {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 26px;
+  padding: 0 4px 0 8px;
+  border-radius: 6px;
+}
+
+.viz-file:hover {
+  background: var(--viz-hover);
+}
+
+.viz-file__path {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--viz-mono);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+
+.viz-file__actions {
+  display: flex;
+  flex: none;
+  opacity: 0.55;
+  transition: opacity var(--viz-duration);
+}
+
+.viz-file:hover .viz-file__actions,
+.viz-file:focus-within .viz-file__actions {
+  opacity: 1;
+}
+
+.viz-file .viz-iconbtn {
+  width: 24px;
+  height: 24px;
+}
+
+.viz-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  text-align: left;
+  transition: background var(--viz-duration);
+}
+
+.viz-link:hover {
+  background: var(--viz-hover);
+}
+
+.viz-link--inline {
+  display: inline;
+  width: auto;
+  min-height: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--viz-link);
+}
+
+.viz-link--inline:hover {
+  background: none;
+  text-decoration: underline;
+}
+
+.viz-link__arrow {
+  flex: none;
+  width: 14px;
+  color: var(--viz-muted);
+}
+
+.viz-link__text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-link__sub {
+  min-width: 0;
+  max-width: 45%;
+  font-family: var(--viz-mono);
+  font-size: 10.5px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-link__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-family: var(--viz-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--viz-bg);
+  background: var(--viz-muted);
+}
+
+.viz-link__num--big {
+  min-width: 28px;
+  height: 28px;
+  font-size: 12px;
+  color: var(--vscode-button-foreground, #fff);
+  background: var(--viz-accent);
+}
+
+.viz-code {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: var(--viz-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--viz-fg);
+  background: color-mix(in srgb, var(--viz-fg) 6%, transparent);
+  border: 1px solid var(--viz-border);
+}

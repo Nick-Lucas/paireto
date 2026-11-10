@@ -5,6 +5,7 @@ import type { EdgeKey, VizRef } from "../model/types";
 import type { UiAction } from "../model/ui";
 import { DeltaBadge, KindIcon, UiIcon } from "./icons";
 import { vscode } from "./vscode";
+import "./inspector.css";
 
 interface InspectorProps {
   index: VizIndex;

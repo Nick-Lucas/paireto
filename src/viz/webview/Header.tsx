@@ -7,6 +7,7 @@ import { ALL_DELTAS, type UiAction, type UiState } from "../model/ui";
 import type { VizHistoryEntry, VizWindowState } from "../protocol";
 import { DELTA_GLYPH, DELTA_LABEL, UiIcon } from "./icons";
 import { vscode } from "./vscode";
+import "./header.css";
 
 interface HeaderProps {
   doc: VizDoc;

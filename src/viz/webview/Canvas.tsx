@@ -19,6 +19,7 @@ import type { UiAction, UiState } from "../model/ui";
 import { NODE_TYPES } from "./nodes";
 import { EDGE_TYPES } from "./VizEdge";
 import { reducedMotion } from "./vscode";
+import "./canvas.css";
 
 interface CanvasProps {
   stageKey: string;
