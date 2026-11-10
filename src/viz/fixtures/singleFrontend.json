@@ -8,7 +8,14 @@
     { "id": "data", "label": "Data access" }
   ],
   "nodes": [
-    { "id": "user", "label": "User", "kind": "actor", "delta": "unchanged", "lane": "view", "flowOnly": true },
+    {
+      "id": "user",
+      "label": "User",
+      "kind": "actor",
+      "delta": "unchanged",
+      "lane": "view",
+      "flowOnly": true
+    },
     {
       "id": "comment-thread",
       "label": "CommentThread",
@@ -74,17 +81,55 @@
       "role": "Adds updateComment.",
       "files": [{ "path": "web/src/api/comments.ts", "line": 51, "endLine": 66 }]
     },
-    { "id": "server", "label": "Comments API", "kind": "external", "delta": "unchanged", "lane": "data", "sub": "PATCH /comments/:id" }
+    {
+      "id": "server",
+      "label": "Comments API",
+      "kind": "external",
+      "delta": "unchanged",
+      "lane": "data",
+      "sub": "PATCH /comments/:id"
+    }
   ],
   "edges": [
     { "from": "comment-thread", "to": "comment-editor", "kind": "render", "delta": "added" },
     { "from": "comment-thread", "to": "edit-dialog", "kind": "render", "delta": "deleted" },
-    { "from": "comment-editor", "to": "use-edit-comment", "kind": "call", "delta": "added", "label": "mutate(text)", "hero": true },
-    { "from": "use-edit-comment", "to": "comments-cache", "kind": "data", "delta": "added", "label": "snapshot, patch, rollback" },
-    { "from": "use-edit-comment", "to": "api-client", "kind": "call", "delta": "added", "label": "updateComment" },
+    {
+      "from": "comment-editor",
+      "to": "use-edit-comment",
+      "kind": "call",
+      "delta": "added",
+      "label": "mutate(text)",
+      "hero": true
+    },
+    {
+      "from": "use-edit-comment",
+      "to": "comments-cache",
+      "kind": "data",
+      "delta": "added",
+      "label": "snapshot, patch, rollback"
+    },
+    {
+      "from": "use-edit-comment",
+      "to": "api-client",
+      "kind": "call",
+      "delta": "added",
+      "label": "updateComment"
+    },
     { "from": "comments-cache", "to": "comment-model", "kind": "uses", "delta": "unchanged" },
-    { "from": "comment-thread", "to": "comments-cache", "kind": "data", "delta": "unchanged", "label": "subscribe" },
-    { "from": "api-client", "to": "server", "kind": "call", "delta": "added", "label": "PATCH /comments/:id" }
+    {
+      "from": "comment-thread",
+      "to": "comments-cache",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "subscribe"
+    },
+    {
+      "from": "api-client",
+      "to": "server",
+      "kind": "call",
+      "delta": "added",
+      "label": "PATCH /comments/:id"
+    }
   ],
   "flows": [
     {
@@ -92,24 +137,67 @@
       "title": "Edit, then server rejects",
       "summary": "The edit shows at once; when the PATCH fails the hook restores the snapshot and the editor reopens with the draft.",
       "delta": "added",
-      "participants": ["user", "comment-editor", "use-edit-comment", "comments-cache", "api-client", "server"],
+      "participants": [
+        "user",
+        "comment-editor",
+        "use-edit-comment",
+        "comments-cache",
+        "api-client",
+        "server"
+      ],
       "steps": [
         { "from": "user", "to": "comment-editor", "label": "Save", "phase": "Optimistic" },
         { "from": "comment-editor", "to": "use-edit-comment", "label": "mutate(text)" },
         { "from": "use-edit-comment", "to": "comments-cache", "label": "snapshot thread" },
-        { "from": "use-edit-comment", "to": "comments-cache", "label": "patch comment, pending: true" },
+        {
+          "from": "use-edit-comment",
+          "to": "comments-cache",
+          "label": "patch comment, pending: true"
+        },
         { "from": "use-edit-comment", "to": "api-client", "label": "updateComment(id, text)" },
-        { "from": "api-client", "to": "server", "label": "PATCH /comments/:id", "request": "{ body }" },
-        { "from": "server", "to": "api-client", "label": "409 conflict", "kind": "return", "phase": "Failure" },
+        {
+          "from": "api-client",
+          "to": "server",
+          "label": "PATCH /comments/:id",
+          "request": "{ body }"
+        },
+        {
+          "from": "server",
+          "to": "api-client",
+          "label": "409 conflict",
+          "kind": "return",
+          "phase": "Failure"
+        },
         { "from": "api-client", "to": "use-edit-comment", "label": "throws", "kind": "return" },
         { "from": "use-edit-comment", "to": "comments-cache", "label": "restore snapshot" },
-        { "from": "use-edit-comment", "to": "comment-editor", "label": "error, keep draft", "kind": "return" }
+        {
+          "from": "use-edit-comment",
+          "to": "comment-editor",
+          "label": "error, keep draft",
+          "kind": "return"
+        }
       ]
     }
   ],
   "walkthrough": [
-    { "title": "Replaces the edit modal", "body": "The thread renders an inline editor; the modal is gone.", "focus": ["comment-thread>comment-editor", "edit-dialog"] },
-    { "title": "Adds an optimistic hook", "body": "useEditComment patches the cache before the request so the edit shows at once.", "focus": ["use-edit-comment", "comment-editor>use-edit-comment", "use-edit-comment>comments-cache"] },
-    { "title": "Rolls back on failure", "body": "A rejected PATCH restores the snapshot and keeps the draft open.", "focus": ["edit-rollback:7", "edit-rollback:8", "edit-rollback:9"] }
+    {
+      "title": "Replaces the edit modal",
+      "body": "The thread renders an inline editor; the modal is gone.",
+      "focus": ["comment-thread>comment-editor", "edit-dialog"]
+    },
+    {
+      "title": "Adds an optimistic hook",
+      "body": "useEditComment patches the cache before the request so the edit shows at once.",
+      "focus": [
+        "use-edit-comment",
+        "comment-editor>use-edit-comment",
+        "use-edit-comment>comments-cache"
+      ]
+    },
+    {
+      "title": "Rolls back on failure",
+      "body": "A rejected PATCH restores the snapshot and keeps the draft open.",
+      "focus": ["edit-rollback:7", "edit-rollback:8", "edit-rollback:9"]
+    }
   ]
 }
