@@ -10,7 +10,7 @@ import type { CompareTo } from "../protocol/guidedReview.js";
 import type { VizShowRequest } from "../protocol/types.js";
 import type { VizArgs } from "../protocol/viz.js";
 import type { ReviewState } from "../review/ReviewController.js";
-import { parseWebviewMessage } from "../viz/host/VizPanel.js";
+import { parseWebviewMessage, parseWebviewState } from "../viz/host/VizPanel.js";
 import { vizIdFor, VizService, type VizReview } from "../viz/host/VizService.js";
 import { VIZ_STORE_LIMIT, VizStore } from "../viz/host/VizStore.js";
 import { VIZ_DOC_FORMAT, type VizDoc } from "../viz/model/types.js";
@@ -254,5 +254,11 @@ suite("viz webview messages", () => {
     );
     assert.strictEqual(parseWebviewMessage({ type: "run", command: "rm" }), undefined);
     assert.strictEqual(parseWebviewMessage("ready"), undefined);
+  });
+
+  test("restored webview state yields its viz id only when well formed", () => {
+    assert.strictEqual(parseWebviewState({ vizId: "abc" }), "abc");
+    assert.strictEqual(parseWebviewState({ vizId: 3 }), undefined);
+    assert.strictEqual(parseWebviewState(undefined), undefined);
   });
 });

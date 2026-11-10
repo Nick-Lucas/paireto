@@ -6,8 +6,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
-  type Edge,
-  type Node,
 } from "@xyflow/react";
 import { useEffect } from "react";
 
@@ -50,8 +48,6 @@ function Camera({ camera }: { camera: Emphasis["camera"] }) {
 
 export function Canvas(props: CanvasProps) {
   const { stageKey, graph, index, emphasis, ui, dispatch } = props;
-  const nodes = graph.nodes as unknown as Node[];
-  const edges = graph.edges as unknown as Edge[];
   const select = (id: string) => {
     const ref = parseVizRef(id, index.flowById);
     if (ref) {
@@ -62,8 +58,8 @@ export function Canvas(props: CanvasProps) {
     <ReactFlowProvider key={stageKey}>
       <ReactFlow
         className={`viz-canvas ${emphasis.veil ? "viz-canvas--veiled" : ""}`}
-        nodes={nodes}
-        edges={edges}
+        nodes={graph.nodes}
+        edges={graph.edges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
         fitView

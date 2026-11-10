@@ -21,6 +21,13 @@ export function parseWebviewMessage(raw: unknown): WebviewToHost | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
+const WebviewState = z.object({ vizId: z.string().min(1).max(200) });
+
+export function parseWebviewState(raw: unknown): string | undefined {
+  const parsed = WebviewState.safeParse(raw);
+  return parsed.success ? parsed.data.vizId : undefined;
+}
+
 export interface VizPanelEvents {
   onMessage(message: WebviewToHost): void;
   onDispose(): void;

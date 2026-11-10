@@ -20,7 +20,7 @@ import { renderAccepted, renderRejected } from "../model/render.js";
 import { VIZ_DOC_FORMAT, type VizDoc, type VizRepo } from "../model/types.js";
 import type { VizWindowState, WebviewToHost } from "../protocol.js";
 import { findUnits, manifestIn, renderChanges, type RepoChanges, vizStatus } from "./changes.js";
-import { VizPanel } from "./VizPanel.js";
+import { parseWebviewState, VizPanel } from "./VizPanel.js";
 import { VizStore } from "./VizStore.js";
 
 export interface VizReview {
@@ -90,14 +90,14 @@ export class VizService implements vscode.Disposable {
       if (!caller) {
         return { ok: false, message: notInWindow(msg.repoRoot) };
       }
-      const roots = new Map(repos.map((repo) => [repo.name, repo.root]));
+      const vizRepos = repos.map((repo): VizRepo => ({ name: repo.name, root: repo.root }));
       const changed = repos.flatMap((repo) => repo.files);
       const result = compileViz(msg.viz, {
         repoName: caller.name,
-        repos: repos.map((repo): VizRepo => ({ name: repo.name, root: repo.root })),
+        repos: vizRepos,
         changed,
         fileExists: (repo, file) => {
-          const root = roots.get(repo);
+          const root = vizRepos.find((candidate) => candidate.name === repo)?.root;
           return root !== undefined && fs.existsSync(path.join(root, file));
         },
       });
@@ -110,7 +110,7 @@ export class VizService implements vscode.Disposable {
           id: vizIdFor(caller.root, result.viz.title),
           repoRoot: caller.root,
           repoName: caller.name,
-          repos: repos.map((repo) => ({ name: repo.name, root: repo.root })),
+          repos: vizRepos,
           harness: msg.harness,
           compareTo: caller.compareTo,
           compareLabel: caller.compareLabel,
@@ -164,9 +164,8 @@ export class VizService implements vscode.Disposable {
   }
 
   revive(webviewPanel: vscode.WebviewPanel, state: unknown): void {
-    const vizId = (state as { vizId?: unknown } | undefined)?.vizId;
-    const doc =
-      (typeof vizId === "string" ? this.store.get(vizId) : undefined) ?? this.store.all()[0];
+    const vizId = parseWebviewState(state);
+    const doc = (vizId ? this.store.get(vizId) : undefined) ?? this.store.all()[0];
     if (!doc || this.panel) {
       webviewPanel.dispose();
       return;

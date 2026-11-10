@@ -1,3 +1,5 @@
+import type { Edge, Node } from "@xyflow/react";
+
 import type { VizEdge, VizNode } from "../../protocol/viz.js";
 import type { Point, Rect } from "../layout/geometry.js";
 import type { OverviewScene } from "../layout/overview.js";
@@ -49,17 +51,13 @@ export type RfNodeData =
   | PhaseData
   | MessageData;
 
-export interface RfNode<D extends RfNodeData = RfNodeData> {
-  readonly id: string;
-  readonly type: D["kind"];
-  readonly position: Point;
-  readonly width: number;
-  readonly height: number;
-  readonly data: D;
-  readonly selectable: boolean;
-  readonly draggable: false;
-  readonly zIndex: number;
-}
+export type RfNode = Node<RfNodeData, RfNodeData["kind"]> & {
+  width: number;
+  height: number;
+  selectable: boolean;
+  draggable: false;
+  zIndex: number;
+};
 
 export type EdgeData = {
   kind: "edge";
@@ -71,19 +69,15 @@ export type EdgeData = {
   steps: number;
 };
 
-export interface RfEdge {
-  readonly id: string;
-  readonly source: string;
-  readonly target: string;
-  readonly type: "viz";
-  readonly data: EdgeData;
-  readonly selectable: boolean;
-  readonly zIndex: number;
-}
+export type RfEdge = Edge<EdgeData, "viz"> & {
+  data: EdgeData;
+  selectable: boolean;
+  zIndex: number;
+};
 
 export interface RfGraph {
-  readonly nodes: readonly RfNode[];
-  readonly edges: readonly RfEdge[];
+  readonly nodes: RfNode[];
+  readonly edges: RfEdge[];
 }
 
 const Z = {
@@ -105,7 +99,7 @@ function decorId(kind: string, ...keys: (string | number)[]): string {
   return [kind, ...keys].join("/");
 }
 
-function rect(r: Rect): Pick<RfNode, "position" | "width" | "height"> {
+function rect(r: Rect): { position: Point; width: number; height: number } {
   return { position: { x: r.x, y: r.y }, width: r.width, height: r.height };
 }
 
