@@ -36,6 +36,10 @@ type MessageType =
   | "plan.review.response"
   | "review.await.request"
   | "review.await.response"
+  | "changes.describe.request"
+  | "changes.describe.response"
+  | "viz.show.request"
+  | "viz.show.response"
   | "stop.gate.request"
   | "stop.gate.response";
 
@@ -112,6 +116,31 @@ interface ReviewAwaitResponse extends Envelope {
   id: string;
   status: ReviewStatus;
   feedback: string;
+}
+
+interface ChangesDescribeRequest extends Envelope {
+  t: "changes.describe.request";
+  id: string;
+  cwd: string;
+  repoRoot: string;
+  harness: string;
+  sessionId?: string;
+}
+
+interface VizShowRequest extends Envelope {
+  t: "viz.show.request";
+  id: string;
+  cwd: string;
+  repoRoot: string;
+  harness: string;
+  sessionId?: string;
+  viz: unknown;
+}
+
+interface TextAnswer extends Envelope {
+  id: string;
+  ok: boolean;
+  message: string;
 }
 
 interface StopGateRequest extends Envelope {
@@ -847,6 +876,83 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
+async function sendTextRequest(
+  opts: Opts,
+  heading: string,
+  build: (target: Target, id: string) => ChangesDescribeRequest | VizShowRequest,
+  responseType: MessageType
+): Promise<void> {
+  const id = crypto.randomUUID();
+  await withBridge(opts, { heading }, async ({ conn, target }) => {
+    const request = build(target, id);
+    dumpMessage(ARROW_OUT, request);
+    const pending = awaitResponse<TextAnswer>(conn, id, responseType, 30_000);
+    bridge.sendLine(conn.sock, request);
+    const response = await pending;
+    if (!response) {
+      return;
+    }
+    dumpMessage(ARROW_IN, response);
+    banner(response.ok ? "ACCEPTED" : "REJECTED", response.ok ? green : red);
+    console.log("");
+    console.log(indent(response.message, "  │ ", response.ok ? blue : yellow));
+    if (!response.ok) {
+      process.exitCode = 1;
+    }
+  });
+}
+
+async function cmdChanges(opts: Opts): Promise<void> {
+  await sendTextRequest(
+    opts,
+    "Changes · paireto_get_changes",
+    (target, id) => ({
+      t: "changes.describe.request",
+      v: bridge.PLUGIN_VERSION,
+      id,
+      ts: bridge.nowIso(),
+      cwd: target.cwd,
+      repoRoot: target.repoRoot,
+      harness: "claudecode",
+      sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
+    }),
+    "changes.describe.response"
+  );
+}
+
+async function cmdViz(opts: Opts, positionals: string[]): Promise<void> {
+  const file = positionals[0] ?? strOpt(opts, "file");
+  if (!file) {
+    console.log(red("Usage: node emulator.ts viz <file.json>"));
+    process.exitCode = 1;
+    return;
+  }
+  let viz: unknown;
+  try {
+    viz = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch (err) {
+    console.log(red(`Could not read ${file}: ${errMessage(err)}`));
+    process.exitCode = 1;
+    return;
+  }
+  await sendTextRequest(
+    opts,
+    "Viz · paireto_show_viz",
+    (target, id) => ({
+      t: "viz.show.request",
+      v: bridge.PLUGIN_VERSION,
+      id,
+      ts: bridge.nowIso(),
+      cwd: target.cwd,
+      repoRoot: target.repoRoot,
+      harness: "claudecode",
+      sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
+      viz,
+    }),
+    "viz.show.response"
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Help + dispatch
 // ---------------------------------------------------------------------------
@@ -869,6 +975,9 @@ ${bold("Commands")}
   ${cyan("flow")}                    Fire a full simulated session lifecycle of events.
   ${cyan("agent")}                   Hold a live session open (liveness connection). Ctrl+C to
                           simulate the agent process being killed → the extension drops it.
+  ${cyan("changes")}                 Ask what the window compares (paireto_get_changes).
+  ${cyan("viz")} <file.json>         Send a viz payload (paireto_show_viz) and print the answer.
+                          Try src/viz/fixtures/multiService.json.
   ${cyan("help")}                    Show this.
 
 ${bold("Options")}
@@ -919,6 +1028,12 @@ async function main(): Promise<void> {
       break;
     case "agent":
       await cmdAgent(opts);
+      break;
+    case "changes":
+      await cmdChanges(opts);
+      break;
+    case "viz":
+      await cmdViz(opts, rest);
       break;
     case "help":
     case "-h":
