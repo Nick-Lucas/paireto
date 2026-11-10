@@ -3,7 +3,7 @@ import { estimateTextWidth, type Rect } from "./geometry.js";
 
 export const SEQ = {
   pad: 24,
-  columnWidth: 168,
+  columnWidth: 192,
   minGap: 48,
   headerHeight: 56,
   firstRow: 44,

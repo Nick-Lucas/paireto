@@ -6,6 +6,8 @@
 !dist/extension.js
 !dist/welcome.js
 !dist/welcome.css
+!dist/viz.js
+!dist/viz.css
 !media/**
 
 # Marketplace metadata

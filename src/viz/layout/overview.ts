@@ -37,7 +37,7 @@ export interface ElkLike {
   layout(graph: ElkNode): Promise<ElkNode>;
 }
 
-export const CARD = { width: 232, height: 64, subHeight: 18 } as const;
+export const CARD = { width: 212, height: 64, subHeight: 18 } as const;
 export const SCENE = { pad: 28, laneHeader: 40, groupTab: 30, groupPad: 16 } as const;
 
 export function cardSize(node: VizNode): { width: number; height: number } {
@@ -83,12 +83,12 @@ const ROOT_OPTIONS: Record<string, string> = {
   "elk.edgeRouting": "ORTHOGONAL",
   "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
   "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "96",
-  "elk.layered.spacing.edgeNodeBetweenLayers": "40",
-  "elk.spacing.nodeNode": "36",
-  "elk.spacing.edgeNode": "28",
-  "elk.spacing.edgeEdge": "20",
-  "elk.spacing.edgeLabel": "6",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "32",
+  "elk.spacing.nodeNode": "32",
+  "elk.spacing.edgeNode": "24",
+  "elk.spacing.edgeEdge": "16",
+  "elk.spacing.edgeLabel": "4",
   "elk.edgeLabels.inline": "true",
   "elk.edgeLabels.placement": "CENTER",
 };
@@ -140,7 +140,13 @@ function toElk(index: VizIndex): ElkNode {
       sources: [edge.from],
       targets: [edge.to],
       labels: edge.label
-        ? [{ text: edge.label, width: estimateTextWidth(edge.label, 11) + 16, height: 20 }]
+        ? [
+            {
+              text: edge.label,
+              width: Math.min(96, estimateTextWidth(edge.label, 10.5) + 14),
+              height: 20,
+            },
+          ]
         : [],
     }));
   return { id: "root", layoutOptions: ROOT_OPTIONS, children, edges };

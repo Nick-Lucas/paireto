@@ -24,7 +24,7 @@
     "compile-tests": "rm -rf out && tsc -p . --outDir out",
     "watch-tests": "tsc -p . -w --outDir out",
     "pretest": "pnpm run compile-tests && pnpm run compile && pnpm run lint",
-    "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview",
+    "check-types": "tsc --noEmit && tsc -p scripts && tsc -p src/welcome/webview && tsc -p src/viz/webview",
     "dogfood": "pnpm package && code --install-extension dist/paireto.vsix --force",
     "lint": "oxlint src",
     "format": "oxfmt --check src",
