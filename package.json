@@ -86,6 +86,10 @@
         "title": "Paireto: Open Selected in This Window"
       },
       {
+        "command": "paireto.viz.open",
+        "title": "Paireto: Open Change Visualization"
+      },
+      {
         "command": "paireto.openWelcome",
         "title": "Paireto: Open Welcome"
       },
@@ -887,6 +891,7 @@
   "activationEvents": [
     "onFileSystem:paireto-changeset",
     "onFileSystem:paireto-review",
+    "onWebviewPanel:paireto.viz",
     "onStartupFinished"
   ],
   "icon": "media/PairetoAppIcon@2x.png",

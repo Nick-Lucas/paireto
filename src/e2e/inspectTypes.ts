@@ -70,6 +70,13 @@ export interface InspectFeedback {
 /** The full read-only snapshot the E2E test asserts against. `planTexts` maps a plan gate id to a
  *  cheap fingerprint (`<sha1>:<length>`) so a re-proposed plan is detectable without shipping the
  *  whole markdown across the command boundary. */
+export interface InspectViz {
+  open: boolean;
+  vizId?: string;
+  title?: string;
+  stored: number;
+}
+
 export interface InspectSnapshot {
   sessions: InspectSession[];
   gates: InspectGate[];
@@ -91,6 +98,7 @@ export interface InspectSnapshot {
   turnBaselinePending: boolean;
   /** Present only while a guided review is open. */
   guided?: InspectGuided;
+  viz: InspectViz;
 }
 
 /** Argument to the `paireto.test.addComment` command. */

@@ -731,6 +731,16 @@ export class ReviewController implements vscode.Disposable {
     return Object.fromEntries(this.refreshCounts);
   }
 
+  compareToFor(repoRoot: string): CompareTo {
+    return compareToForRepo(this.compareTo, this.guidedCompareTo, repoRoot);
+  }
+
+  async setCompareTo(compareTo: CompareTo, by: string): Promise<void> {
+    this.guidedCompareTo = undefined;
+    await this.applyCompareTo(compareTo, by);
+    await this.refresh("compare-to");
+  }
+
   /** Adopt a Compare To point and persist it, so the Changes model and anything reading it agree. */
   private async applyCompareTo(compareTo: CompareTo, by: string): Promise<void> {
     if (this.compareTo.kind === compareTo.kind && this.compareTo.ref === compareTo.ref) {

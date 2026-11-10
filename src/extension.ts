@@ -36,6 +36,8 @@ import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
+import { VIZ_VIEW_TYPE } from "./viz/host/VizPanel.js";
+import { VizService } from "./viz/host/VizService.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
 import { exposeTestControlPlane } from "./testControlPlane.js";
@@ -89,6 +91,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewContent,
     coordinator,
   );
+  const viz = new VizService({
+    extensionUri: context.extensionUri,
+    memento: context.workspaceState,
+    review: reviewController,
+    getChanges: (repoRoot, compareTo) => diffService.getChanges(repoRoot, compareTo),
+  });
 
   // The buckets and the comment threads of one commenting context. A branch or repository change
   // reports a new context, and the whole set is opened again from disk.
@@ -166,6 +174,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(Commands.openWelcome, () =>
       WelcomePanel.show(context, installStatus),
     ),
+    viz,
+    vscode.commands.registerCommand(Commands.vizOpen, () => viz.pick()),
+    vscode.window.registerWebviewPanelSerializer(VIZ_VIEW_TYPE, {
+      deserializeWebviewPanel: async (panel, state) => viz.revive(panel, state),
+    }),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
     vscode.commands.registerCommand(Commands.gateApprove, () =>
       coordinator.answer((gate) => gate.approve()),
@@ -211,6 +224,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         planReview,
         reviewController,
         repoService,
+        viz,
       }),
     );
   }
