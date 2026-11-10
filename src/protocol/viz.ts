@@ -57,7 +57,9 @@ export type VizEdgeKind = z.infer<typeof VizEdgeKind>;
 
 export const VizStepKind = z
   .enum(["sync", "async", "return"])
-  .describe("sync: call and wait (default). async: fire and forget. return: reply. from = to draws a self step.");
+  .describe(
+    "sync: call and wait (default). async: fire and forget. return: reply. from = to draws a self step.",
+  );
 export type VizStepKind = z.infer<typeof VizStepKind>;
 
 export const VizFileRef = z.strictObject({
@@ -80,7 +82,9 @@ export const VizNode = z.strictObject({
   kind: VizNodeKind,
   delta: VizDelta,
   lane: id("Lane id."),
-  group: text(40).optional().describe("Nodes sharing a group are boxed together, e.g. one service."),
+  group: text(40)
+    .optional()
+    .describe("Nodes sharing a group are boxed together, e.g. one service."),
   sub: text(48).optional().describe("Short qualifier: route, table, topic."),
   role: text(200)
     .optional()
@@ -90,10 +94,7 @@ export const VizNode = z.strictObject({
     .max(VIZ_LIMITS.filesPerNode)
     .optional()
     .describe("Where it lives in the diff. Required unless unchanged."),
-  flowOnly: z
-    .boolean()
-    .optional()
-    .describe("Shown only in flows, e.g. the user or the browser."),
+  flowOnly: z.boolean().optional().describe("Shown only in flows, e.g. the user or the browser."),
 });
 export type VizNode = z.infer<typeof VizNode>;
 
