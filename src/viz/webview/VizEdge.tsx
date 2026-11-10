@@ -80,6 +80,7 @@ export function VizEdge({ data }: EdgeProps<Edge<EdgeData, "viz">>) {
             className={`viz-edge-label viz-edge-label--${edge.delta} viz-level--${level} ${data.selected ? "viz-edge-label--selected" : ""} ${edge.hero ? "viz-edge-label--hero" : ""}`}
             style={{
               transform: `translate(-50%, -50%) translate(${label.x + label.width / 2}px, ${label.y + label.height / 2}px)`,
+              maxWidth: label.width,
             }}
           >
             {edge.delta !== "unchanged" && (
@@ -87,7 +88,9 @@ export function VizEdge({ data }: EdgeProps<Edge<EdgeData, "viz">>) {
                 {DELTA_GLYPH[edge.delta]}
               </span>
             )}
-            <span>{edge.label}</span>
+            <span className="viz-edge-label__text" title={edge.label}>
+              {edge.label}
+            </span>
             {data.steps > 0 && <span className="viz-edge-label__steps">{data.steps}</span>}
           </div>
         </EdgeLabelRenderer>

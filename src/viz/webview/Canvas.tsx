@@ -5,11 +5,14 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  getViewportForBounds,
   useReactFlow,
+  useStore,
 } from "@xyflow/react";
-import { useEffect } from "react";
+import { useEffect, useMemo, useRef } from "react";
 
-import type { Emphasis } from "../model/emphasis";
+import { union } from "../layout/geometry";
+import { openingFrames, type Emphasis } from "../model/emphasis";
 import type { VizIndex } from "../model/index";
 import { parseVizRef } from "../model/refs";
 import type { RfGraph } from "../model/rf";
@@ -29,14 +32,63 @@ interface CanvasProps {
 }
 
 const FIT = { padding: 0.08, duration: reducedMotion ? 0 : 500 };
+const READABLE_ZOOM = 0.8;
+const MIN_ZOOM = 0.2;
 
-function Camera({ camera }: { camera: Emphasis["camera"] }) {
-  const { fitView } = useReactFlow();
+function Camera({
+  camera,
+  frames,
+  graph,
+}: {
+  camera: Emphasis["camera"];
+  frames: string[][];
+  graph: RfGraph;
+}) {
+  const { fitView, setViewport } = useReactFlow();
+  const width = useStore((state) => state.width);
+  const height = useStore((state) => state.height);
+  const opened = useRef(false);
   const key = camera?.join("|") ?? "";
+  useEffect(() => {
+    if (key || opened.current || width === 0 || height === 0) {
+      return;
+    }
+    opened.current = true;
+    const boxes = new Map(
+      graph.nodes.map((node) => [
+        node.id,
+        { ...node.position, width: node.width, height: node.height },
+      ]),
+    );
+    const view = (frame: string[], minZoom: number, maxZoom: number) =>
+      getViewportForBounds(
+        union(frame.flatMap((id) => boxes.get(id) ?? [])),
+        width,
+        height,
+        minZoom,
+        maxZoom,
+        FIT.padding,
+      );
+    const [all, ...parts] = frames;
+    if (!all) {
+      return;
+    }
+    const whole = view(all, MIN_ZOOM, 1.2);
+    if (whole.zoom >= READABLE_ZOOM) {
+      void setViewport(whole);
+      return;
+    }
+    const part =
+      parts.find((frame) => view(frame, MIN_ZOOM, 1.2).zoom >= READABLE_ZOOM) ??
+      parts.at(-1) ??
+      all;
+    void setViewport(view(part, READABLE_ZOOM, READABLE_ZOOM));
+  }, [key, frames, graph, width, height, setViewport]);
   useEffect(() => {
     if (!key) {
       return;
     }
+    opened.current = true;
     const nodes = key.split("|").map((id) => ({ id }));
     const frame = requestAnimationFrame(() => {
       void fitView({ ...FIT, padding: 0.35, maxZoom: 1.1, nodes });
@@ -48,6 +100,7 @@ function Camera({ camera }: { camera: Emphasis["camera"] }) {
 
 export function Canvas(props: CanvasProps) {
   const { stageKey, graph, index, emphasis, ui, dispatch } = props;
+  const frames = useMemo(() => openingFrames(index, ui.stage), [index, ui.stage]);
   const select = (id: string) => {
     const ref = parseVizRef(id, index.flowById);
     if (ref) {
@@ -62,9 +115,7 @@ export function Canvas(props: CanvasProps) {
         edges={graph.edges}
         nodeTypes={NODE_TYPES}
         edgeTypes={EDGE_TYPES}
-        fitView
-        fitViewOptions={FIT}
-        minZoom={0.2}
+        minZoom={MIN_ZOOM}
         maxZoom={2}
         nodesDraggable={false}
         nodesConnectable={false}
@@ -83,7 +134,7 @@ export function Canvas(props: CanvasProps) {
         }}
       >
         <Background variant={BackgroundVariant.Dots} gap={22} size={1.2} className="viz-dots-bg" />
-        <Controls showInteractive={false} position="bottom-left" />
+        <Controls showInteractive={false} position="bottom-left" fitViewOptions={FIT} />
         {ui.minimap && (
           <MiniMap
             pannable
@@ -93,7 +144,7 @@ export function Canvas(props: CanvasProps) {
             nodeStrokeWidth={2}
           />
         )}
-        <Camera camera={emphasis.camera} />
+        <Camera camera={emphasis.camera} frames={frames} graph={graph} />
       </ReactFlow>
     </ReactFlowProvider>
   );

@@ -1,6 +1,6 @@
 import * as assert from "node:assert";
 
-import { emphasisOf } from "../viz/model/emphasis.js";
+import { emphasisOf, openingFrames } from "../viz/model/emphasis.js";
 import { initialUi, reduceUi, type UiAction, type UiState } from "../viz/model/ui.js";
 import { multiServiceIndex } from "./vizFixtures.js";
 
@@ -109,5 +109,17 @@ suite("viz emphasis", () => {
   test("a walkthrough outranks a pending query", () => {
     const emphasis = emphasisOf(index, run({ type: "query", query: "notify" }, { type: "walk" }));
     assert.deepStrictEqual(only(emphasis.nodes, "bright").sort(), ["billing-api", "retry-queue"]);
+  });
+
+  test("the opening camera tries everything, then the changed parts, then the hero edge", () => {
+    assert.deepStrictEqual(openingFrames(index, { kind: "overview" }), [
+      index.overviewNodes.map((node) => node.id),
+      index.overviewNodes.filter((node) => node.delta !== "unchanged").map((node) => node.id),
+      ["billing-api", "retry-queue"],
+    ]);
+    const [all, opening] = openingFrames(index, FLOW);
+    assert.ok(all.includes("soft-decline:14"));
+    assert.deepStrictEqual(opening.slice(0, 3), ["soft-decline:1", "shopper", "checkout"]);
+    assert.ok(!opening.includes("soft-decline:5"));
   });
 });

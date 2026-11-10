@@ -37,7 +37,7 @@ export interface ElkLike {
   layout(graph: ElkNode): Promise<ElkNode>;
 }
 
-const CARD = { width: 212, height: 64, subHeight: 18 } as const;
+const CARD = { width: 224, height: 76, subHeight: 20 } as const;
 const SCENE = { pad: 28, laneHeader: 40, groupTab: 30, groupPad: 16 } as const;
 
 function cardSize(node: VizNode): { width: number; height: number } {
@@ -83,11 +83,11 @@ const ROOT_OPTIONS: Record<string, string> = {
   "elk.edgeRouting": "ORTHOGONAL",
   "elk.layered.considerModelOrder.strategy": "NODES_AND_EDGES",
   "elk.layered.nodePlacement.strategy": "NETWORK_SIMPLEX",
-  "elk.layered.spacing.nodeNodeBetweenLayers": "64",
-  "elk.layered.spacing.edgeNodeBetweenLayers": "32",
-  "elk.spacing.nodeNode": "32",
-  "elk.spacing.edgeNode": "24",
-  "elk.spacing.edgeEdge": "16",
+  "elk.layered.spacing.nodeNodeBetweenLayers": "40",
+  "elk.layered.spacing.edgeNodeBetweenLayers": "16",
+  "elk.spacing.nodeNode": "24",
+  "elk.spacing.edgeNode": "16",
+  "elk.spacing.edgeEdge": "12",
   "elk.spacing.edgeLabel": "4",
   "elk.edgeLabels.inline": "true",
   "elk.edgeLabels.placement": "CENTER",
@@ -127,8 +127,8 @@ function toElk(index: VizIndex): { graph: ElkNode; groupKeys: ReadonlyMap<string
         layoutOptions: {
           "elk.partitioning.partition": partition,
           "elk.padding": `[top=${SCENE.groupTab},left=${SCENE.groupPad},bottom=${SCENE.groupPad},right=${SCENE.groupPad}]`,
-          "elk.spacing.nodeNode": "28",
-          "elk.layered.spacing.nodeNodeBetweenLayers": "64",
+          "elk.spacing.nodeNode": "24",
+          "elk.layered.spacing.nodeNodeBetweenLayers": "40",
         },
       };
       groups.set(key, group);
@@ -147,8 +147,8 @@ function toElk(index: VizIndex): { graph: ElkNode; groupKeys: ReadonlyMap<string
         ? [
             {
               text: edge.label,
-              width: Math.min(96, estimateTextWidth(edge.label, 10.5) + 14),
-              height: 20,
+              width: Math.min(172, estimateTextWidth(edge.label, 13.5) + 56),
+              height: 24,
             },
           ]
         : [],

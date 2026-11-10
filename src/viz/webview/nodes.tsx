@@ -49,7 +49,7 @@ function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
       <Handle type="source" position={Position.Right} className="viz-handle" />
       <div className="viz-card__row">
         <span className={`viz-card__icon viz-card__icon--${node.delta}`}>
-          <KindIcon kind={node.kind} />
+          <KindIcon kind={node.kind} size={16} />
         </span>
         <span className="viz-card__label">{node.label}</span>
         <DeltaBadge delta={node.delta} compact />

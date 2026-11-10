@@ -1,5 +1,5 @@
 import type { VizDelta } from "../../protocol/viz.js";
-import { searchMatches, stepAt, type VizIndex } from "./index.js";
+import { searchMatches, stepAt, type Stage, type VizIndex } from "./index.js";
 import { edgeKey, formatVizRef } from "./refs.js";
 import type { EdgeKey, VizRef } from "./types.js";
 import type { UiState } from "./ui.js";
@@ -152,6 +152,32 @@ function cameraIds(index: VizIndex, refs: readonly VizRef[]): string[] {
     }
   }
   return [...ids];
+}
+
+export function openingFrames(index: VizIndex, stage: Stage): string[][] {
+  if (stage.kind === "flow") {
+    const flow = index.flowById.get(stage.flow);
+    if (!flow) {
+      return [];
+    }
+    const steps = flow.steps.map((step): VizRef => ({
+      kind: "step",
+      flow: flow.id,
+      index: step.index,
+    }));
+    return [cameraIds(index, steps), cameraIds(index, steps.slice(0, 4))];
+  }
+  const nodes = (list: readonly { id: string }[]) =>
+    cameraIds(
+      index,
+      list.map(({ id }): VizRef => ({ kind: "node", id })),
+    );
+  const hero = index.edges.find((edge) => edge.hero);
+  return [
+    nodes(index.overviewNodes),
+    nodes(index.overviewNodes.filter((node) => node.delta !== "unchanged")),
+    hero ? cameraIds(index, [{ kind: "edge", key: edgeKey(hero.from, hero.to) }]) : [],
+  ].filter((frame) => frame.length > 0);
 }
 
 function neighbourhood(index: VizIndex, node: string): { nodes: Set<string>; edges: Set<EdgeKey> } {
