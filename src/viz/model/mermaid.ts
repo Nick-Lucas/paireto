@@ -3,12 +3,19 @@ import type { IndexedFlow, Stage, VizIndex } from "./index.js";
 
 const GLYPH: Record<VizDelta, string> = { added: "+", changed: "~", deleted: "−", unchanged: "" };
 
-function id(raw: string): string {
-  return raw.replace(/[^A-Za-z0-9_]/g, "_");
+const ENTITY: Record<string, string> = { "#": "#35;", ";": "#59;", '"': "#quot;" };
+
+function escape(text: string): string {
+  return text.replace(/\r?\n/g, "<br/>").replace(/[#;"]/g, (char) => ENTITY[char]);
 }
 
 function quote(text: string): string {
-  return `"${text.replace(/"/g, "#quot;")}"`;
+  return `"${escape(text)}"`;
+}
+
+function nodeIds(index: VizIndex): (node: string) => string {
+  const ids = new Map(index.nodes.map((node, at) => [node.id, `n${at}`] as const));
+  return (node) => ids.get(node) ?? node;
 }
 
 function nodeLabel(node: VizNode): string {
@@ -46,13 +53,15 @@ function arrow(edge: VizEdge): string {
 }
 
 function overview(index: VizIndex): string {
+  const id = nodeIds(index);
   const lines = ["flowchart LR"];
-  for (const lane of index.lanes) {
+  let groupCount = 0;
+  for (const [laneAt, lane] of index.lanes.entries()) {
     const members = index.nodes.filter((node) => node.lane === lane.id && !node.flowOnly);
     if (members.length === 0) {
       continue;
     }
-    lines.push(`  subgraph ${id(`lane_${lane.id}`)}[${quote(lane.label)}]`);
+    lines.push(`  subgraph lane${laneAt}[${quote(lane.label)}]`);
     lines.push("    direction LR");
     const groups = new Map<string, VizNode[]>();
     for (const node of members) {
@@ -62,7 +71,8 @@ function overview(index: VizIndex): string {
     for (const [group, nodes] of groups) {
       const indent = group ? "      " : "    ";
       if (group) {
-        lines.push(`    subgraph ${id(`group_${lane.id}_${group}`)}[${quote(group)}]`);
+        lines.push(`    subgraph group${groupCount}[${quote(group)}]`);
+        groupCount += 1;
       }
       for (const node of nodes) {
         const [open, close] = shape(node);
@@ -84,23 +94,24 @@ function overview(index: VizIndex): string {
 }
 
 function sequence(index: VizIndex, flow: IndexedFlow): string {
-  const lines = ["sequenceDiagram", `  title ${flow.title}`];
+  const id = nodeIds(index);
+  const lines = ["sequenceDiagram", `  title ${escape(flow.title)}`];
   for (const participant of flow.participants) {
     const node = index.nodeById.get(participant);
     const label = node ? node.label : participant;
     const keyword = node?.kind === "actor" ? "actor" : "participant";
-    lines.push(`  ${keyword} ${id(participant)} as ${label}`);
+    lines.push(`  ${keyword} ${id(participant)} as ${escape(label)}`);
   }
   const first = id(flow.participants[0]);
   const last = id(flow.participants[flow.participants.length - 1]);
   for (const step of flow.steps) {
     if (step.startsPhase && step.phase) {
-      lines.push(`  Note over ${first},${last}: ${step.phase}`);
+      lines.push(`  Note over ${first},${last}: ${escape(step.phase)}`);
     }
     const op = step.kind === "return" ? "-->>" : step.kind === "async" ? "-)" : "->>";
-    lines.push(`  ${id(step.from)}${op}${id(step.to)}: ${step.label}`);
+    lines.push(`  ${id(step.from)}${op}${id(step.to)}: ${escape(step.label)}`);
     if (step.note) {
-      lines.push(`  Note right of ${id(step.to)}: ${step.note}`);
+      lines.push(`  Note right of ${id(step.to)}: ${escape(step.note)}`);
     }
   }
   return `${lines.join("\n")}\n`;
