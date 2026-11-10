@@ -9,7 +9,8 @@ import type {
   ParticipantData,
   PhaseData,
 } from "../model/rf";
-import { DeltaBadge, DELTA_GLYPH, KindIcon } from "./icons";
+import { DELTA_GLYPH } from "../model/delta";
+import { DeltaBadge, KindIcon } from "./icons";
 import "./cards.css";
 import "./sequence.css";
 

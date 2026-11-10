@@ -1,6 +1,12 @@
 import * as assert from "node:assert";
 
-import { buildVizIndex, refInStage, searchMatches, stepAt } from "../viz/model/index.js";
+import {
+  buildVizIndex,
+  refInStage,
+  searchMatches,
+  stageNumber,
+  stepAt,
+} from "../viz/model/index.js";
 import { loadVizFixture, multiServiceIndex } from "./vizFixtures.js";
 
 suite("viz index", () => {
@@ -83,13 +89,35 @@ suite("viz index", () => {
     });
   });
 
-  test("counts node deltas for the legend", () => {
+  test("counts overview node deltas for the legend", () => {
     assert.deepStrictEqual(multiServiceIndex().deltaCounts, {
       added: 2,
       changed: 4,
       deleted: 1,
-      unchanged: 3,
+      unchanged: 2,
     });
+  });
+
+  test("points each step at the overview element it rides or touches", () => {
+    const index = multiServiceIndex();
+    assert.deepStrictEqual(stepAt(index, { flow: "soft-decline", index: 3 })?.overviewRef, {
+      kind: "edge",
+      key: "billing-api>stripe",
+    });
+    assert.deepStrictEqual(stepAt(index, { flow: "soft-decline", index: 0 })?.overviewRef, {
+      kind: "node",
+      id: "checkout",
+    });
+    assert.deepStrictEqual(stepAt(index, { flow: "soft-decline", index: 9 })?.overviewRef, {
+      kind: "node",
+      id: "retry-worker",
+    });
+  });
+
+  test("numbers the overview 0 and each flow from 1", () => {
+    const index = multiServiceIndex();
+    assert.strictEqual(stageNumber(index, { kind: "overview" }), 0);
+    assert.strictEqual(stageNumber(index, { kind: "flow", flow: "final-failure" }), 2);
   });
 
   test("search matches labels, roles, files and step text, case-insensitively", () => {

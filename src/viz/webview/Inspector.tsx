@@ -157,10 +157,13 @@ function NodePanel({
                 key={flowId}
                 type="button"
                 className="viz-chip-btn"
-                onClick={() => {
-                  dispatch({ type: "stage", stage: { kind: "flow", flow: flowId } });
-                  dispatch({ type: "select", ref: { kind: "node", id: node.id } });
-                }}
+                onClick={() =>
+                  dispatch({
+                    type: "goto",
+                    ref: { kind: "node", id: node.id },
+                    stage: { kind: "flow", flow: flowId },
+                  })
+                }
               >
                 {index.flowById.get(flowId)?.title ?? flowId}
               </button>
@@ -257,11 +260,6 @@ function StepPanel({
 }) {
   const from = index.nodeById.get(step.from);
   const to = index.nodeById.get(step.to);
-  const overviewRef: VizRef | undefined = step.edge
-    ? { kind: "edge", key: step.edge }
-    : index.nodeById.get(step.from)?.flowOnly
-      ? { kind: "node", id: step.to }
-      : { kind: "node", id: step.from };
   return (
     <>
       <header className="viz-inspector__head">
@@ -296,7 +294,7 @@ function StepPanel({
         <button
           type="button"
           className="viz-btn viz-btn--secondary"
-          onClick={() => dispatch({ type: "goto", ref: overviewRef })}
+          onClick={() => dispatch({ type: "goto", ref: step.overviewRef })}
         >
           Show in overview
         </button>
@@ -307,15 +305,12 @@ function StepPanel({
 
 function StagePanel({ index, stage }: { index: VizIndex; stage: Stage }) {
   if (stage.kind === "overview") {
-    const changed = index.nodes.filter(
-      (node) => node.delta !== "unchanged" && !node.flowOnly,
-    ).length;
+    const changed = index.overviewNodes.filter((node) => node.delta !== "unchanged").length;
     return (
       <>
         <h3>Overview</h3>
         <p className="viz-inspector__role">
-          {changed} of {index.nodes.filter((node) => !node.flowOnly).length} parts changed across{" "}
-          {index.lanes.length} lanes.
+          {changed} of {index.overviewNodes.length} parts changed across {index.lanes.length} lanes.
         </p>
         <p className="viz-inspector__hint">
           Select a part or a connection to read its role and files. Press ? for keys.

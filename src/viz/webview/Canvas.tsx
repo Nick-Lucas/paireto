@@ -9,13 +9,12 @@ import {
   type Edge,
   type Node,
 } from "@xyflow/react";
-import { useEffect, useMemo } from "react";
+import { useEffect } from "react";
 
 import type { Emphasis } from "../model/emphasis";
 import type { VizIndex } from "../model/index";
-import { formatVizRef, parseVizRef } from "../model/refs";
+import { parseVizRef } from "../model/refs";
 import type { RfGraph } from "../model/rf";
-import type { VizRef } from "../model/types";
 import type { UiAction, UiState } from "../model/ui";
 import { NODE_TYPES } from "./nodes";
 import { EDGE_TYPES } from "./VizEdge";
@@ -33,51 +32,9 @@ interface CanvasProps {
 
 const FIT = { padding: 0.08, duration: reducedMotion ? 0 : 500 };
 
-function cameraNodeIds(
-  index: VizIndex,
-  refs: readonly VizRef[],
-  stage: UiState["stage"],
-): string[] {
-  const ids = new Set<string>();
-  for (const ref of refs) {
-    switch (ref.kind) {
-      case "node":
-        ids.add(ref.id);
-        break;
-      case "edge": {
-        const edge = index.edgesByKey.get(ref.key);
-        if (edge) {
-          ids.add(edge.from);
-          ids.add(edge.to);
-        }
-        break;
-      }
-      case "flow":
-        for (const participant of index.flowById.get(ref.id)?.participants ?? []) {
-          ids.add(participant);
-        }
-        break;
-      case "step":
-        if (stage.kind === "flow" && stage.flow === ref.flow) {
-          ids.add(formatVizRef(ref));
-          const step = index.flowById.get(ref.flow)?.steps[ref.index];
-          if (step) {
-            ids.add(step.from);
-            ids.add(step.to);
-          }
-        }
-        break;
-    }
-  }
-  return [...ids];
-}
-
-function Camera({ index, emphasis, ui }: Pick<CanvasProps, "index" | "emphasis" | "ui">) {
+function Camera({ camera }: { camera: Emphasis["camera"] }) {
   const { fitView } = useReactFlow();
-  const key = useMemo(
-    () => (emphasis.camera ? cameraNodeIds(index, emphasis.camera, ui.stage).join("|") : ""),
-    [index, emphasis.camera, ui.stage],
-  );
+  const key = camera?.join("|") ?? "";
   useEffect(() => {
     if (!key) {
       return;
@@ -140,7 +97,7 @@ export function Canvas(props: CanvasProps) {
             nodeStrokeWidth={2}
           />
         )}
-        <Camera index={index} emphasis={emphasis} ui={ui} />
+        <Camera camera={emphasis.camera} />
       </ReactFlow>
     </ReactFlowProvider>
   );

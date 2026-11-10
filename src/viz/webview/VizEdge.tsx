@@ -1,7 +1,7 @@
 import { EdgeLabelRenderer, type Edge, type EdgeProps } from "@xyflow/react";
 
 import type { EdgeData } from "../model/rf";
-import { DELTA_GLYPH } from "./icons";
+import { DELTA_GLYPH } from "../model/delta";
 import "./edges.css";
 
 const ARROW = 8;

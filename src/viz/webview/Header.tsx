@@ -1,11 +1,12 @@
 import { useState, type RefObject } from "react";
 
 import type { VizDelta } from "../../protocol/viz";
-import type { VizIndex } from "../model/index";
+import { stageNumber, type VizIndex } from "../model/index";
 import type { VizDoc } from "../model/types";
 import { ALL_DELTAS, type UiAction, type UiState } from "../model/ui";
 import type { VizHistoryEntry, VizWindowState } from "../protocol";
-import { DELTA_GLYPH, DELTA_LABEL, UiIcon } from "./icons";
+import { DELTA_GLYPH } from "../model/delta";
+import { DELTA_LABEL, UiIcon } from "./icons";
 import { vscode } from "./vscode";
 import "./header.css";
 
@@ -31,9 +32,7 @@ export function Header({
   onExport,
 }: HeaderProps) {
   const [summaryOpen, setSummaryOpen] = useState(true);
-  const stage = ui.stage;
-  const stageNumber =
-    stage.kind === "overview" ? 0 : index.flows.findIndex((flow) => flow.id === stage.flow) + 1;
+  const current = stageNumber(index, ui.stage);
   return (
     <header className="viz-header">
       <div className="viz-header__top">
@@ -133,7 +132,7 @@ export function Header({
         <nav className="viz-tabs" aria-label="Stages">
           <button
             type="button"
-            className={`viz-tab ${stageNumber === 0 ? "viz-tab--active" : ""}`}
+            className={`viz-tab ${current === 0 ? "viz-tab--active" : ""}`}
             onClick={() => dispatch({ type: "stageAt", n: 0 })}
           >
             <kbd>0</kbd> Overview
@@ -142,7 +141,7 @@ export function Header({
             <button
               key={flow.id}
               type="button"
-              className={`viz-tab ${stageNumber === i + 1 ? "viz-tab--active" : ""}`}
+              className={`viz-tab ${current === i + 1 ? "viz-tab--active" : ""}`}
               onClick={() => dispatch({ type: "stageAt", n: i + 1 })}
             >
               <kbd>{i + 1}</kbd> {flow.title}

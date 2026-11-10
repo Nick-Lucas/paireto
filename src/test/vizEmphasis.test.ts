@@ -81,7 +81,7 @@ suite("viz emphasis", () => {
     assert.deepStrictEqual(only(emphasis.nodes, "bright").sort(), ["billing-api", "retry-queue"]);
     assert.deepStrictEqual(only(emphasis.edges, "bright"), ["billing-api>retry-queue"]);
     assert.strictEqual(emphasis.veil, true);
-    assert.deepStrictEqual(emphasis.camera, index.walkthrough[0].refs);
+    assert.deepStrictEqual(emphasis.camera, ["billing-api", "retry-queue"]);
     const onFlow = emphasisOf(
       index,
       run({ type: "walk" }, { type: "next" }, { type: "next" }, { type: "next" }),
@@ -103,7 +103,7 @@ suite("viz emphasis", () => {
     assert.deepStrictEqual(only(emphasis.steps, "bright"), [2]);
     assert.strictEqual(only(emphasis.steps, "dim").length, 11);
     assert.deepStrictEqual(only(emphasis.nodes, "bright").sort(), ["billing-api", "stripe"]);
-    assert.deepStrictEqual(emphasis.camera, [{ kind: "step", flow: "soft-decline", index: 2 }]);
+    assert.deepStrictEqual(emphasis.camera, ["soft-decline:3", "billing-api", "stripe"]);
   });
 
   test("a walkthrough outranks a pending query", () => {

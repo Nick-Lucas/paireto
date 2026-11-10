@@ -1,7 +1,6 @@
-import type { VizDelta, VizEdge, VizNode } from "../../protocol/viz.js";
+import type { VizEdge, VizNode } from "../../protocol/viz.js";
+import { DELTA_GLYPH } from "./delta.js";
 import type { IndexedFlow, Stage, VizIndex } from "./index.js";
-
-const GLYPH: Record<VizDelta, string> = { added: "+", changed: "~", deleted: "−", unchanged: "" };
 
 const ENTITY: Record<string, string> = { "#": "#35;", ";": "#59;", '"': "#quot;" };
 
@@ -19,8 +18,7 @@ function nodeIds(index: VizIndex): (node: string) => string {
 }
 
 function nodeLabel(node: VizNode): string {
-  const glyph = GLYPH[node.delta];
-  return glyph ? `${glyph} ${node.label}` : node.label;
+  return node.delta === "unchanged" ? node.label : `${DELTA_GLYPH[node.delta]} ${node.label}`;
 }
 
 function shape(node: VizNode): [string, string] {

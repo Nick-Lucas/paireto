@@ -65,6 +65,16 @@ suite("viz ui reducer", () => {
     assert.deepStrictEqual(node.selection, { kind: "node", id: "notify" });
   });
 
+  test("goto with a stage selects the node on that flow", () => {
+    const ui = run({
+      type: "goto",
+      ref: { kind: "node", id: "retry-worker" },
+      stage: { kind: "flow", flow: "final-failure" },
+    });
+    assert.deepStrictEqual(ui.stage, { kind: "flow", flow: "final-failure" });
+    assert.deepStrictEqual(ui.selection, { kind: "node", id: "retry-worker" });
+  });
+
   test("focus needs a selected node on the overview and toggles off", () => {
     assert.deepStrictEqual(run({ type: "focus" }).mode, { kind: "explore" });
     const focused = run(

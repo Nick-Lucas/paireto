@@ -29,7 +29,7 @@ export type UiAction =
   | { readonly type: "stage"; readonly stage: Stage }
   | { readonly type: "stageAt"; readonly n: number }
   | { readonly type: "select"; readonly ref: VizRef | undefined }
-  | { readonly type: "goto"; readonly ref: VizRef }
+  | { readonly type: "goto"; readonly ref: VizRef; readonly stage?: Stage }
   | { readonly type: "focus" }
   | { readonly type: "walk" }
   | { readonly type: "next" }
@@ -142,7 +142,7 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
       return { ...ui, mode, selection: action.ref };
     }
     case "goto": {
-      const stage = stageOfRef(index, action.ref, ui.stage);
+      const stage = action.stage ?? stageOfRef(index, action.ref, ui.stage);
       const entered = sameStage(stage, ui.stage)
         ? { ...ui, mode: EXPLORE }
         : enterStage(index, ui, stage);

@@ -33,6 +33,7 @@ export interface IndexedStep {
   readonly startsPhase: boolean;
   readonly files: readonly VizFileRef[];
   readonly edge?: EdgeKey;
+  readonly overviewRef: VizRef;
 }
 
 export interface IndexedFlow {
@@ -62,6 +63,7 @@ export interface VizIndex {
   readonly lanes: readonly VizLane[];
   readonly laneIndex: ReadonlyMap<string, number>;
   readonly nodes: readonly VizNode[];
+  readonly overviewNodes: readonly VizNode[];
   readonly nodeById: ReadonlyMap<string, VizNode>;
   readonly edges: readonly VizEdge[];
   readonly edgesByKey: ReadonlyMap<EdgeKey, VizEdge>;
@@ -152,6 +154,9 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
         startsPhase,
         files: step.files ?? [],
         edge,
+        overviewRef: edge
+          ? { kind: "edge", key: edge }
+          : { kind: "node", id: nodeById.get(step.from)?.flowOnly ? step.to : step.from },
       };
     });
     return {
@@ -206,8 +211,9 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
     }
   }
 
+  const overviewNodes = viz.nodes.filter((node) => !node.flowOnly);
   const deltaCounts: Record<VizDelta, number> = { added: 0, changed: 0, deleted: 0, unchanged: 0 };
-  for (const node of viz.nodes) {
+  for (const node of overviewNodes) {
     deltaCounts[node.delta] += 1;
   }
 
@@ -216,6 +222,7 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
     lanes: viz.lanes,
     laneIndex,
     nodes: viz.nodes,
+    overviewNodes,
     nodeById,
     edges,
     edgesByKey,
@@ -249,6 +256,12 @@ export function refInStage(index: VizIndex, ref: VizRef, stage: Stage): boolean 
     case "step":
       return stage.kind === "flow" && stage.flow === ref.flow;
   }
+}
+
+export function stageNumber(index: VizIndex, stage: Stage): number {
+  return stage.kind === "overview"
+    ? 0
+    : index.flows.findIndex((flow) => flow.id === stage.flow) + 1;
 }
 
 export function stepAt(index: VizIndex, locator: StepLocator): IndexedStep | undefined {

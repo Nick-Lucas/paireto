@@ -1,4 +1,5 @@
 import type { VizDelta, VizNodeKind } from "../../protocol/viz";
+import { DELTA_GLYPH } from "../model/delta";
 
 const KIND_PATHS: Record<VizNodeKind, string> = {
   actor: "M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 6a5 5 0 0 1 10 0",
@@ -43,13 +44,6 @@ export function KindIcon({ kind, size = 14 }: { kind: VizNodeKind; size?: number
     </svg>
   );
 }
-
-export const DELTA_GLYPH: Record<VizDelta, string> = {
-  added: "+",
-  changed: "~",
-  deleted: "−",
-  unchanged: "·",
-};
 
 export const DELTA_LABEL: Record<VizDelta, string> = {
   added: "Added",

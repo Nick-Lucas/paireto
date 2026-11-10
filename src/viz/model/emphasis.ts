@@ -1,5 +1,5 @@
 import type { VizDelta } from "../../protocol/viz.js";
-import { searchMatches, type VizIndex } from "./index.js";
+import { searchMatches, stepAt, type VizIndex } from "./index.js";
 import { edgeKey, formatVizRef } from "./refs.js";
 import type { EdgeKey, VizRef } from "./types.js";
 import type { UiState } from "./ui.js";
@@ -10,7 +10,7 @@ export interface Emphasis {
   readonly nodes: ReadonlyMap<string, Level>;
   readonly edges: ReadonlyMap<EdgeKey, Level>;
   readonly steps: ReadonlyMap<number, Level>;
-  readonly camera: readonly VizRef[] | undefined;
+  readonly camera: readonly string[] | undefined;
   readonly veil: boolean;
   readonly cursor: number | undefined;
 }
@@ -121,6 +121,39 @@ function applyPlay(levels: Levels, index: VizIndex, flow: string, cursor: number
   }
 }
 
+function cameraIds(index: VizIndex, refs: readonly VizRef[]): string[] {
+  const ids = new Set<string>();
+  const node = (id: string) => ids.add(formatVizRef({ kind: "node", id }));
+  for (const ref of refs) {
+    switch (ref.kind) {
+      case "node":
+        node(ref.id);
+        break;
+      case "edge": {
+        const edge = index.edgesByKey.get(ref.key);
+        if (edge) {
+          node(edge.from);
+          node(edge.to);
+        }
+        break;
+      }
+      case "flow":
+        index.flowById.get(ref.id)?.participants.forEach(node);
+        break;
+      case "step": {
+        const step = stepAt(index, ref);
+        if (step) {
+          ids.add(formatVizRef(ref));
+          node(step.from);
+          node(step.to);
+        }
+        break;
+      }
+    }
+  }
+  return [...ids];
+}
+
 function neighbourhood(index: VizIndex, node: string): { nodes: Set<string>; edges: Set<EdgeKey> } {
   const nodes = new Set([node]);
   const edges = new Set<EdgeKey>();
@@ -164,12 +197,12 @@ export function emphasisOf(index: VizIndex, ui: UiState): Emphasis {
     const step = index.walkthrough[mode.step];
     const refs = step?.refs ?? [];
     applyRefs(levels, index, refs);
-    return { ...levels, camera: refs, veil: true, cursor: undefined };
+    return { ...levels, camera: cameraIds(index, refs), veil: true, cursor: undefined };
   }
   if (mode.kind === "play" && ui.stage.kind === "flow" && ui.stage.flow === mode.flow) {
     applyPlay(levels, index, mode.flow, mode.step);
     const ref: VizRef = { kind: "step", flow: mode.flow, index: mode.step };
-    return { ...levels, camera: [ref], veil: true, cursor: mode.step };
+    return { ...levels, camera: cameraIds(index, [ref]), veil: true, cursor: mode.step };
   }
   if (mode.kind === "focus" && ui.stage.kind === "overview") {
     const near = neighbourhood(index, mode.node);
@@ -182,7 +215,10 @@ export function emphasisOf(index: VizIndex, ui: UiState): Emphasis {
     for (const key of near.edges) {
       levels.edges.set(key, "bright");
     }
-    const camera = [...near.nodes].map((id): VizRef => ({ kind: "node", id }));
+    const camera = cameraIds(
+      index,
+      [...near.nodes].map((id): VizRef => ({ kind: "node", id })),
+    );
     return { ...levels, camera, veil: false, cursor: undefined };
   }
   if (ui.query.trim()) {
