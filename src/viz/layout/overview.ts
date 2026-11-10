@@ -38,9 +38,9 @@ export interface ElkLike {
 }
 
 export const CARD = { width: 212, height: 64, subHeight: 18 } as const;
-export const SCENE = { pad: 28, laneHeader: 40, groupTab: 30, groupPad: 16 } as const;
+const SCENE = { pad: 28, laneHeader: 40, groupTab: 30, groupPad: 16 } as const;
 
-export function cardSize(node: VizNode): { width: number; height: number } {
+function cardSize(node: VizNode): { width: number; height: number } {
   return { width: CARD.width, height: CARD.height + (node.sub ? CARD.subHeight : 0) };
 }
 
