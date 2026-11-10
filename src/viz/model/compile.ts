@@ -1,7 +1,8 @@
 import { VizArgs } from "../../protocol/viz.js";
-import type { VizFileRef, VizFlow, VizNode } from "../../protocol/viz.js";
+import type { VizFileRef, VizNode } from "../../protocol/viz.js";
 import { normalizePath } from "../../review/guidedPlan.js";
-import { edgeKey, parseVizRef } from "./refs.js";
+import { buildVizIndex, refInStage, walkStage, type Stage, type VizIndex } from "./index.js";
+import { edgeKey, formatVizRef, parseVizRef } from "./refs.js";
 import { plural } from "./render.js";
 import { closest, didYouMean } from "./similarity.js";
 import type { EdgeKey, VizChangedFile, VizRef, VizRepo } from "./types.js";
@@ -68,19 +69,13 @@ interface LocatedFileRef {
   ref: VizFileRef;
 }
 
-interface Model {
-  viz: VizArgs;
+interface Files {
   env: VizEnv;
-  laneIds: Set<string>;
-  nodes: Map<string, VizNode>;
-  flows: Map<string, VizFlow>;
-  edgeKeys: Set<EdgeKey>;
-  fileRefs: LocatedFileRef[];
+  refs: LocatedFileRef[];
   changed: Map<string, VizChangedFile>;
-  focus: FocusIssues;
 }
 
-type Rule = { severity: "error" | "warning"; check(model: Model): Found[] };
+type Rule = { severity: "error" | "warning"; check(index: VizIndex, files: Files): Found[] };
 
 const RULES: Record<Exclude<VizIssueCode, "schema">, Rule> = {
   "duplicate-id": { severity: "error", check: duplicateIds },
@@ -96,10 +91,13 @@ const RULES: Record<Exclude<VizIssueCode, "schema">, Rule> = {
   "missing-role": { severity: "error", check: missingRoles },
   "missing-files": { severity: "error", check: missingFiles },
   "flow-only-edge": { severity: "error", check: flowOnlyEdges },
-  "focus-malformed": { severity: "error", check: (model) => model.focus.malformed },
-  "focus-unknown": { severity: "error", check: (model) => model.focus.unknown },
-  "unknown-flow": { severity: "error", check: (model) => model.focus.unknownFlow },
-  "focus-mixed-stage": { severity: "error", check: (model) => model.focus.mixed },
+  "focus-malformed": { severity: "error", check: (index) => focusIssues(index, "focus-malformed") },
+  "focus-unknown": { severity: "error", check: (index) => focusIssues(index, "focus-unknown") },
+  "unknown-flow": { severity: "error", check: (index) => focusIssues(index, "unknown-flow") },
+  "focus-mixed-stage": {
+    severity: "error",
+    check: (index) => focusIssues(index, "focus-mixed-stage"),
+  },
   "unknown-repo": { severity: "error", check: unknownRepos },
   "path-outside-repo": { severity: "error", check: pathsOutsideRepo },
   "file-not-found": { severity: "error", check: filesNotFound },
@@ -126,12 +124,13 @@ export function compileViz(raw: unknown, env: VizEnv): CompileResult {
       warnings: [],
     };
   }
-  const model = buildModel(parsed.data, env);
+  const index = buildVizIndex(parsed.data);
+  const files = collectFiles(parsed.data, env);
   const errors: VizIssue[] = [];
   const warnings: VizIssue[] = [];
   for (const code of VIZ_RULE_CODES) {
     const rule = RULES[code];
-    for (const found of rule.check(model)) {
+    for (const found of rule.check(index, files)) {
       (rule.severity === "error" ? errors : warnings).push({ code, ...found });
     }
   }
@@ -140,22 +139,10 @@ export function compileViz(raw: unknown, env: VizEnv): CompileResult {
     : { ok: true, viz: parsed.data, warnings };
 }
 
-function buildModel(viz: VizArgs, env: VizEnv): Model {
-  const nodes = new Map<string, VizNode>();
-  for (const node of viz.nodes) {
-    if (!nodes.has(node.id)) {
-      nodes.set(node.id, node);
-    }
-  }
-  const flows = new Map<string, VizFlow>();
-  for (const flow of viz.flows ?? []) {
-    if (!flows.has(flow.id)) {
-      flows.set(flow.id, flow);
-    }
-  }
-  const fileRefs: LocatedFileRef[] = [];
-  const collect = (refs: VizFileRef[] | undefined, at: VizIssuePath) =>
-    (refs ?? []).forEach((ref, index) => fileRefs.push({ path: [...at, "files", index], ref }));
+function collectFiles(viz: VizArgs, env: VizEnv): Files {
+  const refs: LocatedFileRef[] = [];
+  const collect = (files: VizFileRef[] | undefined, at: VizIssuePath) =>
+    (files ?? []).forEach((ref, index) => refs.push({ path: [...at, "files", index], ref }));
   viz.nodes.forEach((node, index) => collect(node.files, ["nodes", index]));
   (viz.edges ?? []).forEach((edge, index) => collect(edge.files, ["edges", index]));
   (viz.flows ?? []).forEach((flow, flowIndex) =>
@@ -163,36 +150,27 @@ function buildModel(viz: VizArgs, env: VizEnv): Model {
       collect(step.files, ["flows", flowIndex, "steps", stepIndex]),
     ),
   );
-  const model = {
-    viz,
+  return {
     env,
-    laneIds: new Set(viz.lanes.map((lane) => lane.id)),
-    nodes,
-    flows,
-    edgeKeys: new Set((viz.edges ?? []).map((edge) => edgeKey(edge.from, edge.to))),
-    fileRefs,
+    refs,
     changed: new Map(env.changed.map((file) => [changedKey(file.repo, file.path), file])),
   };
-  return { ...model, focus: focusIssues(model) };
 }
 
 function changedKey(repo: string, path: string): string {
   return `${repo}\n${path}`;
 }
 
-function resolvedFile(
-  model: RefModel,
-  ref: VizFileRef,
-): { repo: string; path: string } | undefined {
-  const repo = ref.repo ?? model.env.repoName;
+function resolvedFile(env: VizEnv, ref: VizFileRef): { repo: string; path: string } | undefined {
+  const repo = ref.repo ?? env.repoName;
   const path = normalizePath(ref.path);
-  if (!path || !model.env.repos.some((candidate) => candidate.name === repo)) {
+  if (!path || !env.repos.some((candidate) => candidate.name === repo)) {
     return undefined;
   }
   return { repo, path };
 }
 
-function duplicateIds(model: Model): Found[] {
+function duplicateIds(index: VizIndex): Found[] {
   const found: Found[] = [];
   const scan = (collection: string, ids: string[]) => {
     const first = new Map<string, number>();
@@ -210,25 +188,25 @@ function duplicateIds(model: Model): Found[] {
   };
   scan(
     "lanes",
-    model.viz.lanes.map((lane) => lane.id),
+    index.viz.lanes.map((lane) => lane.id),
   );
   scan(
     "nodes",
-    model.viz.nodes.map((node) => node.id),
+    index.viz.nodes.map((node) => node.id),
   );
   scan(
     "flows",
-    (model.viz.flows ?? []).map((flow) => flow.id),
+    index.flows.map((flow) => flow.id),
   );
   return found;
 }
 
-function flowIdIsNode(model: Model): Found[] {
-  return (model.viz.flows ?? []).flatMap((flow, index) =>
-    model.nodes.has(flow.id)
+function flowIdIsNode(index: VizIndex): Found[] {
+  return index.flows.flatMap((flow, at) =>
+    index.nodeById.has(flow.id)
       ? [
           {
-            path: ["flows", index, "id"],
+            path: ["flows", at, "id"],
             message: `flow id "${flow.id}" is also a node id. Walkthrough refs name both, so use a distinct id.`,
           },
         ]
@@ -236,56 +214,56 @@ function flowIdIsNode(model: Model): Found[] {
   );
 }
 
-function unknownLanes(model: Model): Found[] {
-  return model.viz.nodes.flatMap((node, index) =>
-    model.laneIds.has(node.lane)
+function unknownLanes(index: VizIndex): Found[] {
+  return index.nodes.flatMap((node, at) =>
+    index.laneIndex.has(node.lane)
       ? []
       : [
           {
-            path: ["nodes", index, "lane"],
-            message: unknownMessage("lane", node.lane, [...model.laneIds]),
+            path: ["nodes", at, "lane"],
+            message: unknownMessage("lane", node.lane, [...index.laneIndex.keys()]),
           },
         ],
   );
 }
 
-function unknownEdgeNodes(model: Model): Found[] {
-  return (model.viz.edges ?? []).flatMap((edge, index) =>
+function unknownEdgeNodes(index: VizIndex): Found[] {
+  return index.edges.flatMap((edge, at) =>
     (["from", "to"] as const).flatMap((end) =>
-      model.nodes.has(edge[end])
+      index.nodeById.has(edge[end])
         ? []
         : [
             {
-              path: ["edges", index, end],
-              message: unknownMessage("node", edge[end], [...model.nodes.keys()]),
+              path: ["edges", at, end],
+              message: unknownMessage("node", edge[end], [...index.nodeById.keys()]),
             },
           ],
     ),
   );
 }
 
-function unknownParticipants(model: Model): Found[] {
-  return (model.viz.flows ?? []).flatMap((flow, flowIndex) =>
-    flow.participants.flatMap((participant, index) =>
-      model.nodes.has(participant)
+function unknownParticipants(index: VizIndex): Found[] {
+  return index.flows.flatMap((flow, flowIndex) =>
+    flow.participants.flatMap((participant, at) =>
+      index.nodeById.has(participant)
         ? []
         : [
             {
-              path: ["flows", flowIndex, "participants", index],
-              message: unknownMessage("node", participant, [...model.nodes.keys()]),
+              path: ["flows", flowIndex, "participants", at],
+              message: unknownMessage("node", participant, [...index.nodeById.keys()]),
             },
           ],
     ),
   );
 }
 
-function duplicateParticipants(model: Model): Found[] {
-  return (model.viz.flows ?? []).flatMap((flow, flowIndex) =>
-    flow.participants.flatMap((participant, index) =>
-      flow.participants.indexOf(participant) < index
+function duplicateParticipants(index: VizIndex): Found[] {
+  return index.flows.flatMap((flow, flowIndex) =>
+    flow.participants.flatMap((participant, at) =>
+      flow.participants.indexOf(participant) < at
         ? [
             {
-              path: ["flows", flowIndex, "participants", index],
+              path: ["flows", flowIndex, "participants", at],
               message: `"${participant}" is listed twice. List each participant once.`,
             },
           ]
@@ -294,8 +272,8 @@ function duplicateParticipants(model: Model): Found[] {
   );
 }
 
-function stepsOutsideParticipants(model: Model): Found[] {
-  return (model.viz.flows ?? []).flatMap((flow, flowIndex) => {
+function stepsOutsideParticipants(index: VizIndex): Found[] {
+  return index.flows.flatMap((flow, flowIndex) => {
     const participants = new Set(flow.participants);
     return flow.steps.flatMap((step, stepIndex) =>
       (["from", "to"] as const).flatMap((end) =>
@@ -312,30 +290,30 @@ function stepsOutsideParticipants(model: Model): Found[] {
   });
 }
 
-function duplicateEdges(model: Model): Found[] {
+function duplicateEdges(index: VizIndex): Found[] {
   const first = new Map<EdgeKey, number>();
-  return (model.viz.edges ?? []).flatMap((edge, index) => {
+  return index.edges.flatMap((edge, at) => {
     const key = edgeKey(edge.from, edge.to);
     const earlier = first.get(key);
     if (earlier === undefined) {
-      first.set(key, index);
+      first.set(key, at);
       return [];
     }
     return [
       {
-        path: ["edges", index],
+        path: ["edges", at],
         message: `second edge ${key}, first at edges[${earlier}]. Merge into one edge, combine the labels.`,
       },
     ];
   });
 }
 
-function selfEdges(model: Model): Found[] {
-  return (model.viz.edges ?? []).flatMap((edge, index) =>
+function selfEdges(index: VizIndex): Found[] {
+  return index.edges.flatMap((edge, at) =>
     edge.from === edge.to
       ? [
           {
-            path: ["edges", index],
+            path: ["edges", at],
             message: `edge ${edgeKey(edge.from, edge.to)} points at itself. Show self calls as a flow step instead.`,
           },
         ]
@@ -343,20 +321,20 @@ function selfEdges(model: Model): Found[] {
   );
 }
 
-function multipleHeroes(model: Model): Found[] {
-  const heroes = (model.viz.edges ?? []).flatMap((edge, index) => (edge.hero ? [index] : []));
-  return heroes.slice(1).map((index) => ({
-    path: ["edges", index, "hero"],
+function multipleHeroes(index: VizIndex): Found[] {
+  const heroes = index.edges.flatMap((edge, at) => (edge.hero ? [at] : []));
+  return heroes.slice(1).map((at) => ({
+    path: ["edges", at, "hero"],
     message: `edges[${heroes[0]}] is already the hero. Mark only the main new path.`,
   }));
 }
 
-function missingRoles(model: Model): Found[] {
-  return model.viz.nodes.flatMap((node, index) =>
+function missingRoles(index: VizIndex): Found[] {
+  return index.nodes.flatMap((node, at) =>
     node.delta !== "unchanged" && !node.role
       ? [
           {
-            path: ["nodes", index, "role"],
+            path: ["nodes", at, "role"],
             message: `node "${node.id}" is ${node.delta}, so it needs a role: one sentence on its part in this change.`,
           },
         ]
@@ -364,12 +342,12 @@ function missingRoles(model: Model): Found[] {
   );
 }
 
-function missingFiles(model: Model): Found[] {
-  return model.viz.nodes.flatMap((node, index) =>
+function missingFiles(index: VizIndex): Found[] {
+  return index.nodes.flatMap((node, at) =>
     node.delta !== "unchanged" && !NO_FILES_KINDS.has(node.kind) && !node.files?.length
       ? [
           {
-            path: ["nodes", index, "files"],
+            path: ["nodes", at, "files"],
             message: `node "${node.id}" is ${node.delta}, so it needs files: where it lives in the diff, with lines.`,
           },
         ]
@@ -377,13 +355,13 @@ function missingFiles(model: Model): Found[] {
   );
 }
 
-function flowOnlyEdges(model: Model): Found[] {
-  return (model.viz.edges ?? []).flatMap((edge, index) =>
+function flowOnlyEdges(index: VizIndex): Found[] {
+  return index.edges.flatMap((edge, at) =>
     (["from", "to"] as const).flatMap((end) =>
-      model.nodes.get(edge[end])?.flowOnly
+      index.nodeById.get(edge[end])?.flowOnly
         ? [
             {
-              path: ["edges", index, end],
+              path: ["edges", at, end],
               message: `node "${edge[end]}" is flowOnly, so it is not in the overview. Drop flowOnly or drop the edge.`,
             },
           ]
@@ -392,127 +370,107 @@ function flowOnlyEdges(model: Model): Found[] {
   );
 }
 
-interface FocusIssues {
-  malformed: Found[];
-  unknown: Found[];
-  unknownFlow: Found[];
-  mixed: Found[];
+type FocusCode = "focus-malformed" | "focus-unknown" | "unknown-flow" | "focus-mixed-stage";
+
+function focusIssues(index: VizIndex, code: FocusCode): Found[] {
+  return (
+    index.viz.walkthrough?.flatMap((walk, walkIndex) => {
+      const found: (Found & { code: FocusCode })[] = [];
+      const known: { ref: VizRef; at: number }[] = [];
+      walk.focus.forEach((raw, at) => {
+        const path = ["walkthrough", walkIndex, "focus", at];
+        const ref = parseVizRef(raw, new Set(index.flowById.keys()));
+        if (!ref) {
+          found.push({
+            code: "focus-malformed",
+            path,
+            message: `"${raw}" is not a ref. Use a node id, from>to, a flow id, or flowId:N.`,
+          });
+          return;
+        }
+        const problem = unknownRef(index, ref);
+        if (problem) {
+          const flowMissing = ref.kind === "step" && !index.flowById.has(ref.flow);
+          found.push({
+            code: flowMissing ? "unknown-flow" : "focus-unknown",
+            path,
+            message: problem,
+          });
+          return;
+        }
+        known.push({ ref, at });
+      });
+      const stage = walkStage(known.map(({ ref }) => ref));
+      for (const { ref, at } of known) {
+        if (!refInStage(index, ref, stage)) {
+          found.push({
+            code: "focus-mixed-stage",
+            path: ["walkthrough", walkIndex, "focus", at],
+            message: offStage(index, ref, stage),
+          });
+        }
+      }
+      return found
+        .filter((issue) => issue.code === code)
+        .map(({ path, message }) => ({ path, message }));
+    }) ?? []
+  );
 }
 
-type RefModel = Omit<Model, "focus">;
-
-function focusIssues(model: RefModel): FocusIssues {
-  const issues: FocusIssues = { malformed: [], unknown: [], unknownFlow: [], mixed: [] };
-  const flowIds = new Set(model.flows.keys());
-  (model.viz.walkthrough ?? []).forEach((walk, walkIndex) => {
-    const known: { ref: VizRef; index: number }[] = [];
-    walk.focus.forEach((raw, index) => {
-      const path = ["walkthrough", walkIndex, "focus", index];
-      const ref = parseVizRef(raw, flowIds);
-      if (!ref) {
-        issues.malformed.push({
-          path,
-          message: `"${raw}" is not a ref. Use a node id, from>to, a flow id, or flowId:N.`,
-        });
-        return;
-      }
-      const problem = unknownRef(model, ref);
-      if (problem) {
-        (ref.kind === "step" && !model.flows.has(ref.flow)
-          ? issues.unknownFlow
-          : issues.unknown
-        ).push({ path, message: problem });
-        return;
-      }
-      known.push({ ref, index });
-    });
-    issues.mixed.push(...mixedStage(model, walkIndex, known));
-  });
-  return issues;
-}
-
-function unknownRef(model: RefModel, ref: VizRef): string | undefined {
+function unknownRef(index: VizIndex, ref: VizRef): string | undefined {
   switch (ref.kind) {
     case "node":
-      return model.nodes.has(ref.id)
+      return index.nodeById.has(ref.id)
         ? undefined
-        : unknownMessage("node or flow", ref.id, [...model.nodes.keys(), ...model.flows.keys()]);
+        : unknownMessage("node or flow", ref.id, [
+            ...index.nodeById.keys(),
+            ...index.flowById.keys(),
+          ]);
     case "flow":
       return undefined;
     case "edge":
-      return model.edgeKeys.has(ref.key)
+      return index.edgesByKey.has(ref.key)
         ? undefined
-        : unknownMessage("edge", ref.key, [...model.edgeKeys]);
+        : unknownMessage("edge", ref.key, [...index.edgesByKey.keys()]);
     case "step": {
-      const flow = model.flows.get(ref.flow);
+      const flow = index.flowById.get(ref.flow);
       if (!flow) {
-        return unknownMessage("flow", ref.flow, [...model.flows.keys()]);
+        return unknownMessage("flow", ref.flow, [...index.flowById.keys()]);
       }
       return ref.index < flow.steps.length
         ? undefined
-        : `${ref.flow}:${ref.index + 1} is past the last step of ${ref.flow} (${flow.steps.length}).`;
+        : `${formatVizRef(ref)} is past the last step of ${ref.flow} (${flow.steps.length}).`;
     }
   }
 }
 
-function mixedStage(
-  model: RefModel,
-  walkIndex: number,
-  known: { ref: VizRef; index: number }[],
-): Found[] {
-  const flowsNamed = [
-    ...new Set(
-      known.flatMap(({ ref }) =>
-        ref.kind === "flow" ? [ref.id] : ref.kind === "step" ? [ref.flow] : [],
-      ),
-    ),
-  ];
-  if (flowsNamed.length === 0) {
-    return [];
+function offStage(index: VizIndex, ref: VizRef, stage: Stage): string {
+  if (stage.kind === "overview") {
+    return `"${formatVizRef(ref)}" is flowOnly, so it is not in the overview. Name a step of a flow it is in, or drop flowOnly.`;
   }
-  if (flowsNamed.length > 1) {
-    return [
-      {
-        path: ["walkthrough", walkIndex, "focus"],
-        message: `refs name ${flowsNamed.length} flows (${flowsNamed.join(", ")}). One step shows one stage, so split it into one step per flow.`,
-      },
-    ];
+  const flow = stage.flow;
+  switch (ref.kind) {
+    case "edge":
+      return `edge ${ref.key} is an overview ref, but this step shows flow ${flow}. Name a step of ${flow} instead, or move the edge to its own step.`;
+    case "node":
+      return `"${ref.id}" is not a participant of ${flow}, which this step shows. Participants: ${index.flowById.get(flow)?.participants.join(", ")}.`;
+    case "flow":
+    case "step":
+      return `"${formatVizRef(ref)}" names another flow, but this step shows ${flow}. One step shows one stage, so split it into one step per flow.`;
   }
-  const flow = model.flows.get(flowsNamed[0])!;
-  const participants = new Set(flow.participants);
-  return known.flatMap(({ ref, index }): Found[] => {
-    const path = ["walkthrough", walkIndex, "focus", index];
-    if (ref.kind === "edge") {
-      return [
-        {
-          path,
-          message: `edge ${ref.key} is an overview ref, but this step shows flow ${flow.id}. Name a step of ${flow.id} instead, or move the edge to its own step.`,
-        },
-      ];
-    }
-    if (ref.kind === "node" && !participants.has(ref.id)) {
-      return [
-        {
-          path,
-          message: `"${ref.id}" is not a participant of ${flow.id}, which this step shows. Participants: ${flow.participants.join(", ")}.`,
-        },
-      ];
-    }
-    return [];
-  });
 }
 
-function unknownRepos(model: Model): Found[] {
-  const names = model.env.repos.map((repo) => repo.name);
-  return model.fileRefs.flatMap(({ path, ref }) =>
+function unknownRepos(_index: VizIndex, files: Files): Found[] {
+  const names = files.env.repos.map((repo) => repo.name);
+  return files.refs.flatMap(({ path, ref }) =>
     ref.repo === undefined || names.includes(ref.repo)
       ? []
       : [{ path: [...path, "repo"], message: unknownMessage("repo", ref.repo, names) }],
   );
 }
 
-function pathsOutsideRepo(model: Model): Found[] {
-  return model.fileRefs.flatMap(({ path, ref }) =>
+function pathsOutsideRepo(_index: VizIndex, files: Files): Found[] {
+  return files.refs.flatMap(({ path, ref }) =>
     normalizePath(ref.path)
       ? []
       : [
@@ -524,17 +482,17 @@ function pathsOutsideRepo(model: Model): Found[] {
   );
 }
 
-function filesNotFound(model: Model): Found[] {
-  return model.fileRefs.flatMap(({ path, ref }) => {
-    const file = resolvedFile(model, ref);
+function filesNotFound(_index: VizIndex, files: Files): Found[] {
+  return files.refs.flatMap(({ path, ref }) => {
+    const file = resolvedFile(files.env, ref);
     if (
       !file ||
-      model.changed.has(changedKey(file.repo, file.path)) ||
-      model.env.fileExists(file.repo, file.path)
+      files.changed.has(changedKey(file.repo, file.path)) ||
+      files.env.fileExists(file.repo, file.path)
     ) {
       return [];
     }
-    const changedPaths = model.env.changed
+    const changedPaths = files.env.changed
       .filter((changed) => changed.repo === file.repo)
       .map((changed) => changed.path);
     const base = file.path.split("/").pop();
@@ -551,8 +509,8 @@ function filesNotFound(model: Model): Found[] {
   });
 }
 
-function badLineRanges(model: Model): Found[] {
-  return model.fileRefs.flatMap(({ path, ref }) =>
+function badLineRanges(_index: VizIndex, files: Files): Found[] {
+  return files.refs.flatMap(({ path, ref }) =>
     ref.line !== undefined && ref.endLine !== undefined && ref.endLine < ref.line
       ? [
           {
@@ -564,16 +522,16 @@ function badLineRanges(model: Model): Found[] {
   );
 }
 
-function coverage(model: Model): Found[] {
+function coverage(_index: VizIndex, files: Files): Found[] {
   const referenced = new Set(
-    model.fileRefs.flatMap(({ ref }) => {
-      const file = resolvedFile(model, ref);
+    files.refs.flatMap(({ ref }) => {
+      const file = resolvedFile(files.env, ref);
       return file ? [changedKey(file.repo, file.path)] : [];
     }),
   );
-  const missing = model.env.changed
+  const missing = files.env.changed
     .filter((file) => !referenced.has(changedKey(file.repo, file.path)))
-    .map((file) => (file.repo === model.env.repoName ? file.path : `${file.repo}:${file.path}`));
+    .map((file) => (file.repo === files.env.repoName ? file.path : `${file.repo}:${file.path}`));
   if (missing.length === 0) {
     return [];
   }
@@ -588,14 +546,14 @@ function coverage(model: Model): Found[] {
   ];
 }
 
-function deltaMismatches(model: Model): Found[] {
-  return model.viz.nodes.flatMap((node, index): Found[] => {
+function deltaMismatches(index: VizIndex, files: Files): Found[] {
+  return index.nodes.flatMap((node, at): Found[] => {
     const statuses = (node.files ?? []).flatMap((ref) => {
-      const file = resolvedFile(model, ref);
-      const changed = file && model.changed.get(changedKey(file.repo, file.path));
+      const file = resolvedFile(files.env, ref);
+      const changed = file && files.changed.get(changedKey(file.repo, file.path));
       return changed ? [{ path: changed.path, status: changed.status }] : [];
     });
-    const path = ["nodes", index, "delta"];
+    const path = ["nodes", at, "delta"];
     if (node.delta === "added" && statuses.length > 0 && !statuses.some((s) => s.status === "A")) {
       return [{ path, message: `node "${node.id}" is added, but none of its files is added.` }];
     }
@@ -618,36 +576,36 @@ function deltaMismatches(model: Model): Found[] {
   });
 }
 
-function isolatedNodes(model: Model): Found[] {
+function isolatedNodes(index: VizIndex): Found[] {
   const linked = new Set<string>();
-  for (const edge of model.viz.edges ?? []) {
+  for (const edge of index.edges) {
     linked.add(edge.from);
     linked.add(edge.to);
   }
-  for (const flow of model.viz.flows ?? []) {
+  for (const flow of index.flows) {
     flow.participants.forEach((participant) => linked.add(participant));
   }
-  return model.viz.nodes.flatMap((node, index) =>
+  return index.nodes.flatMap((node, at) =>
     linked.has(node.id)
       ? []
       : [
           {
-            path: ["nodes", index],
+            path: ["nodes", at],
             message: `node "${node.id}" is on no edge and in no flow. Connect it to the parts it talks to.`,
           },
         ],
   );
 }
 
-function noEdges(model: Model): Found[] {
-  return model.viz.nodes.length > 1 && (model.viz.edges ?? []).length === 0
+function noEdges(index: VizIndex): Found[] {
+  return index.nodes.length > 1 && index.edges.length === 0
     ? [{ path: ["edges"], message: "no edges. Edges say how the parts interact." }]
     : [];
 }
 
-function noFlows(model: Model): Found[] {
-  const changedNodes = model.viz.nodes.filter((node) => node.delta !== "unchanged").length;
-  return changedNodes >= 3 && (model.viz.flows ?? []).length === 0
+function noFlows(index: VizIndex): Found[] {
+  const changedNodes = index.nodes.filter((node) => node.delta !== "unchanged").length;
+  return changedNodes >= 3 && index.flows.length === 0
     ? [
         {
           path: ["flows"],

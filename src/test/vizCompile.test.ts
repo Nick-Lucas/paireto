@@ -123,6 +123,12 @@ const MUTATIONS: Mutation[] = [
     message: /overview ref, but this step shows flow soft-decline/,
   },
   {
+    code: "focus-mixed-stage",
+    viz: (viz) => (viz.walkthrough![0].focus[0] = "shopper"),
+    path: ["walkthrough", 0, "focus", 0],
+    message: /"shopper" is flowOnly, so it is not in the overview/,
+  },
+  {
     code: "unknown-repo",
     viz: (viz) => (viz.nodes[1].files![0].repo = "infra"),
     path: ["nodes", 1, "files", 0, "repo"],

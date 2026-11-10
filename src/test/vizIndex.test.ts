@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 
-import { refInStage, searchMatches, stepAt } from "../viz/model/index.js";
-import { multiServiceIndex } from "./vizFixtures.js";
+import { buildVizIndex, refInStage, searchMatches, stepAt } from "../viz/model/index.js";
+import { loadVizFixture, multiServiceIndex } from "./vizFixtures.js";
 
 suite("viz index", () => {
   test("defaults step kind to sync and step delta to the flow delta", () => {
@@ -72,6 +72,15 @@ suite("viz index", () => {
     ]);
     assert.deepStrictEqual(walk[3].stage, { kind: "flow", flow: "soft-decline" });
     assert.deepStrictEqual(walk[3].refs[0], { kind: "step", flow: "soft-decline", index: 6 });
+  });
+
+  test("takes the walkthrough stage from a flow ref anywhere in the focus", () => {
+    const viz = loadVizFixture("multiService");
+    viz.walkthrough![3].focus = ["checkout", "soft-decline:7"];
+    assert.deepStrictEqual(buildVizIndex(viz).walkthrough[3].stage, {
+      kind: "flow",
+      flow: "soft-decline",
+    });
   });
 
   test("counts node deltas for the legend", () => {

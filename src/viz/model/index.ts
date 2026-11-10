@@ -92,20 +92,16 @@ function words(parts: readonly (string | undefined)[]): string {
     .toLowerCase();
 }
 
-function stageOf(refs: readonly VizRef[]): Stage {
-  const first = refs[0];
-  if (!first) {
-    return OVERVIEW;
+export function walkStage(refs: readonly VizRef[]): Stage {
+  for (const ref of refs) {
+    if (ref.kind === "flow") {
+      return { kind: "flow", flow: ref.id };
+    }
+    if (ref.kind === "step") {
+      return { kind: "flow", flow: ref.flow };
+    }
   }
-  switch (first.kind) {
-    case "node":
-    case "edge":
-      return OVERVIEW;
-    case "flow":
-      return { kind: "flow", flow: first.id };
-    case "step":
-      return { kind: "flow", flow: first.flow };
-  }
+  return OVERVIEW;
 }
 
 export function buildVizIndex(viz: VizArgs): VizIndex {
@@ -174,7 +170,7 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
     const refs = step.focus
       .map((raw) => parseVizRef(raw, flowIds))
       .filter((ref): ref is VizRef => ref !== undefined);
-    return { index, title: step.title, body: step.body, refs, stage: stageOf(refs) };
+    return { index, title: step.title, body: step.body, refs, stage: walkStage(refs) };
   });
 
   const haystack = new Map<string, string>();
