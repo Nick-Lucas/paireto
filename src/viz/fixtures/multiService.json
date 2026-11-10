@@ -11,7 +11,14 @@
     { "id": "third-party", "label": "Third parties" }
   ],
   "nodes": [
-    { "id": "shopper", "label": "Shopper", "kind": "actor", "delta": "unchanged", "lane": "client", "flowOnly": true },
+    {
+      "id": "shopper",
+      "label": "Shopper",
+      "kind": "actor",
+      "delta": "unchanged",
+      "lane": "client",
+      "flowOnly": true
+    },
     {
       "id": "checkout",
       "label": "Checkout page",
@@ -90,7 +97,14 @@
       "role": "Gains a payment_attempts table that records each try and its outcome.",
       "files": [{ "path": "services/billing/migrations/0042_payment_attempts.sql" }]
     },
-    { "id": "stripe", "label": "Stripe", "kind": "external", "delta": "unchanged", "lane": "third-party", "role": "Card processor." },
+    {
+      "id": "stripe",
+      "label": "Stripe",
+      "kind": "external",
+      "delta": "unchanged",
+      "lane": "third-party",
+      "role": "Card processor."
+    },
     {
       "id": "legacy-dunning",
       "label": "Dunning cron",
@@ -103,16 +117,72 @@
     }
   ],
   "edges": [
-    { "from": "checkout", "to": "billing-api", "kind": "call", "delta": "changed", "label": "POST /charges, GET /payments/:id" },
-    { "from": "billing-api", "to": "stripe", "kind": "call", "delta": "unchanged", "label": "charge" },
-    { "from": "billing-api", "to": "retry-queue", "kind": "event", "delta": "added", "label": "enqueue retry", "hero": true, "files": [{ "path": "services/billing/api.go", "line": 152, "endLine": 160 }] },
-    { "from": "retry-queue", "to": "retry-worker", "kind": "event", "delta": "added", "label": "deliver after backoff" },
-    { "from": "retry-worker", "to": "stripe", "kind": "call", "delta": "added", "label": "re-charge" },
-    { "from": "retry-worker", "to": "payments-db", "kind": "data", "delta": "added", "label": "write attempt" },
-    { "from": "billing-api", "to": "payments-db", "kind": "data", "delta": "changed", "label": "read status, write attempt" },
-    { "from": "retry-worker", "to": "events", "kind": "event", "delta": "added", "label": "payment.failed (final)" },
+    {
+      "from": "checkout",
+      "to": "billing-api",
+      "kind": "call",
+      "delta": "changed",
+      "label": "POST /charges, GET /payments/:id"
+    },
+    {
+      "from": "billing-api",
+      "to": "stripe",
+      "kind": "call",
+      "delta": "unchanged",
+      "label": "charge"
+    },
+    {
+      "from": "billing-api",
+      "to": "retry-queue",
+      "kind": "event",
+      "delta": "added",
+      "label": "enqueue retry",
+      "hero": true,
+      "files": [{ "path": "services/billing/api.go", "line": 152, "endLine": 160 }]
+    },
+    {
+      "from": "retry-queue",
+      "to": "retry-worker",
+      "kind": "event",
+      "delta": "added",
+      "label": "deliver after backoff"
+    },
+    {
+      "from": "retry-worker",
+      "to": "stripe",
+      "kind": "call",
+      "delta": "added",
+      "label": "re-charge"
+    },
+    {
+      "from": "retry-worker",
+      "to": "payments-db",
+      "kind": "data",
+      "delta": "added",
+      "label": "write attempt"
+    },
+    {
+      "from": "billing-api",
+      "to": "payments-db",
+      "kind": "data",
+      "delta": "changed",
+      "label": "read status, write attempt"
+    },
+    {
+      "from": "retry-worker",
+      "to": "events",
+      "kind": "event",
+      "delta": "added",
+      "label": "payment.failed (final)"
+    },
     { "from": "events", "to": "notify", "kind": "event", "delta": "unchanged" },
-    { "from": "legacy-dunning", "to": "stripe", "kind": "call", "delta": "deleted", "label": "nightly re-charge" }
+    {
+      "from": "legacy-dunning",
+      "to": "stripe",
+      "kind": "call",
+      "delta": "deleted",
+      "label": "nightly re-charge"
+    }
   ],
   "flows": [
     {
@@ -120,22 +190,78 @@
       "title": "Soft decline, then success",
       "summary": "A soft-declined charge is queued, retried by the worker after backoff, and checkout learns the result by polling.",
       "delta": "added",
-      "participants": ["shopper", "checkout", "billing-api", "stripe", "retry-queue", "retry-worker", "payments-db"],
+      "participants": [
+        "shopper",
+        "checkout",
+        "billing-api",
+        "stripe",
+        "retry-queue",
+        "retry-worker",
+        "payments-db"
+      ],
       "steps": [
-        { "from": "shopper", "to": "checkout", "label": "Pay", "delta": "unchanged", "phase": "Checkout" },
-        { "from": "checkout", "to": "billing-api", "label": "POST /charges", "delta": "unchanged", "request": "{ cartId, paymentMethodId }" },
+        {
+          "from": "shopper",
+          "to": "checkout",
+          "label": "Pay",
+          "delta": "unchanged",
+          "phase": "Checkout"
+        },
+        {
+          "from": "checkout",
+          "to": "billing-api",
+          "label": "POST /charges",
+          "delta": "unchanged",
+          "request": "{ cartId, paymentMethodId }"
+        },
         { "from": "billing-api", "to": "stripe", "label": "charge", "delta": "unchanged" },
-        { "from": "stripe", "to": "billing-api", "label": "card_declined (soft)", "kind": "return", "delta": "changed" },
-        { "from": "billing-api", "to": "payments-db", "label": "insert attempt #1", "files": [{ "path": "services/billing/api.go", "line": 140, "endLine": 151 }] },
-        { "from": "billing-api", "to": "retry-queue", "label": "enqueue retry +30s", "kind": "async", "request": "{ chargeId, attempt: 2, notBefore }", "files": [{ "path": "services/billing/api.go", "line": 152, "endLine": 160 }] },
-        { "from": "billing-api", "to": "checkout", "label": "202 pending", "kind": "return", "response": "{ paymentId, status: \"pending\" }" },
-        { "from": "checkout", "to": "billing-api", "label": "GET /payments/:id (poll)", "phase": "Retry", "note": "Polls every 3s, gives up after 2 minutes." },
+        {
+          "from": "stripe",
+          "to": "billing-api",
+          "label": "card_declined (soft)",
+          "kind": "return",
+          "delta": "changed"
+        },
+        {
+          "from": "billing-api",
+          "to": "payments-db",
+          "label": "insert attempt #1",
+          "files": [{ "path": "services/billing/api.go", "line": 140, "endLine": 151 }]
+        },
+        {
+          "from": "billing-api",
+          "to": "retry-queue",
+          "label": "enqueue retry +30s",
+          "kind": "async",
+          "request": "{ chargeId, attempt: 2, notBefore }",
+          "files": [{ "path": "services/billing/api.go", "line": 152, "endLine": 160 }]
+        },
+        {
+          "from": "billing-api",
+          "to": "checkout",
+          "label": "202 pending",
+          "kind": "return",
+          "response": "{ paymentId, status: \"pending\" }"
+        },
+        {
+          "from": "checkout",
+          "to": "billing-api",
+          "label": "GET /payments/:id (poll)",
+          "phase": "Retry",
+          "note": "Polls every 3s, gives up after 2 minutes."
+        },
         { "from": "retry-queue", "to": "retry-worker", "label": "deliver", "kind": "async" },
         { "from": "retry-worker", "to": "retry-worker", "label": "backoff check" },
         { "from": "retry-worker", "to": "stripe", "label": "re-charge" },
         { "from": "stripe", "to": "retry-worker", "label": "succeeded", "kind": "return" },
         { "from": "retry-worker", "to": "payments-db", "label": "mark paid" },
-        { "from": "billing-api", "to": "checkout", "label": "status: paid", "kind": "return", "phase": "Settled" }
+        {
+          "from": "billing-api",
+          "to": "checkout",
+          "label": "status: paid",
+          "kind": "return",
+          "phase": "Settled"
+        }
       ]
     },
     {
@@ -145,20 +271,72 @@
       "delta": "changed",
       "participants": ["retry-worker", "stripe", "payments-db", "events", "notify"],
       "steps": [
-        { "from": "retry-worker", "to": "stripe", "label": "re-charge (attempt 3)", "delta": "added" },
-        { "from": "stripe", "to": "retry-worker", "label": "declined", "kind": "return", "delta": "added" },
+        {
+          "from": "retry-worker",
+          "to": "stripe",
+          "label": "re-charge (attempt 3)",
+          "delta": "added"
+        },
+        {
+          "from": "stripe",
+          "to": "retry-worker",
+          "label": "declined",
+          "kind": "return",
+          "delta": "added"
+        },
         { "from": "retry-worker", "to": "payments-db", "label": "mark failed", "delta": "added" },
-        { "from": "retry-worker", "to": "events", "label": "payment.failed", "kind": "async", "delta": "added", "request": "{ paymentId, attempts: 3, reason }" },
-        { "from": "events", "to": "notify", "label": "deliver", "kind": "async", "delta": "unchanged" },
-        { "from": "notify", "to": "notify", "label": "skip unless attempts = 3", "delta": "changed", "files": [{ "path": "services/notify/handlers/payment_failed.go", "line": 22, "endLine": 30 }] }
+        {
+          "from": "retry-worker",
+          "to": "events",
+          "label": "payment.failed",
+          "kind": "async",
+          "delta": "added",
+          "request": "{ paymentId, attempts: 3, reason }"
+        },
+        {
+          "from": "events",
+          "to": "notify",
+          "label": "deliver",
+          "kind": "async",
+          "delta": "unchanged"
+        },
+        {
+          "from": "notify",
+          "to": "notify",
+          "label": "skip unless attempts = 3",
+          "delta": "changed",
+          "files": [
+            { "path": "services/notify/handlers/payment_failed.go", "line": 22, "endLine": 30 }
+          ]
+        }
       ]
     }
   ],
   "walkthrough": [
-    { "title": "Declines now queue a retry", "body": "Billing no longer fails a soft decline. It records the attempt and puts a retry on a new queue.", "focus": ["billing-api", "billing-api>retry-queue", "retry-queue"] },
-    { "title": "Adds a retry worker", "body": "The worker takes each retry after its backoff and charges the card again, at most three times.", "focus": ["retry-worker", "retry-queue>retry-worker", "retry-worker>stripe"] },
-    { "title": "Removes the nightly dunning job", "body": "The cron that retried every declined charge once a night is gone.", "focus": ["legacy-dunning"] },
-    { "title": "Checkout polls for the result", "body": "The page shows a pending state and polls the new status endpoint until the payment settles.", "focus": ["soft-decline:7", "soft-decline:8", "soft-decline:14"] },
-    { "title": "Only the last failure emails", "body": "Notify now skips every payment.failed event except the final one.", "focus": ["final-failure:4", "final-failure:5", "final-failure:6"] }
+    {
+      "title": "Declines now queue a retry",
+      "body": "Billing no longer fails a soft decline. It records the attempt and puts a retry on a new queue.",
+      "focus": ["billing-api", "billing-api>retry-queue", "retry-queue"]
+    },
+    {
+      "title": "Adds a retry worker",
+      "body": "The worker takes each retry after its backoff and charges the card again, at most three times.",
+      "focus": ["retry-worker", "retry-queue>retry-worker", "retry-worker>stripe"]
+    },
+    {
+      "title": "Removes the nightly dunning job",
+      "body": "The cron that retried every declined charge once a night is gone.",
+      "focus": ["legacy-dunning"]
+    },
+    {
+      "title": "Checkout polls for the result",
+      "body": "The page shows a pending state and polls the new status endpoint until the payment settles.",
+      "focus": ["soft-decline:7", "soft-decline:8", "soft-decline:14"]
+    },
+    {
+      "title": "Only the last failure emails",
+      "body": "Notify now skips every payment.failed event except the final one.",
+      "focus": ["final-failure:4", "final-failure:5", "final-failure:6"]
+    }
   ]
 }
