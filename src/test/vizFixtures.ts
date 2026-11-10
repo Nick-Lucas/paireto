@@ -1,16 +1,25 @@
-import * as fs from "node:fs";
-import * as path from "node:path";
-
-import type { VizArgs, VizFileRef } from "../protocol/viz.js";
+import { VizArgs, type VizFileRef } from "../protocol/viz.js";
+import multiServiceJson from "../viz/fixtures/multiService.json";
+import singleFrontendJson from "../viz/fixtures/singleFrontend.json";
 import type { VizEnv } from "../viz/model/compile.js";
+import { buildVizIndex, type VizIndex } from "../viz/model/index.js";
 import type { ChangedFileStatus, VizChangedFile } from "../viz/model/types.js";
 
 export const FIXTURE_REPO = "shop";
 
-const fixturesDir = path.resolve(__dirname, "../../src/viz/fixtures");
+export const multiService: VizArgs = VizArgs.parse(multiServiceJson);
+export const singleFrontend: VizArgs = VizArgs.parse(singleFrontendJson);
+
+export function multiServiceIndex(): VizIndex {
+  return buildVizIndex(multiService);
+}
+
+export function singleFrontendIndex(): VizIndex {
+  return buildVizIndex(singleFrontend);
+}
 
 export function loadVizFixture(name: "multiService" | "singleFrontend"): VizArgs {
-  return JSON.parse(fs.readFileSync(path.join(fixturesDir, `${name}.json`), "utf8")) as VizArgs;
+  return structuredClone(name === "multiService" ? multiService : singleFrontend);
 }
 
 export function changedFilesFor(viz: VizArgs): VizChangedFile[] {
