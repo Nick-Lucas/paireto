@@ -15,7 +15,8 @@ import type { ChangesDescribeRequest, VizShowRequest } from "../../protocol/type
 import type { VizFileRef } from "../../protocol/viz.js";
 import { normalizePath } from "../../review/guidedPlan.js";
 import type { RepoChangedFile, ReviewState } from "../../review/ReviewController.js";
-import { compileViz, renderAccepted, renderRejected } from "../model/compile.js";
+import { compileViz } from "../model/compile.js";
+import { renderAccepted, renderRejected } from "../model/render.js";
 import { VIZ_DOC_FORMAT, type VizDoc, type VizRepo } from "../model/types.js";
 import type { VizWindowState, WebviewToHost } from "../protocol.js";
 import { findUnits, manifestIn, renderChanges, type RepoChanges, vizStatus } from "./changes.js";

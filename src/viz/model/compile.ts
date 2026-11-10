@@ -2,6 +2,8 @@ import { VizArgs } from "../../protocol/viz.js";
 import type { VizFileRef, VizFlow, VizNode } from "../../protocol/viz.js";
 import { normalizePath } from "../../review/guidedPlan.js";
 import { edgeKey, parseVizRef } from "./refs.js";
+import { plural } from "./render.js";
+import { closest, didYouMean } from "./similarity.js";
 import type { EdgeKey, VizChangedFile, VizRef, VizRepo } from "./types.js";
 
 export interface VizEnv {
@@ -52,7 +54,6 @@ export type CompileResult =
   | { ok: true; viz: VizArgs; warnings: VizIssue[] }
   | { ok: false; errors: VizIssue[]; warnings: VizIssue[] };
 
-export const MAX_RENDERED_ISSUES = 30;
 const MAX_COVERAGE_PATHS = 10;
 const MAX_LISTED_IDS = 20;
 const NO_FILES_KINDS = new Set<VizNode["kind"]>(["actor", "external"]);
@@ -137,56 +138,6 @@ export function compileViz(raw: unknown, env: VizEnv): CompileResult {
   return errors.length > 0
     ? { ok: false, errors, warnings }
     : { ok: true, viz: parsed.data, warnings };
-}
-
-export function renderAccepted(viz: VizArgs, warnings: VizIssue[]): string {
-  const counts = [
-    plural(viz.nodes.length, "node"),
-    plural(viz.edges?.length ?? 0, "edge"),
-    plural(viz.flows?.length ?? 0, "flow"),
-    plural(viz.walkthrough?.length ?? 0, "walkthrough step"),
-  ].join(", ");
-  const head = `Viz "${viz.title}" is open in VS Code: ${counts}.`;
-  if (warnings.length === 0) {
-    return head;
-  }
-  return [
-    head,
-    "Warnings. Fix them and call paireto_show_viz again if they matter:",
-    ...renderIssues(warnings),
-  ].join("\n");
-}
-
-export function renderRejected(errors: VizIssue[], warnings: VizIssue[]): string {
-  const lines = [
-    `Viz rejected. Fix all ${errors.length} and call paireto_show_viz again. Do not remove elements to pass.`,
-    ...renderIssues(errors),
-  ];
-  if (warnings.length > 0) {
-    lines.push("Warnings:", ...renderIssues(warnings));
-  }
-  return lines.join("\n");
-}
-
-function formatIssuePath(path: VizIssuePath): string {
-  return path
-    .map((key, index) => (typeof key === "number" ? `[${key}]` : index === 0 ? key : `.${key}`))
-    .join("");
-}
-
-function renderIssues(issues: VizIssue[]): string[] {
-  const shown = issues.slice(0, MAX_RENDERED_ISSUES).map((issue) => {
-    const where = formatIssuePath(issue.path);
-    return where ? `- ${where}: ${issue.message}` : `- ${issue.message}`;
-  });
-  if (issues.length > MAX_RENDERED_ISSUES) {
-    shown.push(`- +${issues.length - MAX_RENDERED_ISSUES} more`);
-  }
-  return shown;
-}
-
-function plural(count: number, noun: string): string {
-  return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
 
 function buildModel(viz: VizArgs, env: VizEnv): Model {
@@ -711,38 +662,4 @@ function unknownMessage(what: string, value: string, valid: string[]): string {
   const more = valid.length > MAX_LISTED_IDS ? `, +${valid.length - MAX_LISTED_IDS} more` : "";
   const known = valid.length > 0 ? `Valid: ${listed}${more}.` : `There are none.`;
   return `unknown ${what} "${value}". ${didYouMean(value, valid)}${known}`;
-}
-
-function didYouMean(value: string, candidates: string[]): string {
-  const best = closest(value, candidates);
-  return best === undefined ? "" : `Did you mean "${best}"? `;
-}
-
-function closest(value: string, candidates: string[]): string | undefined {
-  let best: string | undefined;
-  let bestDistance = 3;
-  for (const candidate of candidates) {
-    const distance = editDistance(value, candidate);
-    if (distance < bestDistance) {
-      best = candidate;
-      bestDistance = distance;
-    }
-  }
-  return best;
-}
-
-function editDistance(a: string, b: string): number {
-  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
-  for (let i = 1; i <= a.length; i++) {
-    const current = [i];
-    for (let j = 1; j <= b.length; j++) {
-      current[j] = Math.min(
-        previous[j] + 1,
-        current[j - 1] + 1,
-        previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
-    }
-    previous = current;
-  }
-  return previous[b.length];
 }

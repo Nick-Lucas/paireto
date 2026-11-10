@@ -3,15 +3,13 @@ import * as assert from "node:assert";
 import type { VizArgs } from "../protocol/viz.js";
 import {
   compileViz,
-  MAX_RENDERED_ISSUES,
-  renderAccepted,
-  renderRejected,
   VIZ_RULE_CODES,
   type VizEnv,
   type VizIssue,
   type VizIssueCode,
   type VizIssuePath,
 } from "../viz/model/compile.js";
+import { MAX_RENDERED_ISSUES, renderAccepted, renderRejected } from "../viz/model/render.js";
 import { envFor, loadVizFixture } from "./vizFixtures.js";
 
 interface Mutation {
