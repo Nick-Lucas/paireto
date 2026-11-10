@@ -75,3 +75,12 @@
   width: 150px;
   height: 100px;
 }
+
+.viz-canvas .react-flow__attribution {
+  background: transparent;
+  opacity: 0.45;
+}
+
+.viz-canvas .react-flow__attribution a {
+  color: var(--vscode-descriptionForeground);
+}
