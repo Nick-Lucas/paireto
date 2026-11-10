@@ -13,7 +13,8 @@ import { useEffect, useMemo } from "react";
 
 import type { Emphasis } from "../model/emphasis";
 import type { VizIndex } from "../model/index";
-import { refOfRfId, type RfGraph } from "../model/rf";
+import { formatVizRef, parseVizRef } from "../model/refs";
+import type { RfGraph } from "../model/rf";
 import type { VizRef } from "../model/types";
 import type { UiAction, UiState } from "../model/ui";
 import { NODE_TYPES } from "./nodes";
@@ -58,7 +59,7 @@ function cameraNodeIds(
         break;
       case "step":
         if (stage.kind === "flow" && stage.flow === ref.flow) {
-          ids.add(`step:${ref.index}`);
+          ids.add(formatVizRef(ref));
           const step = index.flowById.get(ref.flow)?.steps[ref.index];
           if (step) {
             ids.add(step.from);
@@ -94,9 +95,8 @@ export function Canvas(props: CanvasProps) {
   const { stageKey, graph, index, emphasis, ui, dispatch } = props;
   const nodes = graph.nodes as unknown as Node[];
   const edges = graph.edges as unknown as Edge[];
-  const flow = ui.stage.kind === "flow" ? ui.stage.flow : undefined;
   const select = (id: string) => {
-    const ref = refOfRfId(id, flow);
+    const ref = parseVizRef(id, index.flowById);
     if (ref) {
       dispatch({ type: "select", ref });
     }

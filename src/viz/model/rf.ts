@@ -4,7 +4,8 @@ import type { OverviewScene } from "../layout/overview.js";
 import type { MessageDirection, SequenceScene } from "../layout/sequence.js";
 import type { Emphasis, Level } from "./emphasis.js";
 import type { IndexedStep, VizIndex } from "./index.js";
-import type { EdgeKey, VizRef } from "./types.js";
+import { formatVizRef } from "./refs.js";
+import type { VizRef } from "./types.js";
 import type { UiState } from "./ui.js";
 
 export type LaneData = { kind: "lane"; label: string; even: boolean };
@@ -71,7 +72,7 @@ export type EdgeData = {
 };
 
 export interface RfEdge {
-  readonly id: EdgeKey;
+  readonly id: string;
   readonly source: string;
   readonly target: string;
   readonly type: "viz";
@@ -97,20 +98,11 @@ const Z = {
 } as const;
 
 function isSelected(selection: VizRef | undefined, ref: VizRef): boolean {
-  if (!selection || selection.kind !== ref.kind) {
-    return false;
-  }
-  switch (ref.kind) {
-    case "node":
-    case "flow":
-      return selection.kind === ref.kind && selection.id === ref.id;
-    case "edge":
-      return selection.kind === "edge" && selection.key === ref.key;
-    case "step":
-      return (
-        selection.kind === "step" && selection.flow === ref.flow && selection.index === ref.index
-      );
-  }
+  return selection !== undefined && formatVizRef(selection) === formatVizRef(ref);
+}
+
+function decorId(kind: string, ...keys: (string | number)[]): string {
+  return [kind, ...keys].join("/");
 }
 
 function rect(r: Rect): Pick<RfNode, "position" | "width" | "height"> {
@@ -126,7 +118,7 @@ export function toOverviewRf(
   const nodes: RfNode[] = [];
   for (const [i, lane] of scene.lanes.entries()) {
     nodes.push({
-      id: `lane:${lane.id}`,
+      id: decorId("lane", lane.id),
       type: "lane",
       ...rect(lane),
       data: { kind: "lane", label: lane.label, even: i % 2 === 0 },
@@ -155,7 +147,7 @@ export function toOverviewRf(
       continue;
     }
     nodes.push({
-      id: node.id,
+      id: formatVizRef({ kind: "node", id: node.id }),
       type: "card",
       ...rect(placed),
       data: {
@@ -179,7 +171,7 @@ export function toOverviewRf(
     }
     const selected = isSelected(ui.selection, { kind: "edge", key: routed.key });
     edges.push({
-      id: routed.key,
+      id: formatVizRef({ kind: "edge", key: routed.key }),
       source: edge.from,
       target: edge.to,
       type: "viz",
@@ -208,7 +200,7 @@ export function toSequenceRf(
   const nodes: RfNode[] = [];
   for (const phase of scene.phases) {
     nodes.push({
-      id: `phase:${phase.firstStep}`,
+      id: decorId("phase", phase.firstStep),
       type: "phase",
       ...rect(phase),
       data: { kind: "phase", label: phase.label },
@@ -223,7 +215,7 @@ export function toSequenceRf(
       continue;
     }
     nodes.push({
-      id: participant.id,
+      id: formatVizRef({ kind: "node", id: participant.id }),
       type: "participant",
       ...rect(participant),
       data: {
@@ -237,7 +229,7 @@ export function toSequenceRf(
       zIndex: Z.card,
     });
     nodes.push({
-      id: `lifeline:${participant.id}`,
+      id: decorId("lifeline", participant.id),
       type: "lifeline",
       position: { x: participant.lifelineX - 1, y: scene.lifelineTop },
       width: 2,
@@ -250,7 +242,7 @@ export function toSequenceRf(
   }
   for (const bar of scene.activations) {
     nodes.push({
-      id: `activation:${bar.participant}:${bar.opener}`,
+      id: decorId("activation", bar.participant, bar.opener),
       type: "activation",
       ...rect(bar),
       data: {
@@ -266,7 +258,7 @@ export function toSequenceRf(
   for (const message of scene.messages) {
     const ref: VizRef = { kind: "step", flow: scene.flow, index: message.index };
     nodes.push({
-      id: `step:${message.index}`,
+      id: formatVizRef(ref),
       type: "message",
       ...rect(message),
       data: {
@@ -286,17 +278,4 @@ export function toSequenceRf(
     });
   }
   return { nodes, edges: [] };
-}
-
-export function refOfRfId(id: string, flow: string | undefined): VizRef | undefined {
-  if (id.includes(">")) {
-    return { kind: "edge", key: id as EdgeKey };
-  }
-  if (id.startsWith("step:") && flow) {
-    return { kind: "step", flow, index: Number(id.slice(5)) };
-  }
-  if (id.includes(":")) {
-    return undefined;
-  }
-  return { kind: "node", id };
 }

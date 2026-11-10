@@ -8,7 +8,10 @@ export function edgeKey(from: string, to: string): EdgeKey {
   return `${from}>${to}`;
 }
 
-export function parseVizRef(raw: string, flowIds: ReadonlySet<string>): VizRef | undefined {
+export function parseVizRef(
+  raw: string,
+  flowIds: { has(id: string): boolean },
+): VizRef | undefined {
   const value = raw.trim();
   const edge = EDGE.exec(value);
   if (edge) {

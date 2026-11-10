@@ -1,6 +1,6 @@
 import type { VizDelta } from "../../protocol/viz.js";
 import { searchMatches, type VizIndex } from "./index.js";
-import { formatVizRef } from "./refs.js";
+import { edgeKey, formatVizRef } from "./refs.js";
 import type { EdgeKey, VizRef } from "./types.js";
 import type { UiState } from "./ui.js";
 
@@ -46,7 +46,7 @@ function baseLevels(index: VizIndex, ui: UiState): Levels {
       const endpointsShown =
         levels.nodes.get(edge.from) !== "dim" && levels.nodes.get(edge.to) !== "dim";
       levels.edges.set(
-        `${edge.from}>${edge.to}`,
+        edgeKey(edge.from, edge.to),
         shown(edge.delta) && endpointsShown ? "normal" : "dim",
       );
     }
@@ -65,7 +65,7 @@ function baseLevels(index: VizIndex, ui: UiState): Levels {
   return levels;
 }
 
-function applyRefs(levels: Levels, refs: readonly VizRef[]): void {
+function applyRefs(levels: Levels, index: VizIndex, refs: readonly VizRef[]): void {
   fill(levels, "dim");
   for (const ref of refs) {
     switch (ref.kind) {
@@ -74,17 +74,18 @@ function applyRefs(levels: Levels, refs: readonly VizRef[]): void {
           levels.nodes.set(ref.id, "bright");
         }
         break;
-      case "edge":
-        if (levels.edges.has(ref.key)) {
+      case "edge": {
+        const edge = index.edgesByKey.get(ref.key);
+        if (edge && levels.edges.has(ref.key)) {
           levels.edges.set(ref.key, "bright");
-          const [from, to] = ref.key.split(">");
-          for (const id of [from, to]) {
+          for (const id of [edge.from, edge.to]) {
             if (levels.nodes.get(id) === "dim") {
               levels.nodes.set(id, "normal");
             }
           }
         }
         break;
+      }
       case "flow":
         for (const key of levels.steps.keys()) {
           levels.steps.set(key, "bright");
@@ -162,7 +163,7 @@ export function emphasisOf(index: VizIndex, ui: UiState): Emphasis {
   if (mode.kind === "walk") {
     const step = index.walkthrough[mode.step];
     const refs = step?.refs ?? [];
-    applyRefs(levels, refs);
+    applyRefs(levels, index, refs);
     return { ...levels, camera: refs, veil: true, cursor: undefined };
   }
   if (mode.kind === "play" && ui.stage.kind === "flow" && ui.stage.flow === mode.flow) {

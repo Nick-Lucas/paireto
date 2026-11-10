@@ -3,13 +3,9 @@ import * as assert from "node:assert";
 import { layoutOverview } from "../viz/layout/overview.js";
 import { layoutSequence } from "../viz/layout/sequence.js";
 import { emphasisOf } from "../viz/model/emphasis.js";
-import {
-  refOfRfId,
-  toOverviewRf,
-  toSequenceRf,
-  type CardData,
-  type MessageData,
-} from "../viz/model/rf.js";
+import { OVERVIEW, refInStage, type Stage } from "../viz/model/index.js";
+import { formatVizRef, parseVizRef } from "../viz/model/refs.js";
+import { toOverviewRf, toSequenceRf, type CardData, type MessageData } from "../viz/model/rf.js";
 import { initialUi, reduceUi, type UiAction, type UiState } from "../viz/model/ui.js";
 import { makeElk } from "./vizElk.js";
 import { multiServiceIndex } from "./vizFixtures.js";
@@ -86,31 +82,40 @@ suite("viz rf adapters", () => {
     assert.strictEqual(count("message"), 14);
     assert.ok(count("activation") > 0);
     assert.strictEqual(graph.edges.length, 0);
-    const current = graph.nodes.find((node) => node.id === "step:1")?.data as MessageData;
+    const current = graph.nodes.find((node) => node.id === "soft-decline:2")?.data as MessageData;
     assert.strictEqual(current.current, true);
     assert.strictEqual(current.selected, true);
     assert.strictEqual(current.level, "bright");
     assert.ok(current.toX > current.fromX);
-    const later = graph.nodes.find((node) => node.id === "step:5")?.data as MessageData;
+    const later = graph.nodes.find((node) => node.id === "soft-decline:6")?.data as MessageData;
     assert.strictEqual(later.level, "dim");
     assert.strictEqual(later.current, false);
   });
 
-  test("maps xyflow ids back to refs", () => {
-    assert.deepStrictEqual(refOfRfId("billing-api", undefined), {
-      kind: "node",
-      id: "billing-api",
-    });
-    assert.deepStrictEqual(refOfRfId("billing-api>stripe", undefined), {
-      kind: "edge",
-      key: "billing-api>stripe",
-    });
-    assert.deepStrictEqual(refOfRfId("step:3", "soft-decline"), {
-      kind: "step",
-      flow: "soft-decline",
-      index: 3,
-    });
-    assert.strictEqual(refOfRfId("lane:web", undefined), undefined);
-    assert.strictEqual(refOfRfId("lifeline:checkout", "soft-decline"), undefined);
+  test("selectable ids are refs on the stage and other ids never parse as one", async () => {
+    const scene = await layoutOverview(index, makeElk());
+    const ui = initialUi();
+    const overview = toOverviewRf(scene, index, emphasisOf(index, ui), ui);
+    const flowUi = run({ type: "stage", stage: FLOW });
+    const sequence = toSequenceRf(
+      layoutSequence(index, "soft-decline"),
+      index,
+      emphasisOf(index, flowUi),
+      flowUi,
+    );
+    const check = (ids: { id: string; selectable: boolean }[], stage: Stage) => {
+      for (const element of ids) {
+        const ref = parseVizRef(element.id, index.flowById);
+        if (element.selectable) {
+          assert.ok(ref && refInStage(index, ref, stage), `${element.id} is a ref on the stage`);
+          assert.strictEqual(formatVizRef(ref), element.id);
+        } else {
+          assert.strictEqual(ref, undefined, `${element.id} is not a ref`);
+        }
+      }
+    };
+    check([...overview.nodes, ...overview.edges], OVERVIEW);
+    check([...sequence.nodes], FLOW);
+    assert.ok(sequence.nodes.some((node) => node.id === "soft-decline:2"));
   });
 });

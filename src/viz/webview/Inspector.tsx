@@ -1,6 +1,6 @@
 import type { VizEdge, VizFileRef, VizNode } from "../../protocol/viz";
 import { stepAt, type IndexedStep, type Stage, type VizIndex } from "../model/index";
-import { edgeKey } from "../model/refs";
+import { edgeKey, formatVizRef } from "../model/refs";
 import type { EdgeKey, VizRef } from "../model/types";
 import type { UiAction } from "../model/ui";
 import { DeltaBadge, KindIcon, UiIcon } from "./icons";
@@ -226,7 +226,7 @@ function EdgePanel({
               const step = stepAt(index, locator);
               const flow = index.flowById.get(locator.flow);
               return (
-                <li key={`${locator.flow}:${locator.index}`}>
+                <li key={formatVizRef({ kind: "step", ...locator })}>
                   <button
                     type="button"
                     className="viz-link"
