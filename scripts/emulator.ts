@@ -21,8 +21,11 @@
 
 import type { Socket } from "node:net";
 
+import type { TextRequest, TextResponseType, VizCommandDeps } from "./emulatorViz.ts";
+
 const crypto = require("node:crypto") as typeof import("node:crypto");
 const fs = require("node:fs") as typeof import("node:fs");
+const vizCommands = require("./emulatorViz.ts") as typeof import("./emulatorViz.ts");
 
 // ---------------------------------------------------------------------------
 // Wire protocol (hand-mirrored from src/protocol/types.ts, like bridge.js)
@@ -59,7 +62,7 @@ type HookEventName =
   | "WorktreeCreate"
   | "WorktreeRemove";
 
-interface Envelope {
+export interface Envelope {
   t: MessageType;
   v: string;
   id?: string;
@@ -118,24 +121,6 @@ interface ReviewAwaitResponse extends Envelope {
   feedback: string;
 }
 
-interface ChangesDescribeRequest extends Envelope {
-  t: "changes.describe.request";
-  id: string;
-  cwd: string;
-  repoRoot: string;
-  harness: string;
-  sessionId?: string;
-}
-
-interface VizShowRequest extends Envelope {
-  t: "viz.show.request";
-  id: string;
-  cwd: string;
-  repoRoot: string;
-  harness: string;
-  sessionId?: string;
-  viz: unknown;
-}
 
 interface TextAnswer extends Envelope {
   id: string;
@@ -313,7 +298,7 @@ function strOpt(opts: Opts, key: string): string | undefined {
 const DEFAULT_SESSION = "emu-" + crypto.randomUUID().slice(0, 8);
 const CONNECT_TIMEOUT_MS = 3000;
 
-interface Target {
+export interface Target {
   socketPath: string;
   repoRoot: string;
   cwd: string;
@@ -876,11 +861,24 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
+function vizDeps(opts: Opts): VizCommandDeps {
+  return {
+    send: (heading, build, responseType) => sendTextRequest(opts, heading, build, responseType),
+    version: bridge.PLUGIN_VERSION,
+    now: () => bridge.nowIso(),
+    session: strOpt(opts, "session") || DEFAULT_SESSION,
+    fail: (message) => {
+      console.log(red(message));
+      process.exitCode = 1;
+    },
+  };
+}
+
 async function sendTextRequest(
   opts: Opts,
   heading: string,
-  build: (target: Target, id: string) => ChangesDescribeRequest | VizShowRequest,
-  responseType: MessageType
+  build: (target: Target, id: string) => TextRequest,
+  responseType: TextResponseType
 ): Promise<void> {
   const id = crypto.randomUUID();
   await withBridge(opts, { heading }, async ({ conn, target }) => {
@@ -900,57 +898,6 @@ async function sendTextRequest(
       process.exitCode = 1;
     }
   });
-}
-
-async function cmdChanges(opts: Opts): Promise<void> {
-  await sendTextRequest(
-    opts,
-    "Changes · paireto_get_changes",
-    (target, id) => ({
-      t: "changes.describe.request",
-      v: bridge.PLUGIN_VERSION,
-      id,
-      ts: bridge.nowIso(),
-      cwd: target.cwd,
-      repoRoot: target.repoRoot,
-      harness: "claudecode",
-      sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
-    }),
-    "changes.describe.response"
-  );
-}
-
-async function cmdViz(opts: Opts, positionals: string[]): Promise<void> {
-  const file = positionals[0] ?? strOpt(opts, "file");
-  if (!file) {
-    console.log(red("Usage: node emulator.ts viz <file.json>"));
-    process.exitCode = 1;
-    return;
-  }
-  let viz: unknown;
-  try {
-    viz = JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (err) {
-    console.log(red(`Could not read ${file}: ${errMessage(err)}`));
-    process.exitCode = 1;
-    return;
-  }
-  await sendTextRequest(
-    opts,
-    "Viz · paireto_show_viz",
-    (target, id) => ({
-      t: "viz.show.request",
-      v: bridge.PLUGIN_VERSION,
-      id,
-      ts: bridge.nowIso(),
-      cwd: target.cwd,
-      repoRoot: target.repoRoot,
-      harness: "claudecode",
-      sessionId: strOpt(opts, "session") || DEFAULT_SESSION,
-      viz,
-    }),
-    "viz.show.response"
-  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,10 +977,10 @@ async function main(): Promise<void> {
       await cmdAgent(opts);
       break;
     case "changes":
-      await cmdChanges(opts);
+      await vizCommands.cmdChanges(vizDeps(opts));
       break;
     case "viz":
-      await cmdViz(opts, rest);
+      await vizCommands.cmdViz(rest[0] ?? strOpt(opts, "file"), vizDeps(opts));
       break;
     case "help":
     case "-h":
