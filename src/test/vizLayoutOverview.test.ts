@@ -1,10 +1,19 @@
 import * as assert from "node:assert";
 
-import { contains } from "../viz/layout/geometry.js";
+import type { Rect } from "../viz/layout/geometry.js";
 import { layoutOverview, type OverviewScene } from "../viz/layout/overview.js";
 import type { VizIndex } from "../viz/model/index.js";
 import { makeElk } from "./vizElk.js";
 import { multiServiceIndex, singleFrontendIndex } from "./vizFixtures.js";
+
+function contains(outer: Rect, inner: Rect): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
 
 function nodeRect(scene: OverviewScene, id: string) {
   const node = scene.nodes.find((candidate) => candidate.id === id);

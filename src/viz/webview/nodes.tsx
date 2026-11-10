@@ -13,7 +13,7 @@ import { DeltaBadge, DELTA_GLYPH, KindIcon } from "./icons";
 
 const levelClass = (level: string) => `viz-level--${level}`;
 
-export function LaneNode({ data }: NodeProps<Node<LaneData, "lane">>) {
+function LaneNode({ data }: NodeProps<Node<LaneData, "lane">>) {
   return (
     <div className={`viz-lane ${data.even ? "viz-lane--even" : "viz-lane--odd"}`}>
       <div className="viz-lane__label">{data.label}</div>
@@ -21,7 +21,7 @@ export function LaneNode({ data }: NodeProps<Node<LaneData, "lane">>) {
   );
 }
 
-export function GroupNode({ data }: NodeProps<Node<GroupData, "group">>) {
+function GroupNode({ data }: NodeProps<Node<GroupData, "group">>) {
   return (
     <div className={`viz-group ${levelClass(data.level)}`}>
       <div className="viz-group__label">{data.label}</div>
@@ -29,7 +29,7 @@ export function GroupNode({ data }: NodeProps<Node<GroupData, "group">>) {
   );
 }
 
-export function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
+function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
   const { node } = data;
   const classes = [
     "viz-card",
@@ -67,7 +67,7 @@ export function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
   );
 }
 
-export function ParticipantNode({ data }: NodeProps<Node<ParticipantData, "participant">>) {
+function ParticipantNode({ data }: NodeProps<Node<ParticipantData, "participant">>) {
   const { node } = data;
   const classes = [
     "viz-participant",
@@ -89,15 +89,15 @@ export function ParticipantNode({ data }: NodeProps<Node<ParticipantData, "parti
   );
 }
 
-export function LifelineNode() {
+function LifelineNode() {
   return <div className="viz-lifeline" />;
 }
 
-export function ActivationNode({ data }: NodeProps<Node<ActivationData, "activation">>) {
+function ActivationNode({ data }: NodeProps<Node<ActivationData, "activation">>) {
   return <div className={`viz-activation ${levelClass(data.level)}`} />;
 }
 
-export function PhaseNode({ data }: NodeProps<Node<PhaseData, "phase">>) {
+function PhaseNode({ data }: NodeProps<Node<PhaseData, "phase">>) {
   return (
     <div className="viz-phase">
       <span className="viz-phase__label">{data.label}</span>
@@ -107,7 +107,7 @@ export function PhaseNode({ data }: NodeProps<Node<PhaseData, "phase">>) {
 
 const ARROW = 7;
 
-export function MessageNode({ data, width, height }: NodeProps<Node<MessageData, "message">>) {
+function MessageNode({ data, width, height }: NodeProps<Node<MessageData, "message">>) {
   const { step } = data;
   const w = width ?? 0;
   const h = height ?? 0;

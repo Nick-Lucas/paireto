@@ -32,7 +32,6 @@ export interface IndexedStep {
   readonly phase?: string;
   readonly startsPhase: boolean;
   readonly files: readonly VizFileRef[];
-  readonly self: boolean;
   readonly edge?: EdgeKey;
 }
 
@@ -74,7 +73,6 @@ export interface VizIndex {
   readonly stepsByEdge: ReadonlyMap<EdgeKey, readonly StepLocator[]>;
   readonly walkthrough: readonly IndexedWalkStep[];
   readonly haystack: ReadonlyMap<string, string>;
-  readonly readingOrder: readonly string[];
   readonly deltaCounts: Readonly<Record<VizDelta, number>>;
 }
 
@@ -157,7 +155,6 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
         phase,
         startsPhase,
         files: step.files ?? [],
-        self: step.from === step.to,
         edge,
       };
     });
@@ -213,14 +210,6 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
     }
   }
 
-  const readingOrder = viz.nodes
-    .map((node, order) => ({ node, order }))
-    .sort(
-      (a, b) =>
-        (laneIndex.get(a.node.lane) ?? 0) - (laneIndex.get(b.node.lane) ?? 0) || a.order - b.order,
-    )
-    .map(({ node }) => node.id);
-
   const deltaCounts: Record<VizDelta, number> = { added: 0, changed: 0, deleted: 0, unchanged: 0 };
   for (const node of viz.nodes) {
     deltaCounts[node.delta] += 1;
@@ -242,7 +231,6 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
     stepsByEdge,
     walkthrough,
     haystack,
-    readingOrder,
     deltaCounts,
   };
 }

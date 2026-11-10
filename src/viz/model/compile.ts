@@ -168,7 +168,7 @@ export function renderRejected(errors: VizIssue[], warnings: VizIssue[]): string
   return lines.join("\n");
 }
 
-export function formatIssuePath(path: VizIssuePath): string {
+function formatIssuePath(path: VizIssuePath): string {
   return path
     .map((key, index) => (typeof key === "number" ? `[${key}]` : index === 0 ? key : `.${key}`))
     .join("");

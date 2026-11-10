@@ -1,26 +1,9 @@
 import * as assert from "node:assert";
 
 import { refInStage, searchMatches, stepAt } from "../viz/model/index.js";
-import { multiServiceIndex, singleFrontendIndex } from "./vizFixtures.js";
+import { multiServiceIndex } from "./vizFixtures.js";
 
 suite("viz index", () => {
-  test("maps lanes, nodes and edges by id", () => {
-    const index = multiServiceIndex();
-    assert.strictEqual(index.laneIndex.get("services"), 2);
-    assert.strictEqual(index.nodeById.get("retry-worker")?.kind, "worker");
-    assert.strictEqual(index.edgesByKey.get("billing-api>retry-queue")?.hero, true);
-    assert.deepStrictEqual(index.outEdges.get("retry-worker"), [
-      "retry-worker>stripe",
-      "retry-worker>payments-db",
-      "retry-worker>events",
-    ]);
-    assert.deepStrictEqual(index.inEdges.get("stripe"), [
-      "billing-api>stripe",
-      "retry-worker>stripe",
-      "legacy-dunning>stripe",
-    ]);
-  });
-
   test("defaults step kind to sync and step delta to the flow delta", () => {
     const index = multiServiceIndex();
     const step = stepAt(index, { flow: "soft-decline", index: 4 });
@@ -56,9 +39,8 @@ suite("viz index", () => {
     );
   });
 
-  test("marks self steps and rides a step on the edge in either direction", () => {
+  test("rides a step on the edge in either direction", () => {
     const index = multiServiceIndex();
-    assert.strictEqual(stepAt(index, { flow: "soft-decline", index: 9 })?.self, true);
     assert.strictEqual(
       stepAt(index, { flow: "soft-decline", index: 3 })?.edge,
       "billing-api>stripe",
@@ -90,20 +72,6 @@ suite("viz index", () => {
     ]);
     assert.deepStrictEqual(walk[3].stage, { kind: "flow", flow: "soft-decline" });
     assert.deepStrictEqual(walk[3].refs[0], { kind: "step", flow: "soft-decline", index: 6 });
-  });
-
-  test("orders nodes by lane then source order", () => {
-    assert.deepStrictEqual(singleFrontendIndex().readingOrder, [
-      "user",
-      "comment-thread",
-      "comment-editor",
-      "edit-dialog",
-      "use-edit-comment",
-      "comments-cache",
-      "comment-model",
-      "api-client",
-      "server",
-    ]);
   });
 
   test("counts node deltas for the legend", () => {

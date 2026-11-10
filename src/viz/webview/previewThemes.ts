@@ -8,7 +8,7 @@ const SHARED = {
   "--vscode-editor-font-size": "12px",
 };
 
-export const PREVIEW_THEMES: Record<PreviewTheme, Record<string, string>> = {
+const PREVIEW_THEMES: Record<PreviewTheme, Record<string, string>> = {
   dark: {
     ...SHARED,
     "--vscode-editor-background": "#1f1f1f",

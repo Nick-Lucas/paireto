@@ -28,12 +28,3 @@ export function union(rects: readonly Rect[]): Rect {
   const bottom = Math.max(...rects.map((r) => r.y + r.height));
   return { x, y, width: right - x, height: bottom - y };
 }
-
-export function contains(outer: Rect, inner: Rect): boolean {
-  return (
-    inner.x >= outer.x &&
-    inner.y >= outer.y &&
-    inner.x + inner.width <= outer.x + outer.width &&
-    inner.y + inner.height <= outer.y + outer.height
-  );
-}

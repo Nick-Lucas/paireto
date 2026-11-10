@@ -2,7 +2,7 @@ import type { FileStatus } from "../../git/DiffService.js";
 import type { CompareTo } from "../../protocol/guidedReview.js";
 import type { ChangedFileStatus, VizChangedFile } from "../model/types.js";
 
-export const UNIT_MANIFESTS = [
+const UNIT_MANIFESTS = [
   "package.json",
   "go.mod",
   "Cargo.toml",
@@ -33,7 +33,7 @@ export interface ChangeUnit {
   files: number;
 }
 
-export type VizLevel = "service" | "component";
+type VizLevel = "service" | "component";
 
 const STATUS: Record<FileStatus, ChangedFileStatus> = {
   A: "A",

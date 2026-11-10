@@ -37,7 +37,7 @@ export interface ElkLike {
   layout(graph: ElkNode): Promise<ElkNode>;
 }
 
-export const CARD = { width: 212, height: 64, subHeight: 18 } as const;
+const CARD = { width: 212, height: 64, subHeight: 18 } as const;
 const SCENE = { pad: 28, laneHeader: 40, groupTab: 30, groupPad: 16 } as const;
 
 function cardSize(node: VizNode): { width: number; height: number } {

@@ -148,28 +148,25 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
       y += SEQ.phaseHeight + SEQ.phaseGap;
     }
     const lineY = y;
+    const self = step.from === step.to;
     const fromCentre = lifelineX(step.from);
     const toCentre = lifelineX(step.to);
-    const direction: MessageDirection = step.self
-      ? "self"
-      : toCentre > fromCentre
-        ? "right"
-        : "left";
-    const fromX = edgeX(step.from, step.self ? fromCentre + 1 : toCentre);
-    if (step.kind === "return" && !step.self) {
+    const direction: MessageDirection = self ? "self" : toCentre > fromCentre ? "right" : "left";
+    const fromX = edgeX(step.from, self ? fromCentre + 1 : toCentre);
+    if (step.kind === "return" && !self) {
       const returned = stack(step.from).pop();
       if (returned) {
         close(returned, lineY);
       }
     }
-    if (!step.self) {
+    if (!self) {
       for (const bars of open.values()) {
         while (bars.length > 0 && bars[bars.length - 1].caller === step.from) {
           close(bars.pop()!, lineY);
         }
       }
     }
-    if (step.kind === "sync" && !step.self) {
+    if (step.kind === "sync" && !self) {
       const bars = stack(step.to);
       bars.push({
         participant: step.to,
@@ -179,9 +176,9 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
         top: lineY,
       });
     }
-    const toX = step.self ? fromX : edgeX(step.to, fromCentre);
-    const height = step.self ? SEQ.selfPitch - 16 : SEQ.messageHeight;
-    const left = step.self ? fromX : Math.min(fromX, toX);
+    const toX = self ? fromX : edgeX(step.to, fromCentre);
+    const height = self ? SEQ.selfPitch - 16 : SEQ.messageHeight;
+    const left = self ? fromX : Math.min(fromX, toX);
     messages.push({
       index: step.index,
       step,
@@ -191,12 +188,12 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
       direction,
       x: left,
       y: lineY - SEQ.messageHeight / 2,
-      width: step.self
+      width: self
         ? SEQ.selfWidth + Math.max(estimateTextWidth(step.label, 12), 40)
         : Math.abs(toX - fromX),
       height,
     });
-    y += step.self ? SEQ.selfPitch : SEQ.pitch;
+    y += self ? SEQ.selfPitch : SEQ.pitch;
   }
   const lifelineBottom = y + SEQ.tail;
   for (const bars of open.values()) {
