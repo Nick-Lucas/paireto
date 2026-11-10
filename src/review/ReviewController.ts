@@ -1910,6 +1910,14 @@ export class ReviewController implements vscode.Disposable {
     );
   }
 
+  editDiagramReply(id: string, body: string): boolean {
+    return this.feedback?.edit(id, body) ?? false;
+  }
+
+  deleteDiagramComment(id: string): boolean {
+    return this.feedback?.removeCommentOrThread(id) ?? false;
+  }
+
   replyDiagramComment(id: string, body: string): boolean {
     return this.feedback?.addReply(id, body) ?? false;
   }

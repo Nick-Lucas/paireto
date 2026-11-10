@@ -23,6 +23,14 @@ const PATHS = {
   next: "M3 8h9M8.5 4.5 12 8l-3.5 3.5",
   filter: "M2.5 3.5h11l-4.2 5v4l-2.6 1.2V8.5Z",
   eye: "M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8ZM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z",
+  close: "M4 4l8 8M12 4l-8 8",
+  edit: "M10.5 2.5l3 3L6 13H3v-3Z",
+  trash: "M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 9h5.6l.7-9",
+  link: "M6.5 9.5l3-3M7 4.5l1.2-1.2a2.6 2.6 0 0 1 3.7 3.7L10.7 8.2M9 11.5l-1.2 1.2a2.6 2.6 0 0 1-3.7-3.7L5.3 7.8",
+  send: "M8 13V3M4 7l4-4 4 4",
+  sparkle: "M8 2l1.4 3.6L13 7l-3.6 1.4L8 12l-1.4-3.6L3 7l3.6-1.4Z",
+  symbolClass: "M2 6h4v4H2ZM10 2.5h4v3.5h-4ZM10 10h4v3.5h-4ZM6 8h2M8 4.25v7.5M8 4.25h2M8 11.75h2",
+  symbolMethod: "M8 1.75l5.5 3v6.5L8 14.25l-5.5-3v-6.5ZM2.5 4.75 8 7.75l5.5-3M8 7.75v6.5",
 };
 
 export type IconName = keyof typeof PATHS;

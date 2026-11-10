@@ -235,6 +235,7 @@ export class FeedbackSession {
           if (ids.has(model.id) && model.delivery === "pending") {
             model.delivery = "sent";
             model.updatedAt = at;
+            model.sentAt = at;
 
             if (getOpeningComment(model).commentKind === "comment") {
               model.resolvedAt = at;

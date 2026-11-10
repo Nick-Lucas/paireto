@@ -87,6 +87,32 @@ export function noteStatus(comment: UmlComment): { meta: string; badge: string }
   return { meta: `${replies}${sent}`, badge: "" };
 }
 
+function partRank(part: UmlCommentLink, query: string): number {
+  const title = part.title.toLowerCase();
+  const name = part.scope === "file" ? title.slice(title.lastIndexOf("/") + 1) : title;
+  if (name.startsWith(query)) {
+    return 0;
+  }
+  if (title.split(/[^a-z0-9_$]+/).some((word) => word.startsWith(query))) {
+    return 1;
+  }
+  return title.includes(query) ? 2 : -1;
+}
+
+export function searchParts(
+  parts: readonly UmlCommentLink[],
+  query: string,
+  limit = 8,
+): UmlCommentLink[] {
+  const text = query.toLowerCase();
+  return parts
+    .map((part, index) => ({ part, index, rank: partRank(part, text) }))
+    .filter((hit) => hit.rank >= 0)
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .slice(0, limit)
+    .map((hit) => hit.part);
+}
+
 export function timeAgo(at: string, now: number): string {
   const minutes = Math.floor((now - Date.parse(at)) / 60000);
   if (minutes < 1) {
@@ -104,7 +130,7 @@ export function timeAgo(at: string, now: number): string {
 
 export type DiagramThread = Pick<
   ReviewThread,
-  "id" | "delivery" | "resolvedAt" | "items" | "diagram"
+  "id" | "delivery" | "resolvedAt" | "sentAt" | "items" | "diagram"
 >;
 
 export function diagramComments(threads: readonly DiagramThread[]): UmlComment[] {
@@ -114,14 +140,20 @@ export function diagramComments(threads: readonly DiagramThread[]): UmlComment[]
       return [];
     }
     const [opening, ...replies] = thread.items;
-    const items = thread.items.map((item) => ({
-      who:
+    const sentAt = thread.sentAt ?? "";
+    const items = thread.items.map((item) => {
+      const who =
         item.kind === "reply" && item.author.kind === "agent"
           ? ("agent" as const)
-          : ("you" as const),
-      body: item.body,
-      at: item.at,
-    }));
+          : ("you" as const);
+      return {
+        id: item.kind === "reply" ? item.id : thread.id,
+        sent: who === "agent" || thread.delivery === "sent" || item.at <= sentAt,
+        who,
+        body: item.body,
+        at: item.at,
+      };
+    });
     const readAt = diagram.readAt ?? "";
     return [
       {

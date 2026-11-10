@@ -70,7 +70,10 @@ export class UmlDiffPanel {
       this.memberLines,
       this.panel.webview.onDidReceiveMessage((msg: WebviewMessage) => void this.onMessage(msg)),
       this.panel.onDidDispose(() => this.dispose()),
-      this.review.onDidChangeState(() => this.schedule()),
+      this.review.onDidChangeState(() => {
+        this.postFeedback();
+        this.schedule();
+      }),
       this.seen.onDidChange(() => this.schedule()),
     );
   }
@@ -87,6 +90,18 @@ export class UmlDiffPanel {
 
   private post(message: HostMessage): void {
     void this.panel.webview.postMessage(message);
+  }
+
+  private postFeedback(): void {
+    if (this.ready) {
+      this.post({
+        type: "feedback",
+        feedback: {
+          waiting: this.review.isSessionActive(),
+          pending: this.review.getPendingComments().length,
+        },
+      });
+    }
   }
 
   private viewState(): UmlViewState {
@@ -133,6 +148,7 @@ export class UmlDiffPanel {
       case "ready":
         this.ready = true;
         this.post({ type: "init", state: this.viewState() });
+        this.postFeedback();
         this.post({ type: "loading", message: "Reading the changes…" });
         await this.rebuild();
         return;
@@ -205,6 +221,18 @@ export class UmlDiffPanel {
         return;
       case "readComment":
         this.review.readDiagramComment(msg.id);
+        return;
+      case "editReply":
+        this.review.editDiagramReply(msg.id, msg.body);
+        return;
+      case "deleteComment":
+        this.review.deleteDiagramComment(msg.id);
+        return;
+      case "sendFeedback":
+        await vscode.commands.executeCommand(Commands.gateSendFeedback);
+        return;
+      case "approve":
+        await vscode.commands.executeCommand(Commands.gateApprove);
         return;
       case "moveComment":
         this.review.moveDiagramComment(msg.id, msg.place);

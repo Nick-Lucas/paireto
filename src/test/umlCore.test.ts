@@ -33,6 +33,7 @@ import {
   diagramComments,
   diagramLink,
   noteStatus,
+  searchParts,
   timeAgo,
 } from "../uml/core/comments.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
@@ -1033,8 +1034,8 @@ suite("UML diff — comments on the diagram", () => {
         ],
         place: { typeId: SERVICE, x: 12, y: -30 },
         items: [
-          { who: "you", body: "Why two caches?", at },
-          { who: "you", body: "More", at },
+          { id: "d1", sent: true, who: "you", body: "Why two caches?", at },
+          { id: "d1#1", sent: true, who: "you", body: "More", at },
         ],
         unread: 0,
         waiting: true,
@@ -1081,6 +1082,44 @@ suite("UML diff — comments on the diagram", () => {
     assert.strictEqual(diagramComments([asked])[0].waiting, true);
   });
 
+  test("each message has an id to edit or delete it, and your messages say if they were sent", () => {
+    const at = (minute: number) => `2026-11-03T00:${String(minute).padStart(2, "0")}:00.000Z`;
+    const agent = { kind: "agent" as const, harness: "claudecode" as const };
+    const items = [
+      {
+        kind: "comment" as const,
+        commentKind: "question" as const,
+        body: "Why?",
+        quote: "",
+        at: at(1),
+      },
+      { id: "d1#1", kind: "reply" as const, author: agent, body: "Because", at: at(3) },
+      {
+        id: "d1#2",
+        kind: "reply" as const,
+        author: { kind: "reviewer" as const },
+        body: "Test it",
+        at: at(4),
+      },
+    ] as ReviewThread["items"];
+    const thread = { id: "d1", items, diagram: { title: "Not linked", links: [] } };
+    const shown = (over: object) =>
+      diagramComments([{ ...thread, delivery: "pending", ...over }])[0].items.map(
+        (item) => `${item.id} ${item.who} ${item.sent ? "sent" : "not sent"}`,
+      );
+    assert.deepStrictEqual(shown({ sentAt: at(2) }), [
+      "d1 you sent",
+      "d1#1 agent sent",
+      "d1#2 you not sent",
+    ]);
+    assert.deepStrictEqual(shown({}), ["d1 you not sent", "d1#1 agent sent", "d1#2 you not sent"]);
+    assert.deepStrictEqual(shown({ delivery: "sent", sentAt: at(2) }), [
+      "d1 you sent",
+      "d1#1 agent sent",
+      "d1#2 you sent",
+    ]);
+  });
+
   test("a note's head says if it is sent, if it waits for the agent, and how many replies are new", () => {
     const status = (over: Partial<UmlComment>) =>
       noteStatus(comment({ replies: 0, sent: false, unread: 0, waiting: false, ...over }));
@@ -1102,6 +1141,31 @@ suite("UML diff — comments on the diagram", () => {
       badge: "",
     });
     assert.deepStrictEqual(status({ replies: 1 }), { meta: "1 reply · not sent", badge: "" });
+  });
+
+  test("typing @ finds parts to link: names that start with the text come first", () => {
+    const parts: UmlCommentLink[] = [
+      { scope: "type", title: "ReviewController", typeIds: ["r"] },
+      { scope: "member", title: "UmlModelBuilder.build", typeIds: ["u"], memberId: "b" },
+      { scope: "type", title: "BuiltModel", typeIds: ["b"] },
+      { scope: "file", title: "src/uml/modelBuilder.ts", typeIds: ["u"], fileKey: "f" },
+      { scope: "group", title: "UmlModelBuilder and 10 linked types", typeIds: ["u", "b"] },
+    ];
+    const titles = (query: string, limit?: number) =>
+      searchParts(parts, query, limit).map((part) => part.title);
+    assert.deepStrictEqual(titles("bui"), [
+      "BuiltModel",
+      "UmlModelBuilder.build",
+      "src/uml/modelBuilder.ts",
+      "UmlModelBuilder and 10 linked types",
+    ]);
+    assert.deepStrictEqual(titles("modelb"), [
+      "src/uml/modelBuilder.ts",
+      "UmlModelBuilder.build",
+      "UmlModelBuilder and 10 linked types",
+    ]);
+    assert.deepStrictEqual(titles("", 2), ["ReviewController", "UmlModelBuilder.build"]);
+    assert.deepStrictEqual(titles("nothing"), []);
   });
 
   test("the time of a message is said in words, from now", () => {

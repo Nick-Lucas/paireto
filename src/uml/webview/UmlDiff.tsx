@@ -34,6 +34,7 @@ import type {
 } from "../core/model";
 import {
   DEFAULT_VIEW_STATE,
+  type FeedbackState,
   type HostMessage,
   type UmlViewState,
   type WebviewMessage,
@@ -61,6 +62,50 @@ const vscode = acquireVsCodeApi();
 
 const elk = new ELK();
 const TOAST_MS = 7000;
+
+function FeedbackControls({
+  feedback,
+  onSend,
+  onApprove,
+}: {
+  feedback: FeedbackState;
+  onSend(): void;
+  onApprove(): void;
+}) {
+  const notSent = `${feedback.pending} not sent`;
+  if (!feedback.waiting) {
+    return feedback.pending > 0 ? (
+      <span className="feedback-state" role="status">
+        <span className="status-dot" aria-hidden />
+        {`${notSent}. They go at the agent's next review.`}
+      </span>
+    ) : null;
+  }
+  return (
+    <span className="feedback-state" role="status">
+      <span className="muted">The agent is waiting for your review</span>
+      {feedback.pending > 0 ? (
+        <button
+          type="button"
+          className="button"
+          title={`Send the ${feedback.pending} messages that are not sent to the agent`}
+          onClick={onSend}
+        >
+          {`Send Feedback · ${feedback.pending}`}
+        </button>
+      ) : (
+        <button
+          type="button"
+          className="button secondary"
+          title="Let the agent go on with no changes"
+          onClick={onApprove}
+        >
+          Approve
+        </button>
+      )}
+    </span>
+  );
+}
 
 function layoutKey(
   view: FocusedView,
@@ -1259,6 +1304,7 @@ export function UmlDiff() {
   const findRef = useRef<HTMLInputElement>(null);
   const [hoverRelation, setHoverRelation] = useState<string | undefined>();
   const [toast, setToast] = useState<string | undefined>();
+  const [feedback, setFeedback] = useState<FeedbackState>({ waiting: false, pending: 0 });
   const [draft, setDraft] = useState<Draft | undefined>();
   const [noteRequest, setNoteRequest] = useState(0);
   const measure = useMemo(() => createMeasure(), []);
@@ -1289,6 +1335,9 @@ export function UmlDiff() {
           return;
         case "loading":
           setLoading(msg.message);
+          return;
+        case "feedback":
+          setFeedback(msg.feedback);
           return;
         case "model":
           modelRef.current = msg.model;
@@ -1514,7 +1563,7 @@ export function UmlDiff() {
         event.metaKey ||
         event.ctrlKey ||
         event.altKey ||
-        target?.closest("input, textarea, select, .draft-note, .thread-popup, .context-menu")
+        target?.closest("input, textarea, select, .thread-popup, .context-menu")
       ) {
         return;
       }
@@ -1645,24 +1694,24 @@ export function UmlDiff() {
         noteRequest={noteRequest}
         onDraft={setDraft}
         onAddComment={(added, body) => {
-          if (added.id) {
-            vscode.postMessage({
-              type: "editComment",
-              id: added.id,
-              kind: added.kind,
-              body,
-              links: added.links,
-            });
-          } else {
-            vscode.postMessage({ type: "addComment", kind: added.kind, body, links: added.links });
-          }
+          vscode.postMessage({ type: "addComment", kind: added.kind, body, links: added.links });
           setDraft(undefined);
           showToast(
-            added.id
-              ? "Note saved. It goes to the agent with Send Feedback."
-              : "Note added to the diagram. It goes to the agent with Send Feedback.",
+            `${added.kind === "question" ? "Question" : "Comment"} saved. It goes to the agent with Send Feedback.`,
           );
         }}
+        onEditComment={(id, kind, body) => {
+          const links = model?.comments.find((c) => c.id === id)?.links ?? [];
+          vscode.postMessage({ type: "editComment", id, kind, body, links });
+          showToast("Change saved. It goes to the agent with Send Feedback.");
+        }}
+        onEditReply={(id, body) => {
+          vscode.postMessage({ type: "editReply", id, body });
+          showToast("Change saved. It goes to the agent with Send Feedback.");
+        }}
+        onDeleteComment={(id) => vscode.postMessage({ type: "deleteComment", id })}
+        onSendFeedback={() => vscode.postMessage({ type: "sendFeedback" })}
+        feedback={feedback}
         onOpenComment={(id) => vscode.postMessage({ type: "openComment", id })}
         onResolveComment={(id) => vscode.postMessage({ type: "resolveComment", id })}
         onLinkComment={(id, link) => vscode.postMessage({ type: "linkComment", id, link })}
@@ -1701,6 +1750,11 @@ export function UmlDiff() {
             <Icon name="down" />
           </button>
           <span className="spacer" />
+          <FeedbackControls
+            feedback={feedback}
+            onSend={() => vscode.postMessage({ type: "sendFeedback" })}
+            onApprove={() => vscode.postMessage({ type: "approve" })}
+          />
           <button
             type="button"
             className="icon-button refresh-button"

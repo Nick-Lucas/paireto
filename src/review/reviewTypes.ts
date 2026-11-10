@@ -50,6 +50,7 @@ export interface ReviewThread extends ThreadItems {
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
+  sentAt?: string;
   sourceDocument?: { uri: string; markdown: string };
   attachment?: {
     group: FileGroup;

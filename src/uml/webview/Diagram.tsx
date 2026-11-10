@@ -27,7 +27,8 @@ import {
   type NoteLayout,
   type Point,
 } from "../core/layout";
-import { linksTitle, sameLink } from "../core/comments";
+import { linksTitle, sameLink, searchParts } from "../core/comments";
+import type { FeedbackState } from "../core/protocol";
 import type {
   NotePlace,
   UmlCommentLink,
@@ -42,18 +43,17 @@ import {
   ContextMenu,
   DRAFT_HEIGHT,
   DRAFT_WIDTH,
-  DraftNote,
   draftPlace,
+  frameLink,
   linkAt,
   NoteView,
   targetLink,
-  THREAD_WIDTH,
-  ThreadPopup,
   type CommentKind,
   type Draft,
   type LinkHit,
   type MenuState,
 } from "./notes";
+import { NewThread, THREAD_WIDTH, ThreadPopup, type ThreadActions } from "./thread";
 import {
   describeMember,
   describeType,
@@ -111,6 +111,11 @@ export interface DiagramProps {
   onMoveComment(id: string, place: NotePlace): void;
   onReplyComment(id: string, body: string): void;
   onReadComment(id: string): void;
+  onEditComment(id: string, kind: CommentKind, body: string): void;
+  onEditReply(itemId: string, body: string): void;
+  onDeleteComment(itemId: string): void;
+  onSendFeedback(): void;
+  feedback: FeedbackState;
 }
 
 interface Moving {
@@ -961,6 +966,22 @@ function Markers() {
           <path d="M1,1.5 L11,6 L1,10.5" className="marker-arrow" />
         </marker>
       ))}
+      {["comment", "question", "lit"].map((kind) => (
+        <marker
+          key={`n-${kind}`}
+          id={`m-note-${kind}`}
+          className={`marker note-${kind}`}
+          viewBox="0 0 10 10"
+          refX={9}
+          refY={5}
+          markerWidth={9}
+          markerHeight={9}
+          markerUnits="userSpaceOnUse"
+          orient="auto"
+        >
+          <path d="M1,1 L9,5 L1,9 Z" className="marker-note" />
+        </marker>
+      ))}
     </defs>
   );
 }
@@ -993,6 +1014,11 @@ export function Diagram({
   onMoveComment,
   onReplyComment,
   onReadComment,
+  onEditComment,
+  onEditReply,
+  onDeleteComment,
+  onSendFeedback,
+  feedback,
 }: DiagramProps) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -1000,6 +1026,7 @@ export function Diagram({
   const [linking, setLinking] = useState<Linking | undefined>();
   const [moving, setMoving] = useState<Moving | undefined>();
   const [thread, setThread] = useState<{ id: string; left: boolean } | undefined>();
+  const [litLink, setLitLink] = useState<{ from: string; index: number } | undefined>();
   const moveRef = useRef<Moving | undefined>(undefined);
   const justMoved = useRef<string | undefined>(undefined);
   const [zoom, setZoom] = useState(1);
@@ -1027,6 +1054,26 @@ export function Diagram({
     [model],
   );
   const items = useMemo(() => buildFocusItems(layout), [layout]);
+  const parts = useMemo(
+    () =>
+      [
+        ...model.types
+          .filter((type) => !type.context)
+          .flatMap((type) => [
+            targetLink(model, { kind: "type", typeId: type.id }),
+            ...type.members.map((member) =>
+              targetLink(model, { kind: "member", typeId: type.id, memberId: member.id }),
+            ),
+          ]),
+        ...model.files
+          .filter((file) => file.status !== "context")
+          .map((file) => targetLink(model, { kind: "file", fileKey: file.key })),
+        ...layout.containers
+          .filter((container) => container.kind === "group")
+          .map((container) => frameLink(model, container)),
+      ].filter((link): link is UmlCommentLink => !!link),
+    [model, layout],
+  );
   const tabTarget = useMemo(() => {
     if (selection && items.some((item) => sameTarget(item.target, selection))) {
       return selection;
@@ -1386,15 +1433,25 @@ export function Diagram({
     return { x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y };
   }, [toDiagram]);
 
+  const threadSide = useCallback(
+    (box: Box) => {
+      const view = visibleBox();
+      const room = view ? view.x + view.width - (box.x + box.width) : Infinity;
+      return room * zoom < THREAD_WIDTH + 24;
+    },
+    [visibleBox, zoom],
+  );
+
   const newDraft = useCallback(
-    (kind: CommentKind, hit: LinkHit | undefined, point: Point) => {
-      onDraft({
-        kind,
-        links: hit ? [hit.link] : [],
-        ...draftPlace(layout, nearBox(hit), point, visibleBox()),
+    (hit: LinkHit | undefined, point: Point) => {
+      const place = draftPlace(layout, nearBox(hit), point, visibleBox());
+      onDraft({ kind: "comment", links: hit ? [hit.link] : [], ...place });
+      setThread({
+        id: "draft",
+        left: threadSide({ ...place, width: DRAFT_WIDTH, height: DRAFT_HEIGHT }),
       });
     },
-    [layout, nearBox, onDraft, visibleBox],
+    [layout, nearBox, onDraft, visibleBox, threadSide],
   );
 
   const addLink = useCallback(
@@ -1416,27 +1473,9 @@ export function Diagram({
   const showThread = useCallback(
     (note: NoteLayout) => {
       setMenu(undefined);
-      const view = visibleBox();
-      const room = view ? view.x + view.width - (note.x + note.width) : Infinity;
-      setThread({ id: note.id, left: room * zoom < THREAD_WIDTH + 24 });
+      setThread({ id: note.id, left: threadSide(note) });
     },
-    [visibleBox, zoom],
-  );
-
-  const editNote = useCallback(
-    (note: NoteLayout) => {
-      setMenu(undefined);
-      setThread(undefined);
-      onDraft({
-        id: note.id,
-        kind: note.comment.kind,
-        body: note.comment.body,
-        links: note.comment.links,
-        x: note.x,
-        y: note.y,
-      });
-    },
-    [onDraft],
+    [threadSide],
   );
 
   const openMenu = (element: Element | null, client: Point) => {
@@ -1471,7 +1510,6 @@ export function Diagram({
         title: `${kind} on ${linksTitle(note.comment.links)}`,
         items: [
           { label: "Show thread", run: () => showThread(note) },
-          { label: "Edit", run: () => editNote(note) },
           {
             label: "Link to a type, member or frame…",
             run: () =>
@@ -1483,13 +1521,10 @@ export function Diagram({
       return;
     }
     const hit = linkAt(element, model, layout);
-    const items = [
-      { label: "Add comment", run: () => newDraft("comment", hit, point) },
-      { label: "Add question", run: () => newDraft("question", hit, point) },
-    ];
+    const items = [{ label: "Add comment", run: () => newDraft(hit, point) }];
     if (draft && hit && !draft.links.some((held) => sameLink(held, hit.link))) {
       items.push({
-        label: draft.id ? "Link the note you are editing here" : "Link the new note here",
+        label: "Link the new comment here",
         run: () => addLink("draft", hit.link),
       });
     }
@@ -1550,7 +1585,7 @@ export function Diagram({
     const element = selection && elements.current.get(targetKey(selection));
     const rect = element?.getBoundingClientRect();
     const hit = link && rect && linkAt(element ?? null, model, layout);
-    newDraft("comment", hit, toDiagram({ x: rect?.right ?? 0, y: rect?.top ?? 0 }));
+    newDraft(hit, toDiagram({ x: rect?.right ?? 0, y: rect?.top ?? 0 }));
   }, [noteRequest, selection, model, layout, newDraft, toDiagram]);
 
   const notes = useMemo(() => {
@@ -1558,12 +1593,16 @@ export function Diagram({
       return layout.notes;
     }
     return layout.notes.map((note): NoteLayout => {
-      if (note.id !== moving.id) {
+      if (note.id !== moving.id || !moving.moved) {
         return note;
       }
       const at = { ...note, x: moving.x, y: moving.y };
       const home = noteHome(at, layout.containers);
-      return { ...at, home, links: noteLinks({ ...at, home }, note.comment.links, layout) };
+      return {
+        ...at,
+        home,
+        links: moving.held ? noteLinks({ ...at, home }, note.comment.links, layout) : [],
+      };
     });
   }, [layout, moving]);
 
@@ -1656,7 +1695,7 @@ export function Diagram({
 
   const shownDraft =
     draft && moving?.id === "draft" ? { ...draft, x: moving.x, y: moving.y } : draft;
-  const shownNotes = draft?.id ? notes.filter((note) => note.id !== draft.id) : notes;
+  const shownNotes = notes;
   const threadNote = thread && shownNotes.find((note) => note.id === thread.id);
   const threadComment = thread && model.comments.find((c) => c.id === thread.id);
   const threadId = thread?.id;
@@ -1665,7 +1704,6 @@ export function Diagram({
       onReadComment(threadId);
     }
   }, [threadId, onReadComment]);
-  const closeThread = useCallback(() => setThread(undefined), []);
 
   const draftBox = {
     x: shownDraft?.x ?? 0,
@@ -1674,7 +1712,57 @@ export function Diagram({
     height: DRAFT_HEIGHT,
     home: "",
   };
-  const draftLines = shownDraft ? noteLinks(draftBox, shownDraft.links, { ...layout, notes }) : [];
+  const draftDragging = moving?.id === "draft" && moving.moved && !moving.held;
+  const draftLines =
+    shownDraft && !draftDragging ? noteLinks(draftBox, shownDraft.links, { ...layout, notes }) : [];
+  const ghostNote: NoteLayout | undefined = shownDraft && {
+    id: "draft",
+    comment: {
+      id: "draft",
+      kind: shownDraft.kind,
+      body: "",
+      replies: 0,
+      sent: false,
+      items: [],
+      unread: 0,
+      waiting: false,
+      links: shownDraft.links,
+    },
+    x: shownDraft.x,
+    y: shownDraft.y,
+    width: DRAFT_WIDTH,
+    height: DRAFT_HEIGHT,
+    lines: ["Type in the thread…"],
+    home: "",
+    links: [],
+  };
+  const threadActions = (id: string, note: Box): ThreadActions => ({
+    nameOf: (typeId) => types.get(typeId)?.name ?? typeId,
+    searchParts: (query) => searchParts(parts, query),
+    onMention: (link) => addLink(id, link),
+    onHoverLink: (index) => setLitLink(index === undefined ? undefined : { from: id, index }),
+    onShowLink: (link) => {
+      const target: Target =
+        link.scope === "file" && link.fileKey
+          ? { kind: "file", fileKey: link.fileKey }
+          : link.scope === "member" && link.memberId
+            ? { kind: "member", typeId: link.typeIds[0], memberId: link.memberId }
+            : { kind: "type", typeId: link.typeIds[0] };
+      onSelect(target);
+      reveal(target, false);
+    },
+    onLink: () => startLink(id, { x: note.x + note.width, y: note.y + note.height / 2 }, true),
+    onUnlink: (index) =>
+      id === "draft"
+        ? draft && onDraft({ ...draft, links: draft.links.filter((_, i) => i !== index) })
+        : onUnlinkComment(id, index),
+    onClose: () => {
+      setThread(undefined);
+      if (id === "draft") {
+        onDraft(undefined);
+      }
+    },
+  });
 
   const onKey = useCallback(
     (event: ReactKeyboardEvent, target: Target) => {
@@ -1982,7 +2070,7 @@ export function Diagram({
                   return (
                     <g
                       key={`${from}:${line.index}:${order}`}
-                      className={`note-line kind-${kind}`}
+                      className={`note-line kind-${kind}${litLink?.from === from && litLink.index === line.index ? " is-lit" : ""}`}
                       data-note-link={from}
                       data-link-index={line.index}
                     >
@@ -2082,11 +2170,6 @@ export function Diagram({
                         showThread(note);
                       }
                     }}
-                    onEdit={() => {
-                      if (justMoved.current !== note.id) {
-                        editNote(note);
-                      }
-                    }}
                     onStartMove={(from) => startMove(note.id, { x: note.x, y: note.y }, from)}
                     onNudge={(dx, dy) => nudge(note, dx * NUDGE, dy * NUDGE)}
                     onResolve={onResolveComment}
@@ -2100,6 +2183,34 @@ export function Diagram({
                     onStartLink={(id, from) => startLink(id, from, false)}
                   />
                 ))}
+                {ghostNote && (
+                  <NoteView
+                    key="draft"
+                    note={ghostNote}
+                    measure={measure}
+                    ghost
+                    moving={moving?.id === "draft" && moving.moved}
+                    onShow={() => {
+                      if (ghostNote) {
+                        setThread({ id: "draft", left: threadSide(ghostNote) });
+                      }
+                    }}
+                    onStartMove={(from) =>
+                      draft && startMove("draft", { x: draft.x, y: draft.y }, from)
+                    }
+                    onNudge={(dx, dy) =>
+                      draft &&
+                      onDraft({
+                        ...draft,
+                        x: Math.max(0, draft.x + dx * NUDGE),
+                        y: Math.max(0, draft.y + dy * NUDGE),
+                      })
+                    }
+                    onResolve={() => onDraft(undefined)}
+                    onMenu={() => undefined}
+                    onStartLink={(_, from) => startLink("draft", from, false)}
+                  />
+                )}
               </g>
               <g className="role-labels">
                 {[...rolePlaces].map(([id, place]) => {
@@ -2165,17 +2276,22 @@ export function Diagram({
                 </g>
               )}
             </svg>
-            {draft && (
-              <DraftNote
-                key={draft.id ?? "new"}
-                draft={shownDraft ?? draft}
-                moving={moving?.id === "draft" && moving.moved}
-                onStartMove={(from) => startMove("draft", { x: draft.x, y: draft.y }, from)}
-                zoom={zoom}
+            {thread?.id === "draft" && draft && ghostNote && (
+              <NewThread
+                kind={draft.kind}
+                links={draft.links}
+                left={
+                  thread.left
+                    ? ghostNote.x * zoom - THREAD_WIDTH - 12
+                    : (ghostNote.x + ghostNote.width) * zoom + 12
+                }
+                top={ghostNote.y * zoom}
+                actions={threadActions("draft", ghostNote)}
                 onKind={(kind) => onDraft({ ...draft, kind })}
-                onDone={(body) => onAddComment(draft, body)}
-                onCancel={() => onDraft(undefined)}
-                onStartLink={(from) => startLink("draft", from, false)}
+                onPost={(body) => {
+                  setThread(undefined);
+                  onAddComment(draft, body);
+                }}
               />
             )}
             {threadNote && threadComment && thread && (
@@ -2188,6 +2304,9 @@ export function Diagram({
                     : (threadNote.x + threadNote.width) * zoom + 12
                 }
                 top={threadNote.y * zoom}
+                linking={!!linking}
+                feedback={feedback}
+                actions={threadActions(threadNote.id, threadNote)}
                 onReply={(body) => onReplyComment(threadNote.id, body)}
                 onRead={readThread}
                 onResolve={() => {
@@ -2195,7 +2314,15 @@ export function Diagram({
                   onResolveComment(threadNote.id);
                 }}
                 onOpenEditor={() => onOpenComment(threadNote.id)}
-                onClose={closeThread}
+                onEditOpening={(kind, body) => onEditComment(threadNote.id, kind, body)}
+                onEditReply={onEditReply}
+                onDelete={(itemId) => {
+                  if (itemId === threadNote.id) {
+                    setThread(undefined);
+                  }
+                  onDeleteComment(itemId);
+                }}
+                onSendFeedback={onSendFeedback}
               />
             )}
           </div>
@@ -2261,7 +2388,9 @@ export function Diagram({
         <div className="link-hint" role="status">
           {linking.hit
             ? `Link to ${linking.hit.link.title}`
-            : "Drop on a type, a member or a frame. Esc cancels."}
+            : linking.sticky
+              ? "Click a type, a member, a frame or a file to link it. Esc to stop."
+              : "Drop on a type, a member, a frame or a file. Esc cancels."}
         </div>
       )}
       {menu && <ContextMenu menu={menu} onClose={() => setMenu(undefined)} />}

@@ -161,20 +161,22 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   file not seen again, after you confirm, so you can review from the start. When the list is folded
   away, the thin bar keeps a round Next change button and the seen count.
 - Comment on the design, not only on a line: right-click a member, a type or a frame and choose
-  **Add comment** or **Add question**. A UML note opens beside that part, linked to it. To link
-  the note to more parts, drag the dot on its edge onto a type, a member or a frame. A frame of
-  linked types can cover many files. You can also right-click an empty part of the diagram to
-  add a note with no link. The note shows on the diagram with a dashed line to each part it is
-  linked to; a note on linked types sits inside their frame. It goes to the agent with **Send
-  Feedback**, and the agent gets each part's file and line. Double-click a note, or select it
-  and press Enter, to edit its text, its kind and its links in place. Drag a note to move it, or
-  select it and press Alt and an arrow key; it stays beside the type it is linked to. The dashed
-  lines go round the boxes and keep off the other lines. When the agent answers, the note shows
-  a badge such as **1 new reply**. Click the note to show its thread beside it: read the
-  replies, reply to the agent, resolve the note, or open the thread in the editor. Your reply
-  goes to the agent with **Send Feedback**. Right-click a note to link it to more parts or to
-  resolve it, and right-click a dashed line to remove that link. A resolved note leaves the
-  diagram.
+  **Add comment**. A new note opens beside that part with its thread, as in Copilot Chat: type
+  in the box, pick **Comment** or **Question**, and post it. The parts the note is linked to
+  show as chips beside **Link a part…** under the text. To link one, type **@** and pick a type,
+  a member, a file or a frame from the list; or click **Link a part…** and then the part on the
+  diagram; or drag the dot on the note's edge onto it. However you link it, its chip shows there
+  at once, also in the reply box of the note's thread. A frame of linked types can cover
+  many files. Right-click an empty part of the diagram to add a note with no link. The note
+  shows on the diagram with a dashed arrow to each part it is linked to; the arrows go round
+  the boxes and keep off the other lines, and pointing at a chip in the thread lights its arrow. Click a note to show its thread: read the agent's replies,
+  reply, edit or delete your messages (an edit happens in place: ⌘↵ saves, Esc cancels), see
+  which parts it is linked to, resolve it, or open it in the editor. A badge such as **1 new reply** shows when the agent answers. Drag a note to
+  move it, or select it and press Alt and an arrow key; it stays beside the type it is linked
+  to, and its arrows are drawn again when you let go. Drag the thread window by its title to move
+  it out of the way. Posting, replying and editing only save; each of your messages shows **not sent** until
+  you press **Send Feedback**, which is also at the top of the diagram while the agent waits
+  for your review. A resolved note leaves the diagram.
 - Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep
   moving. The centre button centres the selection. **Fit all** (F) zooms out until the whole
   diagram is on screen.

@@ -17,8 +17,14 @@ export const DEFAULT_VIEW_STATE: UmlViewState = {
   changesWidth: 260,
 };
 
+export interface FeedbackState {
+  waiting: boolean;
+  pending: number;
+}
+
 export type HostMessage =
   | { type: "init"; state: UmlViewState }
+  | { type: "feedback"; feedback: FeedbackState }
   | { type: "loading"; message: string }
   | { type: "model"; model: UmlModel }
   | { type: "error"; message: string };
@@ -45,5 +51,9 @@ export type WebviewMessage =
       body: string;
       links: UmlCommentLink[];
     }
+  | { type: "editReply"; id: string; body: string }
+  | { type: "deleteComment"; id: string }
+  | { type: "sendFeedback" }
+  | { type: "approve" }
   | { type: "openComment"; id: string }
   | { type: "resolveComment"; id: string };

@@ -97,6 +97,8 @@ export interface NotePlace {
 }
 
 export interface UmlCommentItem {
+  id: string;
+  sent: boolean;
   who: "you" | "agent";
   body: string;
   at: string;
