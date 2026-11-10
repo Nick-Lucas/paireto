@@ -66,6 +66,22 @@ export const FEEDBACK_REPLY_GUIDELINES = [
     "asks for instead.",
 ];
 
+export const GET_CHANGES_SNIPPET =
+  "List the connected VS Code window's Compare To, repos, changed files and units";
+
+export const GET_CHANGES_GUIDELINES = [
+  "Call paireto_get_changes first when the user asks to visualize the changes, and read only " +
+    "what its Compare To covers.",
+];
+
+export const SHOW_VIZ_SNIPPET =
+  "Show a diagram of how the changes fit together in the connected VS Code window";
+
+export const SHOW_VIZ_GUIDELINES = [
+  "Call paireto_show_viz after paireto_get_changes and after you read the diffs. On rejection, " +
+    "fix every error and call it again. Never delete elements to pass.",
+];
+
 export const TRUNCATION_NOTICE =
   "[Paireto truncated this result to keep it inside the tool output limit. Ask the reviewer to " +
   "split the feedback if anything is missing.]";

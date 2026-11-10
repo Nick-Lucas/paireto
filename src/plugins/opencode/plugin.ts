@@ -32,6 +32,13 @@ import {
   FEEDBACK_REPLY_TOOL_NAME,
   FeedbackReplyArgs,
 } from "../core/mcp/feedbackTools.js";
+import { VizArgs } from "../../protocol/viz.js";
+import {
+  GET_CHANGES_TOOL_DESCRIPTION,
+  GET_CHANGES_TOOL_NAME,
+  SHOW_VIZ_TOOL_DESCRIPTION,
+  SHOW_VIZ_TOOL_NAME,
+} from "../core/mcp/vizTools.js";
 import { createBridge } from "./bridge.js";
 import { handleEvent, maybeRunStopGate, switchAgent } from "./dispatch.js";
 import {
@@ -276,6 +283,45 @@ export const PairetoOpenCode = async ({ worktree, client, directory }: PluginInp
             sessionId: sessionID,
             feedbackId: args.feedbackId,
             message: args.message,
+          });
+          if (!response) {
+            return REVIEW_UNAVAILABLE;
+          }
+          return response.message;
+        },
+      },
+
+      [GET_CHANGES_TOOL_NAME]: {
+        description: GET_CHANGES_TOOL_DESCRIPTION,
+        args: {},
+        execute: async (_args: unknown, ctx: ToolContext) => {
+          const sessionID = typeof ctx?.sessionID === "string" ? ctx.sessionID : undefined;
+          const response = await bridge.gate({
+            t: "changes.describe.request",
+            cwd: bridge.repoRoot,
+            repoRoot: bridge.repoRoot,
+            harness: "opencode",
+            sessionId: sessionID,
+          });
+          if (!response) {
+            return REVIEW_UNAVAILABLE;
+          }
+          return response.message;
+        },
+      },
+
+      [SHOW_VIZ_TOOL_NAME]: {
+        description: SHOW_VIZ_TOOL_DESCRIPTION,
+        args: VizArgs.shape,
+        execute: async (args: VizArgs, ctx: ToolContext) => {
+          const sessionID = typeof ctx?.sessionID === "string" ? ctx.sessionID : undefined;
+          const response = await bridge.gate({
+            t: "viz.show.request",
+            cwd: bridge.repoRoot,
+            repoRoot: bridge.repoRoot,
+            harness: "opencode",
+            sessionId: sessionID,
+            viz: args,
           });
           if (!response) {
             return REVIEW_UNAVAILABLE;

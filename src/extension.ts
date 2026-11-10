@@ -419,6 +419,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         msg.sessionId,
       );
     },
+    onChangesDescribe: (msg) => {
+      warnForeignRepo(msg.repoRoot);
+      return viz.describeChanges(msg);
+    },
+    onVizShow: (msg) => {
+      warnForeignRepo(msg.repoRoot);
+      return viz.show(msg);
+    },
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => {
       agents.detachSession(sessionId);

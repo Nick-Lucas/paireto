@@ -15,6 +15,7 @@ import {
   truncateToolText,
 } from "../plugins/pi/automation.js";
 import { TRUNCATION_NOTICE } from "../plugins/pi/text.js";
+import { VizArgs } from "../protocol/viz.js";
 
 suite("pi plan mode", () => {
   test("blocks the file-mutating built-ins while a plan is awaiting approval", () => {
@@ -84,6 +85,11 @@ suite("pi tool schemas", () => {
       "summary",
     ]);
     assert.deepStrictEqual(schema.required, ["changesets"]);
+  });
+
+  test("the viz tool advertises the shared payload", () => {
+    const schema = toolSchema(VizArgs);
+    assert.deepStrictEqual(schema.required, ["title", "summary", "level", "lanes", "nodes"]);
   });
 
   test("a string enum stays a JSON-Schema enum, which every provider accepts", () => {

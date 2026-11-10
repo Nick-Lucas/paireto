@@ -20,6 +20,15 @@ import {
   runPlanReview,
 } from "./planReviewTool.js";
 import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME, runReview } from "./reviewTool.js";
+import { VizArgs } from "../../../protocol/viz.js";
+import {
+  GET_CHANGES_TOOL_DESCRIPTION,
+  GET_CHANGES_TOOL_NAME,
+  runGetChanges,
+  runShowViz,
+  SHOW_VIZ_TOOL_DESCRIPTION,
+  SHOW_VIZ_TOOL_NAME,
+} from "./vizTools.js";
 import {
   FEEDBACK_REPLY_TOOL_DESCRIPTION,
   FEEDBACK_REPLY_TOOL_NAME,
@@ -100,6 +109,20 @@ export function createMcpServer(adapter: McpHarnessAdapter): McpServer {
         args,
         adapter.noTargetMessage,
       ),
+  );
+
+  server.registerTool(GET_CHANGES_TOOL_NAME, { description: GET_CHANGES_TOOL_DESCRIPTION }, () =>
+    runGetChanges(adapter.resolveReviewTarget(), adapter.harness, adapter.noTargetMessage),
+  );
+
+  server.registerTool(
+    SHOW_VIZ_TOOL_NAME,
+    {
+      description: SHOW_VIZ_TOOL_DESCRIPTION,
+      inputSchema: VizArgs.shape,
+    },
+    (args) =>
+      runShowViz(adapter.resolveReviewTarget(), adapter.harness, args, adapter.noTargetMessage),
   );
 
   return server;

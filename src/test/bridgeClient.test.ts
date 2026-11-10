@@ -30,12 +30,14 @@ suite("plugin bridge client", () => {
 
   test("response tags cover every request tag", () => {
     assert.deepStrictEqual(Object.keys(RESPONSE_TAG).sort(), [
+      "changes.describe.request",
       "feedback.reply.request",
       "guided.review.await.request",
       "plan.review.hook.request",
       "plan.review.tool.request",
       "review.await.request",
       "stop.gate.request",
+      "viz.show.request",
     ]);
   });
 

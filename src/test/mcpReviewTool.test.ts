@@ -21,6 +21,7 @@ import {
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
 import { type Harness, PLUGIN_VERSION } from "../protocol/types.js";
 import { FEEDBACK_REPLY_TOOL_NAME, runFeedbackReply } from "../plugins/core/mcp/feedbackTools.js";
+import { GET_CHANGES_TOOL_NAME, SHOW_VIZ_TOOL_NAME } from "../plugins/core/mcp/vizTools.js";
 import { ackWith, startServer } from "./fakeBridgeServer.js";
 
 suite("MCP paireto_review tool", () => {
@@ -202,7 +203,7 @@ suite("MCP paireto_plan_review tool exposure", () => {
   };
 
   /** Every harness can answer feedback, so this rides alongside whatever else it is given. */
-  const FEEDBACK_TOOLS = [FEEDBACK_REPLY_TOOL_NAME];
+  const FEEDBACK_TOOLS = [FEEDBACK_REPLY_TOOL_NAME, GET_CHANGES_TOOL_NAME, SHOW_VIZ_TOOL_NAME];
 
   test("Kiro gets the plan-review tool", async () => {
     assert.deepStrictEqual(

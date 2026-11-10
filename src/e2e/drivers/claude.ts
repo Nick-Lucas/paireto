@@ -52,6 +52,8 @@ const PRE_APPROVED_TOOLS = [
   "mcp__plugin_paireto_bridge__paireto_start_guided_review",
   "mcp__plugin_paireto_bridge__paireto_reply_to_feedback",
   "mcp__plugin_paireto_bridge__paireto_resolve_feedback",
+  "mcp__plugin_paireto_bridge__paireto_get_changes",
+  "mcp__plugin_paireto_bridge__paireto_show_viz",
   "Write",
   "Edit",
 ];
