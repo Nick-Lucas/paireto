@@ -13,7 +13,7 @@ Use the comparison the user asks for. If they do not specify one then default to
 
 ## 2. Read the changes
 
-`git diff --stat` for that comparison, then the diffs themselves. Do not judge a file by its name/directory only.
+`git diff --stat` for that comparison, then the diffs themselves. If the comparison includes the working tree, also run `git status --short`: `git diff` does not show untracked files, and they are changes too. Read them in full. Do not judge a file by its name/directory only.
 
 ## 3. Group them
 
