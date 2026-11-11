@@ -18,6 +18,7 @@ import { parseVizRef } from "../model/refs";
 import type { RfGraph } from "../model/rf";
 import type { UiAction, UiState } from "../model/ui";
 import { NODE_TYPES } from "./nodes";
+import { ZOOM_KEY } from "./platform";
 import { EDGE_TYPES } from "./VizEdge";
 import { reducedMotion } from "./vscode";
 import "./canvas.css";
@@ -122,6 +123,10 @@ export function Canvas(props: CanvasProps) {
         elementsSelectable
         selectNodesOnDrag={false}
         zoomOnDoubleClick={false}
+        panOnScroll
+        panOnScrollSpeed={1}
+        zoomOnScroll={false}
+        zoomActivationKeyCode={ZOOM_KEY}
         attributionPosition="top-right"
         onNodeClick={(_, node) => select(node.id)}
         onEdgeClick={(_, edge) => select(edge.id)}

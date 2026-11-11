@@ -2,6 +2,7 @@ import type { VizIndex } from "../model/index";
 import { KEY_BINDINGS } from "../model/keymap";
 import type { UiAction, UiState } from "../model/ui";
 import { UiIcon } from "./icons";
+import { ZOOM_KEY_LABEL } from "./platform";
 import "./overlays.css";
 
 interface OverlayProps {
@@ -153,7 +154,8 @@ export function HelpOverlay({ ui, dispatch }: Pick<OverlayProps, "ui" | "dispatc
           ))}
         </dl>
         <p className="viz-inspector__hint">
-          Drag to pan, scroll to zoom. Click a part, connection or step to inspect it.
+          Scroll or drag to pan. Pinch or hold {ZOOM_KEY_LABEL} and scroll to zoom. Click a part,
+          connection or step to inspect it.
         </p>
       </div>
     </div>
