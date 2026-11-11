@@ -47,13 +47,13 @@ RUN sed -i 's|URIs: http://|URIs: https://|' /etc/apt/sources.list.d/debian.sour
 RUN npm install -g pnpm@11.21.0
 
 # --- Harness CLIs for the E2E suite, pinned here and bumped by `pnpm bump-harnesses`. ---
-ARG CLAUDE_CODE_VERSION=2.1.310
-ARG CODEX_VERSION=0.164.0
-ARG OPENCODE_VERSION=1.19.4
-ARG PI_VERSION=1.4.0
-ARG KIRO_VERSION=2.34.0
-ARG KIRO_SHA256_ARM64=2cd2610eaf3080e349578c7dff6e054b74f20075c15e53afe01a65c8349200e2
-ARG KIRO_SHA256_AMD64=877b6fc99182c1a789719141306ff19019c047eaf500d19f2b812f925dd0f913
+ARG CLAUDE_CODE_VERSION=2.1.322
+ARG CODEX_VERSION=0.167.1
+ARG OPENCODE_VERSION=1.19.5
+ARG PI_VERSION=1.5.2
+ARG KIRO_VERSION=3.1.0
+ARG KIRO_SHA256_ARM64=1a65bd74602b7a8d32ca45937bbfbb3a320f25e8807eecf611935dc2983c969d
+ARG KIRO_SHA256_AMD64=6f43c9ca9811d1ef2d4b47148667243b5af2d4aaea7cdef3e9a6af1c10d4c8ba
 ARG TARGETARCH
 
 RUN npm install -g \
@@ -63,9 +63,6 @@ RUN npm install -g \
     && npm install -g --ignore-scripts "@earendil-works/pi-coding-agent@${PI_VERSION}" \
     && pi --version
 
-# Every kiro-cli* binary is linked, not just the entry point: `kiro-cli chat` re-execs its sibling
-# `kiro-cli-chat` BY NAME through PATH (2.18.1 split chat and term out of the single binary), so
-# linking the entry point alone leaves every chat session dying with "os error 2" before it starts.
 RUN case "$TARGETARCH" in \
       arm64) kiro_zip=kirocli-aarch64-linux-musl.zip; kiro_sha256="$KIRO_SHA256_ARM64" ;; \
       amd64) kiro_zip=kirocli-x86_64-linux.zip; kiro_sha256="$KIRO_SHA256_AMD64" ;; \
@@ -75,14 +72,9 @@ RUN case "$TARGETARCH" in \
     && curl -fsSL -o "$kiro_tmp/$kiro_zip" "https://prod.download.cli.kiro.dev/stable/${KIRO_VERSION}/$kiro_zip" \
     && echo "$kiro_sha256  $kiro_tmp/$kiro_zip" | sha256sum -c - \
     && unzip -q "$kiro_tmp/$kiro_zip" -d "$kiro_tmp" \
-    && KIRO_CLI_SKIP_SETUP=1 "$kiro_tmp/kirocli/install.sh" \
+    && "$kiro_tmp/kirocli/install.sh" --global \
     && rm -rf "$kiro_tmp" \
-    && test -x /root/.local/bin/kiro-cli \
-    && for bin in /root/.local/bin/kiro-cli*; do \
-         ln -sf "$bin" "/usr/local/bin/$(basename "$bin")"; \
-       done \
-    && kiro-cli --version \
-    && command -v kiro-cli-chat >/dev/null
+    && kiro-cli --version
 
 # OpenCode installs the plugin SDK (@opencode-ai/plugin) from npm at runtime, which credential-free
 # `check` runs cannot do. Without it our plugin advertises paireto_submit_plan with no `plan`
