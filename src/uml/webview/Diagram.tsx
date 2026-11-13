@@ -52,6 +52,7 @@ import {
   type Draft,
   type LinkHit,
   type MenuState,
+  type ShowNote,
 } from "./notes";
 import { NewThread, THREAD_WIDTH, ThreadPopup, type ThreadActions } from "./thread";
 import {
@@ -102,9 +103,9 @@ export interface DiagramProps {
   onOverview(overview: boolean): void;
   draft?: Draft;
   noteRequest: number;
+  showNote?: ShowNote;
   onDraft(draft: Draft | undefined): void;
   onAddComment(draft: Draft, body: string): void;
-  onOpenComment(id: string): void;
   onResolveComment(id: string): void;
   onLinkComment(id: string, link: UmlCommentLink): void;
   onUnlinkComment(id: string, index: number): void;
@@ -1005,9 +1006,9 @@ export function Diagram({
   onOverview,
   draft,
   noteRequest,
+  showNote,
   onDraft,
   onAddComment,
-  onOpenComment,
   onResolveComment,
   onLinkComment,
   onUnlinkComment,
@@ -1477,6 +1478,22 @@ export function Diagram({
     },
     [threadSide],
   );
+
+  const shownNote = useRef(0);
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    const note = showNote && layout.notes.find((n) => n.id === showNote.id);
+    if (!showNote || showNote.seq === shownNote.current || !note || !viewport) {
+      return;
+    }
+    shownNote.current = showNote.seq;
+    const offset = svgOffset(viewport);
+    viewport.scrollTo({
+      left: (note.x + note.width / 2) * zoom + offset.x - viewport.clientWidth / 2,
+      top: (note.y + note.height / 2) * zoom + offset.y - viewport.clientHeight / 2,
+    });
+    showThread(note);
+  }, [showNote, layout, zoom, svgOffset, showThread]);
 
   const openMenu = (element: Element | null, client: Point) => {
     const point = toDiagram(client);
@@ -2313,7 +2330,6 @@ export function Diagram({
                   setThread(undefined);
                   onResolveComment(threadNote.id);
                 }}
-                onOpenEditor={() => onOpenComment(threadNote.id)}
                 onEditOpening={(kind, body) => onEditComment(threadNote.id, kind, body)}
                 onEditReply={onEditReply}
                 onDelete={(itemId) => {

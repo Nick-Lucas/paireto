@@ -40,7 +40,7 @@ import {
   type WebviewMessage,
 } from "../core/protocol";
 import { Diagram } from "./Diagram";
-import type { Draft } from "./notes";
+import type { Draft, ShowNote } from "./notes";
 import { Icon } from "./icons";
 import { createMeasure } from "./measure";
 import {
@@ -1307,6 +1307,7 @@ export function UmlDiff() {
   const [feedback, setFeedback] = useState<FeedbackState>({ waiting: false, pending: 0 });
   const [draft, setDraft] = useState<Draft | undefined>();
   const [noteRequest, setNoteRequest] = useState(0);
+  const [showNote, setShowNote] = useState<ShowNote>();
   const measure = useMemo(() => createMeasure(), []);
   const mainRef = useRef<HTMLDivElement>(null);
   const mainAreaRef = useRef<HTMLElement>(null);
@@ -1338,6 +1339,9 @@ export function UmlDiff() {
           return;
         case "feedback":
           setFeedback(msg.feedback);
+          return;
+        case "showNote":
+          setShowNote((shown) => ({ id: msg.id, seq: (shown?.seq ?? 0) + 1 }));
           return;
         case "model":
           modelRef.current = msg.model;
@@ -1692,6 +1696,7 @@ export function UmlDiff() {
         onOverview={onOverview}
         draft={draft}
         noteRequest={noteRequest}
+        showNote={showNote}
         onDraft={setDraft}
         onAddComment={(added, body) => {
           vscode.postMessage({ type: "addComment", kind: added.kind, body, links: added.links });
@@ -1712,7 +1717,6 @@ export function UmlDiff() {
         onDeleteComment={(id) => vscode.postMessage({ type: "deleteComment", id })}
         onSendFeedback={() => vscode.postMessage({ type: "sendFeedback" })}
         feedback={feedback}
-        onOpenComment={(id) => vscode.postMessage({ type: "openComment", id })}
         onResolveComment={(id) => vscode.postMessage({ type: "resolveComment", id })}
         onLinkComment={(id, link) => vscode.postMessage({ type: "linkComment", id, link })}
         onUnlinkComment={(id, index) => vscode.postMessage({ type: "unlinkComment", id, index })}

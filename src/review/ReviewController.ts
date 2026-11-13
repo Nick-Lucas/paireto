@@ -1931,25 +1931,6 @@ export class ReviewController implements vscode.Disposable {
     return !!this.feedback?.amendThread(id, (thread) => placeDiagramThread(thread, place));
   }
 
-  async openDiagramComment(id: string): Promise<void> {
-    const model = this.getComments().find((item) => item.id === id);
-    const entry = this.feedback?.commentFor(id);
-    if (!model?.diagram) {
-      return;
-    }
-    const uri = this.feedbackUri(model);
-    const doc = await vscode.workspace.openTextDocument(uri);
-    await vscode.languages.setTextDocumentLanguage(doc, "markdown");
-    await vscode.window.showTextDocument(doc, {
-      viewColumn: vscode.ViewColumn.Beside,
-      preview: true,
-    });
-    if (entry?.thread) {
-      entry.thread.collapsibleState = vscode.CommentThreadCollapsibleState.Expanded;
-    }
-    void ensureCommentingVisible();
-  }
-
   resolveComment(id: string): void {
     this.setResolved(id, true);
   }
@@ -2068,6 +2049,10 @@ export class ReviewController implements vscode.Disposable {
   private async revealComment(id: string): Promise<void> {
     const entry = this.feedback?.commentFor(id);
     if (!entry?.thread) {
+      return;
+    }
+    if (this.getComments().some((model) => model.id === id && model.diagram)) {
+      await vscode.commands.executeCommand(Commands.reviewOpenUml, { note: id });
       return;
     }
     await this.refresh("reveal-comment");

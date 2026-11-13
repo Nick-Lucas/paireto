@@ -533,17 +533,17 @@
       ],
       "view/item/context": [
         {
-          "command": "paireto.review.pickCompareTo",
+          "command": "paireto.review.openUml",
           "when": "view == paireto.main && viewItem =~ /^section:files/",
           "group": "inline@1"
         },
         {
-          "command": "paireto.review.pickViewMode",
+          "command": "paireto.review.pickCompareTo",
           "when": "view == paireto.main && viewItem =~ /^section:files/",
           "group": "inline@2"
         },
         {
-          "command": "paireto.review.openUml",
+          "command": "paireto.review.pickViewMode",
           "when": "view == paireto.main && viewItem =~ /^section:files/",
           "group": "inline@3"
         },
@@ -744,11 +744,6 @@
         }
       ],
       "view/title": [
-        {
-          "command": "paireto.review.openUml",
-          "when": "view == paireto.main",
-          "group": "navigation@2"
-        },
         {
           "command": "paireto.review.refresh",
           "when": "view == paireto.main",

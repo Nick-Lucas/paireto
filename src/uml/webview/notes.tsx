@@ -17,6 +17,11 @@ import type { Target } from "./targets";
 
 export type CommentKind = "comment" | "question";
 
+export interface ShowNote {
+  id: string;
+  seq: number;
+}
+
 export interface Draft {
   kind: CommentKind;
   links: UmlCommentLink[];

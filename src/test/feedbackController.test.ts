@@ -14,6 +14,7 @@ import type { CommentSession, GateComment } from "../comments/CommentSession.js"
 import type { CommentKind } from "../comments/kinds.js";
 import type { ChangesModel } from "../git/DiffService.js";
 import type { FeedbackRef } from "../git/gitCli.js";
+import { Commands } from "../config.js";
 import { PlanReviewController } from "../plan/PlanReviewController.js";
 import { INCLUDE_FILE_COMMENTS } from "../plan/planCodeFeedback.js";
 import { type RefreshReason, ReviewController } from "../review/ReviewController.js";
@@ -22,6 +23,7 @@ import {
   type FeedbackContext,
   type FeedbackHost,
 } from "../review/feedback/FeedbackSession.js";
+import { diagramThread } from "../review/diagramComments.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 import gitCli = require("../git/gitCli.js");
 import feedbackId = require("../review/feedbackId.js");
@@ -333,6 +335,35 @@ suite("review controller feedback", () => {
 
     assert.strictEqual(c.getComments()[0].line, 1, "the anchor found its new line");
     assert.strictEqual(model.line, 0, "the earlier snapshot is untouched");
+  });
+
+  test("revealing a diagram comment opens the UML Diff at its note, not a document", async () => {
+    const { c, session } = await withFeedback({
+      refresh: async () => {},
+      changesFor: () => undefined,
+    });
+    const id = "note-1";
+    await session.add(
+      diagramThread({
+        id,
+        at: "2026-08-12T20:00:00.000Z",
+        kind: "question",
+        body: "Why here?",
+        uri: `paireto-changeset:/Builder.md?diagram=${id}`,
+        repoRoot: REPO,
+        anchor: { title: "Builder", links: [] },
+      }),
+    );
+    const run = mock.method(vscode.commands, "executeCommand", async () => undefined);
+    const show = mock.method(vscode.window, "showTextDocument");
+
+    await c.revealComment(id);
+
+    assert.deepStrictEqual(
+      run.mock.calls.map((call) => call.arguments),
+      [[Commands.reviewOpenUml, { note: id }]],
+    );
+    assert.strictEqual(show.mock.callCount(), 0);
   });
 
   test("restored diff addresses use this window", () => {

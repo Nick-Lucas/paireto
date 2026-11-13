@@ -22,9 +22,15 @@ const REBUILD_DELAY_MS = 250;
 export class UmlDiffPanel {
   private static current: UmlDiffPanel | undefined;
 
-  static show(context: vscode.ExtensionContext, review: ReviewController, seen: SeenFiles): void {
+  static show(
+    context: vscode.ExtensionContext,
+    review: ReviewController,
+    seen: SeenFiles,
+    note?: string,
+  ): void {
     if (UmlDiffPanel.current) {
       UmlDiffPanel.current.panel.reveal();
+      UmlDiffPanel.current.showNote(note);
       return;
     }
     const panel = vscode.window.createWebviewPanel(
@@ -39,6 +45,20 @@ export class UmlDiffPanel {
     );
     panel.iconPath = vscode.Uri.joinPath(context.extensionUri, "media", "paireto.svg");
     UmlDiffPanel.current = new UmlDiffPanel(panel, context, review, seen);
+    UmlDiffPanel.current.showNote(note);
+  }
+
+  private noteToShow: string | undefined;
+
+  private showNote(note: string | undefined): void {
+    if (!note) {
+      return;
+    }
+    if (this.ready) {
+      this.post({ type: "showNote", id: note });
+    } else {
+      this.noteToShow = note;
+    }
   }
 
   private readonly disposables: vscode.Disposable[] = [];
@@ -151,6 +171,8 @@ export class UmlDiffPanel {
         this.postFeedback();
         this.post({ type: "loading", message: "Reading the changes…" });
         await this.rebuild();
+        this.showNote(this.noteToShow);
+        this.noteToShow = undefined;
         return;
       case "refresh":
         this.builder.clearCaches();
@@ -236,9 +258,6 @@ export class UmlDiffPanel {
         return;
       case "moveComment":
         this.review.moveDiagramComment(msg.id, msg.place);
-        return;
-      case "openComment":
-        await this.review.openDiagramComment(msg.id);
         return;
       case "resolveComment":
         this.review.resolveComment(msg.id);

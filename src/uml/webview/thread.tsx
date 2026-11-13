@@ -288,7 +288,16 @@ function Composer({
               return;
             }
           }
-          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+          if (event.key === "Enter" && event.ctrlKey && !event.metaKey) {
+            event.preventDefault();
+            event.stopPropagation();
+            document.execCommand("insertText", false, "\n");
+          } else if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.altKey &&
+            !event.nativeEvent.isComposing
+          ) {
             event.preventDefault();
             event.stopPropagation();
             submit();
@@ -352,8 +361,8 @@ function Composer({
           aria-label={submitLabel}
           title={
             variant === "edit"
-              ? "Save the change (⌘↵). Esc cancels."
-              : `${submitLabel} (⌘↵). It is saved in the review and goes to the agent with Send Feedback.`
+              ? "Save the change (Enter). Shift+Enter adds a line. Esc cancels."
+              : `${submitLabel} (Enter). Shift+Enter adds a line. It is saved in the review and goes to the agent with Send Feedback.`
           }
           disabled={disabled || !body.trim()}
           onClick={submit}
@@ -584,7 +593,6 @@ export function ThreadPopup({
   onReply,
   onRead,
   onResolve,
-  onOpenEditor,
   onEditOpening,
   onEditReply,
   onDelete,
@@ -599,7 +607,6 @@ export function ThreadPopup({
   onReply(body: string): void;
   onRead(): void;
   onResolve(): void;
-  onOpenEditor(): void;
   onEditOpening(kind: CommentKind, body: string): void;
   onEditReply(itemId: string, body: string): void;
   onDelete(itemId: string): void;
@@ -677,15 +684,6 @@ export function ThreadPopup({
         <button
           type="button"
           className="thread-icon"
-          aria-label="Open the thread in the editor"
-          title="Open in editor"
-          onClick={onOpenEditor}
-        >
-          <Icon name="open" />
-        </button>
-        <button
-          type="button"
-          className="thread-icon"
           aria-label="Resolve the thread"
           title="Resolve"
           onClick={onResolve}
@@ -726,7 +724,7 @@ export function ThreadPopup({
                 onCancel={() => setEditing(undefined)}
               />
               <div className="thread-hint">
-                {`Editing. ⌘↵ saves, Esc cancels.${item.sent ? " This was sent: saving marks it not sent again." : ""}`}
+                {`Editing. Enter saves, Shift+Enter adds a line, Esc cancels.${item.sent ? " This was sent: saving marks it not sent again." : ""}`}
               </div>
             </div>
           ) : (

@@ -167,8 +167,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(Commands.openWelcome, () =>
       WelcomePanel.show(context, installStatus),
     ),
-    vscode.commands.registerCommand(Commands.reviewOpenUml, () =>
-      UmlDiffPanel.show(context, reviewController, seenFiles),
+    vscode.commands.registerCommand(Commands.reviewOpenUml, (arg?: { note?: string }) =>
+      UmlDiffPanel.show(context, reviewController, seenFiles, arg?.note),
     ),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
     vscode.commands.registerCommand(Commands.gateApprove, () =>

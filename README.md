@@ -112,9 +112,9 @@ Use the **View Modes** button on the section to pick the layout (tree or flat) a
 ## UML Diff
 
 **UML Diff** shows the Compare To comparison as a UML class diagram, so you can see the structure and
-impact of a change before you read the code. Open it with the type-hierarchy button in the Paireto
-view's title bar, on the Changed Files row, or in the title bar of any Paireto diff. You can also run
-`Paireto: Open UML Diff`.
+impact of a change before you read the code. Open it with the type-hierarchy button on the Changed
+Files row, next to its name, or in the title bar of any Paireto diff. You can also run `Paireto: Open
+UML Diff`.
 
 - Classes, interfaces, enums and structs show their fields and methods with UML relationship lines:
   generalization, realization, association (with multiplicity) and dependency. Files with only
@@ -147,6 +147,7 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   one line, it changes to two lines: Show and Find on top, Filter and View below.
   A box shows its six largest changes; "show all" opens the rest. Selecting or opening never moves
   the boxes.
+
 - **Where the changes are** sits beside the diagram. It lists the changed types, largest first,
   with their largest members. Click a row to go to it in the diagram; double-click to open its
   diff. Drag the left edge to resize the list (double-click the edge to reset it), or fold it away
@@ -170,11 +171,11 @@ view's title bar, on the Changed Files row, or in the title bar of any Paireto d
   many files. Right-click an empty part of the diagram to add a note with no link. The note
   shows on the diagram with a dashed arrow to each part it is linked to; the arrows go round
   the boxes and keep off the other lines, and pointing at a chip in the thread lights its arrow. Click a note to show its thread: read the agent's replies,
-  reply, edit or delete your messages (an edit happens in place: ⌘↵ saves, Esc cancels), see
-  which parts it is linked to, resolve it, or open it in the editor. A badge such as **1 new reply** shows when the agent answers. Drag a note to
+  reply, edit or delete your messages (an edit happens in place: Enter saves, Esc cancels), see
+  which parts it is linked to, or resolve it. A click on the note's row in the Feedback list opens the UML Diff at the note, with its thread open. A badge such as **1 new reply** shows when the agent answers. Drag a note to
   move it, or select it and press Alt and an arrow key; it stays beside the type it is linked
   to, and its arrows are drawn again when you let go. Drag the thread window by its title to move
-  it out of the way. Posting, replying and editing only save; each of your messages shows **not sent** until
+  it out of the way. In the send box, Enter posts and Shift+Enter or Ctrl+Enter adds a line. Posting, replying and editing only save; each of your messages shows **not sent** until
   you press **Send Feedback**, which is also at the top of the diagram while the agent waits
   for your review. A resolved note leaves the diagram.
 - Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep

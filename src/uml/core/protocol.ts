@@ -27,6 +27,7 @@ export type HostMessage =
   | { type: "feedback"; feedback: FeedbackState }
   | { type: "loading"; message: string }
   | { type: "model"; model: UmlModel }
+  | { type: "showNote"; id: string }
   | { type: "error"; message: string };
 
 export type WebviewMessage =
@@ -55,5 +56,4 @@ export type WebviewMessage =
   | { type: "deleteComment"; id: string }
   | { type: "sendFeedback" }
   | { type: "approve" }
-  | { type: "openComment"; id: string }
   | { type: "resolveComment"; id: string };
