@@ -2,6 +2,7 @@ var B = 0.625;
 var b = function (n) { return +(n * B).toFixed(6); };
 var TL = {
   fps: 30,
+  intro: 1,
   duration: b(72),
   bpm: 96,
   scenes: {
@@ -15,8 +16,8 @@ var TL = {
   },
   hook: [
     [0, b(0), "Agents"], [0, b(0.5), "do"], [0, b(1), "80%", "hi"], [0, b(1.5), "of the"], [0, b(2), "work."],
-    [1, b(3), "What’s"], [1, b(3.5), "left"], [1, b(4), "is"],
-    [2, b(5), "understanding,", "hi"], [3, b(6), "judgement,", "hi"], [4, b(7), "and coherence.", "hi"],
+    [1, b(3), "What’s left is", "track", b(1) + 0.32],
+    [2, b(5), "understanding", "hi"], [3, b(6), "judgement", "hi"], [4, b(7), "coherence", "hi"],
   ],
   hookAttr: b(8),
   s2: { parrot: b(12), word: b(12.5), tag: b(13), chips: b(14.5) },

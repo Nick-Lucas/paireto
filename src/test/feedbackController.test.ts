@@ -17,6 +17,7 @@ import type { FeedbackRef } from "../git/gitCli.js";
 import { Commands } from "../config.js";
 import { PlanReviewController } from "../plan/PlanReviewController.js";
 import { INCLUDE_FILE_COMMENTS } from "../plan/planCodeFeedback.js";
+import { RepoWriteQueue } from "../review/indexWrites.js";
 import { type RefreshReason, ReviewController } from "../review/ReviewController.js";
 import {
   FeedbackSession,
@@ -96,6 +97,7 @@ function build(overrides: Record<string, unknown> = {}): Controller {
       repositoryStates: new Map(),
       lastFeedbackRef: new Map(),
       prunedComments: new Map(),
+      indexWrites: new RepoWriteQueue(),
       roots: { gitRoots: [] },
     },
     overrides,

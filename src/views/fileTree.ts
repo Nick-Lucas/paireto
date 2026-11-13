@@ -65,3 +65,15 @@ function toEntries<F extends { path: string }>(node: MutFolder<F>, prefix: strin
     .map((file) => ({ type: "file", file }));
   return [...folders, ...fileEntries];
 }
+
+export function sortByDirectory<F extends { path: string }>(files: F[]): F[] {
+  const split = (file: F): [string, string] => {
+    const slash = file.path.lastIndexOf("/");
+    return [file.path.slice(0, Math.max(slash, 0)), file.path.slice(slash + 1)];
+  };
+  return files.slice().sort((a, b) => {
+    const [aDir, aName] = split(a);
+    const [bDir, bName] = split(b);
+    return aDir.localeCompare(bDir) || aName.localeCompare(bName);
+  });
+}

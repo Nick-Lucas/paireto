@@ -10,11 +10,13 @@ import { tabUri } from "./gate/tabs.js";
 import type { RepoService } from "./git/RepoService.js";
 import type { PlanReviewController } from "./plan/PlanReviewController.js";
 import type { ReviewController } from "./review/ReviewController.js";
+import type { MainTreeProvider } from "./views/MainTreeProvider.js";
 import type { AddCommentArgs, InspectGuided, InspectSnapshot } from "./e2e/inspectTypes.js";
 
 export interface TestControlPlaneDeps {
   agents: AgentSessionService;
   coordinator: GateCoordinator;
+  mainTree: MainTreeProvider;
   planReview: PlanReviewController;
   reviewController: ReviewController;
   repoService: RepoService;
@@ -87,6 +89,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       refreshCounts: deps.reviewController.getRefreshCounts(),
       compareTo: review.compareTo,
       openDiffs: deps.reviewController.openDiffRows(),
+      treeSelection: deps.mainTree.selectedFilePaths(),
       repositories: review.repositories.map((repository) => ({
         repoRoot: repository.repoRoot,
         compareRef: repository.changes.compareRef,

@@ -32,11 +32,17 @@ import type { AgentInstallStatus } from "../welcome/AgentInstallStatus.js";
 import type { SetupPrompt } from "../welcome/installStatus.js";
 import type { AgentSession } from "../agents/AgentSession.js";
 import type { AgentState, ChangesMode, FileGroup } from "../types.js";
-import { buildDelta, stagingFlags, type DeltaFile, type StageState } from "../review/delta.js";
+import {
+  buildDelta,
+  deletedFromDisk,
+  stagingFlags,
+  type DeltaFile,
+  type StageState,
+} from "../review/delta.js";
 import type { SeenFiles } from "../review/SeenFiles.js";
 import { repoKey } from "../protocol/paths.js";
 import { describeCompareTo } from "../protocol/guidedReview.js";
-import { buildFileTree, filesInEntry, type TreeEntry } from "./fileTree.js";
+import { buildFileTree, filesInEntry, sortByDirectory, type TreeEntry } from "./fileTree.js";
 
 // Status indicator: a coloured letter (A/M/D/R/C/U) in git's status colours, rendered as a
 // per-status SVG so the colour stays on the indicator only (a FileDecoration would tint the whole
@@ -65,6 +71,23 @@ function statusIcon(
     light: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-light.svg`),
     dark: vscode.Uri.joinPath(extensionUri, "media", "status", `${variant}-dark.svg`),
   };
+}
+
+const COMMITTED_STATUS_COLOR: Record<FileStatus, string> = {
+  A: "gitDecoration.addedResourceForeground",
+  M: "gitDecoration.modifiedResourceForeground",
+  D: "gitDecoration.deletedResourceForeground",
+  R: "gitDecoration.renamedResourceForeground",
+  C: "gitDecoration.renamedResourceForeground",
+  U: "gitDecoration.untrackedResourceForeground",
+  "!": "gitDecoration.conflictingResourceForeground",
+};
+
+function committedIcon(status: FileStatus): vscode.ThemeIcon {
+  return new vscode.ThemeIcon(
+    GROUP_ICON.committed.icon,
+    new vscode.ThemeColor(COMMITTED_STATUS_COLOR[status]),
+  );
 }
 
 type SectionId = "agents" | "plan" | "changesets" | "files" | "feedback";
@@ -203,6 +226,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   readonly onDidChangeTreeData = this.emitter.event;
   private readonly subs: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
+  private readonly deletedPaths = new WeakMap<RepositoryChangesModel, Set<string>>();
 
   constructor(
     private readonly agents: AgentSessionService,
@@ -269,6 +293,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     );
     this.updateBadge();
     return this.view;
+  }
+
+  selectedFilePaths(): string[] {
+    return (this.view?.selection ?? []).flatMap((node) => {
+      switch (node.kind) {
+        case "file":
+          return [node.file.path];
+        case "deltaFile":
+          return [node.delta.path];
+        default:
+          return [];
+      }
+    });
   }
 
   /** Refresh the activity-bar badge: the changed-file count, like the Git tab. */
@@ -476,7 +513,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "changeset":
         return changesetItem(node.repoRoot, node.changeset);
       case "changesetFile":
-        return changesetFileItem(node.repoRoot, node.row, this.extensionUri);
+        return changesetFileItem(
+          node.repoRoot,
+          node.row,
+          this.extensionUri,
+          !!node.row.file && this.isDeletedFromDisk(node.row.file),
+        );
       case "repository": {
         const item = new vscode.TreeItem(
           node.repository.displayName,
@@ -497,14 +539,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "deltaFolder": {
         const { mode } = this.review.getState();
         const files = filesInEntry(node.entry);
-        const item = new vscode.TreeItem(node.entry.name, vscode.TreeItemCollapsibleState.Expanded);
-        item.id = `deltaFolder:${repoKey(node.repoRoot)}:${node.entry.path}`;
+        const checkbox = mode === "review" ? this.checkboxFor(files) : undefined;
+        const seen = checkbox === vscode.TreeItemCheckboxState.Checked;
+        const item = new vscode.TreeItem(
+          node.entry.name,
+          seen
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.Expanded,
+        );
+        item.id = `deltaFolder:${repoKey(node.repoRoot)}:${node.entry.path}${seen ? ":seen" : ""}`;
         item.resourceUri = vscode.Uri.file(path.join(node.repoRoot, node.entry.path));
         item.iconPath = vscode.ThemeIcon.Folder;
         item.contextValue = deltaContainerContext("deltaFolder", mode, files);
-        if (mode === "review") {
-          item.checkboxState = this.checkboxFor(files);
-        }
+        item.checkboxState = checkbox;
         return item;
       }
       case "deltaFile":
@@ -535,7 +582,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return item;
       }
       case "file":
-        return fileItem(node.file, this.extensionUri);
+        return fileItem(node.file, this.extensionUri, this.isDeletedFromDisk(node.file));
       case "agent": {
         const entry = this.coordinator.entryForSession(node.session.sessionId);
         const gate = entry
@@ -710,7 +757,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         return [placeholder("No changes")];
       }
       return layout === "flat"
-        ? deltas.map((delta) => ({ kind: "deltaFile", delta }) as Node)
+        ? sortByDirectory(deltas).map((delta) => ({ kind: "deltaFile", delta }) as Node)
         : buildFileTree(deltas).map((e) => deltaEntryToNode(e, repository.repoRoot));
     }
     const { changes, repoRoot } = repository;
@@ -732,7 +779,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const changes = this.repository(repoRoot)?.changes ?? emptyChanges();
     const files = changes[group];
     if (layout === "flat") {
-      return files.map((file) => ({ kind: "file", file }) as Node);
+      return sortByDirectory(files).map((file) => ({ kind: "file", file }) as Node);
     }
     return buildFileTree(files).map((e) => entryToNode(e, repoRoot, group));
   }
@@ -747,6 +794,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const seen = files.filter((file) => this.seen.isSeen(file)).length;
     const progress = `${seen}/${files.length} seen`;
     return compare ? `${compare} · ${progress}` : progress;
+  }
+
+  private isDeletedFromDisk(file: RepoChangedFile): boolean {
+    const changes = this.repository(file.repoRoot)?.changes;
+    if (!changes) {
+      return file.status === "D";
+    }
+    let deleted = this.deletedPaths.get(changes);
+    if (!deleted) {
+      deleted = deletedFromDisk(changes);
+      this.deletedPaths.set(changes, deleted);
+    }
+    return deleted.has(file.path);
   }
 
   private repository(repoRoot: string): RepositoryReviewState | undefined {
@@ -875,16 +935,15 @@ const STAGE_LABEL: Record<StageState, string> = {
   committed: "Committed",
 };
 
+const DELETED_FLAG = ":deleted";
+
 export function stageIcon(
   delta: DeltaFile,
   extensionUri: vscode.Uri,
 ): vscode.ThemeIcon | { light: vscode.Uri; dark: vscode.Uri } {
   switch (delta.stage) {
     case "committed":
-      return new vscode.ThemeIcon(
-        GROUP_ICON.committed.icon,
-        new vscode.ThemeColor(GROUP_ICON.committed.color),
-      );
+      return committedIcon(delta.status);
     case "staged":
       return statusIcon(extensionUri, delta.status, "staged");
     case "partial":
@@ -910,7 +969,7 @@ export function deltaFileItem(
   const counts = `+${delta.additions} -${delta.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${delta.path}\n${statusWord(delta.status)} · ${counts}\n${STAGE_LABEL[delta.stage]}`;
-  item.contextValue = deltaContainerContext("deltaFile", mode, [delta]);
+  item.contextValue = `${deltaContainerContext("deltaFile", mode, [delta])}${delta.status === "D" ? DELETED_FLAG : ""}`;
   item.command = { command: Commands.reviewOpenDelta, title: "Open Changes", arguments: [delta] };
   if (mode === "review") {
     item.checkboxState = seen
@@ -1009,9 +1068,10 @@ function agentItem(
 
 /** `scope` namespaces the row id. The same file can legitimately appear under two changesets and in
  *  Changed Files, and VS Code rejects a tree with a duplicate TreeItem.id. */
-function fileItem(
+export function fileItem(
   file: RepoChangedFile,
   extensionUri: vscode.Uri,
+  deleted: boolean,
   scope = "changes",
 ): vscode.TreeItem {
   // Colour only the status indicator (a coloured letter, like git), leaving the filename default —
@@ -1023,7 +1083,7 @@ function fileItem(
   const counts = `+${file.additions} -${file.deletions}`;
   item.description = dir === "." ? counts : `${dir}  ${counts}`;
   item.tooltip = `${file.path}\n${statusWord(file.status)} · ${counts}`;
-  item.contextValue = `changedFile:${file.group}`;
+  item.contextValue = `changedFile:${file.group}${deleted ? DELETED_FLAG : ""}`;
   item.command = { command: Commands.reviewOpenDiff, title: "Open Diff", arguments: [file] };
   return item;
 }
@@ -1090,6 +1150,7 @@ export function changesetFileItem(
   repoRoot: string,
   row: GuidedFileRow,
   extensionUri: vscode.Uri,
+  deleted: boolean,
 ): vscode.TreeItem {
   if (!row.file) {
     // The plan named it but it has no change now (already committed away, reverted, or outside the
@@ -1102,18 +1163,12 @@ export function changesetFileItem(
     item.tooltip = `${row.path}\nNot in the current comparison`;
     return item;
   }
-  const item = fileItem(row.file, extensionUri, row.changesetId);
-  item.contextValue = `changedFile:${row.file.group}:planned`;
-  // The plan lists a file wherever it currently sits, so the row itself has to say which git layer
-  // that is — unlike Changed Files, where the group header already does. A committed change gets the
-  // commit glyph; the working tree keeps the usual coloured status letter, and the index the same
-  // letter muted, so staged reads as "already dealt with" without losing what changed.
+  const item = fileItem(row.file, extensionUri, deleted, row.changesetId);
+  item.contextValue = `changedFile:${row.file.group}:planned${deleted ? DELETED_FLAG : ""}`;
+
   item.iconPath =
     row.file.group === "committed"
-      ? new vscode.ThemeIcon(
-          GROUP_ICON.committed.icon,
-          new vscode.ThemeColor(GROUP_ICON.committed.color),
-        )
+      ? committedIcon(row.file.status)
       : statusIcon(
           extensionUri,
           row.file.status,

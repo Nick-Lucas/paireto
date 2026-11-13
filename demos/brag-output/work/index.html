@@ -64,8 +64,8 @@ body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antial
 .mid { flex: 1; display: flex; min-height: 0; }
 .ab { width: 52px; flex: none; background: var(--vs-side); border-right: 1px solid var(--vs-border); display: flex; flex-direction: column; align-items: center; padding-top: 6px; }
 .ab .ci, .ab img { font-size: 24px; color: #868686; height: 48px; width: 52px; display: flex; align-items: center; justify-content: center; }
-.ab .on { color: #d7d7d7; box-shadow: inset 2px 0 0 var(--vs-focus); }
-.ab .on img { width: 26px; height: 26px; }
+.ab .on { width: 40px; height: 40px; margin: 4px 0; border-radius: 6px; background: #37373d; display: flex; align-items: center; justify-content: center; }
+.ab .on img { width: 24px; height: 24px; }
 .sb { width: 400px; flex: none; background: var(--vs-side); border-right: 1px solid var(--vs-border); display: flex; flex-direction: column; }
 .sbh { height: 36px; display: flex; align-items: center; padding: 0 12px 0 20px; font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; color: #cccccc; justify-content: space-between; }
 .sbh .acts { display: flex; gap: 2px; color: #c5c5c5; font-size: 16px; align-items: center; }
@@ -76,8 +76,8 @@ body { font-family: var(--ui); color: var(--ink); -webkit-font-smoothing: antial
 .row .inl { margin-left: auto; display: flex; gap: 2px; color: #c5c5c5; font-size: 16px; }
 .row .inl .ta { width: 22px; height: 22px; }
 .row.hov { background: #2a2d2e; }
-.cb { width: 15px; height: 15px; border: 1px solid #6b6b6b; border-radius: 3px; margin-right: 6px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; color: transparent; }
-.cb.on { background: var(--vs-focus); border-color: var(--vs-focus); color: #fff; }
+.cb { width: 16px; height: 16px; box-sizing: border-box; border: 1px solid #5a5a5a; border-radius: 3px; background: #2b2b2b; margin-right: 6px; flex: none; display: flex; align-items: center; justify-content: center; font-family: codicon; line-height: 1; font-size: 14px; color: transparent; }
+.cb.on { color: #cccccc; }
 .rn { position: absolute; background: #252526; border: 1px solid #454545; border-radius: 4px; padding: 5px; width: 300px; box-shadow: 0 6px 20px rgba(0,0,0,0.55); z-index: 5; }
 .rn .in { height: 28px; border: 1px solid var(--vs-focus); background: #313131; border-radius: 2px; display: flex; align-items: center; padding: 0 6px; font-family: var(--mono); font-size: 15px; color: #e6e6e6; white-space: pre; }
 .rn .in .sl { background: #264f78; }
@@ -487,11 +487,12 @@ function vis(el, on) { el.style.display = on ? "" : "none"; }
 
 (function buildHook() {
   const lines = [$("#hl0"), $("#hl1"), $("#hl2"), $("#hl3"), $("#hl4")];
-  for (const [li, t, word, cls] of TL.hook) {
+  for (const [li, t, word, cls, d] of TL.hook) {
     const s = document.createElement("span");
     s.className = "w" + (cls ? " " + cls : "");
     s.textContent = word;
     s.dataset.t = t;
+    s.dataset.d = d ?? 0.32;
     lines[li].appendChild(s);
   }
 })();
@@ -500,6 +501,15 @@ function renderHook(t) {
   const [a, b] = S.s1;
   const out = eio(seg(t, b - 0.45, b));
   for (const w of $$("#s1 .w")) {
+    if (w.classList.contains("track")) {
+      const p = seg(t, +w.dataset.t, +w.dataset.t + +w.dataset.d);
+      const q = eo(p);
+      w.style.opacity = cl(eo(seg(p, 0, 0.45)));
+      w.style.letterSpacing = `${(1 - eo(p) ** 0.6) * 0.55}em`;
+      w.style.filter = `blur(${(1 - cl(p * 2.2)) * 6}px)`;
+      w.style.transform = `scale(${1.06 - 0.06 * q})`;
+      continue;
+    }
     const p = eo(seg(t, +w.dataset.t, +w.dataset.t + 0.32));
     const big = w.parentElement.classList.contains("big");
     const sc = big ? 0.6 + 0.4 * eback(seg(t, +w.dataset.t, +w.dataset.t + 0.4)) : 1;
@@ -918,11 +928,18 @@ function sceneAt(t) {
   return "s7";
 }
 
-window.render = function (t) {
+function renderAt(t) {
   const id = sceneAt(t);
   for (const k of Object.keys(S)) $("#" + k).style.display = k === id ? "block" : "none";
   ({ s1: renderHook, s2: renderReveal, s3: renderS3, s4: renderS4, s5: renderS5, s6: renderS6, s7: renderOutro })[id](t);
   renderCursor(t, id);
+  $("#s7").style.opacity = 1;
+}
+
+window.render = function (t) {
+  if (t >= TL.intro) return renderAt(t - TL.intro);
+  renderAt(TL.duration - 1);
+  $("#s7").style.opacity = 1 - eio(seg(t, TL.intro - 0.35, TL.intro));
 };
 
 window.ready = (async () => {
@@ -931,11 +948,11 @@ window.ready = (async () => {
   await Promise.all($$("img").map((i) => (i.complete ? 0 : new Promise((r) => (i.onload = i.onerror = r)))));
   for (const [id, spec] of Object.entries(CURSOR)) {
     const [a, b] = S[id];
-    render(b - 0.6);
+    renderAt(b - 0.6);
     const winR = $(`#${id} .win`).getBoundingClientRect();
     const pts = [[spec.start, winR.left + winR.width * 0.7, winR.top + winR.height * 0.75]];
     for (const [tt, sel, dx, dy] of spec.moves) {
-      render(tt);
+      renderAt(tt - 0.01);
       pts.push([tt, ...targetPoint(sel, dx, dy)]);
     }
     spec.pts = pts;
