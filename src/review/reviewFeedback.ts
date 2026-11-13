@@ -50,6 +50,15 @@ function location(item: ReviewThread, multiRepository: boolean): string {
   if (item.changeset) {
     return `Changeset "${item.changeset.title}"  ${kind}`;
   }
+  if (item.diagram) {
+    const parts = item.diagram.links
+      .flatMap((link) => link.targets)
+      .map(
+        (target) =>
+          `\n- ${target.name} at ${multiRepository ? join(target.repoRoot, target.filePath) : target.filePath}:${target.line + 1}`,
+      );
+    return `Class diagram: ${item.diagram.title}  ${kind}${parts.join("")}`;
+  }
   const filePath = multiRepository ? join(item.repoRoot, item.filePath) : item.filePath;
   return `${filePath}:${item.line + 1}  ${kind}`;
 }

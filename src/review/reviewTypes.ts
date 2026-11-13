@@ -13,12 +13,36 @@ export interface ReviewAnchor {
   lineHash: string;
 }
 
+export interface DiagramTarget {
+  repoRoot: string;
+  name: string;
+  filePath: string;
+  line: number;
+}
+
+export interface DiagramLink {
+  scope: "type" | "member" | "group" | "file";
+  title: string;
+  typeIds: string[];
+  memberId?: string;
+  fileKey?: string;
+  targets: DiagramTarget[];
+}
+
+export interface DiagramAnchor {
+  title: string;
+  links: DiagramLink[];
+  place?: { typeId?: string; x: number; y: number };
+  readAt?: string;
+}
+
 export interface ReviewThread extends ThreadItems {
   sourceUri?: string;
 
   repoRoot: string;
   filePath: string;
   changeset?: { id: string; title: string };
+  diagram?: DiagramAnchor;
   side: "base" | "modified";
   line: number; // 0-based on the side's document
   anchor: ReviewAnchor;
@@ -26,6 +50,7 @@ export interface ReviewThread extends ThreadItems {
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
+  sentAt?: string;
   sourceDocument?: { uri: string; markdown: string };
   attachment?: {
     group: FileGroup;

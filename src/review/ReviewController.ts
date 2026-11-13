@@ -77,7 +77,14 @@ import { serialiseRejectedReviewFeedback } from "./reviewFeedback.js";
 import { deleteFiles, newFile, rename } from "./fileOperations.js";
 import { dirtyTargetDocs, saveFailureMessage } from "./stageSaves.js";
 import { pickCompareTo, pickFileCompareTo, pickMultiCompareTo } from "./reviewSelectors.js";
-import { getOpeningComment, type ReviewThread } from "./reviewTypes.js";
+import {
+  diagramThread,
+  editDiagramThread,
+  placeDiagramThread,
+  readDiagramThread,
+  relinkDiagramThread,
+} from "./diagramComments.js";
+import { getOpeningComment, type DiagramAnchor, type ReviewThread } from "./reviewTypes.js";
 import {
   appendFeedbackReply,
   pendingFeedback,
@@ -279,7 +286,8 @@ export class ReviewController implements vscode.Disposable {
       { prompt: "Add a review comment", placeHolder: "Leave a comment for Claude" },
       (doc) =>
         doc.uri.scheme === Schemes.review ||
-        (doc.uri.scheme === Schemes.changeset && changesetIdFromDocUri(doc.uri) !== PLAN_DOC_ID) ||
+        (doc.uri.scheme === Schemes.changeset &&
+          ![undefined, PLAN_DOC_ID].includes(changesetIdFromDocUri(doc.uri))) ||
         (doc.uri.scheme === "file" && this.isChangedFileDoc(doc.uri)),
     );
 
@@ -1537,6 +1545,7 @@ export class ReviewController implements vscode.Disposable {
       suppressActiveDiffEvent?: boolean;
       keepTreeSelection?: boolean;
       ignoreSizeLimit?: boolean;
+      focus?: { side: "base" | "modified"; line: number };
     },
   ): Promise<OpenedReviewFile | undefined> {
     const seq = show?.suppressActiveDiffEvent ? undefined : ++this.openDiffSeq;
@@ -1648,6 +1657,7 @@ export class ReviewController implements vscode.Disposable {
     const modifiedLabel = editable ? "Working Tree" : GROUP_LABEL[file.group];
     const title = `${name} (${modifiedLabel} vs ${baseLabel})`;
 
+    const lineRange = (line: number) => new vscode.Range(line, 0, line, 0);
     const openSinglePane = async (paneUri: vscode.Uri): Promise<OpenedReviewFile> => {
       publish();
       if (paneUri.scheme === Schemes.review) {
@@ -1657,6 +1667,7 @@ export class ReviewController implements vscode.Disposable {
         preview: show?.preview ?? true,
         viewColumn: show?.viewColumn,
         preserveFocus: show?.preserveFocus,
+        selection: show?.focus ? lineRange(show.focus.line) : undefined,
       });
       this.syncActiveDiffContext();
       void ensureCommentingVisible();
@@ -1722,6 +1733,7 @@ export class ReviewController implements vscode.Disposable {
       preview: show?.preview ?? true,
       viewColumn: show?.viewColumn,
       preserveFocus: show?.preserveFocus,
+      selection: show?.focus?.side === "modified" ? lineRange(show.focus.line) : undefined,
     });
     this.syncActiveDiffContext();
     void ensureCommentingVisible();
@@ -1880,6 +1892,77 @@ export class ReviewController implements vscode.Disposable {
     return true;
   }
 
+  async addDiagramComment(
+    repoRoot: string,
+    anchor: DiagramAnchor,
+    kind: CommentKind,
+    body: string,
+  ): Promise<boolean> {
+    if (!body.trim() || !this.holdsFeedbackFor(repoRoot)) {
+      return false;
+    }
+    const id = await newFeedbackId();
+    const uri = vscode.Uri.from({
+      scheme: Schemes.changeset,
+      path: `/${anchor.title.replaceAll("/", "-")}.md`,
+      query: `diagram=${encodeURIComponent(id)}`,
+    });
+    const model = diagramThread({
+      id,
+      at: new Date().toISOString(),
+      kind,
+      body: body.trim(),
+      uri: uri.toString(),
+      repoRoot,
+      anchor,
+    });
+    if (!this.feedback?.add(model)) {
+      this.warnFeedbackClosed();
+      return false;
+    }
+    return true;
+  }
+
+  diagramAnchorOf(id: string): DiagramAnchor | undefined {
+    return this.getComments().find((item) => item.id === id)?.diagram;
+  }
+
+  relinkDiagramComment(id: string, anchor: DiagramAnchor): boolean {
+    return !!this.feedback?.amendThread(id, (thread) => relinkDiagramThread(thread, anchor));
+  }
+
+  editDiagramComment(id: string, kind: CommentKind, body: string, anchor: DiagramAnchor): boolean {
+    const at = new Date().toISOString();
+    return !!this.feedback?.amendThread(id, (thread) =>
+      editDiagramThread(thread, { kind, body, anchor, at }),
+    );
+  }
+
+  editDiagramReply(id: string, body: string): boolean {
+    return this.feedback?.edit(id, body) ?? false;
+  }
+
+  deleteDiagramComment(id: string): boolean {
+    return this.feedback?.removeCommentOrThread(id) ?? false;
+  }
+
+  replyDiagramComment(id: string, body: string): boolean {
+    return this.feedback?.addReply(id, body) ?? false;
+  }
+
+  readDiagramComment(id: string): boolean {
+    const at = new Date().toISOString();
+    return !!this.feedback?.amendThread(id, (thread) => readDiagramThread(thread, at));
+  }
+
+  moveDiagramComment(id: string, place: NonNullable<DiagramAnchor["place"]>): boolean {
+    return !!this.feedback?.amendThread(id, (thread) => placeDiagramThread(thread, place));
+  }
+
+  resolveComment(id: string): void {
+    this.setResolved(id, true);
+  }
+
   /**
    * Add to a thread that is already open. A reply carries no kind of its own: the comment that
    * opens the thread says whether it is a question or a comment, and a review answers on that.
@@ -1994,6 +2077,10 @@ export class ReviewController implements vscode.Disposable {
   private async revealComment(id: string): Promise<void> {
     const entry = this.feedback?.commentFor(id);
     if (!entry?.thread) {
+      return;
+    }
+    if (this.getComments().some((model) => model.id === id && model.diagram)) {
+      await vscode.commands.executeCommand(Commands.reviewOpenUml, { note: id });
       return;
     }
     await this.refresh("reveal-comment");
@@ -2179,6 +2266,39 @@ export class ReviewController implements vscode.Disposable {
     });
   }
 
+  async openAgainstCompareToAt(
+    file: RepoChangedFile,
+    focus: { side: "base" | "modified"; start: number; end: number },
+  ): Promise<vscode.TextEditor | undefined> {
+    const changes = this.changesFor(file.repoRoot);
+    const opened = await this.openDiff(file, {
+      viewColumn: vscode.ViewColumn.Beside,
+      preserveFocus: true,
+      baseComparison: changes
+        ? plannedBaseComparison(this.diff.fileSides(file, changes.compareRef), changes)
+        : undefined,
+      focus: { side: focus.side, line: focus.start },
+    });
+    if (!opened) {
+      return undefined;
+    }
+    const wanted = (focus.side === "base" ? opened.baseUri : opened.modifiedUri).toString();
+    const target =
+      opened.visibleUris.find((uri) => uri.toString() === wanted) ?? opened.visibleUris[0];
+    const editor = await visibleEditorFor(target, opened.visibleUris.length > 1, focus.start);
+    if (!editor) {
+      return undefined;
+    }
+    const line = Math.min(focus.start, editor.document.lineCount - 1);
+    const column = editor.document.lineAt(line).firstNonWhitespaceCharacterIndex;
+    editor.selection = new vscode.Selection(line, column, line, column);
+    editor.revealRange(
+      new vscode.Range(Math.max(0, line - 2), 0, Math.max(0, line - 2), 0),
+      vscode.TextEditorRevealType.AtTop,
+    );
+    return editor;
+  }
+
   /** The changeset an id names, resolved against the live plan. */
   private guidedChangeset(id: string | undefined): GuidedChangesetState | undefined {
     return id === undefined
@@ -2325,7 +2445,9 @@ export class ReviewController implements vscode.Disposable {
   private feedbackLabel(model: ReviewThread): string {
     return model.changeset
       ? `Changeset: ${model.changeset.title}`
-      : this.commentLocationLabel(model.repoRoot, model.filePath, model.line);
+      : model.diagram
+        ? `Class diagram: ${model.diagram.title}`
+        : this.commentLocationLabel(model.repoRoot, model.filePath, model.line);
   }
 
   private feedbackUri(model: ReviewThread): vscode.Uri {
@@ -2921,5 +3043,38 @@ function groupEqual(a: ChangedFile[], b: ChangedFile[]): boolean {
       x.additions === y.additions &&
       x.deletions === y.deletions
     );
+  });
+}
+
+async function visibleEditorFor(
+  uri: vscode.Uri,
+  inDiff: boolean,
+  line: number,
+): Promise<vscode.TextEditor | undefined> {
+  const key = uri.toString();
+  const find = (): vscode.TextEditor | undefined => {
+    const candidates = vscode.window.visibleTextEditors.filter(
+      (editor) =>
+        editor.document.uri.toString() === key && (editor.viewColumn === undefined) === inDiff,
+    );
+    return candidates.find((editor) => editor.selection.active.line === line) ?? candidates[0];
+  };
+  const now = find();
+  if (now) {
+    return now;
+  }
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      listener.dispose();
+      resolve(find());
+    }, 1000);
+    const listener = vscode.window.onDidChangeVisibleTextEditors(() => {
+      const editor = find();
+      if (editor) {
+        clearTimeout(timer);
+        listener.dispose();
+        resolve(editor);
+      }
+    });
   });
 }

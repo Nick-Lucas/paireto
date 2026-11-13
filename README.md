@@ -35,6 +35,7 @@
   - [Plan Review](#plan-review)
   - [Code Review](#code-review)
   - [Changed Files view](#changed-files-view)
+  - [UML Diff](#uml-diff)
   - [Switch repo or worktree](#switch-repo-or-worktree)
 - [Skills](#skills)
   - [`/paireto:review`](#pairetoreview)
@@ -56,6 +57,7 @@ I didn't need a second app, I needed a tighter integration between my agent and 
 | --- | --- |
 | 🤖 **Agent status** | Live status and notifications from your agent |
 | 👩🏽‍💻 **Changed Files** | Edit from any git comparison, in multiple view modes |
+| 🧩 **UML Diff** | See a comparison as a UML class diagram and open each change in the native diff |
 | 📋 **Plan review** | Give feedback on agent plans before implementation |
 | 🔍 **Code review** | Review completed agent code before accepting it |
 | 🧭 **Guided review** | Your agent groups a branch's changes into described changesets to read in order |
@@ -128,6 +130,82 @@ Use the **View Modes** button to pick one of three views or toggle between a tre
 - **Staging** groups the changes into Committed, Staged and Working Tree, similar to the native git panel.
 - **Delta** shows each file once, with its net change against Compare To. You can stage and unstage files without them moving around.
 - **Review** shows the same rows with a checkbox. Tick a file when you've read it. This is useful when you review changes that are already committed.
+
+## UML Diff
+
+**UML Diff** shows the Compare To comparison as a UML class diagram, so you can see the structure and
+impact of a change before you read the code. Open it with the type-hierarchy button on the Changed
+Files row, next to its name, or in the title bar of any Paireto diff. You can also run `Paireto: Open
+UML Diff`.
+
+- Classes, interfaces, enums and structs show their fields and methods with UML relationship lines:
+  generalization, realization, association (with multiplicity) and dependency. Files with only
+  top-level functions show as a «module» box.
+- Badges mark each change: **A** added, **D** removed, **M** changed, and **S** for a member whose
+  signature changed. A header pill counts `+added / −removed` lines for the whole type; a number on
+  a row counts that member only.
+- Click a member, a type header or a file frame to select it and follow its links. Double-click it,
+  or press Enter, to open it beside the diagram the same way a Changed Files row opens: the native
+  diff for a changed file, or the file itself for a new one. It opens at that member, with the
+  member's lines marked. Editing, LSP features and inline comments work as normal.
+- Select a type to follow its links: its lines turn bold in their own colour (green for a new link,
+  red for a removed one, grey for one that did not change) and name the field or method that makes
+  them, and everything unrelated fades. Click a line or a linked name to go to the other end. **L** fits
+  the type and everything it links to.
+- The top bar shows the comparison. Click it to compare with another branch or commit.
+- A floating toolbar at the top of the diagram changes what you see. It has three menus, and each
+  shows its name in grey and its current choice:
+  - **Show** picks the question: All changes, API, Implementation or Fields. Each choice says what
+    it shows. Related types outside the focus stay as grey boxes with a dotted outline: a **U**
+    mark and a "no diff" pill when they have no change, or their grey line counts and an "outside
+    focus" pill when they do.
+  - **Filter** narrows any question to files **Not seen** yet or to types with **Open threads**.
+    The button turns blue while a filter is on. **Clear filters** turns them all off.
+  - **View** picks the layout: **By links**, with lines running left to right, or **By folder**,
+    with one frame for each folder and file.
+  - **Find** (/) goes to a class or file by name.
+
+  When the diagram is narrow, the menus drop their grey names. If the toolbar still does not fit on
+  one line, it changes to two lines: Show and Find on top, Filter and View below.
+  A box shows its six largest changes; "show all" opens the rest. Selecting or opening never moves
+  the boxes.
+
+- **Where the changes are** sits beside the diagram. It lists the changed types, largest first,
+  with their largest members. Click a row to go to it in the diagram; double-click to open its
+  diff. Drag the left edge to resize the list (double-click the edge to reset it), or fold it away
+  to a thin bar.
+- Your review runs from the top of this list: how many files you have seen, and **Next change**
+  (N). Next change selects, in turn, each changed member that the diagram shows for the current
+  Show choice, or the type itself when the diagram shows none of its members. A member with several
+  changed parts is one stop. It goes through every type in a file before the next file, and the row
+  of that change shows which one it is in the file, for example "2 of 3". It does not open the
+  diff; double-click the selection to open it. After the last change it marks the file seen and
+  goes to the next file not seen, in the order of the list. A seen file has a tick and turns grey. **Start again** marks every
+  file not seen again, after you confirm, so you can review from the start. When the list is folded
+  away, the thin bar keeps a round Next change button and the seen count.
+- Comment on the design, not only on a line: right-click a member, a type or a frame and choose
+  **Add comment**. A new note opens beside that part with its thread, as in Copilot Chat: type
+  in the box, pick **Comment** or **Question**, and post it. The parts the note is linked to
+  show as chips beside **Link a part…** under the text. To link one, type **@** and pick a type,
+  a member, a file or a frame from the list; or click **Link a part…** and then the part on the
+  diagram; or drag the dot on the note's edge onto it. However you link it, its chip shows there
+  at once, also in the reply box of the note's thread. A frame of linked types can cover
+  many files. Right-click an empty part of the diagram to add a note with no link. The note
+  shows on the diagram with a dashed arrow to each part it is linked to; the arrows go round
+  the boxes and keep off the other lines, and pointing at a chip in the thread lights its arrow. Click a note to show its thread: read the agent's replies,
+  reply, edit or delete your messages (an edit happens in place: Enter saves, Esc cancels), see
+  which parts it is linked to, or resolve it. A click on the note's row in the Feedback list opens the UML Diff at the note, with its thread open. A badge such as **1 new reply** shows when the agent answers. Drag a note to
+  move it, or select it and press Alt and an arrow key; it stays beside the type it is linked
+  to, and its arrows are drawn again when you let go. Drag the thread window by its title to move
+  it out of the way. In the send box, Enter posts and Shift+Enter or Ctrl+Enter adds a line. Posting, replying and editing only save; each of your messages shows **not sent** until
+  you press **Send Feedback**, which is also at the top of the diagram while the agent waits
+  for your review. A resolved note leaves the diagram.
+- Move the view with the joypad in the corner: click an arrow to pan one step, or hold it to keep
+  moving. The centre button centres the selection. **Fit all** (F) zooms out until the whole
+  diagram is on screen.
+
+The structure comes from each language's document symbols in VS Code, so any language with a symbol
+provider works. Relationships come from declaration headers, field types and method signatures.
 
 ## Switch repo or worktree
 

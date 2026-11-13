@@ -28,6 +28,13 @@ import { parseNameStatus, type ChangedFile, type FileStatus } from "../git/DiffS
 import { buildFileTree, filesInEntry } from "../views/fileTree.js";
 import { renderRejectedPlanFeedback } from "../plan/planFeedback.js";
 import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
+import {
+  diagramThread,
+  editDiagramThread,
+  placeDiagramThread,
+  readDiagramThread,
+  relinkDiagramThread,
+} from "../review/diagramComments.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 import type { CommentKind } from "../comments/kinds.js";
 import { ReviewGateRegistry } from "../review/ReviewGateRegistry.js";
@@ -554,6 +561,134 @@ suite("renderRejectedPlanFeedback", () => {
   });
 });
 
+suite("diagram comment threads", () => {
+  const at = "2026-11-03T00:00:00.000Z";
+  const builder = {
+    scope: "type" as const,
+    title: "Builder",
+    typeIds: ["repo:src/a.ts::Builder"],
+    targets: [{ repoRoot: "/repo", name: "Builder", filePath: "src/a.ts", line: 9 }],
+  };
+  const model = {
+    scope: "type" as const,
+    title: "Model",
+    typeIds: ["repo:src/b.ts::Model"],
+    targets: [{ repoRoot: "/repo", name: "Model", filePath: "src/b.ts", line: 2 }],
+  };
+  const thread = (links: (typeof builder)[]) =>
+    diagramThread({
+      id: "d1",
+      at,
+      kind: "question",
+      body: "Should these share one cache?",
+      uri: "paireto-changeset:/Builder.md?diagram=d1",
+      repoRoot: "/repo",
+      anchor: { title: links[0]?.title ?? "Not linked", links },
+    });
+
+  test("a comment on the class diagram is held like a changeset comment, with a document that lists its links", () => {
+    const made = thread([builder, model]);
+    assert.strictEqual(made.repoRoot, "/repo");
+    assert.strictEqual(made.filePath, "");
+    assert.strictEqual(made.line, 0);
+    assert.strictEqual(made.delivery, "pending");
+    const opening = made.items[0];
+    assert.strictEqual(opening.commentKind, "question");
+    assert.strictEqual(opening.body, "Should these share one cache?");
+    assert.strictEqual(opening.quote, "# Comment on the class diagram");
+    assert.strictEqual(made.anchor.lineText, opening.quote);
+    assert.strictEqual(made.sourceDocument?.uri, "paireto-changeset:/Builder.md?diagram=d1");
+    const doc = made.sourceDocument?.markdown.split("\n") ?? [];
+    assert.strictEqual(doc[0], opening.quote);
+    assert.ok(doc.includes("- **Builder** at `src/a.ts:10`"));
+    assert.ok(doc.includes("- **Model** at `src/b.ts:3`"));
+  });
+
+  test("a note that is not linked says so in its document", () => {
+    const doc = thread([]).sourceDocument?.markdown ?? "";
+    assert.ok(doc.includes("This note is not linked to a part of the diagram yet."));
+  });
+
+  test("a new link changes what the thread is on and its document, but not where it is anchored", () => {
+    const made = thread([builder]);
+    const moved = relinkDiagramThread(made, {
+      title: "Builder and 1 more",
+      links: [builder, model],
+    });
+    assert.deepStrictEqual(moved.diagram?.links, [builder, model]);
+    assert.strictEqual(moved.diagram?.title, "Builder and 1 more");
+    assert.ok(moved.sourceDocument?.markdown.includes("- **Model** at `src/b.ts:3`"));
+    assert.strictEqual(moved.sourceDocument?.uri, made.sourceDocument?.uri);
+    assert.deepStrictEqual(moved.anchor, made.anchor);
+    assert.deepStrictEqual(moved.items, made.items);
+  });
+
+  test("editing a note changes its text, kind and links, keeps its place, and makes it ready to send again", () => {
+    const place = { typeId: "repo:src/a.ts::Builder", x: 10, y: 20 };
+    const made = {
+      ...placeDiagramThread(thread([builder]), place),
+      delivery: "sent" as const,
+    };
+    const later = "2026-11-04T00:00:00.000Z";
+    const edited = editDiagramThread(made, {
+      kind: "comment",
+      body: "Share one cache.",
+      anchor: { title: "Builder and 1 more", links: [builder, model] },
+      at: later,
+    });
+    assert.strictEqual(edited.items[0].body, "Share one cache.");
+    assert.strictEqual(edited.items[0].commentKind, "comment");
+    assert.strictEqual(edited.items[0].quote, made.items[0].quote);
+    assert.deepStrictEqual(edited.diagram, {
+      title: "Builder and 1 more",
+      links: [builder, model],
+      place,
+    });
+    assert.ok(edited.sourceDocument?.markdown.includes("- **Model** at `src/b.ts:3`"));
+    assert.strictEqual(edited.delivery, "pending");
+    assert.strictEqual(edited.updatedAt, later);
+    assert.deepStrictEqual(edited.anchor, made.anchor);
+  });
+
+  test("reading a note's thread records when, and a new link or edit keeps it", () => {
+    const later = "2026-11-04T00:00:00.000Z";
+    const read = readDiagramThread(thread([builder]), later);
+    assert.strictEqual(read.diagram?.readAt, later);
+    assert.strictEqual(read.delivery, "pending");
+    assert.deepStrictEqual(read.items, thread([builder]).items);
+    const linked = relinkDiagramThread(read, {
+      title: "Builder and 1 more",
+      links: [builder, model],
+    });
+    assert.strictEqual(linked.diagram?.readAt, later);
+    const edited = editDiagramThread(read, {
+      kind: "comment",
+      body: "Changed",
+      anchor: { title: "Builder", links: [builder] },
+      at: "2026-11-05T00:00:00.000Z",
+    });
+    assert.strictEqual(edited.diagram?.readAt, later);
+  });
+
+  test("a note put in a new place keeps its links and document, and keeps the place when linked again", () => {
+    const made = thread([builder]);
+    const place = { typeId: "repo:src/a.ts::Builder", x: 240, y: -16 };
+    const placed = placeDiagramThread(made, place);
+    assert.deepStrictEqual(placed.diagram, { ...made.diagram, place });
+    assert.deepStrictEqual(placed.sourceDocument, made.sourceDocument);
+    assert.deepStrictEqual(placed.items, made.items);
+    const linked = relinkDiagramThread(placed, {
+      title: "Builder and 1 more",
+      links: [builder, model],
+    });
+    assert.deepStrictEqual(linked.diagram?.place, place);
+    assert.strictEqual(
+      relinkDiagramThread(made, made.diagram ?? { title: "", links: [] }).diagram?.place,
+      undefined,
+    );
+  });
+});
+
 suite("serialiseRejectedReviewFeedback", () => {
   const at = "2026-08-12T20:00:00.000Z";
   const mk = (
@@ -610,6 +745,65 @@ suite("serialiseRejectedReviewFeedback", () => {
         src/a.ts:1  [COMMENT]
         > const x = 1;
         Rename this helper.
+      `,
+    );
+  });
+
+  test("a diagram comment names what it is linked to and where each part of it is", () => {
+    const link = (scope: "type" | "group", title: string, names: string[]) => ({
+      scope,
+      title,
+      typeIds: names,
+      targets: names.map((name, line) => ({
+        repoRoot: "/repo",
+        name,
+        filePath: `src/${name}.ts`,
+        line,
+      })),
+    });
+    assert.strictEqual(
+      serialiseRejectedReviewFeedback([
+        mk({
+          id: "d",
+          filePath: "",
+          body: "Keep these in step.",
+          quote: "",
+          diagram: {
+            title: "Builder and 1 more",
+            links: [
+              link("group", "Builder and 1 linked type", ["Builder", "Model"]),
+              link("type", "Model", ["Model"]),
+            ],
+          },
+        }),
+        mk({
+          id: "e",
+          filePath: "",
+          body: "Is a cache needed at all?",
+          quote: "",
+          diagram: { title: "Not linked", links: [] },
+        }),
+      ]),
+      dedent`
+        Code review feedback received from the user:
+
+        Each item includes its feedback ID, file:line and kind, quoted line, and comment. Act on each item by its kind:
+
+        - [QUESTION]: answer it with paireto_reply_to_feedback. Do not change code for a question.
+        - [COMMENT]: make the code changes it asks for. Do not reply to a comment.
+
+        The reviewer closes each item themselves.
+
+        Feedback ID: d
+        Class diagram: Builder and 1 more  [COMMENT]
+        - Builder at src/Builder.ts:1
+        - Model at src/Model.ts:2
+        - Model at src/Model.ts:1
+        Keep these in step.
+
+        Feedback ID: e
+        Class diagram: Not linked  [COMMENT]
+        Is a cache needed at all?
       `,
     );
   });

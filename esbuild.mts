@@ -71,6 +71,12 @@ const webviewConfig: BuildOptions = {
   plugins: [esbuildProblemMatcherPlugin],
 };
 
+const umlWebviewConfig: BuildOptions = {
+  ...webviewConfig,
+  entryPoints: ["src/uml/webview/index.tsx"],
+  outfile: "dist/uml.js",
+};
+
 async function main(): Promise<void> {
   const ctx = { production, problemMatcher: esbuildProblemMatcherPlugin };
 
@@ -82,7 +88,7 @@ async function main(): Promise<void> {
 
   const configs: BuildOptions[] = emulatorBridgeOnly
     ? [emulatorBridgeConfig(ctx)]
-    : [extensionConfig, webviewConfig, ...pluginConfigs(ctx)];
+    : [extensionConfig, webviewConfig, umlWebviewConfig, ...pluginConfigs(ctx)];
 
   const ctxs = await Promise.all(configs.map((config) => esbuild.context(config)));
   if (watch) {

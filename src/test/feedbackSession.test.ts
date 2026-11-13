@@ -18,9 +18,16 @@ import {
   contextKey,
   type FeedbackHost,
 } from "../review/feedback/FeedbackSession.js";
-import { appendFeedbackReply, resolveThread, unresolveThread } from "../review/feedbackState.js";
+import { readDiagramThread } from "../review/diagramComments.js";
+import {
+  appendFeedbackReply,
+  pendingFeedback,
+  resolveThread,
+  unresolveThread,
+} from "../review/feedbackState.js";
 import { getOpeningComment, type ReviewThread } from "../review/reviewTypes.js";
 import { feedbackFilePath, type FeedbackState } from "../storage/FeedbackStore.js";
+import { diagramComments } from "../uml/core/comments.js";
 
 const SCHEME = "paireto-feedback-session-doc";
 const REPO = "/paireto-session-repo";
@@ -539,6 +546,96 @@ suite("feedback session", () => {
     assert.strictEqual(sent[0].delivery, "sent");
     assert.strictEqual(getOpeningComment(snapshot[0]).body, "send");
     assert.strictEqual(snapshot[0].delivery, "pending");
+  });
+
+  test("marking sent records when, and a second send keeps the first time", async () => {
+    seed([comment("once")]);
+    const session = await openSession();
+
+    await session.markResolved(new Set(["once"]), "2026-09-01T00:00:00.000Z");
+    await session.markResolved(new Set(["once"]), "2026-09-02T00:00:00.000Z");
+
+    assert.strictEqual(session.allThreads()[0].sentAt, "2026-09-01T00:00:00.000Z");
+  });
+
+  const diagramQuestion = (id: string): ReviewThread =>
+    comment(id, {
+      diagram: { title: "Builder", links: [] },
+      items: [{ kind: "comment", commentKind: "question", body: id, quote: "", at: WHEN }],
+    });
+
+  const chat = (session: FeedbackSession) => {
+    const [note] = diagramComments(session.allThreads());
+    return {
+      waiting: note.waiting,
+      unread: note.unread,
+      items: note.items.map(
+        (item) => `${item.who}:${item.body}:${item.sent ? "sent" : "not sent"}`,
+      ),
+    };
+  };
+
+  test("a diagram question goes to the agent, gets its answer and a follow-up goes on the next send", async () => {
+    seed([diagramQuestion("q")]);
+    const session = await openSession();
+
+    await session.markResolved(new Set(["q"]), "2026-09-01T00:00:00.000Z");
+    assert.deepStrictEqual(chat(session), { waiting: true, unread: 0, items: ["you:q:sent"] });
+
+    session.amend(REPO, "q", (item) =>
+      appendFeedbackReply(item, {
+        body: "It reads each file once.",
+        at: "2026-09-02T00:00:00.000Z",
+        author: { kind: "agent", harness: "claudecode" },
+      }),
+    );
+    assert.deepStrictEqual(chat(session), {
+      waiting: false,
+      unread: 1,
+      items: ["you:q:sent", "agent:It reads each file once.:sent"],
+    });
+
+    session.amendThread("q", (thread) => readDiagramThread(thread, "2026-09-03T00:00:00.000Z"));
+    assert.strictEqual(chat(session).unread, 0);
+
+    session.addReply("q", "Then why is it slow?");
+    assert.deepStrictEqual(chat(session).items, [
+      "you:q:sent",
+      "agent:It reads each file once.:sent",
+      "you:Then why is it slow?:not sent",
+    ]);
+    assert.deepStrictEqual(ids(pendingFeedback(session.allThreads())), ["q"]);
+
+    await session.markResolved(new Set(["q"]), new Date(Date.now() + 1000).toISOString());
+    assert.deepStrictEqual(chat(session), {
+      waiting: true,
+      unread: 0,
+      items: ["you:q:sent", "agent:It reads each file once.:sent", "you:Then why is it slow?:sent"],
+    });
+  });
+
+  test("deleting the only reply not sent leaves nothing to send", async () => {
+    seed([diagramQuestion("q")]);
+    const session = await openSession();
+    await session.markResolved(new Set(["q"]), "2026-09-01T00:00:00.000Z");
+    session.addReply("q", "one more thing");
+
+    session.removeCommentOrThread("q#1");
+
+    assert.strictEqual(session.allThreads()[0].delivery, "sent");
+    assert.deepStrictEqual(pendingFeedback(session.allThreads()), []);
+  });
+
+  test("deleting a reply leaves the thread to send when another change is not sent", async () => {
+    seed([diagramQuestion("q")]);
+    const session = await openSession();
+    await session.markResolved(new Set(["q"]), "2026-09-01T00:00:00.000Z");
+    session.addReply("q", "keep this");
+    session.addReply("q", "drop this");
+
+    session.removeCommentOrThread("q#2");
+
+    assert.strictEqual(session.allThreads()[0].delivery, "pending");
   });
 
   test("marking sent skips ids no longer held", async () => {
