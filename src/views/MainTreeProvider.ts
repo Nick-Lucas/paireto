@@ -539,14 +539,19 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "deltaFolder": {
         const { mode } = this.review.getState();
         const files = filesInEntry(node.entry);
-        const item = new vscode.TreeItem(node.entry.name, vscode.TreeItemCollapsibleState.Expanded);
-        item.id = `deltaFolder:${repoKey(node.repoRoot)}:${node.entry.path}`;
+        const checkbox = mode === "review" ? this.checkboxFor(files) : undefined;
+        const seen = checkbox === vscode.TreeItemCheckboxState.Checked;
+        const item = new vscode.TreeItem(
+          node.entry.name,
+          seen
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.Expanded,
+        );
+        item.id = `deltaFolder:${repoKey(node.repoRoot)}:${node.entry.path}${seen ? ":seen" : ""}`;
         item.resourceUri = vscode.Uri.file(path.join(node.repoRoot, node.entry.path));
         item.iconPath = vscode.ThemeIcon.Folder;
         item.contextValue = deltaContainerContext("deltaFolder", mode, files);
-        if (mode === "review") {
-          item.checkboxState = this.checkboxFor(files);
-        }
+        item.checkboxState = checkbox;
         return item;
       }
       case "deltaFile":
