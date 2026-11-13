@@ -1,0 +1,149 @@
+.viz-edge__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.viz-edge__line {
+  fill: none;
+  stroke: var(--viz-unchanged);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke-width var(--viz-duration);
+}
+
+.viz-edge__head {
+  fill: var(--viz-unchanged);
+  stroke: none;
+}
+
+.viz-edge__glow {
+  fill: none;
+  stroke: var(--viz-added);
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.18;
+  filter: blur(2px);
+}
+
+.viz-edge--added .viz-edge__line,
+.viz-edge--added .viz-edge__glow {
+  stroke: var(--viz-added);
+}
+.viz-edge--added .viz-edge__head {
+  fill: var(--viz-added);
+}
+.viz-edge--changed .viz-edge__line,
+.viz-edge--changed .viz-edge__glow {
+  stroke: var(--viz-changed);
+}
+.viz-edge--changed .viz-edge__head {
+  fill: var(--viz-changed);
+}
+.viz-edge--deleted .viz-edge__line {
+  stroke: var(--viz-deleted);
+  stroke-dasharray: 5 4;
+  opacity: 0.8;
+}
+.viz-edge--deleted .viz-edge__head {
+  fill: var(--viz-deleted);
+}
+
+.viz-edge--event .viz-edge__line {
+  stroke-dasharray: 7 5;
+}
+.viz-edge--data .viz-edge__line {
+  stroke-dasharray: 1.5 4;
+  stroke-linecap: round;
+}
+.viz-edge--uses .viz-edge__line {
+  stroke-width: 1;
+}
+.viz-edge--uses .viz-edge__head {
+  opacity: 0.6;
+}
+.viz-edge--hero .viz-edge__line {
+  stroke-width: 2.5;
+}
+.viz-edge--selected .viz-edge__line,
+.viz-edge--selected .viz-edge__head {
+  stroke-width: 3;
+  stroke: var(--viz-accent);
+  fill: var(--viz-accent);
+}
+.viz-edge--selected .viz-edge__head {
+  stroke: none;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .viz-edge--event .viz-edge__line {
+    animation: viz-dash 1.2s linear infinite;
+  }
+  .viz-edge--event.viz-edge--deleted .viz-edge__line {
+    animation: none;
+  }
+}
+
+@keyframes viz-dash {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+.viz-edge-label {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  box-sizing: border-box;
+  height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  color: var(--viz-fg);
+  background: color-mix(in srgb, var(--viz-panel) 92%, var(--viz-fg));
+  border: 1px solid color-mix(in srgb, var(--viz-fg) 16%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  transition: opacity 260ms ease;
+}
+
+.viz-edge-label__text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-edge-label__glyph {
+  font-family: var(--viz-mono);
+  font-weight: 700;
+}
+
+.viz-edge-label__steps {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--vscode-badge-foreground, #f8f8f8);
+  background: var(--vscode-badge-background, #616161);
+}
+
+.viz-edge-label--hero {
+  border-color: color-mix(in srgb, var(--viz-added) 55%, transparent);
+}
+
+.viz-edge-label--selected {
+  border-color: var(--viz-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--viz-accent) 40%, transparent);
+}

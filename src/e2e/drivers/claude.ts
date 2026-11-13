@@ -5,6 +5,7 @@
 //
 import * as path from "node:path";
 
+import { MUTATION_TOOLS } from "../../plugins/core/mcp/mutationTools.js";
 import { resolveMode } from "../mockserver/mode.js";
 import { resolveMockProxy } from "../mockserver/proxyEnv.js";
 import { buildClaudeHome, mockPath, probeClaude, type HarnessHome } from "../sandbox.js";
@@ -50,8 +51,8 @@ const PERMISSION_POLL_MS = 500;
 const PRE_APPROVED_TOOLS = [
   "mcp__plugin_paireto_bridge__paireto_review",
   "mcp__plugin_paireto_bridge__paireto_start_guided_review",
-  "mcp__plugin_paireto_bridge__paireto_reply_to_feedback",
   "mcp__plugin_paireto_bridge__paireto_resolve_feedback",
+  ...MUTATION_TOOLS.map((tool) => `mcp__plugin_paireto_bridge__${tool.name}`),
   "Write",
   "Edit",
 ];

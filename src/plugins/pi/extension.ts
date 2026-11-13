@@ -1,14 +1,10 @@
 import { GuidedReviewArgs } from "../../protocol/guidedReview.js";
 import {
-  FEEDBACK_REPLY_TOOL_DESCRIPTION,
-  FEEDBACK_REPLY_TOOL_NAME,
-  FeedbackReplyArgs,
-} from "../core/mcp/feedbackTools.js";
-import {
   GUIDED_REVIEW_TOOL_DESCRIPTION,
   GUIDED_REVIEW_TOOL_NAME,
 } from "../core/mcp/guidedReviewTool.js";
 import { REVIEW_TOOL_DESCRIPTION, REVIEW_TOOL_NAME } from "../core/mcp/reviewTool.js";
+import { MUTATION_TOOLS } from "../core/mcp/mutationTools.js";
 import { gitToplevel } from "../core/target.js";
 import {
   blocksInPlanMode,
@@ -22,8 +18,6 @@ import {
 import type { PiBridge } from "./bridge.js";
 import { createBridge } from "./bridge.js";
 import {
-  FEEDBACK_REPLY_GUIDELINES,
-  FEEDBACK_REPLY_SNIPPET,
   GUIDED_REVIEW_APPROVED,
   GUIDED_REVIEW_GUIDELINES,
   GUIDED_REVIEW_SNIPPET,
@@ -50,7 +44,6 @@ import type { PiExtensionAPI, PiExtensionContext, PiToolResult } from "./types.j
 
 const PLAN_SCHEMA = toolSchema(SubmitPlanArgs);
 const GUIDED_SCHEMA = toolSchema(GuidedReviewArgs);
-const FEEDBACK_SCHEMA = toolSchema(FeedbackReplyArgs);
 
 function text(value: string): PiToolResult {
   return { content: [{ type: "text", text: truncateToolText(value) }], details: {} };
@@ -310,36 +303,36 @@ export default function paireto(pi: PiExtensionAPI): void {
     },
   });
 
-  pi.registerTool<FeedbackReplyArgs>({
-    name: FEEDBACK_REPLY_TOOL_NAME,
-    label: "Paireto Feedback Reply",
-    description: FEEDBACK_REPLY_TOOL_DESCRIPTION,
-    promptSnippet: FEEDBACK_REPLY_SNIPPET,
-    promptGuidelines: FEEDBACK_REPLY_GUIDELINES,
-    parameters: FEEDBACK_SCHEMA,
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const connected = bridgeFor(ctx);
-      if (!connected) {
-        throw new Error(REVIEW_UNAVAILABLE);
-      }
-      const response = await connected.gate(
-        {
-          t: "feedback.reply.request",
-          repoRoot: connected.repoRoot,
-          harness: "pi",
-          sessionId: sessionId(ctx),
-          feedbackId: params.feedbackId,
-          message: params.message,
-        },
-        signal,
-      );
-      if (!response) {
-        throw new Error(REVIEW_UNAVAILABLE);
-      }
-      if (!response.ok) {
-        throw new Error(response.message);
-      }
-      return text(response.message);
-    },
-  });
+  for (const tool of MUTATION_TOOLS) {
+    pi.registerTool<Record<string, unknown>>({
+      name: tool.name,
+      label: tool.pi.label,
+      description: tool.description,
+      promptSnippet: tool.pi.snippet,
+      promptGuidelines: tool.pi.guidelines,
+      parameters: tool.args ? toolSchema(tool.args) : { type: "object", properties: {} },
+      async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+        const connected = bridgeFor(ctx);
+        if (!connected) {
+          throw new Error(REVIEW_UNAVAILABLE);
+        }
+        const response = await connected.gate(
+          tool.request(params ?? {}, {
+            repoRoot: connected.repoRoot,
+            cwd: connected.repoRoot,
+            harness: "pi",
+            sessionId: sessionId(ctx),
+          }),
+          signal,
+        );
+        if (!response) {
+          throw new Error(REVIEW_UNAVAILABLE);
+        }
+        if (!response.ok) {
+          throw new Error(response.message);
+        }
+        return text(response.message);
+      },
+    });
+  }
 }

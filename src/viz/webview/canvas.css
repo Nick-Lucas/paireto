@@ -1,0 +1,86 @@
+.viz-canvas {
+  background: var(--viz-bg);
+}
+
+.viz-canvas .react-flow__node {
+  cursor: default;
+}
+
+.viz-canvas .react-flow__node.selectable {
+  cursor: pointer;
+}
+
+.viz-canvas .react-flow__node:focus,
+.viz-canvas .react-flow__node:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.viz-canvas .react-flow__node.selected .viz-card,
+.viz-canvas .react-flow__node.selected .viz-participant {
+  box-shadow: none;
+}
+
+.viz-canvas .react-flow__background {
+  color: color-mix(in srgb, var(--viz-fg) 22%, transparent);
+}
+
+.viz-canvas .react-flow__controls {
+  box-shadow: var(--viz-shadow);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.viz-canvas .react-flow__controls-button {
+  width: 24px;
+  height: 24px;
+  color: var(--viz-fg);
+  background: var(--viz-panel);
+  border-bottom: 1px solid var(--viz-border);
+}
+
+.viz-canvas .react-flow__controls-button:hover {
+  background: var(--viz-hover);
+}
+
+.viz-canvas .react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.viz-canvas .react-flow__minimap {
+  background: var(--viz-panel);
+  border: 1px solid var(--viz-border);
+  border-radius: 6px;
+  box-shadow: var(--viz-shadow);
+}
+
+.viz-canvas .react-flow__minimap-mask {
+  fill: color-mix(in srgb, var(--viz-fg) 8%, transparent);
+}
+
+.viz-canvas .react-flow__minimap-node {
+  fill: color-mix(in srgb, var(--viz-fg) 35%, transparent);
+  stroke: none;
+}
+
+.viz-canvas .react-flow__node-group {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.viz-canvas .react-flow__minimap svg {
+  width: 150px;
+  height: 100px;
+}
+
+.viz-canvas .react-flow__attribution {
+  background: transparent;
+  opacity: 0.45;
+}
+
+.viz-canvas .react-flow__attribution a {
+  color: var(--vscode-descriptionForeground);
+}

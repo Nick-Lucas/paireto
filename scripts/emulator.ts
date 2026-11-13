@@ -21,8 +21,11 @@
 
 import type { Socket } from "node:net";
 
+import type { TextRequest, TextResponseType, VizCommandDeps } from "./emulatorViz.ts";
+
 const crypto = require("node:crypto") as typeof import("node:crypto");
 const fs = require("node:fs") as typeof import("node:fs");
+const vizCommands = require("./emulatorViz.ts") as typeof import("./emulatorViz.ts");
 
 // ---------------------------------------------------------------------------
 // Wire protocol (hand-mirrored from src/protocol/types.ts, like bridge.js)
@@ -36,6 +39,10 @@ type MessageType =
   | "plan.review.response"
   | "review.await.request"
   | "review.await.response"
+  | "changes.describe.request"
+  | "changes.describe.response"
+  | "viz.show.request"
+  | "viz.show.response"
   | "stop.gate.request"
   | "stop.gate.response";
 
@@ -55,7 +62,7 @@ type HookEventName =
   | "WorktreeCreate"
   | "WorktreeRemove";
 
-interface Envelope {
+export interface Envelope {
   t: MessageType;
   v: string;
   id?: string;
@@ -112,6 +119,13 @@ interface ReviewAwaitResponse extends Envelope {
   id: string;
   status: ReviewStatus;
   feedback: string;
+}
+
+
+interface TextAnswer extends Envelope {
+  id: string;
+  ok: boolean;
+  message: string;
 }
 
 interface StopGateRequest extends Envelope {
@@ -284,7 +298,7 @@ function strOpt(opts: Opts, key: string): string | undefined {
 const DEFAULT_SESSION = "emu-" + crypto.randomUUID().slice(0, 8);
 const CONNECT_TIMEOUT_MS = 3000;
 
-interface Target {
+export interface Target {
   socketPath: string;
   repoRoot: string;
   cwd: string;
@@ -847,6 +861,45 @@ function errMessage(err: unknown): string {
   return String(err);
 }
 
+function vizDeps(opts: Opts): VizCommandDeps {
+  return {
+    send: (heading, build, responseType) => sendTextRequest(opts, heading, build, responseType),
+    version: bridge.PLUGIN_VERSION,
+    now: () => bridge.nowIso(),
+    session: strOpt(opts, "session") || DEFAULT_SESSION,
+    fail: (message) => {
+      console.log(red(message));
+      process.exitCode = 1;
+    },
+  };
+}
+
+async function sendTextRequest(
+  opts: Opts,
+  heading: string,
+  build: (target: Target, id: string) => TextRequest,
+  responseType: TextResponseType
+): Promise<void> {
+  const id = crypto.randomUUID();
+  await withBridge(opts, { heading }, async ({ conn, target }) => {
+    const request = build(target, id);
+    dumpMessage(ARROW_OUT, request);
+    const pending = awaitResponse<TextAnswer>(conn, id, responseType, 30_000);
+    bridge.sendLine(conn.sock, request);
+    const response = await pending;
+    if (!response) {
+      return;
+    }
+    dumpMessage(ARROW_IN, response);
+    banner(response.ok ? "ACCEPTED" : "REJECTED", response.ok ? green : red);
+    console.log("");
+    console.log(indent(response.message, "  │ ", response.ok ? blue : yellow));
+    if (!response.ok) {
+      process.exitCode = 1;
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Help + dispatch
 // ---------------------------------------------------------------------------
@@ -869,6 +922,9 @@ ${bold("Commands")}
   ${cyan("flow")}                    Fire a full simulated session lifecycle of events.
   ${cyan("agent")}                   Hold a live session open (liveness connection). Ctrl+C to
                           simulate the agent process being killed → the extension drops it.
+  ${cyan("changes")}                 Ask what the window compares (paireto_get_changes).
+  ${cyan("viz")} <file.json>         Send a viz payload (paireto_show_viz) and print the answer.
+                          Try src/viz/fixtures/multiService.json.
   ${cyan("help")}                    Show this.
 
 ${bold("Options")}
@@ -919,6 +975,12 @@ async function main(): Promise<void> {
       break;
     case "agent":
       await cmdAgent(opts);
+      break;
+    case "changes":
+      await vizCommands.cmdChanges(vizDeps(opts));
+      break;
+    case "viz":
+      await vizCommands.cmdViz(rest[0] ?? strOpt(opts, "file"), vizDeps(opts));
       break;
     case "help":
     case "-h":

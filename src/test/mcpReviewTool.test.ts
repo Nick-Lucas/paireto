@@ -20,7 +20,11 @@ import {
 } from "../plugins/core/mcp/reviewTool.js";
 import { createMcpServer } from "../plugins/core/mcp/runtime.js";
 import { type Harness, PLUGIN_VERSION } from "../protocol/types.js";
-import { FEEDBACK_REPLY_TOOL_NAME, runFeedbackReply } from "../plugins/core/mcp/feedbackTools.js";
+import {
+  FEEDBACK_REPLY_TOOL,
+  MUTATION_TOOLS,
+  runMutationTool,
+} from "../plugins/core/mcp/mutationTools.js";
 import { ackWith, startServer } from "./fakeBridgeServer.js";
 
 suite("MCP paireto_review tool", () => {
@@ -50,7 +54,7 @@ suite("MCP paireto_review tool", () => {
     try {
       const listed = await client.request({ method: "tools/list" }, ListToolsResultSchema);
       const tools = new Map(listed.tools.map((tool) => [tool.name, tool]));
-      assert.deepStrictEqual(tools.get(FEEDBACK_REPLY_TOOL_NAME)?.inputSchema.required, [
+      assert.deepStrictEqual(tools.get(FEEDBACK_REPLY_TOOL.name)?.inputSchema.required, [
         "feedbackId",
         "message",
       ]);
@@ -69,7 +73,8 @@ suite("MCP paireto_review tool", () => {
     // settles the tool call. Without one the agent waits until the socket drops.
     const server = await startServer(ackWith(true));
     try {
-      const result = await runFeedbackReply(
+      const result = await runMutationTool(
+        FEEDBACK_REPLY_TOOL,
         { target: server.target, cwd: server.target.repoRoot },
         "codex",
         { feedbackId: "feedback-1", message: "I changed it." },
@@ -202,7 +207,7 @@ suite("MCP paireto_plan_review tool exposure", () => {
   };
 
   /** Every harness can answer feedback, so this rides alongside whatever else it is given. */
-  const FEEDBACK_TOOLS = [FEEDBACK_REPLY_TOOL_NAME];
+  const FEEDBACK_TOOLS = MUTATION_TOOLS.map((tool) => tool.name);
 
   test("Kiro gets the plan-review tool", async () => {
     assert.deepStrictEqual(

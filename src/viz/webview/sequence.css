@@ -1,0 +1,257 @@
+.viz-participant {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 100%;
+  padding: 0 12px;
+  border-radius: var(--viz-radius);
+  background: var(--viz-card-bg);
+  border: 1px solid color-mix(in srgb, var(--viz-fg) 18%, transparent);
+  border-top: 3px solid var(--viz-unchanged);
+  box-shadow: var(--viz-shadow);
+  transition:
+    border-color var(--viz-duration),
+    box-shadow var(--viz-duration);
+}
+
+.viz-participant--added {
+  border-top-color: var(--viz-added);
+}
+.viz-participant--changed {
+  border-top-color: var(--viz-changed);
+}
+.viz-participant--deleted {
+  border-top-color: var(--viz-deleted);
+}
+
+.viz-participant__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.viz-participant__label {
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-participant__sub {
+  font-family: var(--viz-mono);
+  font-size: 10px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-participant.viz-level--bright {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--viz-accent) 50%, transparent),
+    var(--viz-shadow);
+}
+
+.viz-lifeline {
+  width: 100%;
+  height: 100%;
+  background: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--viz-fg) 30%, transparent) 0 6px,
+    transparent 6px 11px
+  );
+  pointer-events: none;
+}
+
+.viz-activation {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--viz-accent) 32%, var(--viz-bg));
+  border: 1px solid color-mix(in srgb, var(--viz-accent) 70%, transparent);
+  pointer-events: none;
+}
+
+.viz-phase {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--viz-fg) 7%, transparent),
+    transparent 70%
+  );
+  border-left: 3px solid color-mix(in srgb, var(--viz-fg) 35%, transparent);
+}
+
+.viz-phase__label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--viz-muted);
+}
+
+.viz-message {
+  position: relative;
+  pointer-events: none;
+}
+
+.viz-message__svg {
+  display: block;
+  overflow: visible;
+}
+
+.viz-message__hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 18;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+.viz-message__line {
+  fill: none;
+  stroke: var(--viz-fg);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.viz-message__head {
+  fill: none;
+  stroke: var(--viz-fg);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.viz-message__head--filled {
+  fill: var(--viz-fg);
+}
+
+.viz-message--added .viz-message__line,
+.viz-message--added .viz-message__head {
+  stroke: var(--viz-added);
+}
+.viz-message--added .viz-message__head--filled {
+  fill: var(--viz-added);
+}
+.viz-message--changed .viz-message__line,
+.viz-message--changed .viz-message__head {
+  stroke: var(--viz-changed);
+}
+.viz-message--changed .viz-message__head--filled {
+  fill: var(--viz-changed);
+}
+.viz-message--deleted .viz-message__line,
+.viz-message--deleted .viz-message__head {
+  stroke: var(--viz-deleted);
+}
+.viz-message--deleted .viz-message__head--filled {
+  fill: var(--viz-deleted);
+}
+.viz-message--unchanged .viz-message__line,
+.viz-message--unchanged .viz-message__head {
+  stroke: var(--viz-muted);
+}
+.viz-message--unchanged .viz-message__head--filled {
+  fill: var(--viz-muted);
+}
+
+.viz-message__label {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 8px 0 3px;
+  border-radius: 999px;
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--viz-fg);
+  background: color-mix(in srgb, var(--viz-panel) 92%, var(--viz-fg));
+  border: 1px solid color-mix(in srgb, var(--viz-fg) 16%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  pointer-events: auto;
+  cursor: pointer;
+  transition:
+    box-shadow var(--viz-duration),
+    border-color var(--viz-duration);
+}
+
+.viz-message__label:hover {
+  border-color: color-mix(in srgb, var(--viz-fg) 40%, transparent);
+}
+
+.viz-message__number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  font-family: var(--viz-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  color: var(--viz-bg);
+  background: var(--viz-muted);
+}
+
+.viz-message--added .viz-message__number {
+  background: var(--viz-added);
+}
+.viz-message--changed .viz-message__number {
+  background: var(--viz-changed);
+}
+.viz-message--deleted .viz-message__number {
+  background: var(--viz-deleted);
+}
+
+.viz-message--selected .viz-message__label {
+  border-color: var(--viz-accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--viz-accent) 40%, transparent);
+}
+
+.viz-message--selected .viz-message__line,
+.viz-message--selected .viz-message__head {
+  stroke-width: 2.5;
+}
+
+.viz-message--current .viz-message__label {
+  color: var(--vscode-button-foreground, #fff);
+  background: var(--viz-accent);
+  border-color: var(--viz-accent);
+}
+
+.viz-message--current .viz-message__number {
+  color: var(--viz-accent);
+  background: var(--vscode-button-foreground, #fff);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .viz-message--current .viz-message__label {
+    animation: viz-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes viz-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--viz-accent) 55%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 7px color-mix(in srgb, var(--viz-accent) 0%, transparent);
+  }
+}

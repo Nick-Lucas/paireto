@@ -1,0 +1,203 @@
+{
+  "title": "Optimistic comment editing",
+  "summary": "Editing a comment now updates the thread at once and rolls back if the server rejects the change. A new hook owns the mutation and the cache patch.",
+  "level": "component",
+  "lanes": [
+    { "id": "view", "label": "Components" },
+    { "id": "state", "label": "State" },
+    { "id": "data", "label": "Data access" }
+  ],
+  "nodes": [
+    {
+      "id": "user",
+      "label": "User",
+      "kind": "actor",
+      "delta": "unchanged",
+      "lane": "view",
+      "flowOnly": true
+    },
+    {
+      "id": "comment-thread",
+      "label": "CommentThread",
+      "kind": "component",
+      "delta": "changed",
+      "lane": "view",
+      "role": "Renders the new editor in place of the read-only body when a comment is in edit mode.",
+      "files": [{ "path": "web/src/comments/CommentThread.tsx", "line": 30, "endLine": 74 }]
+    },
+    {
+      "id": "comment-editor",
+      "label": "CommentEditor",
+      "kind": "component",
+      "delta": "added",
+      "lane": "view",
+      "role": "Inline editor that submits through useEditComment and shows a saving state.",
+      "files": [{ "path": "web/src/comments/CommentEditor.tsx" }]
+    },
+    {
+      "id": "edit-dialog",
+      "label": "EditCommentDialog",
+      "kind": "component",
+      "delta": "deleted",
+      "lane": "view",
+      "role": "The modal editor is removed; inline editing replaces it.",
+      "files": [{ "path": "web/src/comments/EditCommentDialog.tsx" }]
+    },
+    {
+      "id": "use-edit-comment",
+      "label": "useEditComment",
+      "kind": "hook",
+      "delta": "added",
+      "lane": "state",
+      "role": "Patches the cached thread before the request and restores the snapshot if it fails.",
+      "files": [{ "path": "web/src/comments/useEditComment.ts" }]
+    },
+    {
+      "id": "comments-cache",
+      "label": "comments query cache",
+      "kind": "state",
+      "delta": "changed",
+      "lane": "state",
+      "sub": "['comments', threadId]",
+      "role": "Now written by the edit hook as well as the fetch.",
+      "files": [{ "path": "web/src/comments/queries.ts", "line": 12, "endLine": 40 }]
+    },
+    {
+      "id": "comment-model",
+      "label": "Comment",
+      "kind": "model",
+      "delta": "changed",
+      "lane": "state",
+      "role": "Gains editedAt and a pending flag for optimistic rows.",
+      "files": [{ "path": "web/src/comments/types.ts", "line": 3, "endLine": 15 }]
+    },
+    {
+      "id": "api-client",
+      "label": "commentsApi",
+      "kind": "module",
+      "delta": "changed",
+      "lane": "data",
+      "sub": "PATCH /comments/:id",
+      "role": "Adds updateComment.",
+      "files": [{ "path": "web/src/api/comments.ts", "line": 51, "endLine": 66 }]
+    },
+    {
+      "id": "server",
+      "label": "Comments API",
+      "kind": "external",
+      "delta": "unchanged",
+      "lane": "data",
+      "sub": "PATCH /comments/:id"
+    }
+  ],
+  "edges": [
+    { "from": "comment-thread", "to": "comment-editor", "kind": "render", "delta": "added" },
+    { "from": "comment-thread", "to": "edit-dialog", "kind": "render", "delta": "deleted" },
+    {
+      "from": "comment-editor",
+      "to": "use-edit-comment",
+      "kind": "call",
+      "delta": "added",
+      "label": "mutate(text)",
+      "hero": true
+    },
+    {
+      "from": "use-edit-comment",
+      "to": "comments-cache",
+      "kind": "data",
+      "delta": "added",
+      "label": "snapshot, patch, rollback"
+    },
+    {
+      "from": "use-edit-comment",
+      "to": "api-client",
+      "kind": "call",
+      "delta": "added",
+      "label": "updateComment"
+    },
+    { "from": "comments-cache", "to": "comment-model", "kind": "uses", "delta": "unchanged" },
+    {
+      "from": "comment-thread",
+      "to": "comments-cache",
+      "kind": "data",
+      "delta": "unchanged",
+      "label": "subscribe"
+    },
+    {
+      "from": "api-client",
+      "to": "server",
+      "kind": "call",
+      "delta": "added",
+      "label": "PATCH /comments/:id"
+    }
+  ],
+  "flows": [
+    {
+      "id": "edit-rollback",
+      "title": "Edit, then server rejects",
+      "summary": "The edit shows at once; when the PATCH fails the hook restores the snapshot and the editor reopens with the draft.",
+      "delta": "added",
+      "participants": [
+        "user",
+        "comment-editor",
+        "use-edit-comment",
+        "comments-cache",
+        "api-client",
+        "server"
+      ],
+      "steps": [
+        { "from": "user", "to": "comment-editor", "label": "Save", "phase": "Optimistic" },
+        { "from": "comment-editor", "to": "use-edit-comment", "label": "mutate(text)" },
+        { "from": "use-edit-comment", "to": "comments-cache", "label": "snapshot thread" },
+        {
+          "from": "use-edit-comment",
+          "to": "comments-cache",
+          "label": "patch comment, pending: true"
+        },
+        { "from": "use-edit-comment", "to": "api-client", "label": "updateComment(id, text)" },
+        {
+          "from": "api-client",
+          "to": "server",
+          "label": "PATCH /comments/:id",
+          "request": "{ body }"
+        },
+        {
+          "from": "server",
+          "to": "api-client",
+          "label": "409 conflict",
+          "kind": "return",
+          "phase": "Failure"
+        },
+        { "from": "api-client", "to": "use-edit-comment", "label": "throws", "kind": "return" },
+        { "from": "use-edit-comment", "to": "comments-cache", "label": "restore snapshot" },
+        {
+          "from": "use-edit-comment",
+          "to": "comment-editor",
+          "label": "error, keep draft",
+          "kind": "return"
+        }
+      ]
+    }
+  ],
+  "walkthrough": [
+    {
+      "title": "Replaces the edit modal",
+      "body": "The thread renders an inline editor; the modal is gone.",
+      "focus": ["comment-thread>comment-editor", "edit-dialog"]
+    },
+    {
+      "title": "Adds an optimistic hook",
+      "body": "useEditComment patches the cache before the request so the edit shows at once.",
+      "focus": [
+        "use-edit-comment",
+        "comment-editor>use-edit-comment",
+        "use-edit-comment>comments-cache"
+      ]
+    },
+    {
+      "title": "Rolls back on failure",
+      "body": "A rejected PATCH restores the snapshot and keeps the draft open.",
+      "focus": ["edit-rollback:7", "edit-rollback:8", "edit-rollback:9"]
+    }
+  ]
+}

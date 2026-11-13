@@ -57,15 +57,6 @@ export const GUIDED_REVIEW_GUIDELINES = [
     "the order they should be read.",
 ];
 
-export const FEEDBACK_REPLY_SNIPPET = "Answer one Paireto review question by its feedback ID";
-
-export const FEEDBACK_REPLY_GUIDELINES = [
-  "Call paireto_reply_to_feedback to answer a reviewer question, using the feedback ID the review " +
-    "returned. Do not change code for a question.",
-  "Do not call paireto_reply_to_feedback for a reviewer comment. Make the code changes the comment " +
-    "asks for instead.",
-];
-
 export const TRUNCATION_NOTICE =
   "[Paireto truncated this result to keep it inside the tool output limit. Ask the reviewer to " +
   "split the feedback if anything is missing.]";

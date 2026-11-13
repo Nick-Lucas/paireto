@@ -1,0 +1,184 @@
+.viz-lane {
+  width: 100%;
+  height: 100%;
+  border-left: 1px dashed color-mix(in srgb, var(--viz-fg) 14%, transparent);
+  pointer-events: none;
+}
+
+.viz-lane--even {
+  background: var(--viz-lane-even);
+}
+
+.viz-lane--odd {
+  background: var(--viz-lane-odd);
+}
+
+.viz-lane__label {
+  position: sticky;
+  top: 0;
+  padding: 10px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--viz-muted);
+}
+
+.viz-group {
+  width: 100%;
+  height: 100%;
+  border: 1.5px dashed color-mix(in srgb, var(--viz-fg) 28%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--viz-fg) 3%, transparent);
+  pointer-events: none;
+}
+
+.viz-group__label {
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  padding: 3px 10px;
+  border-radius: 0 0 6px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--viz-muted);
+  background: color-mix(in srgb, var(--viz-fg) 10%, var(--viz-bg));
+}
+
+.viz-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 11px 14px 10px;
+  border-radius: var(--viz-radius);
+  background: var(--viz-card-bg);
+  border: 1px solid color-mix(in srgb, var(--viz-fg) 18%, transparent);
+  border-left: 3px solid var(--viz-unchanged);
+  box-shadow: var(--viz-shadow);
+  transition:
+    border-color var(--viz-duration),
+    box-shadow var(--viz-duration),
+    transform var(--viz-duration);
+}
+
+.viz-card:hover {
+  border-color: color-mix(in srgb, var(--viz-fg) 32%, transparent);
+  transform: translateY(-1px);
+}
+
+.viz-card--added {
+  border-left-color: var(--viz-added);
+}
+.viz-card--changed {
+  border-left-color: var(--viz-changed);
+}
+.viz-card--deleted {
+  border-left-color: var(--viz-deleted);
+  border-style: dashed;
+  border-left-style: solid;
+  opacity: 0.78;
+}
+.viz-card--deleted .viz-card__label {
+  text-decoration: line-through;
+  text-decoration-color: var(--viz-deleted);
+  text-decoration-thickness: 1.5px;
+}
+.viz-card--unchanged {
+  background: color-mix(in srgb, var(--viz-card-bg) 60%, var(--viz-bg));
+}
+
+.viz-card--selected,
+.viz-participant--selected {
+  border-color: var(--viz-accent) !important;
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--viz-accent) 45%, transparent),
+    var(--viz-shadow);
+}
+
+.viz-level--bright .viz-card,
+.viz-card.viz-level--bright {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--viz-fg) 20%, transparent),
+    0 0 24px color-mix(in srgb, var(--viz-accent) 35%, transparent),
+    var(--viz-shadow);
+}
+
+.viz-card__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.viz-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  color: var(--viz-fg);
+  background: color-mix(in srgb, var(--viz-fg) 9%, transparent);
+}
+
+.viz-card__icon--added {
+  color: var(--viz-added);
+  background: color-mix(in srgb, var(--viz-added) 16%, transparent);
+}
+.viz-card__icon--changed {
+  color: var(--viz-changed);
+  background: color-mix(in srgb, var(--viz-changed) 16%, transparent);
+}
+.viz-card__icon--deleted {
+  color: var(--viz-deleted);
+  background: color-mix(in srgb, var(--viz-deleted) 16%, transparent);
+}
+
+.viz-card__label {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-card__sub {
+  margin-top: 3px;
+  padding-left: 38px;
+  font-family: var(--viz-mono);
+  font-size: 12.5px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 5px;
+  padding-left: 38px;
+  font-size: 12.5px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+}
+
+.viz-card__flows {
+  color: var(--viz-link);
+}
+
+.viz-handle {
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
+}

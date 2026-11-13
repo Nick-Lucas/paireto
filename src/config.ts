@@ -8,6 +8,7 @@ export const Commands = {
   switcherOpenInThisWindow: "paireto.switcher.openInThisWindow",
   /** Open the Welcome / onboarding webview (also shown once automatically on first install). */
   openWelcome: "paireto.openWelcome",
+  vizOpen: "paireto.viz.open",
   // Shared gate outcomes (dispatch to the active Plan or Review flow via the coordinator).
   gateApprove: "paireto.gate.approve",
   gateSendFeedback: "paireto.gate.sendFeedback",
@@ -96,4 +97,5 @@ export const StateKeys = {
   changesMode: "paireto.changesMode",
   seenFiles: "paireto.seenFiles",
   recentRefs: "paireto.recentRefs",
+  vizDocs: "paireto.vizDocs",
 } as const;
