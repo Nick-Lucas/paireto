@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { prettifyError } from "zod/v4";
 
+import type { FeedbackRef } from "../git/gitCli.js";
 import { CompareTo, GuidedChangeset, GuidedChangesetFile } from "../protocol/guidedReview.js";
 import type { FileGroup } from "../types.js";
 import type { RepoChangedFile, RepositoryReviewState } from "./ReviewController.js";
@@ -27,13 +28,34 @@ export interface ParsedChangeset extends GuidedChangeset {
   id: string;
 }
 
-/** The sanitized plan, held by ReviewController for the lifetime of one guided review. */
+/** The sanitized plan, kept by ReviewController after its guided review ends. */
 export interface GuidedPlan {
   repoRoot: string;
   summary?: string;
   /** What the agent diffed against; the window aligns its Compare To to this when the plan opens. */
   compareTo: CompareTo;
   changesets: ParsedChangeset[];
+}
+
+export interface CachedGuidedReview {
+  ref: FeedbackRef;
+  generatedAt: string;
+  plan: GuidedPlan;
+}
+
+export function latestGuidedReview(
+  entries: readonly CachedGuidedReview[],
+  refs: ReadonlyMap<string, FeedbackRef>,
+): CachedGuidedReview | undefined {
+  let latest: CachedGuidedReview | undefined;
+  for (const entry of entries) {
+    const current = refs.get(entry.plan.repoRoot);
+    const onBranch = current?.kind === entry.ref.kind && current.value === entry.ref.value;
+    if (onBranch && (!latest || entry.generatedAt > latest.generatedAt)) {
+      latest = entry;
+    }
+  }
+  return latest;
 }
 
 /** One row under a changeset. `file` is undefined when the named path no longer has a live change —

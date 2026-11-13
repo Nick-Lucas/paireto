@@ -90,7 +90,7 @@ function committedIcon(status: FileStatus): vscode.ThemeIcon {
   );
 }
 
-type SectionId = "agents" | "plan" | "changesets" | "files" | "feedback";
+type SectionId = "agents" | "plan" | "files" | "feedback";
 
 type Node =
   | { kind: "setupNotice"; prompt: SetupPrompt }
@@ -342,7 +342,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       case "repository":
         return this.deltaFor(node.repository);
       case "section":
-        return node.id === "files" ? this.allDeltaFiles() : [];
+        return node.id === "files" && !this.review.getState().guided ? this.allDeltaFiles() : [];
       default:
         return [];
     }
@@ -411,14 +411,14 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   getParent(node: Node): Node | undefined {
     switch (node.kind) {
       case "changeset":
-        return { kind: "section", id: "changesets", label: "Review Plan" };
+        return { kind: "section", id: "files", label: "Review Plan" };
       case "changesetFile": {
         const changeset = this.review
           .getState()
           .guided?.changesets.find((c) => c.id === node.row.changesetId);
         return changeset
           ? { kind: "changeset", repoRoot: node.repoRoot, changeset }
-          : { kind: "section", id: "changesets", label: "Review Plan" };
+          : { kind: "section", id: "files", label: "Review Plan" };
       }
       case "repository":
         return { kind: "section", id: "files", label: "Changed Files" };
@@ -502,7 +502,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const item = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.Expanded);
         item.id = `section:${node.id}`;
         item.contextValue = node.id === "files" ? this.filesSectionContext() : `section:${node.id}`;
-        if (node.id === "files" && this.review.getState().mode === "review") {
+        const state = this.review.getState();
+        if (node.id === "files" && !state.guided && state.mode === "review") {
           item.checkboxState = this.checkboxFor(this.allDeltaFiles());
         }
         item.description = node.description;
@@ -661,7 +662,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (guided) {
       out.push({
         kind: "section",
-        id: "changesets",
+        id: "files",
         label: "Review Plan",
         description: guidedDescription(guided),
         tooltip: guidedTooltip(guided),
@@ -702,19 +703,15 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
           ? sessions.map((session) => ({ kind: "agent", session }) as Node)
           : [placeholder("No agents connected")];
       }
-      case "changesets": {
-        const guided = this.review.getState().guided;
-        if (!guided) {
-          return [];
-        }
-        return guided.changesets.map((changeset) => ({
-          kind: "changeset",
-          repoRoot: guided.repoRoot,
-          changeset,
-        }));
-      }
       case "files": {
-        const repositories = this.review.getState().repositories;
+        const { guided, repositories } = this.review.getState();
+        if (guided) {
+          return guided.changesets.map((changeset) => ({
+            kind: "changeset",
+            repoRoot: guided.repoRoot,
+            changeset,
+          }));
+        }
         if (repositories.length > 1) {
           return repositories.map((repository) => ({ kind: "repository", repository }));
         }
@@ -738,7 +735,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   }
 
   private filesSectionContext(): string {
-    const { mode } = this.review.getState();
+    const { guided, mode } = this.review.getState();
+    if (guided) {
+      return "section:files:guided";
+    }
     const files = mode === "staging" ? [] : this.allDeltaFiles();
     return deltaContainerContext("section:files", mode, files);
   }
