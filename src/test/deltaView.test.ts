@@ -530,6 +530,40 @@ suite("Review mode — tree", () => {
     assert.strictEqual(filesSection(tree).description, "HEAD · 2/3 seen");
   });
 
+  test("ticking a folder collapses it and unticking it expands it again", async () => {
+    const seen = new SeenFiles(new MemoryMemento());
+    const tree = treeIn("review", seen, repo);
+    const [folder] = tree.getChildren(filesSection(tree));
+    const unseenItem = tree.getTreeItem(folder);
+
+    await tree.onCheckboxes([[folder, vscode.TreeItemCheckboxState.Checked]]);
+    const seenItem = tree.getTreeItem(folder);
+
+    assert.strictEqual(unseenItem.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+    assert.strictEqual(seenItem.collapsibleState, vscode.TreeItemCollapsibleState.Collapsed);
+    assert.notStrictEqual(
+      seenItem.id,
+      unseenItem.id,
+      "VS Code keeps a row's expand state by id, so a seen folder needs its own id to collapse",
+    );
+
+    await tree.onCheckboxes([[folder, vscode.TreeItemCheckboxState.Unchecked]]);
+    const unticked = tree.getTreeItem(folder);
+
+    assert.strictEqual(unticked.collapsibleState, vscode.TreeItemCollapsibleState.Expanded);
+    assert.strictEqual(unticked.id, unseenItem.id);
+  });
+
+  test("a folder stays expanded outside Review mode", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo);
+    const [folder] = tree.getChildren(filesSection(tree));
+
+    assert.strictEqual(
+      tree.getTreeItem(folder).collapsibleState,
+      vscode.TreeItemCollapsibleState.Expanded,
+    );
+  });
+
   test("the Changed Files checkbox is ticked only when every file is seen, and ticks them all", async () => {
     const seen = new SeenFiles(new MemoryMemento());
     const tree = treeIn("review", seen, repo);
