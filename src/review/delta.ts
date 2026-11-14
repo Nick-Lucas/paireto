@@ -16,6 +16,29 @@ export interface DeltaFile {
   layers: RepoChangedFile[];
 }
 
+export interface UnchangedFile {
+  repoRoot: string;
+  path: string;
+}
+
+export type DeltaRow = DeltaFile | UnchangedFile;
+
+export function isDeltaFile(row: DeltaRow): row is DeltaFile {
+  return "layers" in row;
+}
+
+export function withUnchangedFiles(
+  repoRoot: string,
+  deltas: DeltaFile[],
+  files: readonly string[],
+): DeltaRow[] {
+  const changed = new Set(deltas.map((delta) => delta.path));
+  const unchanged = [...new Set(files)]
+    .filter((path) => !changed.has(path))
+    .map((path): UnchangedFile => ({ repoRoot, path }));
+  return [...deltas, ...unchanged].sort((a, b) => a.path.localeCompare(b.path));
+}
+
 const LAYER_ORDER: FileGroup[] = ["unstaged", "staged", "committed"];
 
 export function stageState(layers: RepoChangedFile[]): StageState {

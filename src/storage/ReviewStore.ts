@@ -7,7 +7,7 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 
 import { StateKeys } from "../config.js";
-import type { ChangesMode, CompareTo, FileLayout } from "../types.js";
+import type { ChangesMode, CompareTo, FileLayout, FileScope } from "../types.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 
 const DEFAULT_COMPARE_TO: CompareTo = { kind: "head" };
@@ -38,6 +38,14 @@ export class ReviewStore {
 
   async setMode(value: ChangesMode): Promise<void> {
     await this.memento.update(StateKeys.changesMode, value);
+  }
+
+  getFileScope(): FileScope {
+    return this.memento.get<FileScope>(StateKeys.fileScope, "changed");
+  }
+
+  async setFileScope(value: FileScope): Promise<void> {
+    await this.memento.update(StateKeys.fileScope, value);
   }
 
   getRecentRefs(): string[] {
