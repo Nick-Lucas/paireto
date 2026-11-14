@@ -33,7 +33,7 @@ export function withUnchangedFiles(
   files: readonly string[],
 ): DeltaRow[] {
   const changed = new Set(deltas.map((delta) => delta.path));
-  const unchanged = files
+  const unchanged = [...new Set(files)]
     .filter((path) => !changed.has(path))
     .map((path): UnchangedFile => ({ repoRoot, path }));
   return [...deltas, ...unchanged].sort((a, b) => a.path.localeCompare(b.path));

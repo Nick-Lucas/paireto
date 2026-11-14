@@ -14,6 +14,7 @@ import type { GateCoordinator, GateKind } from "../gate/GateCoordinator.js";
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { ChangedFile, FileStatus } from "../git/DiffService.js";
 import type {
+  ActiveFile,
   RepoChangedFile,
   RepositoryChangesModel,
   RepositoryReviewState,
@@ -232,6 +233,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   private readonly subs: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
   private readonly deletedPaths = new WeakMap<RepositoryChangesModel, Set<string>>();
+  private pinned?: UnchangedFile;
 
   constructor(
     private readonly agents: AgentSessionService,
@@ -265,7 +267,73 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       vscode.commands.registerCommand(Commands.agentShow, (arg: AgentCommandArg) =>
         this.agents.setMuted(commandSession(arg).sessionId, false),
       ),
+      vscode.commands.registerCommand(Commands.reviewRevealActiveFile, () =>
+        this.revealActiveFile(),
+      ),
+      vscode.window.onDidChangeActiveTextEditor(() => this.releasePin()),
+      vscode.window.tabGroups.onDidChangeTabs(() => this.releasePin()),
     );
+  }
+
+  private async revealActiveFile(): Promise<void> {
+    const active = this.review.activeFile();
+    if (!active) {
+      return;
+    }
+    const node = this.rowForActive(active) ?? this.pin(active);
+    if (!node) {
+      void vscode.window.showInformationMessage(`${active.path} is not in the Review Plan.`);
+      return;
+    }
+    await this.view?.reveal(node, { select: true, focus: true }).then(undefined, () => undefined);
+  }
+
+  private rowForActive(active: ActiveFile): Node | undefined {
+    const state = this.review.getState();
+    if (state.guided) {
+      const row =
+        state.guided.repoRoot === active.repoRoot
+          ? state.guided.changesets
+              .flatMap((changeset) => changeset.files)
+              .find((candidate) => candidate.path === active.path)
+          : undefined;
+      return row && { kind: "changesetFile", repoRoot: state.guided.repoRoot, row };
+    }
+    const repository = this.repository(active.repoRoot);
+    if (!repository) {
+      return undefined;
+    }
+    if (state.mode === "staging") {
+      const file = stagingRow(repository.changes, active);
+      return file && { kind: "file", file };
+    }
+    const row = this.rowsFor(repository).find((candidate) => candidate.path === active.path);
+    return row && deltaRowToNode(row);
+  }
+
+  private pin(active: ActiveFile): Node | undefined {
+    if (this.review.getState().guided || !this.repository(active.repoRoot)) {
+      return undefined;
+    }
+    this.pinned = { repoRoot: active.repoRoot, path: active.path };
+    this.emitter.fire();
+    return { kind: "unchangedFile", file: this.pinned };
+  }
+
+  private releasePin(): void {
+    if (!this.pinned) {
+      return;
+    }
+    const active = this.review.activeFile();
+    if (active?.repoRoot === this.pinned.repoRoot && active.path === this.pinned.path) {
+      return;
+    }
+    this.pinned = undefined;
+    this.emitter.fire();
+  }
+
+  private pinnedPaths(repoRoot: string): string[] {
+    return this.pinned?.repoRoot === repoRoot ? [this.pinned.path] : [];
   }
 
   private onStateChanged(): void {
@@ -364,9 +432,11 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   private rowsFor(repository: RepositoryReviewState): DeltaRow[] {
     const deltas = this.deltaFor(repository);
     const { fileScope } = this.review.getState();
-    return fileScope === "all" && repository.files
-      ? withUnchangedFiles(repository.repoRoot, deltas, repository.files)
-      : deltas;
+    const unchanged = [
+      ...(fileScope === "all" ? (repository.files ?? []) : []),
+      ...this.pinnedPaths(repository.repoRoot),
+    ];
+    return unchanged.length ? withUnchangedFiles(repository.repoRoot, deltas, unchanged) : deltas;
   }
 
   // ── Selection sync: keep the highlighted row pointed at the diff the editor is showing ──
@@ -466,10 +536,12 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
           (e) => e.type === "file" && e.file.path === node.delta.path,
         );
       case "unchangedFile":
-        return this.deltaParent(
-          node.file.repoRoot,
-          (e) => e.type === "file" && e.file.path === node.file.path,
-        );
+        return this.review.getState().mode === "staging"
+          ? this.filesTop(node.file.repoRoot)
+          : this.deltaParent(
+              node.file.repoRoot,
+              (e) => e.type === "file" && e.file.path === node.file.path,
+            );
       case "agent":
         return { kind: "section", id: "agents", label: "Agents" };
       case "reviewComment":
@@ -498,13 +570,17 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     return parent ? { kind: "folder", repoRoot, group, entry: parent } : groupHeader;
   }
 
+  private filesTop(repoRoot: string): Node {
+    const repository = this.repository(repoRoot);
+    return this.review.getState().repositories.length > 1 && repository
+      ? { kind: "repository", repository }
+      : { kind: "section", id: "files", label: "Changed Files" };
+  }
+
   private deltaParent(repoRoot: string, matches: (e: TreeEntry<DeltaRow>) => boolean): Node {
     const state = this.review.getState();
     const repository = this.repository(repoRoot);
-    const top: Node =
-      state.repositories.length > 1 && repository
-        ? { kind: "repository", repository }
-        : { kind: "section", id: "files", label: "Changed Files" };
+    const top = this.filesTop(repoRoot);
     if (state.layout === "flat" || !repository) {
       return top;
     }
@@ -791,6 +867,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (changes.unstaged.length) {
       groups.push(groupNode(repoRoot, "unstaged", GROUP_LABELS.unstaged, changes.unstaged));
     }
+    if (this.pinned?.repoRoot === repoRoot && !stagingRow(changes, this.pinned)) {
+      groups.push({ kind: "unchangedFile", file: this.pinned });
+    }
     return groups.length ? groups : [placeholder("No changes")];
   }
 
@@ -887,6 +966,22 @@ function groupNode(repoRoot: string, group: FileGroup, label: string, files: Cha
     deletions += f.deletions;
   }
   return { kind: "group", repoRoot, group, label, count: files.length, additions, deletions };
+}
+
+const STAGING_ROW_ORDER: FileGroup[] = ["unstaged", "staged", "committed"];
+
+function stagingRow(
+  changes: RepositoryChangesModel,
+  active: ActiveFile,
+): RepoChangedFile | undefined {
+  const order = active.group ? [active.group, ...STAGING_ROW_ORDER] : STAGING_ROW_ORDER;
+  for (const group of order) {
+    const file = changes[group].find((candidate) => candidate.path === active.path);
+    if (file) {
+      return file;
+    }
+  }
+  return undefined;
 }
 
 function emptyChanges(): RepositoryChangesModel {

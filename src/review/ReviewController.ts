@@ -154,6 +154,12 @@ export interface RepoChangedFile extends ChangedFile {
   repoRoot: string;
 }
 
+export interface ActiveFile {
+  repoRoot: string;
+  path: string;
+  group?: FileGroup;
+}
+
 export interface RepositoryChangesModel extends Omit<ChangesModel, FileGroup> {
   staged: RepoChangedFile[];
   unstaged: RepoChangedFile[];
@@ -791,6 +797,25 @@ export class ReviewController implements vscode.Disposable {
 
   drainGate(): void {
     this.gate.drain({ status: "cancelled", feedback: "" });
+  }
+
+  activeFile(): ActiveFile | undefined {
+    const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input;
+    const key = reviewTabKey(input);
+    const open = key ? this.openDiffs.get(key) : undefined;
+    if (open) {
+      return { repoRoot: open.repoRoot, path: open.path, group: open.group };
+    }
+    const uri = tabUri(input);
+    if (uri?.scheme === Schemes.review) {
+      const review = ReviewPath.fromUri(uri);
+      return { repoRoot: review.repoRoot, path: review.relPath };
+    }
+    if (uri?.scheme !== "file") {
+      return undefined;
+    }
+    const root = this.roots.gitRootForPath(uri.fsPath);
+    return root && { repoRoot: root.repoRoot, path: repoRelativePath(root.repoRoot, uri.fsPath) };
   }
 
   getState(): ReviewState {
@@ -2538,6 +2563,20 @@ function tabUriScheme(input: unknown): string | undefined {
 }
 
 /** Stable virtual URI used to identify either a two-pane review diff or a single virtual pane. */
+function tabUri(input: unknown): vscode.Uri | undefined {
+  if (input instanceof vscode.TabInputTextDiff) {
+    return input.modified;
+  }
+  if (
+    input instanceof vscode.TabInputText ||
+    input instanceof vscode.TabInputCustom ||
+    input instanceof vscode.TabInputNotebook
+  ) {
+    return input.uri;
+  }
+  return undefined;
+}
+
 function reviewTabKey(input: unknown): string | undefined {
   if (input instanceof vscode.TabInputTextDiff && input.original.scheme === Schemes.review) {
     return input.original.toString();

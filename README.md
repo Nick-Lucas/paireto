@@ -131,6 +131,8 @@ Use the **View Modes** button to pick one of three views or toggle between a tre
 
 In Delta and Review, the **Files** option shows **Changed Only** or **All Files**. All Files shows the full file tree, with the unchanged files beside the changes. Folders without changes stay collapsed. Only changed files get a Review checkbox.
 
+**Paireto: Reveal Active File** selects the file in the active editor in the Paireto view, in every view. Bind it to a key in Keyboard Shortcuts. If the file has no changes, Paireto adds it to the list until you focus a different file.
+
 ## Switch repo or worktree
 
 Hit **`Cmd+Shift+K`** to view all your worktrees and their agent state. You can switch to another open window or replace your current window with a different worktree.
