@@ -38,6 +38,7 @@ function state(groups: Partial<Record<FileGroup, RepoChangedFile[]>>): ReviewSta
     compareTo: { kind: "head" },
     layout: "flat",
     mode: "staging",
+    fileScope: "changed",
     repositories: [
       {
         repoRoot: REPO,

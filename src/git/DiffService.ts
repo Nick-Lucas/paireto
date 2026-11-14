@@ -105,6 +105,18 @@ export class DiffService {
     };
   }
 
+  async listFiles(repoRoot: string): Promise<string[]> {
+    const { stdout } = await git(repoRoot, [
+      "ls-files",
+      "--cached",
+      "--others",
+      "--exclude-standard",
+      "--deduplicate",
+      "-z",
+    ]);
+    return splitNul(stdout);
+  }
+
   async hasBothConflictSides(repoRoot: string, relPath: string): Promise<boolean> {
     const out = await gitSafe(repoRoot, ["ls-files", "-u", "-z", "--", `:(literal)${relPath}`]);
     const stages = new Set(splitNul(out).map((entry) => entry.split("\t")[0]?.split(" ")[2]));

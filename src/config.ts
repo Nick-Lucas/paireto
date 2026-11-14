@@ -94,6 +94,7 @@ export const StateKeys = {
   compareTo: "paireto.compareTo",
   fileLayout: "paireto.fileLayout",
   changesMode: "paireto.changesMode",
+  fileScope: "paireto.fileScope",
   seenFiles: "paireto.seenFiles",
   recentRefs: "paireto.recentRefs",
 } as const;

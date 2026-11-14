@@ -32,7 +32,7 @@ import { log } from "../log.js";
 import type { ReviewStore } from "../storage/ReviewStore.js";
 import type { Harness } from "../protocol/types.js";
 import { currentFeedbackRef, type FeedbackRef } from "../git/gitCli.js";
-import type { ChangesMode, CompareTo, FileGroup, FileLayout } from "../types.js";
+import type { ChangesMode, CompareTo, FileGroup, FileLayout, FileScope } from "../types.js";
 import { getAutoRevealSetting } from "../util/editorSettings.js";
 import { ReviewContentProvider } from "./ReviewContentProvider.js";
 import { ReviewPath } from "./ReviewPath.js";
@@ -128,6 +128,7 @@ export type RefreshReason =
   | "git"
   | "manual"
   | "compare-to"
+  | "view-mode"
   | "review-opened"
   | "review-foreground"
   | "review-ended"
@@ -143,6 +144,7 @@ export interface ReviewState {
   compareTo: CompareTo;
   layout: FileLayout;
   mode: ChangesMode;
+  fileScope: FileScope;
   repositories: RepositoryReviewState[];
   /** The agent's changeset plan resolved against the live changes, while a guided review is open. */
   guided?: GuidedReviewState;
@@ -163,6 +165,7 @@ export interface RepositoryReviewState {
   displayName: string;
   branch?: string;
   changes: RepositoryChangesModel;
+  files?: string[];
 }
 
 /** State belonging to an open tab: its tree location may move, but its comparison stays pinned. */
@@ -204,6 +207,7 @@ export class ReviewController implements vscode.Disposable {
   private compareTo: CompareTo;
   private layout: FileLayout;
   private mode: ChangesMode;
+  private fileScope: FileScope;
   private readonly repositoryStates = new Map<string, RepositoryReviewState>();
   /** The last ref a scan really read for each root. A scan that failed says nothing about a branch,
    *  so the remembered answer stands until another scan succeeds. */
@@ -268,6 +272,7 @@ export class ReviewController implements vscode.Disposable {
     this.compareTo = store.getCompareTo();
     this.layout = store.getLayout();
     this.mode = store.getMode();
+    this.fileScope = store.getFileScope();
     this.turns = new TurnReviewState(() => this.roots.gitRoots.map((root) => root.repoRoot));
     // Commenting is always available on the Changes diffs — on the review-scheme side of a locked
     // diff AND on the editable working-tree (file:) side of an editable one, so it works regardless
@@ -801,6 +806,7 @@ export class ReviewController implements vscode.Disposable {
       compareTo: this.compareTo,
       layout: this.layout,
       mode: this.mode,
+      fileScope: this.fileScope,
       repositories,
       guided: this.guidedPlan && this.buildGuided(this.guidedPlan, repositories),
     };
@@ -857,13 +863,15 @@ export class ReviewController implements vscode.Disposable {
         this.refreshSeq.set(root.repoRoot, seq);
         let next: ChangesModel;
         let feedbackRef: FeedbackRef | undefined;
+        let files: string[] | undefined;
         try {
-          [next, feedbackRef] = await Promise.all([
+          [next, feedbackRef, files] = await Promise.all([
             this.diff.getChanges(
               root.repoRoot,
               compareToForRepo(this.compareTo, this.guidedCompareTo, root.repoRoot),
             ),
             currentFeedbackRef(root.repoRoot),
+            this.listsAllFiles() ? this.diff.listFiles(root.repoRoot) : undefined,
           ]);
         } catch {
           this.debug(`refresh(${reason}) ${root.repoRoot} #${seq}: failed — keeping last model`);
@@ -886,13 +894,15 @@ export class ReviewController implements vscode.Disposable {
           !previous ||
           previous.displayName !== root.displayName ||
           previous.branch !== branch ||
-          !changesEqual(previous.changes, next)
+          !changesEqual(previous.changes, next) ||
+          previous.files?.join("\0") !== files?.join("\0")
         ) {
           this.repositoryStates.set(root.repoRoot, {
             repoRoot: root.repoRoot,
             displayName: root.displayName,
             branch,
             changes: scopedChanges(root.repoRoot, next),
+            files,
           });
           changed = true;
         }
@@ -1068,18 +1078,33 @@ export class ReviewController implements vscode.Disposable {
 
   private pickViewMode(): void {
     openViewModePicker(
-      () => ({ mode: this.mode, layout: this.layout }),
+      () => ({ mode: this.mode, layout: this.layout, fileScope: this.fileScope }),
       (choice) => this.applyViewMode(choice),
     );
   }
 
+  private listsAllFiles(): boolean {
+    return this.mode !== "staging" && this.fileScope === "all";
+  }
+
   private async applyViewMode(choice: ViewModeChoice): Promise<void> {
-    if (choice.kind === "mode") {
-      this.mode = choice.mode;
-      await this.store.setMode(this.mode);
-    } else {
-      this.layout = choice.layout;
-      await this.store.setLayout(this.layout);
+    const listedAllFiles = this.listsAllFiles();
+    switch (choice.kind) {
+      case "mode":
+        this.mode = choice.mode;
+        await this.store.setMode(this.mode);
+        break;
+      case "layout":
+        this.layout = choice.layout;
+        await this.store.setLayout(this.layout);
+        break;
+      case "fileScope":
+        this.fileScope = choice.fileScope;
+        await this.store.setFileScope(this.fileScope);
+        break;
+    }
+    if (this.listsAllFiles() && !listedAllFiles) {
+      await this.refresh("view-mode");
     }
     this.changeEmitter.fire();
   }
@@ -2572,7 +2597,14 @@ export function selectCommentFile(
  */
 export type ViewModeChoice =
   | { kind: "mode"; mode: ChangesMode }
-  | { kind: "layout"; layout: FileLayout };
+  | { kind: "layout"; layout: FileLayout }
+  | { kind: "fileScope"; fileScope: FileScope };
+
+export interface ViewModeSettings {
+  mode: ChangesMode;
+  layout: FileLayout;
+  fileScope: FileScope;
+}
 
 export type ViewModeItem = vscode.QuickPickItem & { choice?: ViewModeChoice };
 
@@ -2599,8 +2631,32 @@ const LAYOUT_OPTIONS: { layout: FileLayout; label: string; detail: string }[] = 
   { layout: "flat", label: "Flat", detail: "Files in one list, with their folder beside the name" },
 ];
 
-export function viewModeItems(mode: ChangesMode, layout: FileLayout): ViewModeItem[] {
+const FILE_SCOPE_OPTIONS: { fileScope: FileScope; label: string; detail: string }[] = [
+  {
+    fileScope: "changed",
+    label: "Changed Only",
+    detail: "Only the files that differ from Compare To",
+  },
+  {
+    fileScope: "all",
+    label: "All Files",
+    detail: "The whole file tree, with unchanged files beside the changes",
+  },
+];
+
+export function viewModeItems({ mode, layout, fileScope }: ViewModeSettings): ViewModeItem[] {
   const mark = (current: boolean): string => (current ? "$(check)" : "$(blank)");
+  const scopeItems: ViewModeItem[] =
+    mode === "staging"
+      ? []
+      : [
+          { label: "Files", kind: vscode.QuickPickItemKind.Separator },
+          ...FILE_SCOPE_OPTIONS.map((option): ViewModeItem => ({
+            label: `${mark(option.fileScope === fileScope)} ${option.label}`,
+            detail: option.detail,
+            choice: { kind: "fileScope", fileScope: option.fileScope },
+          })),
+        ];
   return [
     { label: "View", kind: vscode.QuickPickItemKind.Separator },
     ...MODE_OPTIONS.map((option): ViewModeItem => ({
@@ -2614,29 +2670,36 @@ export function viewModeItems(mode: ChangesMode, layout: FileLayout): ViewModeIt
       detail: option.detail,
       choice: { kind: "layout", layout: option.layout },
     })),
+    ...scopeItems,
   ];
 }
 
+function choiceValue(choice: ViewModeChoice): string {
+  switch (choice.kind) {
+    case "mode":
+      return choice.mode;
+    case "layout":
+      return choice.layout;
+    case "fileScope":
+      return choice.fileScope;
+  }
+}
+
 function sameChoice(a: ViewModeChoice | undefined, b: ViewModeChoice): boolean {
-  return (
-    a?.kind === b.kind &&
-    (a.kind === "mode"
-      ? a.mode === (b as typeof a).mode
-      : a.layout === (b as Extract<ViewModeChoice, { kind: "layout" }>).layout)
-  );
+  return a?.kind === b.kind && choiceValue(a) === choiceValue(b);
 }
 
 export function openViewModePicker(
-  current: () => { mode: ChangesMode; layout: FileLayout },
+  current: () => ViewModeSettings,
   apply: (choice: ViewModeChoice) => Promise<void>,
 ): vscode.QuickPick<ViewModeItem> {
   const pick = vscode.window.createQuickPick<ViewModeItem>();
   pick.title = "View Modes";
   pick.keepScrollPosition = true;
   const render = (active?: ViewModeChoice): void => {
-    const { mode, layout } = current();
-    const items = viewModeItems(mode, layout);
-    const focus = active ?? { kind: "mode", mode };
+    const settings = current();
+    const items = viewModeItems(settings);
+    const focus = active ?? { kind: "mode", mode: settings.mode };
     pick.items = items;
     pick.activeItems = items.filter((item) => sameChoice(item.choice, focus));
   };

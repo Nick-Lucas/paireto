@@ -19,7 +19,7 @@ import {
   type ViewModeItem,
 } from "../review/ReviewController.js";
 import { SeenFiles } from "../review/SeenFiles.js";
-import type { ChangesMode, FileGroup, FileLayout } from "../types.js";
+import type { ChangesMode, FileGroup, FileLayout, FileScope } from "../types.js";
 import { buildFileTree } from "../views/fileTree.js";
 import { deltaFileItem, MainTreeProvider } from "../views/MainTreeProvider.js";
 
@@ -53,10 +53,15 @@ function net(filePath: string, over: Partial<NetChange> = {}): NetChange {
   };
 }
 
-function repository(layers: RepoChangedFile[], netChanges: NetChange[]): RepositoryReviewState {
+function repository(
+  layers: RepoChangedFile[],
+  netChanges: NetChange[],
+  files?: string[],
+): RepositoryReviewState {
   return {
     repoRoot: REPO,
     displayName: "repo",
+    files,
     changes: {
       staged: layers.filter((f) => f.group === "staged"),
       unstaged: layers.filter((f) => f.group === "unstaged"),
@@ -467,6 +472,7 @@ suite("Review mode — seen files", () => {
 interface TreeUnderTest {
   getChildren(node?: unknown): Array<{ kind: string }>;
   getTreeItem(node: unknown): vscode.TreeItem;
+  getParent(node: unknown): unknown;
   onCheckboxes(items: ReadonlyArray<[unknown, vscode.TreeItemCheckboxState]>): Promise<void>;
 }
 
@@ -475,11 +481,13 @@ function treeIn(
   seen: SeenFiles,
   repo: RepositoryReviewState,
   layout: FileLayout = "tree",
+  fileScope: FileScope = "changed",
 ): TreeUnderTest {
   const state: ReviewState = {
     compareTo: { kind: "head" },
     layout,
     mode,
+    fileScope,
     repositories: [repo],
   };
   return Object.assign(Object.create(MainTreeProvider.prototype), {
@@ -607,6 +615,160 @@ suite("Review mode — tree", () => {
   });
 });
 
+suite("All Files scope", () => {
+  const repo = repository(
+    [layer("src/a.ts", "unstaged"), layer("top.ts", "staged")],
+    [net("src/a.ts"), net("top.ts")],
+    ["docs/guide.md", "src/a.ts", "src/b.ts", "top.ts", "z.txt"],
+  );
+  const rowLabel = (tree: TreeUnderTest, node: unknown): string => {
+    const label = tree.getTreeItem(node).label;
+    return typeof label === "string"
+      ? label
+      : path.basename(tree.getTreeItem(node).resourceUri?.path ?? "");
+  };
+  const rowSummary = (tree: TreeUnderTest, node: { kind: string }): [string, string] => [
+    node.kind,
+    rowLabel(tree, node),
+  ];
+
+  test("the tree lists unchanged files beside the changed files", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "tree", "all");
+    const top = tree.getChildren(filesSection(tree));
+    const src = top.find((node) => rowLabel(tree, node) === "src");
+    assert.ok(src, "the src folder must be listed");
+
+    assert.deepStrictEqual(
+      top.map((node) => rowSummary(tree, node)),
+      [
+        ["deltaFolder", "docs"],
+        ["deltaFolder", "src"],
+        ["deltaFile", "top.ts"],
+        ["unchangedFile", "z.txt"],
+      ],
+    );
+    assert.deepStrictEqual(
+      tree.getChildren(src).map((node) => rowSummary(tree, node)),
+      [
+        ["deltaFile", "a.ts"],
+        ["unchangedFile", "b.ts"],
+      ],
+    );
+  });
+
+  test("Changed Only hides the unchanged files", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "tree", "changed");
+
+    assert.deepStrictEqual(
+      tree.getChildren(filesSection(tree)).map((node) => rowSummary(tree, node)),
+      [
+        ["deltaFolder", "src"],
+        ["deltaFile", "top.ts"],
+      ],
+    );
+  });
+
+  test("in Review mode only changed files and folders that hold them have a seen checkbox", () => {
+    const tree = treeIn("review", new SeenFiles(new MemoryMemento()), repo, "tree", "all");
+    const top = tree.getChildren(filesSection(tree));
+    const [docs, src] = top;
+    const [changed, unchanged] = tree.getChildren(src);
+
+    assert.strictEqual(tree.getTreeItem(docs).checkboxState, undefined);
+    assert.strictEqual(tree.getTreeItem(src).checkboxState, vscode.TreeItemCheckboxState.Unchecked);
+    assert.strictEqual(
+      tree.getTreeItem(changed).checkboxState,
+      vscode.TreeItemCheckboxState.Unchecked,
+    );
+    assert.strictEqual(tree.getTreeItem(unchanged).checkboxState, undefined);
+    assert.strictEqual(tree.getTreeItem(top[3]).checkboxState, undefined);
+    assert.strictEqual(filesSection(tree).description, "HEAD · 0/2 seen");
+  });
+
+  test("ticking a folder marks only its changed files seen and ticks the folder", async () => {
+    const seen = new SeenFiles(new MemoryMemento());
+    const tree = treeIn("review", seen, repo, "tree", "all");
+    const [, src] = tree.getChildren(filesSection(tree));
+
+    await tree.onCheckboxes([[src, vscode.TreeItemCheckboxState.Checked]]);
+
+    assert.strictEqual(tree.getTreeItem(src).checkboxState, vscode.TreeItemCheckboxState.Checked);
+    assert.strictEqual(filesSection(tree).description, "HEAD · 1/2 seen");
+  });
+
+  test("a folder with no changed files is collapsed and a folder with changes is expanded", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "tree", "all");
+    const [docs, src] = tree.getChildren(filesSection(tree));
+
+    assert.strictEqual(
+      tree.getTreeItem(docs).collapsibleState,
+      vscode.TreeItemCollapsibleState.Collapsed,
+    );
+    assert.strictEqual(
+      tree.getTreeItem(src).collapsibleState,
+      vscode.TreeItemCollapsibleState.Expanded,
+    );
+    assert.strictEqual(tree.getTreeItem(docs).contextValue, "deltaFolder:delta");
+  });
+
+  test("an unchanged file opens the file and has no stage actions", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "tree", "all");
+    const unchanged = tree.getChildren(filesSection(tree))[3];
+    const item = tree.getTreeItem(unchanged);
+
+    assert.strictEqual(item.contextValue, "unchangedFile");
+    assert.deepStrictEqual(
+      [item.command?.command, (item.command?.arguments ?? []).map((uri: vscode.Uri) => uri.fsPath)],
+      ["vscode.open", [vscode.Uri.file(path.join(REPO, "z.txt")).fsPath]],
+    );
+  });
+
+  test("stage on a folder acts only on its changed files", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "tree", "all");
+    const [, src] = tree.getChildren(filesSection(tree));
+
+    assert.deepStrictEqual(
+      FilesArg.parse(src).map((file) => file.path),
+      ["src/a.ts"],
+    );
+  });
+
+  test("an unchanged file row names its folder as its parent", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "tree", "all");
+    const [docs] = tree.getChildren(filesSection(tree));
+    const [guide] = tree.getChildren(docs);
+
+    assert.strictEqual(rowLabel(tree, tree.getParent(guide)), "docs");
+  });
+
+  test("the flat layout lists every file by directory", () => {
+    const tree = treeIn("delta", new SeenFiles(new MemoryMemento()), repo, "flat", "all");
+
+    assert.deepStrictEqual(
+      tree.getChildren(filesSection(tree)).map((node) => rowSummary(tree, node)),
+      [
+        ["deltaFile", "top.ts"],
+        ["unchangedFile", "z.txt"],
+        ["unchangedFile", "guide.md"],
+        ["deltaFile", "a.ts"],
+        ["unchangedFile", "b.ts"],
+      ],
+    );
+  });
+
+  test("the file list holds tracked and untracked files but not ignored ones", async () => {
+    const { root, git, write } = makeRepo();
+    write(".gitignore", "*.log\n");
+    write("src/new.ts", "x\n");
+    write("debug.log", "x\n");
+    git(["add", ".gitignore"]);
+
+    const files = await new DiffService().listFiles(root);
+
+    assert.deepStrictEqual(files.sort(), [".gitignore", "base.txt", "src/new.ts"]);
+  });
+});
+
 suite("Flat layout order", () => {
   const paths = [
     "src/views/b.ts",
@@ -657,17 +819,29 @@ interface ViewModePicker {
 function controllerWith(
   mode: ChangesMode,
   layout: FileLayout,
+  fileScope: FileScope = "changed",
 ): {
   controller: ViewModePicker;
-  saved: { mode?: ChangesMode; layout?: FileLayout };
+  saved: { mode?: ChangesMode; layout?: FileLayout; fileScope?: FileScope };
   fired: () => number;
+  refreshes: () => number;
 } {
-  const saved: { mode?: ChangesMode; layout?: FileLayout } = {};
+  const saved: { mode?: ChangesMode; layout?: FileLayout; fileScope?: FileScope } = {};
   let fires = 0;
+  let refreshes = 0;
   const controller = Object.assign(Object.create(ReviewController.prototype), {
     mode,
     layout,
+    fileScope,
+    refresh: () => {
+      refreshes += 1;
+      return Promise.resolve();
+    },
     store: {
+      setFileScope: (value: FileScope) => {
+        saved.fileScope = value;
+        return Promise.resolve();
+      },
       setMode: (value: ChangesMode) => {
         saved.mode = value;
         return Promise.resolve();
@@ -679,7 +853,7 @@ function controllerWith(
     },
     changeEmitter: { fire: () => (fires += 1) },
   }) as ViewModePicker;
-  return { controller, saved, fired: () => fires };
+  return { controller, saved, fired: () => fires, refreshes: () => refreshes };
 }
 
 interface OpenedPicker {
@@ -757,16 +931,59 @@ async function accept(pick: vscode.QuickPick<ViewModeItem>, name: string): Promi
 suite("View Modes control", function () {
   this.timeout(30_000);
 
-  test("one picker offers the view and the layout, with the current ones ticked", () => {
-    assert.deepStrictEqual(labels(viewModeItems("delta", "flat")), [
-      "View",
-      "$(blank) Staging",
-      "$(check) Delta",
-      "$(blank) Review",
-      "Layout",
-      "$(blank) Tree",
-      "$(check) Flat",
-    ]);
+  test("one picker offers the view, the layout and the file scope, with the current ones ticked", () => {
+    assert.deepStrictEqual(
+      labels(viewModeItems({ mode: "delta", layout: "flat", fileScope: "all" })),
+      [
+        "View",
+        "$(blank) Staging",
+        "$(check) Delta",
+        "$(blank) Review",
+        "Layout",
+        "$(blank) Tree",
+        "$(check) Flat",
+        "Files",
+        "$(blank) Changed Only",
+        "$(check) All Files",
+      ],
+    );
+  });
+
+  test("Staging mode offers no file scope", () => {
+    assert.deepStrictEqual(
+      labels(viewModeItems({ mode: "staging", layout: "tree", fileScope: "all" })),
+      [
+        "View",
+        "$(check) Staging",
+        "$(blank) Delta",
+        "$(blank) Review",
+        "Layout",
+        "$(check) Tree",
+        "$(blank) Flat",
+      ],
+    );
+  });
+
+  test("picking All Files saves it and reads the file tree", async () => {
+    const { controller, saved, fired, refreshes } = controllerWith("review", "tree");
+
+    await withPicker(controller, async ({ pick }) => {
+      await accept(pick, "All Files");
+
+      assert.deepStrictEqual(saved, { fileScope: "all" });
+      assert.strictEqual(refreshes(), 1);
+      assert.strictEqual(fired(), 1);
+    });
+  });
+
+  test("a layout change does not read the file tree again", async () => {
+    const { controller, refreshes } = controllerWith("delta", "tree", "all");
+
+    await withPicker(controller, async ({ pick }) => {
+      await accept(pick, "Flat");
+
+      assert.strictEqual(refreshes(), 0);
+    });
   });
 
   test("the picker opens with the current view highlighted", async () => {
@@ -804,6 +1021,9 @@ suite("View Modes control", function () {
         "Layout",
         "$(blank) Tree",
         "$(check) Flat",
+        "Files",
+        "$(check) Changed Only",
+        "$(blank) All Files",
       ]);
     });
   });
