@@ -372,3 +372,4 @@ Export is one-way. No Mermaid import. Mermaid has no official parser AST for flo
 - Delta shows as a prefix glyph and a `classDef` colour.
 - The JSON export is the full `VizDoc`. It is the only lossless format.
 - D2 is the second exporter. It keeps deep nesting and sequences with less loss than Mermaid.
+- A LikeC4 exporter writes graph views as LikeC4 views and walks as dynamic views. See [06-likec4.md](06-likec4.md).

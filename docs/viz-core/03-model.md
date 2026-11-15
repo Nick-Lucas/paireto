@@ -247,7 +247,7 @@ interface Step {
   label: string;
   request?: string;
   response?: string;
-  fragment?: { kind: "alt" | "opt" | "loop" | "par"; label?: string; id: string };
+  fragment?: { kind: "alt" | "opt" | "loop" | "par" | "break" | "try"; label?: string; id: string };
   phase?: string;
   code?: CodeRef[];
   delta?: Delta;
@@ -261,7 +261,7 @@ interface Tour {
 ```
 
 - A **walk** is a protocol or a logical flow. A sequence view draws it with lifelines. A graph view plays it back by highlighting `step.relation` one step at a time. #74 had two models for these. The core has one.
-- `fragment` adds `alt`, `opt`, `loop` and `par` blocks. #74 has no fragments.
+- `fragment` adds `alt`, `opt`, `loop`, `par`, `break` and `try` blocks, with the same words as LikeC4. #74 has no fragments.
 - A **tour** is the narrated walkthrough from #74. A stop names a view, so one tour can move from the overview to a sequence and back. In #74 a walkthrough step cannot mix stages.
 - "Next change" from #77 is a generated tour. Its stops are the changed members in rank order.
 
