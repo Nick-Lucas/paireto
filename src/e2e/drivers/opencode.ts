@@ -53,6 +53,10 @@ export function openCodeRunFatal(line: string): string | undefined {
     : undefined;
 }
 
+export function openCodeEnv(): NodeJS.ProcessEnv {
+  return { ...baseHarnessEnv(), OPENCODE_DISABLE_MODELS_FETCH: "true" };
+}
+
 /**
  * The `opencode run` argument list for one turn. The plan agent denies every edit until a plan
  * approval releases it, so it is passed only for a case that proposes a plan: a case that never does
@@ -113,7 +117,7 @@ export class OpenCodeDriver implements HarnessDriver {
       checkMode: this.mode === "check",
       homeDir: mockHomeDir(),
     });
-    this.env = { ...baseHarnessEnv(), ...this.home.env };
+    this.env = { ...openCodeEnv(), ...this.home.env };
     // localhost serve/attach stays direct through NO_PROXY; provider traffic is recorded or replayed.
     Object.assign(this.env, proxy.env);
     this.log(`mode=${this.mode}: HTTPS_PROXY=${proxy.url} (+CA trust)`);

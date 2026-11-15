@@ -45,3 +45,23 @@ U2, U3 and U4 run in parallel in separate worktrees, because their files do not 
 3. The e2e suite passes in Docker against cassettes recorded for the new tools.
 4. In the browser preview, a generated fixture viz shows class boxes with members and badges, a sequence flow with a fragment, notes, and the review list.
 5. In VS Code, `paireto_viz_generate` on a real diff writes a file with class nodes, and `paireto_viz_present` opens it. A note on a class becomes a review thread that Send Feedback delivers.
+
+## Status
+
+| Unit | Result |
+| --- | --- |
+| U1 Model | Done. `VizFile` schema, compile rules, index, refs, Mermaid flowchart, class and sequence exports |
+| U2 Generator | Done. `src/viz/generate/`. Ported from #77. Uses a definition lookup when a short type name is ambiguous |
+| U3 Host | Done. Viz files, `paireto_viz_generate`, `paireto_viz_present`, custom editor, Open Viz, open newest, notes as review threads, regenerate request, skill for every harness, wire version 0.12.0 |
+| U4 Webview | Done. One ReactFlow UI with #77's look and #74's features. ELK runs on the main thread, because the webview CSP has no `worker-src`. It takes 53 ms for the class diagram fixture |
+| U5 Integration | Done. Generator connected. Cassettes recorded again for codex, kiro, opencode and pi. OpenCode now runs with `OPENCODE_DISABLE_MODELS_FETCH`, so record and replay send the same title request |
+
+Verified:
+
+- The unit suite passes in Docker: 1423 passing, 0 failing.
+- The e2e suite passes in Docker against the recorded cassettes: 15 suites over five harnesses.
+- A real TypeScript language server in the VS Code test host produces class nodes, members and edges that compile with no errors.
+- `vscode.open` on a `.viz.json` file opens the viz editor.
+- The webview renders under the editor's Content Security Policy in headless Chrome, with no violations.
+
+Not yet verified by hand: the full agent loop in a live VS Code window. No e2e case drives the viz tools.

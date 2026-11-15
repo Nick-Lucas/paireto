@@ -9,6 +9,7 @@ import {
 import { formatVizRef } from "../model/refs";
 import type { VizRef } from "../model/types";
 import type { UiAction } from "../model/ui";
+import { nodeContextChips } from "../model/inspector";
 import { DeltaBadge, KindIcon, UiIcon } from "./icons";
 import { vscode } from "./vscode";
 import "./inspector.css";
@@ -120,14 +121,11 @@ function NodePanel({
       <div className="viz-chips">
         <span className="viz-kind-chip">{node.kind}</span>
         <DeltaBadge delta={node.delta} />
-        <span className="viz-kind-chip viz-kind-chip--muted">
-          {index.lanes.find((lane) => lane.id === node.lane)?.label}
-        </span>
-        {node.parent && (
-          <span className="viz-kind-chip viz-kind-chip--muted">
-            {index.nodeById.get(node.parent)?.label ?? node.parent}
+        {nodeContextChips(node, index).map((label) => (
+          <span key={label} className="viz-kind-chip viz-kind-chip--muted">
+            {label}
           </span>
-        )}
+        ))}
       </div>
       {node.role && <p className="viz-inspector__role">{node.role}</p>}
       <Files files={node.files} />
