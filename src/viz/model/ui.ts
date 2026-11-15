@@ -13,7 +13,7 @@ export type Mode =
       readonly running: boolean;
     };
 
-export const ALL_DELTAS: readonly VizDelta[] = ["added", "changed", "deleted", "unchanged"];
+export const ALL_DELTAS: readonly VizDelta[] = ["added", "changed", "removed", "unchanged"];
 
 export interface UiState {
   readonly stage: Stage;
@@ -60,6 +60,7 @@ function stageOfRef(index: VizIndex, ref: VizRef, current: Stage): Stage {
   switch (ref.kind) {
     case "node":
       return refInStage(index, ref, current) ? current : OVERVIEW;
+    case "member":
     case "edge":
       return OVERVIEW;
     case "flow":

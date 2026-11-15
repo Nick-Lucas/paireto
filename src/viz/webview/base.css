@@ -1,7 +1,7 @@
 :root {
   --viz-added: var(--vscode-gitDecoration-addedResourceForeground, #81b88b);
   --viz-changed: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
-  --viz-deleted: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
+  --viz-removed: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
   --viz-unchanged: var(--vscode-descriptionForeground, #9d9d9d);
   --viz-bg: var(--vscode-editor-background, #1f1f1f);
   --viz-fg: var(--vscode-foreground, #ccc);
@@ -181,8 +181,8 @@ kbd {
 .viz-delta--changed {
   color: var(--viz-changed);
 }
-.viz-delta--deleted {
-  color: var(--viz-deleted);
+.viz-delta--removed {
+  color: var(--viz-removed);
 }
 .viz-delta--unchanged {
   color: var(--viz-unchanged);

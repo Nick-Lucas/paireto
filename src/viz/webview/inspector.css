@@ -76,7 +76,7 @@
 
 .viz-struck {
   text-decoration: line-through;
-  text-decoration-color: var(--viz-deleted);
+  text-decoration-color: var(--viz-removed);
 }
 
 .viz-chips {

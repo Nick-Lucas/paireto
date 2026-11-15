@@ -42,10 +42,10 @@ suite("viz rf adapters", () => {
 
   test("overview edges keep their route, label, level and step count", async () => {
     const scene = await layoutOverview(index, makeElk());
-    const ui = run({ type: "select", ref: { kind: "edge", key: "billing-api>stripe" } });
+    const ui = run({ type: "select", ref: { kind: "edge", id: "billing-api>stripe:call" } });
     const graph = toOverviewRf(scene, index, emphasisOf(index, ui), ui);
     assert.strictEqual(graph.edges.length, 10);
-    const edge = graph.edges.find((candidate) => candidate.id === "billing-api>stripe");
+    const edge = graph.edges.find((candidate) => candidate.id === "billing-api>stripe:call");
     assert.ok(edge);
     assert.strictEqual(edge.source, "billing-api");
     assert.strictEqual(edge.target, "stripe");
@@ -64,7 +64,7 @@ suite("viz rf adapters", () => {
     assert.strictEqual(level("billing-api"), "bright");
     assert.strictEqual(level("notify"), "dim");
     assert.strictEqual(
-      graph.edges.find((edge) => edge.id === "billing-api>retry-queue")?.data.level,
+      graph.edges.find((edge) => edge.id === "billing-api>retry-queue:event")?.data.level,
       "bright",
     );
     const notifyGroup = graph.nodes.find(
@@ -84,12 +84,12 @@ suite("viz rf adapters", () => {
     assert.strictEqual(count("message"), 14);
     assert.ok(count("activation") > 0);
     assert.strictEqual(graph.edges.length, 0);
-    const current = graph.nodes.find((node) => node.id === "soft-decline:2")?.data as MessageData;
+    const current = graph.nodes.find((node) => node.id === "soft-decline 2")?.data as MessageData;
     assert.strictEqual(current.current, true);
     assert.strictEqual(current.selected, true);
     assert.strictEqual(current.level, "bright");
     assert.ok(current.toX > current.fromX);
-    const later = graph.nodes.find((node) => node.id === "soft-decline:6")?.data as MessageData;
+    const later = graph.nodes.find((node) => node.id === "soft-decline 6")?.data as MessageData;
     assert.strictEqual(later.level, "dim");
     assert.strictEqual(later.current, false);
   });
@@ -107,7 +107,7 @@ suite("viz rf adapters", () => {
     );
     const check = (ids: { id: string; selectable: boolean }[], stage: Stage) => {
       for (const element of ids) {
-        const ref = parseVizRef(element.id, index.flowById);
+        const ref = parseVizRef(element.id, index);
         if (element.selectable) {
           assert.ok(ref && refInStage(index, ref, stage), `${element.id} is a ref on the stage`);
           assert.strictEqual(formatVizRef(ref), element.id);
@@ -118,6 +118,6 @@ suite("viz rf adapters", () => {
     };
     check([...overview.nodes, ...overview.edges], OVERVIEW);
     check([...sequence.nodes], FLOW);
-    assert.ok(sequence.nodes.some((node) => node.id === "soft-decline:2"));
+    assert.ok(sequence.nodes.some((node) => node.id === "soft-decline 2"));
   });
 });

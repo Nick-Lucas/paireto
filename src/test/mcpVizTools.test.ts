@@ -79,10 +79,10 @@ suite("MCP viz tools", () => {
         properties: {},
       });
       assert.deepStrictEqual(tools.get(SHOW_VIZ_TOOL.name)?.inputSchema.required, [
+        "version",
         "title",
         "summary",
-        "level",
-        "lanes",
+        "base",
         "nodes",
       ]);
       const result = await client.request(

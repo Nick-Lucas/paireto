@@ -8,7 +8,7 @@ import * as vscode from "vscode";
 import type { ChangesModel, FileStatus } from "../git/DiffService.js";
 import type { CompareTo } from "../protocol/guidedReview.js";
 import type { VizShowRequest } from "../protocol/types.js";
-import type { VizArgs } from "../protocol/viz.js";
+import type { VizFile } from "../protocol/viz.js";
 import type { ReviewState } from "../review/ReviewController.js";
 import {
   parseWebviewMessage,
@@ -74,7 +74,7 @@ function changesOf(paths: { path: string; status: FileStatus }[]): ChangesModel 
   };
 }
 
-function harness(viz: VizArgs, options: HarnessOptions = {}): Harness {
+function harness(viz: VizFile, options: HarnessOptions = {}): Harness {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-viz-"));
   fs.mkdirSync(path.join(root, "web"));
   fs.writeFileSync(path.join(root, "web", "package.json"), "{}");
@@ -153,7 +153,11 @@ function loads(panel: FakePanel | undefined): VizDoc[] {
 }
 
 function lastWindow(panel: FakePanel | undefined): VizWindowState | undefined {
-  return (panel?.posts ?? []).map((message) => message.window).slice(-1)[0];
+  return (panel?.posts ?? [])
+    .flatMap((message) =>
+      message.type === "load" || message.type === "window" ? [message.window] : [],
+    )
+    .slice(-1)[0];
 }
 
 async function closePanels(): Promise<void> {
@@ -340,15 +344,14 @@ suite("viz store", () => {
     return {
       format: VIZ_DOC_FORMAT,
       meta: {
-        id,
+        name: id,
+        path: `/work/shop/.paireto/viz/${id}.viz.json`,
         repoRoot: "/work/shop",
         repoName: "shop",
         repos: [{ name: "shop", root: "/work/shop" }],
-        harness: "claudecode",
         compareTo: { kind: "head" },
         compareLabel: "HEAD",
-        createdAt: "2026-11-10T00:00:00.000Z",
-        changed: [],
+        checkedAt: "2026-11-10T00:00:00.000Z",
       },
       viz: { ...loadVizFixture("singleFrontend"), title: `Viz ${id}` },
     };
@@ -363,7 +366,7 @@ suite("viz store", () => {
       "junk",
     ]);
     assert.deepStrictEqual(
-      new VizStore(state).all().map((stored) => stored.meta.id),
+      new VizStore(state).all().map((stored) => stored.meta.name),
       ["good"],
     );
   });
@@ -374,7 +377,7 @@ suite("viz store", () => {
       await store.put(doc(`v${i}`));
     }
     await store.put(doc("v5"));
-    const ids = store.all().map((stored) => stored.meta.id);
+    const ids = store.all().map((stored) => stored.meta.name);
     assert.strictEqual(ids.length, VIZ_STORE_LIMIT);
     assert.deepStrictEqual(ids.slice(0, 3), ["v5", "v11", "v10"]);
     assert.strictEqual(ids.filter((id) => id === "v5").length, 1);

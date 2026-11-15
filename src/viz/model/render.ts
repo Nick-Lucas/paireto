@@ -1,9 +1,9 @@
-import type { VizArgs } from "../../protocol/viz.js";
-import type { VizIssue, VizIssuePath } from "./compile.js";
+import type { VizFile } from "../../protocol/viz.js";
+import type { VizIssue } from "./types.js";
 
 export const MAX_RENDERED_ISSUES = 30;
 
-export function renderAccepted(viz: VizArgs, warnings: VizIssue[]): string {
+export function renderAccepted(viz: VizFile, issues: VizIssue[]): string {
   const counts = [
     plural(viz.nodes.length, "node"),
     plural(viz.edges?.length ?? 0, "edge"),
@@ -11,6 +11,7 @@ export function renderAccepted(viz: VizArgs, warnings: VizIssue[]): string {
     plural(viz.walkthrough?.length ?? 0, "walkthrough step"),
   ].join(", ");
   const head = `Viz "${viz.title}" is open in VS Code: ${counts}.`;
+  const warnings = issues.filter((issue) => issue.severity === "warning");
   if (warnings.length === 0) {
     return head;
   }
@@ -21,9 +22,11 @@ export function renderAccepted(viz: VizArgs, warnings: VizIssue[]): string {
   ].join("\n");
 }
 
-export function renderRejected(errors: VizIssue[], warnings: VizIssue[]): string {
+export function renderRejected(issues: VizIssue[]): string {
+  const errors = issues.filter((issue) => issue.severity === "error");
+  const warnings = issues.filter((issue) => issue.severity === "warning");
   const lines = [
-    `Viz rejected. Fix all ${errors.length} and call paireto_show_viz again. Do not remove elements to pass.`,
+    `Viz rejected. Fix all ${errors.length} and call paireto_show_viz again. Do not remove items to pass.`,
     ...renderIssues(errors),
   ];
   if (warnings.length > 0) {
@@ -32,17 +35,13 @@ export function renderRejected(errors: VizIssue[], warnings: VizIssue[]): string
   return lines.join("\n");
 }
 
-function formatIssuePath(path: VizIssuePath): string {
-  return path
-    .map((key, index) => (typeof key === "number" ? `[${key}]` : index === 0 ? key : `.${key}`))
-    .join("");
+export function renderIssue(issue: VizIssue): string {
+  const hint = issue.suggestion === undefined ? "" : ` Did you mean "${issue.suggestion}"?`;
+  return issue.path ? `${issue.path}: ${issue.message}${hint}` : `${issue.message}${hint}`;
 }
 
 function renderIssues(issues: VizIssue[]): string[] {
-  const shown = issues.slice(0, MAX_RENDERED_ISSUES).map((issue) => {
-    const where = formatIssuePath(issue.path);
-    return where ? `- ${where}: ${issue.message}` : `- ${issue.message}`;
-  });
+  const shown = issues.slice(0, MAX_RENDERED_ISSUES).map((issue) => `- ${renderIssue(issue)}`);
   if (issues.length > MAX_RENDERED_ISSUES) {
     shown.push(`- +${issues.length - MAX_RENDERED_ISSUES} more`);
   }

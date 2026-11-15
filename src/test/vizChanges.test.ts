@@ -8,7 +8,7 @@ import {
   uniqueRepoNames,
   type RepoChanges,
 } from "../viz/host/changes.js";
-import type { VizChangedFile } from "../viz/model/types.js";
+import type { VizChangedFile } from "../viz/model/compile.js";
 
 function file(path: string, status: VizChangedFile["status"] = "M", repo = "shop"): VizChangedFile {
   return { repo, path, status, additions: 3, deletions: status === "A" ? 0 : 1 };

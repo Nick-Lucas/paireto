@@ -1,0 +1,8 @@
+step	decision	why	evidence	result
+setup	Branch viz-core from #74 head e559f8e, merge origin/main and the planning docs	#74 already has the MCP plumbing, skills for every harness, ReactFlow webview and e2e cassettes; #77 is ported into it	git log viz-core	merged clean
+baseline	Unit suite on the merged branch before schema changes	Old value for the done check	docker project paireto-modest-emu, pnpm test	1291 passing, 0 failing
+schema	One VizFile per viz, no layers; opaque ids; nodes carry members; edges have ids and member ends; flows have fragments; walkthrough focus is ids or {flow, step}	User chose a single file the generator writes and the agent edits; ids must hold symbol paths; class boxes and protocol diagrams share one schema	src/protocol/viz.ts	written
+tools	paireto_viz_generate and paireto_viz_present replace paireto_show_viz and paireto_get_changes; generate returns the change summary	User asked for two tools; the summary keeps the #74 unit and level hints without a third tool	src/protocol/viz.ts VizGenerateArgs, VizPresentArgs	written
+protocol	Host and webview messages fixed before U3 and U4 split, mirroring #77 note messages	Parallel units must agree on one contract	src/viz/protocol.ts	written
+U1	Model migrated to VizFile; ids resolve by lookup; new rules for parents, members, fragments, step edges; Mermaid class and sequence exports	Foundation for U2-U4	check-types, lint, format on host; docker suite	1326 passing, 0 failing
+U1-docker	Exec docker tests with -e CI=true and never run pnpm install in the container	A fresh per-project node_modules volume made pnpm abort without a TTY	U1 report	noted for U2-U4 briefs

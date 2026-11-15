@@ -17,7 +17,13 @@ import type { RepoChangedFile, ReviewState } from "../../review/ReviewController
 import { compileViz } from "../model/compile.js";
 import { renderAccepted, renderRejected } from "../model/render.js";
 import { VIZ_DOC_FORMAT, type VizDoc, type VizRepo } from "../model/types.js";
-import type { HostToWebview, VizAlignment, VizWindowState, WebviewToHost } from "../protocol.js";
+import {
+  DEFAULT_VIZ_VIEW_STATE,
+  type HostToWebview,
+  type VizAlignment,
+  type VizWindowState,
+  type WebviewToHost,
+} from "../protocol.js";
 import {
   findUnits,
   manifestIn,
@@ -116,26 +122,26 @@ export class VizService implements vscode.Disposable {
         },
       });
       if (!result.ok) {
-        return { ok: false, message: renderRejected(result.errors, result.warnings) };
+        return { ok: false, message: renderRejected(result.issues) };
       }
+      const name = vizIdFor(caller.root, result.viz.title);
       const doc: VizDoc = {
         format: VIZ_DOC_FORMAT,
         meta: {
-          id: vizIdFor(caller.root, result.viz.title),
+          name,
+          path: path.join(caller.root, ".paireto", "viz", `${name}.viz.json`),
           repoRoot: caller.root,
           repoName: caller.name,
           repos: vizRepos,
-          harness: msg.harness,
           compareTo: caller.compareTo,
           compareLabel: caller.compareLabel,
-          createdAt: new Date().toISOString(),
-          changed,
+          checkedAt: new Date().toISOString(),
         },
         viz: result.viz,
       };
       await this.store.put(doc);
       this.open(doc);
-      return { ok: true, message: renderAccepted(result.viz, result.warnings) };
+      return { ok: true, message: renderAccepted(result.viz, result.issues) };
     } catch (error) {
       log.error(`viz: show failed: ${String(error)}`);
       return { ok: false, message: `Paireto could not show the viz: ${String(error)}` };
@@ -151,15 +157,15 @@ export class VizService implements vscode.Disposable {
       return;
     }
     if (docs.length === 1) {
-      this.reopen(docs[0].meta.id);
+      this.reopen(docs[0].meta.name);
       return;
     }
     const chosen = await vscode.window.showQuickPick(
       docs.map((doc) => ({
         label: doc.viz.title,
         description: `${doc.meta.repoName} · ${doc.meta.compareLabel}`,
-        detail: new Date(doc.meta.createdAt).toLocaleString(),
-        id: doc.meta.id,
+        detail: new Date(doc.meta.checkedAt).toLocaleString(),
+        id: doc.meta.name,
       })),
       { placeHolder: "Open a change visualization" },
     );
@@ -193,7 +199,7 @@ export class VizService implements vscode.Disposable {
     const stored = this.store.all().length;
     const doc = this.panel ? this.current : undefined;
     return doc
-      ? { open: true, vizId: doc.meta.id, title: doc.viz.title, stored }
+      ? { open: true, vizId: doc.meta.name, title: doc.viz.title, stored }
       : { open: this.panel !== undefined, stored };
   }
 
@@ -220,7 +226,14 @@ export class VizService implements vscode.Disposable {
     }
     const window = this.windowState(doc);
     this.postedWindow = JSON.stringify(window);
-    this.panel.post({ type: "load", doc, history: this.store.history(), window });
+    this.panel.post({
+      type: "load",
+      doc,
+      window,
+      vizzes: this.store.list(),
+      review: { files: [], notes: [], feedback: { waiting: false, pending: 0 } },
+      view: DEFAULT_VIZ_VIEW_STATE,
+    });
   }
 
   private panelEvents(): VizPanelEvents {
@@ -249,12 +262,12 @@ export class VizService implements vscode.Disposable {
         }
         return;
       case "align":
-        if (doc && this.windowState(doc).alignment.kind === "available") {
+        if (doc?.meta.compareTo && this.windowState(doc).alignment.kind === "available") {
           await this.deps.review.setCompareTo(doc.meta.compareTo, "viz");
         }
         return;
-      case "showHistory":
-        this.reopen(message.id);
+      case "switch":
+        this.reopen(message.name);
         return;
       case "copy":
         await vscode.env.clipboard.writeText(message.text);
@@ -281,7 +294,7 @@ export class VizService implements vscode.Disposable {
     const compareTo = this.deps.review.compareToFor(repository?.repoRoot ?? doc.meta.repoRoot);
     return {
       compareTo,
-      compareLabel: repository?.changes.compareLabel ?? doc.meta.compareLabel,
+      compareLabel: repository?.changes.compareLabel ?? doc.meta.compareLabel ?? "",
       alignment: alignmentOf(doc.meta.compareTo, compareTo, repositories.length),
     };
   }
@@ -390,8 +403,12 @@ function sameCompareTo(a: CompareTo, b: CompareTo): boolean {
   return a.kind === b.kind && (a.kind !== "ref" || a.ref === b.ref);
 }
 
-function alignmentOf(snapshot: CompareTo, window: CompareTo, repoCount: number): VizAlignment {
-  if (sameCompareTo(snapshot, window)) {
+function alignmentOf(
+  snapshot: CompareTo | undefined,
+  window: CompareTo,
+  repoCount: number,
+): VizAlignment {
+  if (!snapshot || sameCompareTo(snapshot, window)) {
     return { kind: "aligned" };
   }
   if (snapshot.kind === "ref" && repoCount > 1) {

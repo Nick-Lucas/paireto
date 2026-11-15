@@ -1,7 +1,13 @@
-import type { VizEdge, VizFileRef, VizNode } from "../../protocol/viz";
-import { stepAt, type IndexedStep, type Stage, type VizIndex } from "../model/index";
-import { edgeKey, formatVizRef } from "../model/refs";
-import type { EdgeKey, VizRef } from "../model/types";
+import type { VizFileRef, VizNode } from "../../protocol/viz";
+import {
+  stepAt,
+  type IndexedEdge,
+  type IndexedStep,
+  type Stage,
+  type VizIndex,
+} from "../model/index";
+import { formatVizRef } from "../model/refs";
+import type { VizRef } from "../model/types";
 import type { UiAction } from "../model/ui";
 import { DeltaBadge, KindIcon, UiIcon } from "./icons";
 import { vscode } from "./vscode";
@@ -66,7 +72,7 @@ function EdgeRow({
   dispatch,
 }: {
   index: VizIndex;
-  edge: VizEdge;
+  edge: IndexedEdge;
   direction: "in" | "out";
   dispatch: InspectorProps["dispatch"];
 }) {
@@ -77,9 +83,7 @@ function EdgeRow({
       <button
         type="button"
         className="viz-link"
-        onClick={() =>
-          dispatch({ type: "goto", ref: { kind: "edge", key: edgeKey(edge.from, edge.to) } })
-        }
+        onClick={() => dispatch({ type: "goto", ref: { kind: "edge", id: edge.id } })}
       >
         <span className="viz-link__arrow">{direction === "out" ? "→" : "←"}</span>
         <span className="viz-link__text">{other?.label ?? otherId}</span>
@@ -99,8 +103,8 @@ function NodePanel({
   node: VizNode;
   dispatch: InspectorProps["dispatch"];
 }) {
-  const out = (index.outEdges.get(node.id) ?? []).map((key) => index.edgesByKey.get(key)!);
-  const inn = (index.inEdges.get(node.id) ?? []).map((key) => index.edgesByKey.get(key)!);
+  const out = (index.outEdges.get(node.id) ?? []).map((id) => index.edgeById.get(id)!);
+  const inn = (index.inEdges.get(node.id) ?? []).map((id) => index.edgeById.get(id)!);
   const flows = index.flowsByNode.get(node.id) ?? [];
   return (
     <>
@@ -109,7 +113,7 @@ function NodePanel({
           <KindIcon kind={node.kind} size={16} />
         </span>
         <div>
-          <h3 className={node.delta === "deleted" ? "viz-struck" : ""}>{node.label}</h3>
+          <h3 className={node.delta === "removed" ? "viz-struck" : ""}>{node.label}</h3>
           {node.sub && <div className="viz-inspector__sub">{node.sub}</div>}
         </div>
       </header>
@@ -119,7 +123,11 @@ function NodePanel({
         <span className="viz-kind-chip viz-kind-chip--muted">
           {index.lanes.find((lane) => lane.id === node.lane)?.label}
         </span>
-        {node.group && <span className="viz-kind-chip viz-kind-chip--muted">{node.group}</span>}
+        {node.parent && (
+          <span className="viz-kind-chip viz-kind-chip--muted">
+            {index.nodeById.get(node.parent)?.label ?? node.parent}
+          </span>
+        )}
       </div>
       {node.role && <p className="viz-inspector__role">{node.role}</p>}
       <Files files={node.files} />
@@ -181,10 +189,10 @@ function EdgePanel({
   dispatch,
 }: {
   index: VizIndex;
-  id: EdgeKey;
+  id: string;
   dispatch: InspectorProps["dispatch"];
 }) {
-  const edge = index.edgesByKey.get(id);
+  const edge = index.edgeById.get(id);
   if (!edge) {
     return null;
   }
@@ -347,8 +355,11 @@ export function Inspector({ index, stage, selection, dispatch }: InspectorProps)
   } else if (selection.kind === "node") {
     const node = index.nodeById.get(selection.id);
     body = node ? <NodePanel index={index} node={node} dispatch={dispatch} /> : null;
+  } else if (selection.kind === "member") {
+    const node = index.nodeById.get(selection.node);
+    body = node ? <NodePanel index={index} node={node} dispatch={dispatch} /> : null;
   } else if (selection.kind === "edge") {
-    body = <EdgePanel index={index} id={selection.key} dispatch={dispatch} />;
+    body = <EdgePanel index={index} id={selection.id} dispatch={dispatch} />;
   } else if (selection.kind === "step") {
     const step = stepAt(index, selection);
     body = step ? <StepPanel index={index} step={step} dispatch={dispatch} /> : null;

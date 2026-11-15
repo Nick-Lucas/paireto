@@ -1,14 +1,33 @@
 {
+  "version": 1,
   "title": "Retry soft-declined card charges",
   "summary": "Soft card declines no longer fail checkout. Billing queues a retry with backoff, the new retry worker re-charges up to three times, and checkout polls a new status endpoint. Notify emails only after the final failure.",
-  "level": "service",
+  "base": "none",
   "lanes": [
-    { "id": "client", "label": "Customer" },
-    { "id": "web", "label": "Web app" },
-    { "id": "services", "label": "Services" },
-    { "id": "messaging", "label": "Messaging" },
-    { "id": "data", "label": "Data" },
-    { "id": "third-party", "label": "Third parties" }
+    {
+      "id": "client",
+      "label": "Customer"
+    },
+    {
+      "id": "web",
+      "label": "Web app"
+    },
+    {
+      "id": "services",
+      "label": "Services"
+    },
+    {
+      "id": "messaging",
+      "label": "Messaging"
+    },
+    {
+      "id": "data",
+      "label": "Data"
+    },
+    {
+      "id": "third-party",
+      "label": "Third parties"
+    }
   ],
   "nodes": [
     {
@@ -28,9 +47,22 @@
       "sub": "/checkout",
       "role": "Shows a pending state after a soft decline and polls the payment status until it settles.",
       "files": [
-        { "path": "web/app/checkout/page.tsx", "line": 40, "endLine": 118 },
-        { "path": "web/lib/usePaymentStatus.ts" }
+        {
+          "path": "web/app/checkout/page.tsx",
+          "line": 40,
+          "endLine": 118
+        },
+        {
+          "path": "web/lib/usePaymentStatus.ts"
+        }
       ]
+    },
+    {
+      "id": "billing-system",
+      "label": "billing",
+      "kind": "system",
+      "delta": "unchanged",
+      "lane": "services"
     },
     {
       "id": "billing-api",
@@ -38,13 +70,19 @@
       "kind": "service",
       "delta": "changed",
       "lane": "services",
-      "group": "billing",
       "sub": "POST /charges, GET /payments/:id",
       "role": "On a soft decline, records the attempt and queues a retry instead of failing. Adds a status endpoint.",
       "files": [
-        { "path": "services/billing/api.go", "line": 112, "endLine": 180 },
-        { "path": "services/billing/status.go" }
-      ]
+        {
+          "path": "services/billing/api.go",
+          "line": 112,
+          "endLine": 180
+        },
+        {
+          "path": "services/billing/status.go"
+        }
+      ],
+      "parent": "billing-system"
     },
     {
       "id": "retry-worker",
@@ -52,12 +90,23 @@
       "kind": "worker",
       "delta": "added",
       "lane": "services",
-      "group": "billing",
       "role": "Re-charges with exponential backoff, at most three attempts, then emits payment.failed.",
       "files": [
-        { "path": "services/billing/retry/worker.go" },
-        { "path": "services/billing/retry/backoff.go" }
-      ]
+        {
+          "path": "services/billing/retry/worker.go"
+        },
+        {
+          "path": "services/billing/retry/backoff.go"
+        }
+      ],
+      "parent": "billing-system"
+    },
+    {
+      "id": "notify-system",
+      "label": "notify",
+      "kind": "system",
+      "delta": "unchanged",
+      "lane": "services"
     },
     {
       "id": "notify",
@@ -65,9 +114,15 @@
       "kind": "service",
       "delta": "changed",
       "lane": "services",
-      "group": "notify",
       "role": "Sends the payment-failed email only for the final failure, no longer for each decline.",
-      "files": [{ "path": "services/notify/handlers/payment_failed.go", "line": 18, "endLine": 49 }]
+      "files": [
+        {
+          "path": "services/notify/handlers/payment_failed.go",
+          "line": 18,
+          "endLine": 49
+        }
+      ],
+      "parent": "notify-system"
     },
     {
       "id": "retry-queue",
@@ -77,7 +132,13 @@
       "lane": "messaging",
       "sub": "SQS, delayed delivery",
       "role": "Holds each retry until its backoff ends.",
-      "files": [{ "path": "infra/queues.tf", "line": 61, "endLine": 78 }]
+      "files": [
+        {
+          "path": "infra/queues.tf",
+          "line": 61,
+          "endLine": 78
+        }
+      ]
     },
     {
       "id": "events",
@@ -95,7 +156,11 @@
       "lane": "data",
       "sub": "Postgres",
       "role": "Gains a payment_attempts table that records each try and its outcome.",
-      "files": [{ "path": "services/billing/migrations/0042_payment_attempts.sql" }]
+      "files": [
+        {
+          "path": "services/billing/migrations/0042_payment_attempts.sql"
+        }
+      ]
     },
     {
       "id": "stripe",
@@ -109,11 +174,15 @@
       "id": "legacy-dunning",
       "label": "Dunning cron",
       "kind": "worker",
-      "delta": "deleted",
+      "delta": "removed",
       "lane": "services",
-      "group": "billing",
       "role": "The nightly retry job is removed; the retry worker replaces it.",
-      "files": [{ "path": "services/billing/cron/dunning.go" }]
+      "files": [
+        {
+          "path": "services/billing/cron/dunning.go"
+        }
+      ],
+      "parent": "billing-system"
     }
   ],
   "edges": [
@@ -138,7 +207,13 @@
       "delta": "added",
       "label": "enqueue retry",
       "hero": true,
-      "files": [{ "path": "services/billing/api.go", "line": 152, "endLine": 160 }]
+      "files": [
+        {
+          "path": "services/billing/api.go",
+          "line": 152,
+          "endLine": 160
+        }
+      ]
     },
     {
       "from": "retry-queue",
@@ -175,12 +250,17 @@
       "delta": "added",
       "label": "payment.failed (final)"
     },
-    { "from": "events", "to": "notify", "kind": "event", "delta": "unchanged" },
+    {
+      "from": "events",
+      "to": "notify",
+      "kind": "event",
+      "delta": "unchanged"
+    },
     {
       "from": "legacy-dunning",
       "to": "stripe",
       "kind": "call",
-      "delta": "deleted",
+      "delta": "removed",
       "label": "nightly re-charge"
     }
   ],
@@ -214,7 +294,12 @@
           "delta": "unchanged",
           "request": "{ cartId, paymentMethodId }"
         },
-        { "from": "billing-api", "to": "stripe", "label": "charge", "delta": "unchanged" },
+        {
+          "from": "billing-api",
+          "to": "stripe",
+          "label": "charge",
+          "delta": "unchanged"
+        },
         {
           "from": "stripe",
           "to": "billing-api",
@@ -226,7 +311,13 @@
           "from": "billing-api",
           "to": "payments-db",
           "label": "insert attempt #1",
-          "files": [{ "path": "services/billing/api.go", "line": 140, "endLine": 151 }]
+          "files": [
+            {
+              "path": "services/billing/api.go",
+              "line": 140,
+              "endLine": 151
+            }
+          ]
         },
         {
           "from": "billing-api",
@@ -234,7 +325,13 @@
           "label": "enqueue retry +30s",
           "kind": "async",
           "request": "{ chargeId, attempt: 2, notBefore }",
-          "files": [{ "path": "services/billing/api.go", "line": 152, "endLine": 160 }]
+          "files": [
+            {
+              "path": "services/billing/api.go",
+              "line": 152,
+              "endLine": 160
+            }
+          ]
         },
         {
           "from": "billing-api",
@@ -250,11 +347,33 @@
           "phase": "Retry",
           "note": "Polls every 3s, gives up after 2 minutes."
         },
-        { "from": "retry-queue", "to": "retry-worker", "label": "deliver", "kind": "async" },
-        { "from": "retry-worker", "to": "retry-worker", "label": "backoff check" },
-        { "from": "retry-worker", "to": "stripe", "label": "re-charge" },
-        { "from": "stripe", "to": "retry-worker", "label": "succeeded", "kind": "return" },
-        { "from": "retry-worker", "to": "payments-db", "label": "mark paid" },
+        {
+          "from": "retry-queue",
+          "to": "retry-worker",
+          "label": "deliver",
+          "kind": "async"
+        },
+        {
+          "from": "retry-worker",
+          "to": "retry-worker",
+          "label": "backoff check"
+        },
+        {
+          "from": "retry-worker",
+          "to": "stripe",
+          "label": "re-charge"
+        },
+        {
+          "from": "stripe",
+          "to": "retry-worker",
+          "label": "succeeded",
+          "kind": "return"
+        },
+        {
+          "from": "retry-worker",
+          "to": "payments-db",
+          "label": "mark paid"
+        },
         {
           "from": "billing-api",
           "to": "checkout",
@@ -284,7 +403,12 @@
           "kind": "return",
           "delta": "added"
         },
-        { "from": "retry-worker", "to": "payments-db", "label": "mark failed", "delta": "added" },
+        {
+          "from": "retry-worker",
+          "to": "payments-db",
+          "label": "mark failed",
+          "delta": "added"
+        },
         {
           "from": "retry-worker",
           "to": "events",
@@ -306,7 +430,11 @@
           "label": "skip unless attempts = 3",
           "delta": "changed",
           "files": [
-            { "path": "services/notify/handlers/payment_failed.go", "line": 22, "endLine": 30 }
+            {
+              "path": "services/notify/handlers/payment_failed.go",
+              "line": 22,
+              "endLine": 30
+            }
           ]
         }
       ]
@@ -316,12 +444,12 @@
     {
       "title": "Declines now queue a retry",
       "body": "Billing no longer fails a soft decline. It records the attempt and puts a retry on a new queue.",
-      "focus": ["billing-api", "billing-api>retry-queue", "retry-queue"]
+      "focus": ["billing-api", "billing-api>retry-queue:event", "retry-queue"]
     },
     {
       "title": "Adds a retry worker",
       "body": "The worker takes each retry after its backoff and charges the card again, at most three times.",
-      "focus": ["retry-worker", "retry-queue>retry-worker", "retry-worker>stripe"]
+      "focus": ["retry-worker", "retry-queue>retry-worker:event", "retry-worker>stripe:call"]
     },
     {
       "title": "Removes the nightly dunning job",
@@ -331,12 +459,38 @@
     {
       "title": "Checkout polls for the result",
       "body": "The page shows a pending state and polls the new status endpoint until the payment settles.",
-      "focus": ["soft-decline:7", "soft-decline:8", "soft-decline:14"]
+      "focus": [
+        {
+          "flow": "soft-decline",
+          "step": 7
+        },
+        {
+          "flow": "soft-decline",
+          "step": 8
+        },
+        {
+          "flow": "soft-decline",
+          "step": 14
+        }
+      ]
     },
     {
       "title": "Only the last failure emails",
       "body": "Notify now skips every payment.failed event except the final one.",
-      "focus": ["final-failure:4", "final-failure:5", "final-failure:6"]
+      "focus": [
+        {
+          "flow": "final-failure",
+          "step": 4
+        },
+        {
+          "flow": "final-failure",
+          "step": 5
+        },
+        {
+          "flow": "final-failure",
+          "step": 6
+        }
+      ]
     }
   ]
 }

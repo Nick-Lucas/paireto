@@ -240,8 +240,8 @@
 .viz-legend__item.viz-delta--changed .viz-legend__swatch {
   background: var(--viz-changed);
 }
-.viz-legend__item.viz-delta--deleted .viz-legend__swatch {
-  background: var(--viz-deleted);
+.viz-legend__item.viz-delta--removed .viz-legend__swatch {
+  background: var(--viz-removed);
 }
 .viz-legend__item.viz-delta--unchanged .viz-legend__swatch {
   background: var(--viz-unchanged);

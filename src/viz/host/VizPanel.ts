@@ -12,7 +12,7 @@ const WebviewMessage = z.discriminatedUnion("type", [
   z.object({ type: z.literal("ready") }),
   z.object({ type: z.literal("open"), file: VizFileRef, mode: z.enum(["file", "diff"]) }),
   z.object({ type: z.literal("align") }),
-  z.object({ type: z.literal("showHistory"), id: z.string().min(1).max(200) }),
+  z.object({ type: z.literal("switch"), name: z.string().min(1).max(200) }),
   z.object({ type: z.literal("copy"), text: z.string().max(1_000_000), what: z.string().max(80) }),
 ]);
 

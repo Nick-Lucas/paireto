@@ -1,7 +1,7 @@
 import type { VizDelta, VizNodeKind } from "../../protocol/viz";
 import { DELTA_GLYPH } from "../model/delta";
 
-const KIND_PATHS: Record<VizNodeKind, string> = {
+const BASE_PATHS = {
   actor: "M8 8a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm-5 6a5 5 0 0 1 10 0",
   ui: "M2 3.5h12v9H2zM2 6h12M4.5 4.75h.01M6.5 4.75h.01",
   service: "M2.5 3h11v4h-11zM2.5 9h11v4h-11zM5 5h.01M5 11h.01",
@@ -24,6 +24,18 @@ const KIND_PATHS: Record<VizNodeKind, string> = {
   state: "M8 3a5 5 0 1 0 0 10A5 5 0 0 0 8 3Zm0 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z",
   config: "M2.5 4.5h11M2.5 8h11M2.5 11.5h11M5.5 3v3M10.5 6.5v3M7 10v3",
   test: "M6 2h4M7 2v4.5L3.5 12a1.5 1.5 0 0 0 1.3 2h6.4a1.5 1.5 0 0 0 1.3-2L9 6.5V2M5 10h6",
+  file: "M4 2h5l3 3v9H4zM9 2v3h3",
+};
+
+const KIND_PATHS: Record<VizNodeKind, string> = {
+  ...BASE_PATHS,
+  interface: BASE_PATHS.class,
+  enum: BASE_PATHS.config,
+  struct: BASE_PATHS.model,
+  package: BASE_PATHS.module,
+  system: BASE_PATHS.service,
+  topic: BASE_PATHS.queue,
+  endpoint: BASE_PATHS.route,
 };
 
 export function KindIcon({ kind, size = 14 }: { kind: VizNodeKind; size?: number }) {
@@ -48,7 +60,7 @@ export function KindIcon({ kind, size = 14 }: { kind: VizNodeKind; size?: number
 export const DELTA_LABEL: Record<VizDelta, string> = {
   added: "Added",
   changed: "Changed",
-  deleted: "Deleted",
+  removed: "Removed",
   unchanged: "Unchanged",
 };
 

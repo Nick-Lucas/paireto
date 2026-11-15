@@ -1,8 +1,3 @@
-export function didYouMean(value: string, candidates: readonly string[]): string {
-  const best = closest(value, candidates);
-  return best === undefined ? "" : `Did you mean "${best}"? `;
-}
-
 export function closest(value: string, candidates: readonly string[]): string | undefined {
   let best: string | undefined;
   let bestDistance = 3;

@@ -56,7 +56,7 @@ function checkInvariants(index: VizIndex, scene: OverviewScene): void {
     }
   }
   for (const edge of scene.edges) {
-    assert.ok(edge.points.length >= 2, `${edge.key} has a route`);
+    assert.ok(edge.points.length >= 2, `${edge.id} has a route`);
   }
 }
 
@@ -81,11 +81,7 @@ suite("viz overview layout", () => {
 
   test("keeps a group label that holds a colon", async () => {
     const viz = loadVizFixture("multiService");
-    for (const node of viz.nodes) {
-      if (node.group === "billing") {
-        node.group = "Billing: retries";
-      }
-    }
+    viz.nodes.find((node) => node.id === "billing-system")!.label = "Billing: retries";
     const index = buildVizIndex(viz);
     const scene = await layoutOverview(index, makeElk());
     checkInvariants(index, scene);
@@ -134,7 +130,7 @@ suite("viz overview layout", () => {
   test("gives labelled edges a label box and starts edges on the source card side", async () => {
     const index = multiServiceIndex();
     const scene = await layoutOverview(index, makeElk());
-    const hero = scene.edges.find((edge) => edge.key === "billing-api>retry-queue");
+    const hero = scene.edges.find((edge) => edge.id === "billing-api>retry-queue:event");
     assert.ok(hero?.label, "the hero edge carries its label box");
     const source = nodeRect(scene, "billing-api");
     const start = hero.points[0];
@@ -142,7 +138,7 @@ suite("viz overview layout", () => {
       Math.abs(start.x - (source.x + source.width)) < 1,
       "edge leaves from the right side of its source",
     );
-    const unlabelled = scene.edges.find((edge) => edge.key === "events>notify");
+    const unlabelled = scene.edges.find((edge) => edge.id === "events>notify:event");
     assert.strictEqual(unlabelled?.label, undefined);
   });
 

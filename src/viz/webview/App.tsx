@@ -10,7 +10,7 @@ import { toMermaid } from "../model/mermaid";
 import { toOverviewRf, toSequenceRf, type RfGraph } from "../model/rf";
 import type { VizDoc } from "../model/types";
 import { initialUi, reduceUi, type UiAction, type UiState } from "../model/ui";
-import type { HostToWebview, VizHistoryEntry, VizWindowState } from "../protocol";
+import type { HostToWebview, VizListEntry, VizWindowState } from "../protocol";
 import { Canvas } from "./Canvas";
 import { Header } from "./Header";
 import { Inspector } from "./Inspector";
@@ -23,7 +23,7 @@ const PLAY_INTERVAL_MS = 1400;
 interface Loaded {
   doc: VizDoc;
   index: VizIndex;
-  history: VizHistoryEntry[];
+  vizzes: VizListEntry[];
   window: VizWindowState;
 }
 
@@ -47,7 +47,7 @@ function useOverviewScene(index: VizIndex | undefined): { scene?: OverviewScene;
 }
 
 function Viz({ loaded }: { loaded: Loaded }) {
-  const { doc, index, history, window: windowState } = loaded;
+  const { doc, index, vizzes, window: windowState } = loaded;
   const [ui, dispatch] = useReducer(
     (state: UiState, action: UiAction) => reduceUi(index, state, action),
     undefined,
@@ -123,7 +123,7 @@ function Viz({ loaded }: { loaded: Loaded }) {
         index={index}
         ui={ui}
         window={windowState}
-        history={history}
+        vizzes={vizzes}
         searchRef={searchRef}
         dispatch={dispatch}
         onExport={onExport}
@@ -160,11 +160,11 @@ export function App() {
     const onMessage = (event: MessageEvent<HostToWebview>) => {
       const message = event.data;
       if (message.type === "load") {
-        vscode.setState({ vizId: message.doc.meta.id });
+        vscode.setState({ vizId: message.doc.meta.name });
         setLoaded({
           doc: message.doc,
           index: buildVizIndex(message.doc.viz),
-          history: message.history,
+          vizzes: message.vizzes,
           window: message.window,
         });
       } else if (message.type === "window") {
@@ -178,5 +178,5 @@ export function App() {
   if (!loaded) {
     return <EmptyState />;
   }
-  return <Viz key={loaded.doc.meta.id + loaded.doc.meta.createdAt} loaded={loaded} />;
+  return <Viz key={loaded.doc.meta.name + loaded.doc.meta.checkedAt} loaded={loaded} />;
 }

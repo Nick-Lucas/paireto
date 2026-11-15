@@ -103,7 +103,7 @@ export function Canvas(props: CanvasProps) {
   const { stageKey, graph, index, emphasis, ui, dispatch } = props;
   const frames = useMemo(() => openingFrames(index, ui.stage), [index, ui.stage]);
   const select = (id: string) => {
-    const ref = parseVizRef(id, index.flowById);
+    const ref = parseVizRef(id, index);
     if (ref) {
       dispatch({ type: "select", ref });
     }

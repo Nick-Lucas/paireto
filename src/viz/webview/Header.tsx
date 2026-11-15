@@ -4,7 +4,7 @@ import type { VizDelta } from "../../protocol/viz";
 import { stageNumber, type VizIndex } from "../model/index";
 import type { VizDoc } from "../model/types";
 import { ALL_DELTAS, type UiAction, type UiState } from "../model/ui";
-import type { VizHistoryEntry, VizWindowState } from "../protocol";
+import type { VizListEntry, VizWindowState } from "../protocol";
 import { DELTA_GLYPH } from "../model/delta";
 import { DELTA_LABEL, UiIcon } from "./icons";
 import { vscode } from "./vscode";
@@ -15,7 +15,7 @@ interface HeaderProps {
   index: VizIndex;
   ui: UiState;
   window: VizWindowState;
-  history: VizHistoryEntry[];
+  vizzes: VizListEntry[];
   searchRef: RefObject<HTMLInputElement | null>;
   dispatch: (action: UiAction) => void;
   onExport: () => void;
@@ -38,7 +38,7 @@ export function Header({
   index,
   ui,
   window,
-  history,
+  vizzes,
   searchRef,
   dispatch,
   onExport,
@@ -50,7 +50,6 @@ export function Header({
       <div className="viz-header__top">
         <div className="viz-header__title">
           <h1>{doc.viz.title}</h1>
-          <span className="viz-kind-chip viz-kind-chip--level">{doc.viz.level}</span>
           <button
             type="button"
             className="viz-compare"
@@ -84,17 +83,15 @@ export function Header({
               }}
             />
           </div>
-          {history.length > 1 && (
+          {vizzes.length > 1 && (
             <select
               className="viz-select"
               title="Earlier visualizations"
-              value={doc.meta.id}
-              onChange={(event) =>
-                vscode.postMessage({ type: "showHistory", id: event.target.value })
-              }
+              value={doc.meta.name}
+              onChange={(event) => vscode.postMessage({ type: "switch", name: event.target.value })}
             >
-              {history.map((entry) => (
-                <option key={entry.id} value={entry.id}>
+              {vizzes.map((entry) => (
+                <option key={entry.name} value={entry.name}>
                   {entry.title} ({entry.repoName})
                 </option>
               ))}

@@ -159,13 +159,13 @@ export function toOverviewRf(
   }
   const edges: RfEdge[] = [];
   for (const routed of scene.edges) {
-    const edge = index.edgesByKey.get(routed.key);
+    const edge = index.edgeById.get(routed.id);
     if (!edge) {
       continue;
     }
-    const selected = isSelected(ui.selection, { kind: "edge", key: routed.key });
+    const selected = isSelected(ui.selection, { kind: "edge", id: routed.id });
     edges.push({
-      id: formatVizRef({ kind: "edge", key: routed.key }),
+      id: formatVizRef({ kind: "edge", id: routed.id }),
       source: edge.from,
       target: edge.to,
       type: "viz",
@@ -174,9 +174,9 @@ export function toOverviewRf(
         edge,
         points: routed.points,
         label: routed.label,
-        level: emphasis.edges.get(routed.key) ?? "normal",
+        level: emphasis.edges.get(routed.id) ?? "normal",
         selected,
-        steps: index.stepsByEdge.get(routed.key)?.length ?? 0,
+        steps: index.stepsByEdge.get(routed.id)?.length ?? 0,
       },
       selectable: true,
       zIndex: selected ? Z.card + 1 : Z.edge,

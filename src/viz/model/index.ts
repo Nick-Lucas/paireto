@@ -1,14 +1,16 @@
 import type {
-  VizArgs,
   VizDelta,
   VizEdge,
+  VizFile,
   VizFileRef,
+  VizFragment,
   VizLane,
+  VizMember,
   VizNode,
   VizStepKind,
 } from "../../protocol/viz.js";
-import { edgeKey, formatVizRef, parseVizRef } from "./refs.js";
-import type { EdgeKey, VizRef } from "./types.js";
+import { edgeId, formatVizRef, resolveFocus } from "./refs.js";
+import type { VizRef } from "./types.js";
 
 export type Stage = { kind: "overview" } | { kind: "flow"; flow: string };
 
@@ -16,6 +18,13 @@ export const OVERVIEW: Stage = { kind: "overview" };
 
 export function sameStage(a: Stage, b: Stage): boolean {
   return a.kind === "overview" ? b.kind === "overview" : b.kind === "flow" && a.flow === b.flow;
+}
+
+export type IndexedEdge = VizEdge & { readonly id: string };
+
+export interface IndexedMember {
+  readonly node: VizNode;
+  readonly member: VizMember;
 }
 
 export interface IndexedStep {
@@ -32,7 +41,7 @@ export interface IndexedStep {
   readonly phase?: string;
   readonly startsPhase: boolean;
   readonly files: readonly VizFileRef[];
-  readonly edge?: EdgeKey;
+  readonly edge?: string;
   readonly overviewRef: VizRef;
 }
 
@@ -43,6 +52,7 @@ export interface IndexedFlow {
   readonly delta: VizDelta;
   readonly participants: readonly string[];
   readonly steps: readonly IndexedStep[];
+  readonly fragments: readonly VizFragment[];
 }
 
 export interface IndexedWalkStep {
@@ -59,20 +69,22 @@ export interface StepLocator {
 }
 
 export interface VizIndex {
-  readonly viz: VizArgs;
+  readonly viz: VizFile;
   readonly lanes: readonly VizLane[];
   readonly laneIndex: ReadonlyMap<string, number>;
   readonly nodes: readonly VizNode[];
   readonly overviewNodes: readonly VizNode[];
   readonly nodeById: ReadonlyMap<string, VizNode>;
-  readonly edges: readonly VizEdge[];
-  readonly edgesByKey: ReadonlyMap<EdgeKey, VizEdge>;
-  readonly outEdges: ReadonlyMap<string, readonly EdgeKey[]>;
-  readonly inEdges: ReadonlyMap<string, readonly EdgeKey[]>;
+  readonly memberById: ReadonlyMap<string, IndexedMember>;
+  readonly childrenByParent: ReadonlyMap<string, readonly string[]>;
+  readonly edges: readonly IndexedEdge[];
+  readonly edgeById: ReadonlyMap<string, IndexedEdge>;
+  readonly outEdges: ReadonlyMap<string, readonly string[]>;
+  readonly inEdges: ReadonlyMap<string, readonly string[]>;
   readonly flows: readonly IndexedFlow[];
   readonly flowById: ReadonlyMap<string, IndexedFlow>;
   readonly flowsByNode: ReadonlyMap<string, readonly string[]>;
-  readonly stepsByEdge: ReadonlyMap<EdgeKey, readonly StepLocator[]>;
+  readonly stepsByEdge: ReadonlyMap<string, readonly StepLocator[]>;
   readonly walkthrough: readonly IndexedWalkStep[];
   readonly haystack: ReadonlyMap<string, string>;
   readonly deltaCounts: Readonly<Record<VizDelta, number>>;
@@ -106,21 +118,34 @@ export function walkStage(refs: readonly VizRef[]): Stage {
   return OVERVIEW;
 }
 
-export function buildVizIndex(viz: VizArgs): VizIndex {
-  const laneIndex = new Map(viz.lanes.map((lane, i) => [lane.id, i] as const));
+export function buildVizIndex(viz: VizFile): VizIndex {
+  const lanes = viz.lanes ?? [];
+  const laneIndex = new Map(lanes.map((lane, i) => [lane.id, i] as const));
   const nodeById = new Map(viz.nodes.map((node) => [node.id, node] as const));
-  const edges = viz.edges ?? [];
-  const edgesByKey = new Map(edges.map((edge) => [edgeKey(edge.from, edge.to), edge] as const));
-  const outEdges = new Map<string, EdgeKey[]>();
-  const inEdges = new Map<string, EdgeKey[]>();
-  for (const edge of edges) {
-    const key = edgeKey(edge.from, edge.to);
-    push(outEdges, edge.from, key);
-    push(inEdges, edge.to, key);
+  const memberById = new Map<string, IndexedMember>();
+  const childrenByParent = new Map<string, string[]>();
+  for (const node of viz.nodes) {
+    for (const member of node.members ?? []) {
+      memberById.set(member.id, { node, member });
+    }
+    if (node.parent !== undefined) {
+      push(childrenByParent, node.parent, node.id);
+    }
   }
 
+  const edges = (viz.edges ?? []).map((edge): IndexedEdge => ({ ...edge, id: edgeId(edge) }));
+  const edgeById = new Map(edges.map((edge) => [edge.id, edge] as const));
+  const outEdges = new Map<string, string[]>();
+  const inEdges = new Map<string, string[]>();
+  for (const edge of edges) {
+    push(outEdges, edge.from, edge.id);
+    push(inEdges, edge.to, edge.id);
+  }
+  const between = (from: string, to: string) =>
+    edges.find((edge) => edge.from === from && edge.to === to)?.id;
+
   const flowsByNode = new Map<string, string[]>();
-  const stepsByEdge = new Map<EdgeKey, StepLocator[]>();
+  const stepsByEdge = new Map<string, StepLocator[]>();
   const flows: IndexedFlow[] = (viz.flows ?? []).map((flow) => {
     for (const participant of flow.participants) {
       push(flowsByNode, participant, flow.id);
@@ -129,13 +154,12 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
     const steps = flow.steps.map((step, index): IndexedStep => {
       const startsPhase = step.phase !== undefined;
       phase = step.phase ?? phase;
-      const forward = edgeKey(step.from, step.to);
-      const backward = edgeKey(step.to, step.from);
-      const edge = edgesByKey.has(forward)
-        ? forward
-        : edgesByKey.has(backward)
-          ? backward
-          : undefined;
+      const edge =
+        step.edge !== undefined
+          ? edgeById.has(step.edge)
+            ? step.edge
+            : undefined
+          : (between(step.from, step.to) ?? between(step.to, step.from));
       if (edge) {
         push(stepsByEdge, edge, { flow: flow.id, index });
       }
@@ -155,7 +179,7 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
         files: step.files ?? [],
         edge,
         overviewRef: edge
-          ? { kind: "edge", key: edge }
+          ? { kind: "edge", id: edge }
           : { kind: "node", id: nodeById.get(step.from)?.flowOnly ? step.to : step.from },
       };
     });
@@ -166,14 +190,15 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
       delta: flow.delta,
       participants: flow.participants,
       steps,
+      fragments: flow.fragments ?? [],
     };
   });
   const flowById = new Map(flows.map((flow) => [flow.id, flow] as const));
-  const flowIds = new Set(flowById.keys());
+  const lookup = { nodeById, memberById, edgeById, flowById };
 
   const walkthrough = (viz.walkthrough ?? []).map((step, index): IndexedWalkStep => {
     const refs = step.focus
-      .map((raw) => parseVizRef(raw, flowIds))
+      .map((focus) => resolveFocus(focus, lookup))
       .filter((ref): ref is VizRef => ref !== undefined);
     return { index, title: step.title, body: step.body, refs, stage: walkStage(refs) };
   });
@@ -188,13 +213,21 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
         node.sub,
         node.role,
         node.kind,
+        node.stereotype,
+        ...(node.members ?? []).map((member) => member.label),
         ...(node.files ?? []).map((file) => file.path),
       ]),
     );
+    for (const member of node.members ?? []) {
+      haystack.set(
+        formatVizRef({ kind: "member", id: member.id, node: node.id }),
+        words([member.id, member.label, member.previous, member.file?.path]),
+      );
+    }
   }
   for (const edge of edges) {
     haystack.set(
-      formatVizRef({ kind: "edge", key: edgeKey(edge.from, edge.to) }),
+      formatVizRef({ kind: "edge", id: edge.id }),
       words([edge.from, edge.to, edge.label, edge.kind]),
     );
   }
@@ -212,20 +245,22 @@ export function buildVizIndex(viz: VizArgs): VizIndex {
   }
 
   const overviewNodes = viz.nodes.filter((node) => !node.flowOnly);
-  const deltaCounts: Record<VizDelta, number> = { added: 0, changed: 0, deleted: 0, unchanged: 0 };
+  const deltaCounts: Record<VizDelta, number> = { added: 0, changed: 0, removed: 0, unchanged: 0 };
   for (const node of overviewNodes) {
     deltaCounts[node.delta] += 1;
   }
 
   return {
     viz,
-    lanes: viz.lanes,
+    lanes,
     laneIndex,
     nodes: viz.nodes,
     overviewNodes,
     nodeById,
+    memberById,
+    childrenByParent,
     edges,
-    edgesByKey,
+    edgeById,
     outEdges,
     inEdges,
     flows,
@@ -249,8 +284,10 @@ export function refInStage(index: VizIndex, ref: VizRef, stage: Stage): boolean 
         ? !node.flowOnly
         : (index.flowById.get(stage.flow)?.participants.includes(ref.id) ?? false);
     }
+    case "member":
+      return stage.kind === "overview" && index.nodeById.get(ref.node)?.flowOnly !== true;
     case "edge":
-      return stage.kind === "overview" && index.edgesByKey.has(ref.key);
+      return stage.kind === "overview" && index.edgeById.has(ref.id);
     case "flow":
       return stage.kind === "flow" && stage.flow === ref.id;
     case "step":

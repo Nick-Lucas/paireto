@@ -1,9 +1,9 @@
 import type * as vscode from "vscode";
 
 import { StateKeys } from "../../config.js";
-import { VizArgs } from "../../protocol/viz.js";
+import { VizFile } from "../../protocol/viz.js";
 import { VIZ_DOC_FORMAT, type VizDoc } from "../model/types.js";
-import type { VizHistoryEntry } from "../protocol.js";
+import type { VizListEntry } from "../protocol.js";
 
 export const VIZ_STORE_LIMIT = 10;
 
@@ -15,21 +15,21 @@ export class VizStore {
     return Array.isArray(stored) ? stored.filter(isVizDoc) : [];
   }
 
-  get(id: string): VizDoc | undefined {
-    return this.all().find((doc) => doc.meta.id === id);
+  get(name: string): VizDoc | undefined {
+    return this.all().find((doc) => doc.meta.name === name);
   }
 
-  history(): VizHistoryEntry[] {
+  list(): VizListEntry[] {
     return this.all().map((doc) => ({
-      id: doc.meta.id,
+      name: doc.meta.name,
       title: doc.viz.title,
-      createdAt: doc.meta.createdAt,
       repoName: doc.meta.repoName,
+      modifiedAt: doc.meta.checkedAt,
     }));
   }
 
   async put(doc: VizDoc): Promise<void> {
-    const kept = this.all().filter((stored) => stored.meta.id !== doc.meta.id);
+    const kept = this.all().filter((stored) => stored.meta.name !== doc.meta.name);
     await this.memento.update(StateKeys.vizDocs, [doc, ...kept].slice(0, VIZ_STORE_LIMIT));
   }
 }
@@ -41,7 +41,7 @@ function isVizDoc(value: unknown): value is VizDoc {
   const doc = value as Partial<VizDoc>;
   return (
     doc.format === VIZ_DOC_FORMAT &&
-    typeof doc.meta?.id === "string" &&
-    VizArgs.safeParse(doc.viz).success
+    typeof doc.meta?.name === "string" &&
+    VizFile.safeParse(doc.viz).success
   );
 }

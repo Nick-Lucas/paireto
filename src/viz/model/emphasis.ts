@@ -1,14 +1,14 @@
 import type { VizDelta } from "../../protocol/viz.js";
 import { searchMatches, stepAt, type Stage, type VizIndex } from "./index.js";
-import { edgeKey, formatVizRef } from "./refs.js";
-import type { EdgeKey, VizRef } from "./types.js";
+import { formatVizRef } from "./refs.js";
+import type { VizRef } from "./types.js";
 import type { UiState } from "./ui.js";
 
 export type Level = "bright" | "normal" | "dim";
 
 export interface Emphasis {
   readonly nodes: ReadonlyMap<string, Level>;
-  readonly edges: ReadonlyMap<EdgeKey, Level>;
+  readonly edges: ReadonlyMap<string, Level>;
   readonly steps: ReadonlyMap<number, Level>;
   readonly camera: readonly string[] | undefined;
   readonly veil: boolean;
@@ -17,7 +17,7 @@ export interface Emphasis {
 
 type Levels = {
   nodes: Map<string, Level>;
-  edges: Map<EdgeKey, Level>;
+  edges: Map<string, Level>;
   steps: Map<number, Level>;
 };
 
@@ -38,17 +38,14 @@ function baseLevels(index: VizIndex, ui: UiState): Levels {
   const shown = (delta: VizDelta) => ui.deltaFilter.has(delta);
   if (ui.stage.kind === "overview") {
     for (const node of index.nodes) {
-      if (!node.flowOnly) {
+      if (!node.flowOnly && !index.childrenByParent.has(node.id)) {
         levels.nodes.set(node.id, shown(node.delta) ? "normal" : "dim");
       }
     }
     for (const edge of index.edges) {
       const endpointsShown =
         levels.nodes.get(edge.from) !== "dim" && levels.nodes.get(edge.to) !== "dim";
-      levels.edges.set(
-        edgeKey(edge.from, edge.to),
-        shown(edge.delta) && endpointsShown ? "normal" : "dim",
-      );
+      levels.edges.set(edge.id, shown(edge.delta) && endpointsShown ? "normal" : "dim");
     }
     return levels;
   }
@@ -70,14 +67,17 @@ function applyRefs(levels: Levels, index: VizIndex, refs: readonly VizRef[]): vo
   for (const ref of refs) {
     switch (ref.kind) {
       case "node":
-        if (levels.nodes.has(ref.id)) {
-          levels.nodes.set(ref.id, "bright");
+      case "member": {
+        const node = ref.kind === "node" ? ref.id : ref.node;
+        if (levels.nodes.has(node)) {
+          levels.nodes.set(node, "bright");
         }
         break;
+      }
       case "edge": {
-        const edge = index.edgesByKey.get(ref.key);
-        if (edge && levels.edges.has(ref.key)) {
-          levels.edges.set(ref.key, "bright");
+        const edge = index.edgeById.get(ref.id);
+        if (edge && levels.edges.has(ref.id)) {
+          levels.edges.set(ref.id, "bright");
           for (const id of [edge.from, edge.to]) {
             if (levels.nodes.get(id) === "dim") {
               levels.nodes.set(id, "normal");
@@ -129,8 +129,11 @@ function cameraIds(index: VizIndex, refs: readonly VizRef[]): string[] {
       case "node":
         node(ref.id);
         break;
+      case "member":
+        node(ref.node);
+        break;
       case "edge": {
-        const edge = index.edgesByKey.get(ref.key);
+        const edge = index.edgeById.get(ref.id);
         if (edge) {
           node(edge.from);
           node(edge.to);
@@ -176,15 +179,15 @@ export function openingFrames(index: VizIndex, stage: Stage): string[][] {
   return [
     nodes(index.overviewNodes),
     nodes(index.overviewNodes.filter((node) => node.delta !== "unchanged")),
-    hero ? cameraIds(index, [{ kind: "edge", key: edgeKey(hero.from, hero.to) }]) : [],
+    hero ? cameraIds(index, [{ kind: "edge", id: hero.id }]) : [],
   ].filter((frame) => frame.length > 0);
 }
 
-function neighbourhood(index: VizIndex, node: string): { nodes: Set<string>; edges: Set<EdgeKey> } {
+function neighbourhood(index: VizIndex, node: string): { nodes: Set<string>; edges: Set<string> } {
   const nodes = new Set([node]);
-  const edges = new Set<EdgeKey>();
+  const edges = new Set<string>();
   for (const key of [...(index.outEdges.get(node) ?? []), ...(index.inEdges.get(node) ?? [])]) {
-    const edge = index.edgesByKey.get(key);
+    const edge = index.edgeById.get(key);
     if (edge) {
       edges.add(key);
       nodes.add(edge.from);
@@ -203,7 +206,7 @@ function applyQuery(levels: Levels, index: VizIndex, ui: UiState): void {
     }
   }
   for (const key of levels.edges.keys()) {
-    if (hits.has(formatVizRef({ kind: "edge", key }))) {
+    if (hits.has(formatVizRef({ kind: "edge", id: key }))) {
       levels.edges.set(key, "bright");
     }
   }

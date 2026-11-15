@@ -1,7 +1,5 @@
 import type { VizNode } from "../../protocol/viz.js";
 import type { VizIndex } from "../model/index.js";
-import { edgeKey } from "../model/refs.js";
-import type { EdgeKey } from "../model/types.js";
 import { estimateTextWidth, union, type Point, type Rect } from "./geometry.js";
 
 export interface ElkLabel {
@@ -62,7 +60,7 @@ export interface PlacedNode extends Rect {
 }
 
 export interface RoutedEdge {
-  readonly key: EdgeKey;
+  readonly id: string;
   readonly points: readonly Point[];
   readonly label?: Rect;
 }
@@ -98,29 +96,38 @@ interface GroupKey {
   readonly label: string;
 }
 
+function parentOf(index: VizIndex, node: VizNode): VizNode | undefined {
+  return node.parent === undefined ? undefined : index.nodeById.get(node.parent);
+}
+
+function laneOf(index: VizIndex, node: VizNode): string {
+  return node.lane ?? parentOf(index, node)?.lane ?? "";
+}
+
 function toElk(index: VizIndex): { graph: ElkNode; groupKeys: ReadonlyMap<string, GroupKey> } {
   const children: ElkNode[] = [];
   const groups = new Map<string, ElkNode>();
   const groupKeys = new Map<string, GroupKey>();
   for (const node of index.nodes) {
-    if (node.flowOnly) {
+    if (node.flowOnly || index.childrenByParent.has(node.id)) {
       continue;
     }
-    const partition = String(index.laneIndex.get(node.lane) ?? 0);
+    const parent = parentOf(index, node);
+    const lane = laneOf(index, node);
+    const partition = String(index.laneIndex.get(lane) ?? 0);
     const child: ElkNode = {
       id: node.id,
       ...cardSize(node),
       layoutOptions: { "elk.partitioning.partition": partition },
     };
-    if (!node.group) {
+    if (!parent) {
       children.push(child);
       continue;
     }
-    const key = JSON.stringify([node.lane, node.group]);
-    let group = groups.get(key);
+    let group = groups.get(parent.id);
     if (!group) {
       const id = `group/${groups.size}`;
-      groupKeys.set(id, { lane: node.lane, label: node.group });
+      groupKeys.set(id, { lane, label: parent.label });
       group = {
         id,
         children: [],
@@ -131,16 +138,20 @@ function toElk(index: VizIndex): { graph: ElkNode; groupKeys: ReadonlyMap<string
           "elk.layered.spacing.nodeNodeBetweenLayers": "40",
         },
       };
-      groups.set(key, group);
+      groups.set(parent.id, group);
       children.push(group);
     }
     group.children?.push(child);
   }
-  const placed = new Set(index.nodes.filter((node) => !node.flowOnly).map((node) => node.id));
+  const placed = new Set(
+    index.nodes
+      .filter((node) => !node.flowOnly && !index.childrenByParent.has(node.id))
+      .map((node) => node.id),
+  );
   const edges: ElkEdge[] = index.edges
     .filter((edge) => placed.has(edge.from) && placed.has(edge.to))
     .map((edge) => ({
-      id: edgeKey(edge.from, edge.to),
+      id: edge.id,
       sources: [edge.from],
       targets: [edge.to],
       labels: edge.label
@@ -220,7 +231,7 @@ export async function layoutOverview(index: VizIndex, elk: ElkLike): Promise<Ove
     ]);
     const label = edge.labels?.[0];
     return {
-      key: edge.id as EdgeKey,
+      id: edge.id,
       points: points.map(shift),
       label:
         label && label.x !== undefined && label.y !== undefined
@@ -243,7 +254,8 @@ export async function layoutOverview(index: VizIndex, elk: ElkLike): Promise<Ove
 
   const extents = new Map<string, { min: number; max: number }>();
   for (const node of nodes) {
-    const lane = index.nodeById.get(node.id)?.lane ?? "";
+    const placedNode = index.nodeById.get(node.id);
+    const lane = placedNode ? laneOf(index, placedNode) : "";
     const extent = extents.get(lane) ?? { min: Infinity, max: -Infinity };
     extent.min = Math.min(extent.min, node.x - SCENE.groupPad);
     extent.max = Math.max(extent.max, node.x + node.width + SCENE.groupPad);

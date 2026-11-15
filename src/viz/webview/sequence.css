@@ -23,8 +23,8 @@
 .viz-participant--changed {
   border-top-color: var(--viz-changed);
 }
-.viz-participant--deleted {
-  border-top-color: var(--viz-deleted);
+.viz-participant--removed {
+  border-top-color: var(--viz-removed);
 }
 
 .viz-participant__text {
@@ -154,12 +154,12 @@
 .viz-message--changed .viz-message__head--filled {
   fill: var(--viz-changed);
 }
-.viz-message--deleted .viz-message__line,
-.viz-message--deleted .viz-message__head {
-  stroke: var(--viz-deleted);
+.viz-message--removed .viz-message__line,
+.viz-message--removed .viz-message__head {
+  stroke: var(--viz-removed);
 }
-.viz-message--deleted .viz-message__head--filled {
-  fill: var(--viz-deleted);
+.viz-message--removed .viz-message__head--filled {
+  fill: var(--viz-removed);
 }
 .viz-message--unchanged .viz-message__line,
 .viz-message--unchanged .viz-message__head {
@@ -215,8 +215,8 @@
 .viz-message--changed .viz-message__number {
   background: var(--viz-changed);
 }
-.viz-message--deleted .viz-message__number {
-  background: var(--viz-deleted);
+.viz-message--removed .viz-message__number {
+  background: var(--viz-removed);
 }
 
 .viz-message--selected .viz-message__label {

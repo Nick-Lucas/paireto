@@ -1,156 +1,262 @@
 import * as assert from "node:assert";
 
-import type { VizArgs } from "../protocol/viz.js";
-import {
-  compileViz,
-  VIZ_RULE_CODES,
-  type VizEnv,
-  type VizIssue,
-  type VizIssueCode,
-  type VizIssuePath,
-} from "../viz/model/compile.js";
+import type { VizFile } from "../protocol/viz.js";
+import { compileViz, VIZ_RULE_CODES, type VizEnv, type VizRuleCode } from "../viz/model/compile.js";
 import { MAX_RENDERED_ISSUES, renderAccepted, renderRejected } from "../viz/model/render.js";
-import { envFor, loadVizFixture } from "./vizFixtures.js";
+import type { VizIssue } from "../viz/model/types.js";
+import { envFor, loadVizFixture, type VizFixtureName } from "./vizFixtures.js";
 
 interface Mutation {
-  code: VizIssueCode;
-  fixture?: "multiService" | "singleFrontend";
-  viz?: (viz: VizArgs) => void;
+  rule: VizRuleCode | "schema";
+  fixture?: VizFixtureName;
+  viz?: (viz: VizFile) => void;
   env?: (env: VizEnv) => void;
-  path: VizIssuePath;
+  path: string;
   message?: RegExp;
+  suggestion?: string;
 }
+
+const NOTIFIER = "src/notify/notifier.ts#Notifier";
+const CHANNEL = "src/notify/channel.ts#Channel";
+const EMAIL = "src/notify/emailChannel.ts#EmailChannel";
 
 const MUTATIONS: Mutation[] = [
   {
-    code: "schema",
-    viz: (viz) => delete (viz as Partial<VizArgs>).title,
-    path: ["title"],
+    rule: "schema",
+    viz: (viz) => delete (viz as Partial<VizFile>).title,
+    path: "title",
   },
   {
-    code: "duplicate-id",
-    viz: (viz) => (viz.nodes[3].id = "billing-api"),
-    path: ["nodes", 3, "id"],
-    message: /already used by nodes\[2\]/,
+    rule: "duplicate-id",
+    viz: (viz) => (viz.nodes[4].id = "billing-api"),
+    path: "nodes[4].id",
+    message: /already used by nodes\[3\]\. Ids are unique across nodes, members, edges and flows/,
   },
   {
-    code: "flow-id-is-node",
+    rule: "duplicate-id",
     viz: (viz) => (viz.flows![1].id = "notify"),
-    path: ["flows", 1, "id"],
+    path: "flows[1].id",
+    message: /already used by nodes\[6\]/,
   },
   {
-    code: "unknown-lane",
-    viz: (viz) => (viz.nodes[2].lane = "sevrices"),
-    path: ["nodes", 2, "lane"],
-    message: /unknown lane "sevrices"\. Did you mean "services"\? Valid: client, web, services/,
+    rule: "duplicate-id",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.nodes[2].members![0].id = `${NOTIFIER}.notify`),
+    path: "nodes[5].members[2].id",
   },
   {
-    code: "unknown-node",
+    rule: "duplicate-id",
+    viz: (viz) => viz.edges!.push({ ...viz.edges![0], label: "GET /status" }),
+    path: "edges[10]",
+    message:
+      /default id "checkout>billing-api:call", already used by edges\[0\]\. Give it its own id/,
+  },
+  {
+    rule: "unknown-parent",
+    viz: (viz) => (viz.nodes[3].parent = "biling-system"),
+    path: "nodes[3].parent",
+    suggestion: "billing-system",
+  },
+  {
+    rule: "parent-cycle",
+    viz: (viz) => (viz.nodes[2].parent = "billing-system"),
+    path: "nodes[2].parent",
+    message: /is its own parent/,
+  },
+  {
+    rule: "parent-cycle",
+    viz: (viz) => (viz.nodes[2].parent = "billing-api"),
+    path: "nodes[3].parent",
+    message: /parent chain loops: billing-api -> billing-system -> billing-api/,
+  },
+  {
+    rule: "unknown-lane",
+    viz: (viz) => (viz.nodes[3].lane = "sevrices"),
+    path: "nodes[3].lane",
+    message: /unknown lane "sevrices"\. Valid: client, web, services/,
+    suggestion: "services",
+  },
+  {
+    rule: "unknown-lane",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.nodes[1].lane = "core"),
+    path: "nodes[1].lane",
+    message: /There are none/,
+  },
+  {
+    rule: "unknown-node",
     viz: (viz) => (viz.edges![0].to = "biling-api"),
-    path: ["edges", 0, "to"],
-    message: /Did you mean "billing-api"\?/,
+    path: "edges[0].to",
+    suggestion: "billing-api",
   },
   {
-    code: "unknown-participant",
+    rule: "unknown-member",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.edges![3].fromMember = `${NOTIFIER}.chanels`),
+    path: "edges[3].fromMember",
+    message: /unknown member of "src\/notify\/notifier\.ts#Notifier"/,
+    suggestion: `${NOTIFIER}.channels`,
+  },
+  {
+    rule: "unknown-member",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.edges![3].toMember = `${NOTIFIER}.channels`),
+    path: "edges[3].toMember",
+    message:
+      /belongs to node "src\/notify\/notifier\.ts#Notifier", not "src\/notify\/channel\.ts#Channel"/,
+  },
+  {
+    rule: "unknown-via",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.edges![3].via = [`${NOTIFIER}.chanels`]),
+    path: "edges[3].via[0]",
+    suggestion: `${NOTIFIER}.channels`,
+  },
+  {
+    rule: "unknown-participant",
     viz: (viz) => (viz.flows![0].participants[2] = "billing"),
-    path: ["flows", 0, "participants", 2],
+    path: "flows[0].participants[2]",
   },
   {
-    code: "duplicate-participant",
+    rule: "duplicate-participant",
     viz: (viz) => viz.flows![1].participants.push("stripe"),
-    path: ["flows", 1, "participants", 5],
+    path: "flows[1].participants[5]",
   },
   {
-    code: "step-not-participant",
+    rule: "step-not-participant",
     viz: (viz) => (viz.flows![1].steps[0].to = "checkout"),
-    path: ["flows", 1, "steps", 0, "to"],
+    path: "flows[1].steps[0].to",
     message: /not a participant of final-failure\. Participants: retry-worker, stripe/,
   },
   {
-    code: "duplicate-edge",
-    viz: (viz) => viz.edges!.push({ ...viz.edges![0], label: "GET /status" }),
-    path: ["edges", 10],
+    rule: "step-edge",
+    viz: (viz) => (viz.flows![0].steps[2].edge = "billing-api>stripe:cal"),
+    path: "flows[0].steps[2].edge",
+    suggestion: "billing-api>stripe:call",
+  },
+  {
+    rule: "step-edge",
+    viz: (viz) => (viz.flows![0].steps[2].edge = "checkout>billing-api:call"),
+    path: "flows[0].steps[2].edge",
     message:
-      /second edge checkout>billing-api, first at edges\[0\]\. Merge into one edge, combine the labels\./,
+      /step goes billing-api -> stripe, but edge "checkout>billing-api:call" joins checkout and billing-api/,
   },
   {
-    code: "self-edge",
-    viz: (viz) => viz.edges!.push({ from: "notify", to: "notify", kind: "call", delta: "added" }),
-    path: ["edges", 10],
+    rule: "fragment-range",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.flows![0].fragments![0].to = 5),
+    path: "flows[0].fragments[0].to",
+    message: /past the last step of deliver \(4\)/,
   },
   {
-    code: "multiple-hero",
+    rule: "fragment-range",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.flows![0].fragments![0].from = 5),
+    path: "flows[0].fragments[0].to",
+    message: /to 4 is before from 5/,
+  },
+  {
+    rule: "fragment-overlap",
+    fixture: "classDiagram",
+    viz: (viz) => viz.flows![0].fragments!.push({ kind: "opt", from: 1, to: 2 }),
+    path: "flows[0].fragments[1]",
+    message: /steps 1-2 cross fragments\[0\] \(steps 2-4\)/,
+  },
+  {
+    rule: "multiple-hero",
     viz: (viz) => (viz.edges![1].hero = true),
-    path: ["edges", 2, "hero"],
+    path: "edges[2].hero",
   },
   {
-    code: "missing-role",
-    viz: (viz) => delete viz.nodes[1].role,
-    path: ["nodes", 1, "role"],
-  },
-  {
-    code: "missing-files",
-    viz: (viz) => delete viz.nodes[3].files,
-    path: ["nodes", 3, "files"],
-  },
-  {
-    code: "flow-only-edge",
+    rule: "flow-only-edge",
     viz: (viz) =>
       viz.edges!.push({ from: "shopper", to: "checkout", kind: "call", delta: "unchanged" }),
-    path: ["edges", 10, "from"],
+    path: "edges[10].from",
   },
   {
-    code: "focus-malformed",
-    viz: (viz) => (viz.walkthrough![0].focus[0] = "billing api"),
-    path: ["walkthrough", 0, "focus", 0],
+    rule: "focus-unknown",
+    viz: (viz) => (viz.walkthrough![0].focus[0] = "biling-api"),
+    path: "walkthrough[0].focus[0]",
+    message: /unknown node, member, edge or flow "biling-api"/,
+    suggestion: "billing-api",
   },
   {
-    code: "focus-unknown",
-    viz: (viz) => (viz.walkthrough![3].focus[0] = "soft-decline:40"),
-    path: ["walkthrough", 3, "focus", 0],
+    rule: "focus-unknown",
+    viz: (viz) => (viz.walkthrough![3].focus[0] = { flow: "soft-decline", step: 40 }),
+    path: "walkthrough[3].focus[0].step",
     message: /past the last step of soft-decline \(14\)/,
   },
   {
-    code: "unknown-flow",
-    viz: (viz) => (viz.walkthrough![3].focus[0] = "soft-declne:7"),
-    path: ["walkthrough", 3, "focus", 0],
-    message: /Did you mean "soft-decline"\?/,
+    rule: "focus-unknown",
+    viz: (viz) => (viz.walkthrough![3].focus[0] = { flow: "soft-declne", step: 7 }),
+    path: "walkthrough[3].focus[0].flow",
+    suggestion: "soft-decline",
   },
   {
-    code: "focus-mixed-stage",
-    viz: (viz) => viz.walkthrough![3].focus.push("billing-api>retry-queue"),
-    path: ["walkthrough", 3, "focus", 3],
-    message: /overview ref, but this step shows flow soft-decline/,
+    rule: "focus-mixed-stage",
+    viz: (viz) => viz.walkthrough![3].focus.push("billing-api>retry-queue:event"),
+    path: "walkthrough[3].focus[3]",
+    message:
+      /edge "billing-api>retry-queue:event" is on the diagram, but this step shows flow soft-decline/,
   },
   {
-    code: "focus-mixed-stage",
+    rule: "focus-mixed-stage",
+    fixture: "classDiagram",
+    viz: (viz) => viz.walkthrough![1].focus.push(`${NOTIFIER}.notify`),
+    path: "walkthrough[1].focus[1]",
+    message: /member "src\/notify\/notifier\.ts#Notifier\.notify" is on the diagram/,
+  },
+  {
+    rule: "focus-mixed-stage",
     viz: (viz) => (viz.walkthrough![0].focus[0] = "shopper"),
-    path: ["walkthrough", 0, "focus", 0],
-    message: /"shopper" is flowOnly, so it is not in the overview/,
+    path: "walkthrough[0].focus[0]",
+    message: /node "shopper" is flowOnly, so it is not on the diagram/,
   },
   {
-    code: "unknown-repo",
+    rule: "unknown-repo",
     viz: (viz) => (viz.nodes[1].files![0].repo = "infra"),
-    path: ["nodes", 1, "files", 0, "repo"],
+    path: "nodes[1].files[0].repo",
   },
   {
-    code: "path-outside-repo",
+    rule: "path-outside-repo",
     viz: (viz) => (viz.nodes[1].files![0].path = "../secrets.txt"),
-    path: ["nodes", 1, "files", 0, "path"],
+    path: "nodes[1].files[0].path",
   },
   {
-    code: "file-not-found",
+    rule: "file-not-found",
     viz: (viz) => (viz.nodes[1].files![1].path = "web/lib/usePaymentStatuss.ts"),
-    path: ["nodes", 1, "files", 1, "path"],
-    message: /Did you mean "web\/lib\/usePaymentStatus\.ts"\?/,
+    path: "nodes[1].files[1].path",
+    suggestion: "web/lib/usePaymentStatus.ts",
   },
   {
-    code: "line-range",
+    rule: "file-not-found",
+    fixture: "classDiagram",
+    viz: (viz) => (viz.nodes[3].members![1].file!.path = "src/notify/gone.ts"),
+    path: "nodes[3].members[1].file.path",
+    message: /For removed code, set side to base/,
+  },
+  {
+    rule: "line-range",
     viz: (viz) => (viz.nodes[1].files![0].endLine = 10),
-    path: ["nodes", 1, "files", 0, "endLine"],
+    path: "nodes[1].files[0].endLine",
   },
   {
-    code: "coverage",
+    rule: "self-edge",
+    viz: (viz) => viz.edges!.push({ from: "notify", to: "notify", kind: "call", delta: "added" }),
+    path: "edges[10]",
+  },
+  {
+    rule: "missing-role",
+    viz: (viz) => delete viz.nodes[1].role,
+    path: "nodes[1].role",
+  },
+  {
+    rule: "missing-files",
+    viz: (viz) => delete viz.nodes[4].files,
+    path: "nodes[4].files",
+  },
+  {
+    rule: "coverage",
     env: (env) =>
       env.changed.push({
         repo: "shop",
@@ -159,16 +265,25 @@ const MUTATIONS: Mutation[] = [
         additions: 1,
         deletions: 0,
       }),
-    path: [],
-    message: /^1 changed file on no node, edge or step: README\.md$/,
+    path: "",
+    message: /^1 changed file on no node, member, edge or step: README\.md$/,
   },
   {
-    code: "delta-mismatch",
-    viz: (viz) => (viz.nodes[1].delta = "added"),
-    path: ["nodes", 1, "delta"],
+    rule: "delta-mismatch",
+    viz: (viz) => (viz.nodes[4].delta = "unchanged"),
+    path: "nodes[4].delta",
+    message: /is unchanged, but its file services\/billing\/retry\/worker\.go is added/,
   },
   {
-    code: "isolated-node",
+    rule: "delta-mismatch",
+    env: (env) =>
+      (env.changed = env.changed.filter((file) => file.path !== "src/notify/notifier.ts")),
+    fixture: "classDiagram",
+    path: "nodes[5].delta",
+    message: /is changed, but none of its files changed/,
+  },
+  {
+    rule: "isolated-node",
     viz: (viz) =>
       viz.nodes.push({
         id: "lonely",
@@ -177,64 +292,63 @@ const MUTATIONS: Mutation[] = [
         delta: "unchanged",
         lane: "services",
       }),
-    path: ["nodes", 10],
+    path: "nodes[12]",
   },
   {
-    code: "no-edges",
+    rule: "no-edges",
     fixture: "singleFrontend",
     viz: (viz) => {
       delete viz.edges;
       delete viz.walkthrough;
     },
-    path: ["edges"],
+    path: "edges",
   },
   {
-    code: "no-flows",
+    rule: "no-flows",
     viz: (viz) => {
       delete viz.flows;
       delete viz.walkthrough;
     },
-    path: ["flows"],
+    path: "flows",
   },
 ];
 
-function issuesOf(result: ReturnType<typeof compileViz>): VizIssue[] {
-  return result.ok ? result.warnings : [...result.errors, ...result.warnings];
-}
+const rules = (issues: VizIssue[]) => issues.map((issue) => issue.rule);
 
 suite("viz compile", () => {
-  for (const name of ["multiService", "singleFrontend"] as const) {
+  for (const name of ["multiService", "singleFrontend", "classDiagram"] as const) {
     test(`the ${name} fixture compiles with no errors and no warnings`, () => {
       const viz = loadVizFixture(name);
       const result = compileViz(viz, envFor(viz));
-      assert.deepStrictEqual(issuesOf(result), []);
+      assert.deepStrictEqual(result.issues, []);
       assert.strictEqual(result.ok, true);
     });
   }
 
   test("every rule has a mutation that triggers it", () => {
-    const covered = new Set(MUTATIONS.map((mutation) => mutation.code));
+    const covered = new Set(MUTATIONS.map((mutation) => mutation.rule));
     assert.deepStrictEqual(
-      ["schema", ...VIZ_RULE_CODES].filter((code) => !covered.has(code as VizIssueCode)),
+      ["schema" as const, ...VIZ_RULE_CODES].filter((rule) => !covered.has(rule)),
       [],
     );
   });
 
   for (const mutation of MUTATIONS) {
-    test(`${mutation.code} is reported at ${JSON.stringify(mutation.path)}`, () => {
+    test(`${mutation.rule} is reported at ${JSON.stringify(mutation.path)}`, () => {
       const viz = loadVizFixture(mutation.fixture ?? "multiService");
       const env = envFor(viz);
       mutation.viz?.(viz);
       mutation.env?.(env);
-      const issues = issuesOf(compileViz(viz, env));
+      const { issues } = compileViz(viz, env);
       const hit = issues.find(
-        (issue) =>
-          issue.code === mutation.code &&
-          JSON.stringify(issue.path) === JSON.stringify(mutation.path),
+        (issue) => issue.rule === mutation.rule && issue.path === mutation.path,
       );
-      assert.ok(hit, `no ${mutation.code} at that path in ${JSON.stringify(issues, null, 2)}`);
+      assert.ok(hit, `no ${mutation.rule} at that path in ${JSON.stringify(issues, null, 2)}`);
       if (mutation.message) {
         assert.match(hit.message, mutation.message);
+      }
+      if (mutation.suggestion) {
+        assert.strictEqual(hit.suggestion, mutation.suggestion);
       }
     });
   }
@@ -242,28 +356,26 @@ suite("viz compile", () => {
   test("a warning alone still accepts the viz", () => {
     const viz = loadVizFixture("multiService");
     const env = envFor(viz);
-    viz.nodes[1].delta = "added";
+    delete viz.nodes[1].role;
     const result = compileViz(viz, env);
     assert.strictEqual(result.ok, true);
-    assert.deepStrictEqual(
-      result.warnings.map((warning) => warning.code),
-      ["delta-mismatch"],
-    );
+    assert.deepStrictEqual(rules(result.issues), ["missing-role"]);
+    assert.strictEqual(result.issues[0].severity, "warning");
   });
 
   test("an error rejects the viz and keeps its warnings", () => {
     const viz = loadVizFixture("multiService");
     const env = envFor(viz);
-    viz.nodes[2].lane = "sevrices";
-    viz.nodes[1].delta = "added";
+    viz.nodes[3].lane = "sevrices";
+    delete viz.nodes[1].role;
     const result = compileViz(viz, env);
     assert.strictEqual(result.ok, false);
-    assert.deepStrictEqual(result.ok ? [] : result.errors.map((error) => error.code), [
-      "unknown-lane",
-    ]);
     assert.deepStrictEqual(
-      result.warnings.map((warning) => warning.code),
-      ["delta-mismatch"],
+      result.issues.map((issue) => [issue.severity, issue.rule]),
+      [
+        ["error", "unknown-lane"],
+        ["warning", "missing-role"],
+      ],
     );
   });
 
@@ -274,11 +386,54 @@ suite("viz compile", () => {
       fileExists: (repo, path) => repo === "shop" && path === "web/lib/format.ts",
     };
     viz.nodes[1].files![1].path = "web/lib/format.ts";
-    const result = compileViz(viz, env);
-    assert.deepStrictEqual(
-      issuesOf(result).map((issue) => issue.code),
-      ["coverage"],
-    );
+    assert.deepStrictEqual(rules(compileViz(viz, env).issues), ["coverage"]);
+  });
+
+  test("a base-side ref may name a file the working tree no longer has", () => {
+    const viz = loadVizFixture("classDiagram");
+    const env = envFor(viz);
+    viz.nodes[3].members![2].file = { path: "src/notify/legacy.ts", line: 3, side: "base" };
+    assert.deepStrictEqual(compileViz(viz, env).issues, []);
+    viz.nodes[3].members![2].file = { path: "src/notify/legacy.ts", line: 3 };
+    assert.deepStrictEqual(rules(compileViz(viz, env).issues), ["file-not-found"]);
+  });
+
+  test("two edges of one pair with their own ids are accepted", () => {
+    const viz = loadVizFixture("multiService");
+    viz.edges!.push({
+      id: "checkout-status",
+      from: "checkout",
+      to: "billing-api",
+      kind: "call",
+      delta: "added",
+      label: "GET /payments/:id",
+    });
+    assert.deepStrictEqual(compileViz(viz, envFor(viz)).issues, []);
+  });
+
+  test("a flow id that matches a node id is a duplicate", () => {
+    const viz = loadVizFixture("classDiagram");
+    viz.flows![0].id = CHANNEL;
+    viz.walkthrough![1].focus = [{ flow: CHANNEL, step: 3 }];
+    assert.deepStrictEqual(rules(compileViz(viz, envFor(viz)).issues), ["duplicate-id"]);
+  });
+
+  test("a type that holds itself is a warning only", () => {
+    const viz = loadVizFixture("classDiagram");
+    viz.edges!.push({ from: EMAIL, to: EMAIL, kind: "association", delta: "added" });
+    const result = compileViz(viz, envFor(viz));
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(rules(result.issues), ["self-edge"]);
+  });
+
+  test("a generated file without roles is accepted with warnings", () => {
+    const viz = loadVizFixture("classDiagram");
+    for (const node of viz.nodes) {
+      delete node.role;
+    }
+    const result = compileViz(viz, envFor(viz));
+    assert.strictEqual(result.ok, true);
+    assert.deepStrictEqual(new Set(rules(result.issues)), new Set(["missing-role"]));
   });
 
   test("the coverage warning lists the first ten paths and counts the rest", () => {
@@ -296,25 +451,39 @@ suite("viz compile", () => {
     const result = compileViz(viz, env);
     assert.strictEqual(result.ok, true);
     assert.strictEqual(
-      result.warnings[0].message,
-      "12 changed files on no node, edge or step: " +
+      result.issues[0].message,
+      "12 changed files on no node, member, edge or step: " +
         Array.from({ length: 10 }, (_, i) => `infra:extra-${i}.tf`).join(", ") +
         " +2 more",
     );
   });
+
+  test("a schema error is reported with its path", () => {
+    const result = compileViz({ title: "x" }, envFor(loadVizFixture("multiService")));
+    assert.strictEqual(result.ok, false);
+    const paths = result.issues.map((issue) => issue.path);
+    assert.ok(paths.includes("summary"));
+    assert.ok(paths.includes("base"));
+    assert.ok(paths.includes("version"));
+  });
 });
 
 suite("viz render", () => {
-  test("accepted text counts the elements and lists warnings", () => {
+  test("accepted text counts the items and lists warnings", () => {
     const viz = loadVizFixture("multiService");
     assert.strictEqual(
       renderAccepted(viz, [
-        { code: "isolated-node", path: ["nodes", 4], message: 'node "notify" is alone.' },
+        {
+          severity: "warning",
+          rule: "isolated-node",
+          path: "nodes[6]",
+          message: 'node "notify" is alone.',
+        },
       ]),
       [
-        'Viz "Retry soft-declined card charges" is open in VS Code: 10 nodes, 10 edges, 2 flows, 5 walkthrough steps.',
+        'Viz "Retry soft-declined card charges" is open in VS Code: 12 nodes, 10 edges, 2 flows, 5 walkthrough steps.',
         "Warnings. Fix them and call paireto_show_viz again if they matter:",
-        '- nodes[4]: node "notify" is alone.',
+        '- nodes[6]: node "notify" is alone.',
       ].join("\n"),
     );
   });
@@ -327,39 +496,32 @@ suite("viz render", () => {
     );
   });
 
-  test("rejected text names every error with its path", () => {
+  test("rejected text names every error with its path and suggestion", () => {
     const viz = loadVizFixture("multiService");
-    viz.nodes[2].lane = "sevrices";
+    viz.nodes[3].lane = "sevrices";
     viz.edges!.push({ ...viz.edges![0] });
     const result = compileViz(viz, envFor(viz));
     assert.strictEqual(result.ok, false);
     assert.strictEqual(
-      result.ok ? "" : renderRejected(result.errors, result.warnings),
+      renderRejected(result.issues),
       [
-        "Viz rejected. Fix all 2 and call paireto_show_viz again. Do not remove elements to pass.",
-        '- nodes[2].lane: unknown lane "sevrices". Did you mean "services"? Valid: client, web, services, messaging, data, third-party.',
-        "- edges[10]: second edge checkout>billing-api, first at edges[0]. Merge into one edge, combine the labels.",
+        "Viz rejected. Fix all 2 and call paireto_show_viz again. Do not remove items to pass.",
+        '- edges[10]: edge has the default id "checkout>billing-api:call", already used by edges[0]. Give it its own id, or merge the two edges.',
+        '- nodes[3].lane: unknown lane "sevrices". Valid: client, web, services, messaging, data, third-party. Did you mean "services"?',
       ].join("\n"),
     );
   });
 
   test("rejected text caps the list and counts the rest", () => {
     const errors: VizIssue[] = Array.from({ length: MAX_RENDERED_ISSUES + 5 }, (_, i) => ({
-      code: "self-edge",
-      path: ["edges", i],
-      message: "points at itself.",
+      severity: "error",
+      rule: "unknown-node",
+      path: `edges[${i}].to`,
+      message: "unknown node.",
     }));
-    const lines = renderRejected(errors, []).split("\n");
+    const lines = renderRejected(errors).split("\n");
     assert.strictEqual(lines[0].startsWith("Viz rejected. Fix all 35 "), true);
     assert.strictEqual(lines.length, MAX_RENDERED_ISSUES + 2);
     assert.strictEqual(lines.at(-1), "- +5 more");
-  });
-
-  test("a schema error is reported with its path", () => {
-    const result = compileViz({ title: "x" }, envFor(loadVizFixture("multiService")));
-    assert.strictEqual(result.ok, false);
-    const paths = result.ok ? [] : result.errors.map((error) => error.path.join("."));
-    assert.ok(paths.includes("summary"));
-    assert.ok(paths.includes("lanes"));
   });
 });

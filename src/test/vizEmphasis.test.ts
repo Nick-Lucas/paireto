@@ -31,11 +31,11 @@ suite("viz emphasis", () => {
     assert.deepStrictEqual(only(emphasis.nodes, "dim").sort(), ["events", "stripe"]);
     assert.strictEqual(emphasis.nodes.size, 9);
     assert.deepStrictEqual(only(emphasis.edges, "dim").sort(), [
-      "billing-api>stripe",
-      "events>notify",
-      "legacy-dunning>stripe",
-      "retry-worker>events",
-      "retry-worker>stripe",
+      "billing-api>stripe:call",
+      "events>notify:event",
+      "legacy-dunning>stripe:call",
+      "retry-worker>events:event",
+      "retry-worker>stripe:call",
     ]);
   });
 
@@ -43,9 +43,9 @@ suite("viz emphasis", () => {
     const emphasis = emphasisOf(index, run({ type: "query", query: "stripe" }));
     assert.deepStrictEqual(only(emphasis.nodes, "bright"), ["stripe"]);
     assert.deepStrictEqual(only(emphasis.edges, "bright").sort(), [
-      "billing-api>stripe",
-      "legacy-dunning>stripe",
-      "retry-worker>stripe",
+      "billing-api>stripe:call",
+      "legacy-dunning>stripe:call",
+      "retry-worker>stripe:call",
     ]);
     assert.strictEqual(only(emphasis.nodes, "dim").length, 8);
     const onFlow = emphasisOf(
@@ -68,10 +68,10 @@ suite("viz emphasis", () => {
       "stripe",
     ]);
     assert.deepStrictEqual(only(emphasis.edges, "bright").sort(), [
-      "retry-queue>retry-worker",
-      "retry-worker>events",
-      "retry-worker>payments-db",
-      "retry-worker>stripe",
+      "retry-queue>retry-worker:event",
+      "retry-worker>events:event",
+      "retry-worker>payments-db:data",
+      "retry-worker>stripe:call",
     ]);
     assert.strictEqual(emphasis.camera?.length, 5);
   });
@@ -79,7 +79,7 @@ suite("viz emphasis", () => {
   test("a walkthrough step brightens its focus refs, veils the rest and frames the refs", () => {
     const emphasis = emphasisOf(index, run({ type: "walk" }));
     assert.deepStrictEqual(only(emphasis.nodes, "bright").sort(), ["billing-api", "retry-queue"]);
-    assert.deepStrictEqual(only(emphasis.edges, "bright"), ["billing-api>retry-queue"]);
+    assert.deepStrictEqual(only(emphasis.edges, "bright"), ["billing-api>retry-queue:event"]);
     assert.strictEqual(emphasis.veil, true);
     assert.deepStrictEqual(emphasis.camera, ["billing-api", "retry-queue"]);
     const onFlow = emphasisOf(
@@ -103,7 +103,7 @@ suite("viz emphasis", () => {
     assert.deepStrictEqual(only(emphasis.steps, "bright"), [2]);
     assert.strictEqual(only(emphasis.steps, "dim").length, 11);
     assert.deepStrictEqual(only(emphasis.nodes, "bright").sort(), ["billing-api", "stripe"]);
-    assert.deepStrictEqual(emphasis.camera, ["soft-decline:3", "billing-api", "stripe"]);
+    assert.deepStrictEqual(emphasis.camera, ["soft-decline 3", "billing-api", "stripe"]);
   });
 
   test("a walkthrough outranks a pending query", () => {
@@ -118,8 +118,8 @@ suite("viz emphasis", () => {
       ["billing-api", "retry-queue"],
     ]);
     const [all, opening] = openingFrames(index, FLOW);
-    assert.ok(all.includes("soft-decline:14"));
-    assert.deepStrictEqual(opening.slice(0, 3), ["soft-decline:1", "shopper", "checkout"]);
-    assert.ok(!opening.includes("soft-decline:5"));
+    assert.ok(all.includes("soft-decline 14"));
+    assert.deepStrictEqual(opening.slice(0, 3), ["soft-decline 1", "shopper", "checkout"]);
+    assert.ok(!opening.includes("soft-decline 5"));
   });
 });

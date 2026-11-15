@@ -1,34 +1,41 @@
 import { createRoot } from "react-dom/client";
 import { useEffect, useState } from "react";
 
-import { VizArgs } from "../../protocol/viz";
+import { VizFile } from "../../protocol/viz";
+import classDiagramJson from "../fixtures/classDiagram.json";
 import multiServiceJson from "../fixtures/multiService.json";
 import singleFrontendJson from "../fixtures/singleFrontend.json";
 import { VIZ_DOC_FORMAT, type VizDoc } from "../model/types";
-import type { HostToWebview, VizAlignment, VizWindowState, WebviewToHost } from "../protocol";
+import {
+  DEFAULT_VIZ_VIEW_STATE,
+  type HostToWebview,
+  type VizAlignment,
+  type VizWindowState,
+  type WebviewToHost,
+} from "../protocol";
 import { applyPreviewTheme, type PreviewTheme } from "./previewThemes";
 
 const FIXTURES = {
   multiService: multiServiceJson,
   singleFrontend: singleFrontendJson,
+  classDiagram: classDiagramJson,
 } as const;
 
 type FixtureName = keyof typeof FIXTURES;
 
 function docOf(name: FixtureName): VizDoc {
-  const viz = VizArgs.parse(FIXTURES[name]);
+  const viz = VizFile.parse(FIXTURES[name]);
   return {
     format: VIZ_DOC_FORMAT,
     meta: {
-      id: `preview-${name}`,
+      name,
+      path: `/work/shop/.paireto/viz/${name}.viz.json`,
       repoRoot: "/work/shop",
       repoName: "shop",
       repos: [{ name: "shop", root: "/work/shop" }],
-      harness: "claudecode",
       compareTo: { kind: "mergeBase" },
       compareLabel: "merge base",
-      createdAt: new Date().toISOString(),
-      changed: [],
+      checkedAt: new Date().toISOString(),
     },
     viz,
   };
@@ -43,8 +50,8 @@ window.acquireVsCodeApi = () => ({
     if (message.type === "ready") {
       send("multiService", ALIGNMENTS[0]);
     }
-    if (message.type === "showHistory") {
-      send(message.id.replace("preview-", "") as FixtureName, ALIGNMENTS[0]);
+    if (message.type === "switch") {
+      send(message.name as FixtureName, ALIGNMENTS[0]);
     }
   },
   setState(state) {
@@ -77,13 +84,15 @@ function send(name: FixtureName, alignment: VizAlignment): void {
   const message: HostToWebview = {
     type: "load",
     doc,
-    history: (Object.keys(FIXTURES) as FixtureName[]).map((key) => ({
-      id: `preview-${key}`,
-      title: VizArgs.parse(FIXTURES[key]).title,
-      createdAt: doc.meta.createdAt,
+    vizzes: (Object.keys(FIXTURES) as FixtureName[]).map((key) => ({
+      name: key,
+      title: VizFile.parse(FIXTURES[key]).title,
       repoName: "shop",
+      modifiedAt: doc.meta.checkedAt,
     })),
     window: windowState(alignment),
+    review: { files: [], notes: [], feedback: { waiting: false, pending: 0 } },
+    view: DEFAULT_VIZ_VIEW_STATE,
   };
   window.postMessage(message, "*");
 }
@@ -101,6 +110,9 @@ function PreviewBar() {
       </button>
       <button type="button" onClick={() => send("singleFrontend", alignment)}>
         singleFrontend
+      </button>
+      <button type="button" onClick={() => send("classDiagram", alignment)}>
+        classDiagram
       </button>
       <button type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
         theme: {theme}

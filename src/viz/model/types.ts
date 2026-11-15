@@ -1,26 +1,14 @@
 import type { CompareTo } from "../../protocol/guidedReview.js";
-import type { Harness } from "../../protocol/types.js";
-import type { VizArgs } from "../../protocol/viz.js";
+import type { VizFile } from "../../protocol/viz.js";
 
-export const VIZ_DOC_FORMAT = 1;
-
-export type EdgeKey = `${string}>${string}`;
+export const VIZ_DOC_FORMAT = 2;
 
 export type VizRef =
   | { kind: "node"; id: string }
-  | { kind: "edge"; key: EdgeKey }
+  | { kind: "member"; id: string; node: string }
+  | { kind: "edge"; id: string }
   | { kind: "flow"; id: string }
   | { kind: "step"; flow: string; index: number };
-
-export type ChangedFileStatus = "A" | "M" | "D" | "R";
-
-export interface VizChangedFile {
-  repo: string;
-  path: string;
-  status: ChangedFileStatus;
-  additions: number;
-  deletions: number;
-}
 
 export interface VizRepo {
   name: string;
@@ -28,19 +16,28 @@ export interface VizRepo {
 }
 
 export interface VizMeta {
-  id: string;
+  name: string;
+  path: string;
   repoRoot: string;
   repoName: string;
   repos: VizRepo[];
-  harness: Harness;
-  compareTo: CompareTo;
-  compareLabel: string;
-  createdAt: string;
-  changed: VizChangedFile[];
+  compareTo?: CompareTo;
+  compareLabel?: string;
+  checkedAt: string;
 }
 
 export interface VizDoc {
   format: typeof VIZ_DOC_FORMAT;
   meta: VizMeta;
-  viz: VizArgs;
+  viz: VizFile;
+}
+
+export type VizIssueSeverity = "error" | "warning";
+
+export interface VizIssue {
+  severity: VizIssueSeverity;
+  rule: string;
+  path: string;
+  message: string;
+  suggestion?: string;
 }

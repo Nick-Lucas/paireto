@@ -19,7 +19,7 @@ suite("viz ui reducer", () => {
     assert.deepStrictEqual([...ui.deltaFilter].sort(), [
       "added",
       "changed",
-      "deleted",
+      "removed",
       "unchanged",
     ]);
   });
@@ -42,7 +42,7 @@ suite("viz ui reducer", () => {
     );
     assert.deepStrictEqual(kept.selection, { kind: "node", id: "checkout" });
     const dropped = run(
-      { type: "select", ref: { kind: "edge", key: "events>notify" } },
+      { type: "select", ref: { kind: "edge", id: "events>notify:event" } },
       { type: "stage", stage: FLOW },
     );
     assert.strictEqual(dropped.selection, undefined);

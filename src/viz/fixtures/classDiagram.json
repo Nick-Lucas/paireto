@@ -1,0 +1,304 @@
+{
+  "version": 1,
+  "title": "Fall back to SMS when email fails",
+  "summary": "Notifier now holds a list of channels and tries the next one when a send fails. A new SmsChannel joins EmailChannel behind the Channel interface, and send becomes async.",
+  "base": "changes",
+  "compareTo": { "kind": "mergeBase" },
+  "generatedAt": "2026-11-15T09:00:00.000Z",
+  "nodes": [
+    {
+      "id": "src/notify",
+      "label": "notify",
+      "kind": "package",
+      "delta": "unchanged"
+    },
+    {
+      "id": "src/notify/channel.ts#Channel",
+      "label": "Channel",
+      "kind": "interface",
+      "delta": "changed",
+      "parent": "src/notify",
+      "detail": "signature",
+      "counts": { "added": 2, "removed": 1 },
+      "role": "send now returns a promise, so a channel can fail asynchronously.",
+      "files": [{ "path": "src/notify/channel.ts", "line": 3, "endLine": 7 }],
+      "members": [
+        {
+          "id": "src/notify/channel.ts#Channel.name",
+          "kind": "property",
+          "label": "name: string",
+          "short": "name",
+          "visibility": "public"
+        },
+        {
+          "id": "src/notify/channel.ts#Channel.send",
+          "kind": "method",
+          "label": "send(message: Message): Promise<void>",
+          "short": "send",
+          "previous": "send(message: Message): void",
+          "visibility": "public",
+          "isAbstract": true,
+          "delta": "changed",
+          "detail": "signature",
+          "counts": { "added": 1, "removed": 1 },
+          "file": { "path": "src/notify/channel.ts", "line": 5 }
+        }
+      ]
+    },
+    {
+      "id": "src/notify/baseChannel.ts#BaseChannel",
+      "label": "BaseChannel",
+      "kind": "class",
+      "delta": "unchanged",
+      "parent": "src/notify",
+      "isAbstract": true,
+      "files": [{ "path": "src/notify/baseChannel.ts", "line": 1, "endLine": 20 }],
+      "members": [
+        {
+          "id": "src/notify/baseChannel.ts#BaseChannel.log",
+          "kind": "method",
+          "label": "log(text: string): void",
+          "short": "log",
+          "visibility": "protected"
+        }
+      ]
+    },
+    {
+      "id": "src/notify/emailChannel.ts#EmailChannel",
+      "label": "EmailChannel",
+      "kind": "class",
+      "delta": "changed",
+      "parent": "src/notify",
+      "detail": "body",
+      "counts": { "added": 14, "removed": 22 },
+      "role": "Throws on a failed send so Notifier can try the next channel.",
+      "files": [{ "path": "src/notify/emailChannel.ts", "line": 4, "endLine": 48 }],
+      "members": [
+        {
+          "id": "src/notify/emailChannel.ts#EmailChannel.retries",
+          "kind": "field",
+          "label": "retries: number",
+          "short": "retries",
+          "visibility": "private",
+          "delta": "added",
+          "counts": { "added": 1, "removed": 0 },
+          "file": { "path": "src/notify/emailChannel.ts", "line": 6 }
+        },
+        {
+          "id": "src/notify/emailChannel.ts#EmailChannel.send",
+          "kind": "method",
+          "label": "send(message: Message): Promise<void>",
+          "short": "send",
+          "previous": "send(message: Message): void",
+          "visibility": "public",
+          "delta": "changed",
+          "detail": "signature",
+          "counts": { "added": 12, "removed": 9 },
+          "file": { "path": "src/notify/emailChannel.ts", "line": 12, "endLine": 30 }
+        },
+        {
+          "id": "src/notify/emailChannel.ts#EmailChannel.legacyFormat",
+          "kind": "method",
+          "label": "legacyFormat(message: Message): string",
+          "short": "legacyFormat",
+          "visibility": "private",
+          "delta": "removed",
+          "counts": { "added": 0, "removed": 13 },
+          "file": {
+            "path": "src/notify/emailChannel.ts",
+            "line": 40,
+            "endLine": 52,
+            "side": "base"
+          }
+        }
+      ]
+    },
+    {
+      "id": "src/notify/smsChannel.ts#SmsChannel",
+      "label": "SmsChannel",
+      "kind": "class",
+      "delta": "added",
+      "parent": "src/notify",
+      "counts": { "added": 31, "removed": 0 },
+      "role": "Sends the message as a text when email fails.",
+      "files": [{ "path": "src/notify/smsChannel.ts" }],
+      "members": [
+        {
+          "id": "src/notify/smsChannel.ts#SmsChannel.constructor",
+          "kind": "constructor",
+          "label": "constructor(gateway: SmsGateway)",
+          "visibility": "public",
+          "delta": "added"
+        },
+        {
+          "id": "src/notify/smsChannel.ts#SmsChannel.send",
+          "kind": "method",
+          "label": "send(message: Message): Promise<void>",
+          "short": "send",
+          "visibility": "public",
+          "delta": "added",
+          "file": { "path": "src/notify/smsChannel.ts", "line": 9, "endLine": 24 }
+        }
+      ]
+    },
+    {
+      "id": "src/notify/notifier.ts#Notifier",
+      "label": "Notifier",
+      "kind": "class",
+      "delta": "changed",
+      "parent": "src/notify",
+      "detail": "signature",
+      "counts": { "added": 18, "removed": 6 },
+      "role": "Tries each channel in order until one send succeeds.",
+      "files": [{ "path": "src/notify/notifier.ts", "line": 1, "endLine": 40 }],
+      "members": [
+        {
+          "id": "src/notify/notifier.ts#Notifier.channel",
+          "kind": "field",
+          "label": "channel: Channel",
+          "short": "channel",
+          "visibility": "private",
+          "delta": "removed",
+          "file": { "path": "src/notify/notifier.ts", "line": 4, "side": "base" }
+        },
+        {
+          "id": "src/notify/notifier.ts#Notifier.channels",
+          "kind": "field",
+          "label": "channels: Channel[]",
+          "short": "channels",
+          "visibility": "private",
+          "delta": "added",
+          "file": { "path": "src/notify/notifier.ts", "line": 4 }
+        },
+        {
+          "id": "src/notify/notifier.ts#Notifier.notify",
+          "kind": "method",
+          "label": "notify(message: Message): Promise<void>",
+          "short": "notify",
+          "previous": "notify(message: Message): void",
+          "visibility": "public",
+          "delta": "changed",
+          "detail": "signature",
+          "counts": { "added": 15, "removed": 5 },
+          "file": { "path": "src/notify/notifier.ts", "line": 12, "endLine": 34 }
+        }
+      ]
+    },
+    {
+      "id": "src/notify/message.ts#Message",
+      "label": "Message",
+      "kind": "struct",
+      "delta": "unchanged",
+      "parent": "src/notify",
+      "files": [{ "path": "src/notify/message.ts" }],
+      "members": [
+        {
+          "id": "src/notify/message.ts#Message.to",
+          "kind": "field",
+          "label": "to: string",
+          "visibility": "public"
+        },
+        {
+          "id": "src/notify/message.ts#Message.body",
+          "kind": "field",
+          "label": "body: string",
+          "visibility": "public"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "src/notify/emailChannel.ts#EmailChannel",
+      "to": "src/notify/channel.ts#Channel",
+      "kind": "implements",
+      "delta": "unchanged"
+    },
+    {
+      "from": "src/notify/smsChannel.ts#SmsChannel",
+      "to": "src/notify/channel.ts#Channel",
+      "kind": "implements",
+      "delta": "added"
+    },
+    {
+      "from": "src/notify/emailChannel.ts#EmailChannel",
+      "to": "src/notify/baseChannel.ts#BaseChannel",
+      "kind": "extends",
+      "delta": "unchanged"
+    },
+    {
+      "id": "notifier-channels",
+      "from": "src/notify/notifier.ts#Notifier",
+      "to": "src/notify/channel.ts#Channel",
+      "fromMember": "src/notify/notifier.ts#Notifier.channels",
+      "kind": "association",
+      "delta": "changed",
+      "label": "tries in order",
+      "hero": true,
+      "multiplicity": { "from": "1", "to": "1..*" },
+      "via": ["src/notify/notifier.ts#Notifier.channels"]
+    },
+    {
+      "from": "src/notify/channel.ts#Channel",
+      "to": "src/notify/message.ts#Message",
+      "fromMember": "src/notify/channel.ts#Channel.send",
+      "kind": "dependency",
+      "delta": "unchanged"
+    }
+  ],
+  "flows": [
+    {
+      "id": "deliver",
+      "title": "Deliver with fallback",
+      "summary": "Notifier sends by email first and falls back to SMS when the email send throws.",
+      "delta": "added",
+      "participants": [
+        "src/notify/notifier.ts#Notifier",
+        "src/notify/emailChannel.ts#EmailChannel",
+        "src/notify/smsChannel.ts#SmsChannel"
+      ],
+      "steps": [
+        {
+          "from": "src/notify/notifier.ts#Notifier",
+          "to": "src/notify/emailChannel.ts#EmailChannel",
+          "label": "send(message)",
+          "delta": "changed"
+        },
+        {
+          "from": "src/notify/emailChannel.ts#EmailChannel",
+          "to": "src/notify/notifier.ts#Notifier",
+          "label": "throws SendError",
+          "kind": "return"
+        },
+        {
+          "from": "src/notify/notifier.ts#Notifier",
+          "to": "src/notify/smsChannel.ts#SmsChannel",
+          "label": "send(message)"
+        },
+        {
+          "from": "src/notify/smsChannel.ts#SmsChannel",
+          "to": "src/notify/notifier.ts#Notifier",
+          "label": "ok",
+          "kind": "return"
+        }
+      ],
+      "fragments": [{ "kind": "alt", "label": "email send fails", "from": 2, "to": 4 }]
+    }
+  ],
+  "walkthrough": [
+    {
+      "title": "Holds a list of channels",
+      "body": "Notifier swaps its single channel for an ordered list.",
+      "focus": [
+        "src/notify/notifier.ts#Notifier.channels",
+        "src/notify/notifier.ts#Notifier.channel",
+        "notifier-channels"
+      ]
+    },
+    {
+      "title": "Falls back to SMS",
+      "body": "When email throws, Notifier tries the next channel.",
+      "focus": [{ "flow": "deliver", "step": 3 }]
+    }
+  ]
+}

@@ -1,6 +1,7 @@
 import type { FileStatus } from "../../git/DiffService.js";
 import type { CompareTo } from "../../protocol/guidedReview.js";
-import type { ChangedFileStatus, VizChangedFile } from "../model/types.js";
+import type { VizChangedFile } from "../model/compile.js";
+import type { VizFileStatus } from "../protocol.js";
 
 const UNIT_MANIFESTS = [
   "package.json",
@@ -35,7 +36,7 @@ export interface ChangeUnit {
 
 type VizLevel = "service" | "component";
 
-const STATUS: Record<FileStatus, ChangedFileStatus> = {
+const STATUS: Record<FileStatus, VizFileStatus> = {
   A: "A",
   M: "M",
   D: "D",
@@ -45,7 +46,7 @@ const STATUS: Record<FileStatus, ChangedFileStatus> = {
   "!": "M",
 };
 
-export function vizStatus(status: FileStatus): ChangedFileStatus {
+export function vizStatus(status: FileStatus): VizFileStatus {
   return STATUS[status];
 }
 

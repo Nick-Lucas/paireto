@@ -73,15 +73,15 @@
 .viz-card--changed {
   border-left-color: var(--viz-changed);
 }
-.viz-card--deleted {
-  border-left-color: var(--viz-deleted);
+.viz-card--removed {
+  border-left-color: var(--viz-removed);
   border-style: dashed;
   border-left-style: solid;
   opacity: 0.78;
 }
-.viz-card--deleted .viz-card__label {
+.viz-card--removed .viz-card__label {
   text-decoration: line-through;
-  text-decoration-color: var(--viz-deleted);
+  text-decoration-color: var(--viz-removed);
   text-decoration-thickness: 1.5px;
 }
 .viz-card--unchanged {
@@ -131,9 +131,9 @@
   color: var(--viz-changed);
   background: color-mix(in srgb, var(--viz-changed) 16%, transparent);
 }
-.viz-card__icon--deleted {
-  color: var(--viz-deleted);
-  background: color-mix(in srgb, var(--viz-deleted) 16%, transparent);
+.viz-card__icon--removed {
+  color: var(--viz-removed);
+  background: color-mix(in srgb, var(--viz-removed) 16%, transparent);
 }
 
 .viz-card__label {

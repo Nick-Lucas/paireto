@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { Harness } from "../../../protocol/types.js";
-import { VizArgs } from "../../../protocol/viz.js";
+import { VizFile } from "../../../protocol/viz.js";
 import { connect, type RequestBody } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
 import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
@@ -112,7 +112,7 @@ export const SHOW_VIZ_TOOL = mutationTool({
     "Show how the changes fit together in the connected VS Code window: an overview graph, flows " +
     "as sequence diagrams, and a walkthrough. Returns at once: accepted with warnings, or every " +
     "error to fix before you call it again.",
-  args: VizArgs,
+  args: VizFile,
   pi: {
     label: "Paireto Viz",
     snippet: "Show a diagram of how the changes fit together in the connected VS Code window",

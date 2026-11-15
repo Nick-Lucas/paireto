@@ -44,13 +44,13 @@
 .viz-edge--changed .viz-edge__head {
   fill: var(--viz-changed);
 }
-.viz-edge--deleted .viz-edge__line {
-  stroke: var(--viz-deleted);
+.viz-edge--removed .viz-edge__line {
+  stroke: var(--viz-removed);
   stroke-dasharray: 5 4;
   opacity: 0.8;
 }
-.viz-edge--deleted .viz-edge__head {
-  fill: var(--viz-deleted);
+.viz-edge--removed .viz-edge__head {
+  fill: var(--viz-removed);
 }
 
 .viz-edge--event .viz-edge__line {
@@ -83,7 +83,7 @@
   .viz-edge--event .viz-edge__line {
     animation: viz-dash 1.2s linear infinite;
   }
-  .viz-edge--event.viz-edge--deleted .viz-edge__line {
+  .viz-edge--event.viz-edge--removed .viz-edge__line {
     animation: none;
   }
 }

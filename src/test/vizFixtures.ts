@@ -1,14 +1,20 @@
-import { VizArgs, type VizFileRef } from "../protocol/viz.js";
+import { VizFile, type VizFileRef } from "../protocol/viz.js";
+import classDiagramJson from "../viz/fixtures/classDiagram.json";
 import multiServiceJson from "../viz/fixtures/multiService.json";
 import singleFrontendJson from "../viz/fixtures/singleFrontend.json";
-import type { VizEnv } from "../viz/model/compile.js";
+import type { VizChangedFile, VizEnv } from "../viz/model/compile.js";
 import { buildVizIndex, type VizIndex } from "../viz/model/index.js";
-import type { ChangedFileStatus, VizChangedFile } from "../viz/model/types.js";
+import type { VizFileStatus } from "../viz/protocol.js";
 
 export const FIXTURE_REPO = "shop";
 
-export const multiService: VizArgs = VizArgs.parse(multiServiceJson);
-export const singleFrontend: VizArgs = VizArgs.parse(singleFrontendJson);
+export const multiService: VizFile = VizFile.parse(multiServiceJson);
+export const singleFrontend: VizFile = VizFile.parse(singleFrontendJson);
+export const classDiagram: VizFile = VizFile.parse(classDiagramJson);
+
+const FIXTURES = { multiService, singleFrontend, classDiagram };
+
+export type VizFixtureName = keyof typeof FIXTURES;
 
 export function multiServiceIndex(): VizIndex {
   return buildVizIndex(multiService);
@@ -18,13 +24,17 @@ export function singleFrontendIndex(): VizIndex {
   return buildVizIndex(singleFrontend);
 }
 
-export function loadVizFixture(name: "multiService" | "singleFrontend"): VizArgs {
-  return structuredClone(name === "multiService" ? multiService : singleFrontend);
+export function classDiagramIndex(): VizIndex {
+  return buildVizIndex(classDiagram);
 }
 
-export function changedFilesFor(viz: VizArgs): VizChangedFile[] {
-  const byPath = new Map<string, ChangedFileStatus>();
-  const add = (refs: VizFileRef[] | undefined, status: ChangedFileStatus) => {
+export function loadVizFixture(name: VizFixtureName): VizFile {
+  return structuredClone(FIXTURES[name]);
+}
+
+export function changedFilesFor(viz: VizFile): VizChangedFile[] {
+  const byPath = new Map<string, VizFileStatus>();
+  const add = (refs: VizFileRef[] | undefined, status: VizFileStatus) => {
     for (const ref of refs ?? []) {
       if (!byPath.has(ref.path)) {
         byPath.set(ref.path, status);
@@ -32,7 +42,9 @@ export function changedFilesFor(viz: VizArgs): VizChangedFile[] {
     }
   };
   for (const node of viz.nodes) {
-    add(node.files, node.delta === "added" ? "A" : node.delta === "deleted" ? "D" : "M");
+    if (node.delta !== "unchanged") {
+      add(node.files, node.delta === "added" ? "A" : node.delta === "removed" ? "D" : "M");
+    }
   }
   for (const edge of viz.edges ?? []) {
     add(edge.files, "M");
@@ -51,11 +63,15 @@ export function changedFilesFor(viz: VizArgs): VizChangedFile[] {
   }));
 }
 
-export function envFor(viz: VizArgs): VizEnv {
+export function envFor(viz: VizFile): VizEnv {
+  const changed = changedFilesFor(viz);
+  const unchanged = new Set(
+    viz.nodes.flatMap((node) => (node.files ?? []).map((file) => file.path)),
+  );
   return {
     repoName: FIXTURE_REPO,
     repos: [{ name: FIXTURE_REPO, root: "/work/shop" }],
-    changed: changedFilesFor(viz),
-    fileExists: () => false,
+    changed,
+    fileExists: (_repo, path) => unchanged.has(path),
   };
 }
