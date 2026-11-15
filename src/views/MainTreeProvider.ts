@@ -9,7 +9,7 @@ import * as vscode from "vscode";
 
 import type { AgentSessionService } from "../agents/AgentSessionService.js";
 import { kindColorId, kindIcon, kindLabel, type CommentKind } from "../comments/kinds.js";
-import { Commands, Views } from "../config.js";
+import { Commands, Schemes, Views } from "../config.js";
 import type { GateCoordinator, GateKind } from "../gate/GateCoordinator.js";
 import type { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import type { ChangedFile, FileStatus } from "../git/DiffService.js";
@@ -233,7 +233,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
   private readonly subs: vscode.Disposable[] = [];
   private view?: vscode.TreeView<Node>;
   private readonly deletedPaths = new WeakMap<RepositoryChangesModel, Set<string>>();
-  private pinned?: UnchangedFile;
+  private activeKey?: string;
 
   constructor(
     private readonly agents: AgentSessionService,
@@ -270,8 +270,9 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
       vscode.commands.registerCommand(Commands.reviewRevealActiveFile, () =>
         this.revealActiveFile(),
       ),
-      vscode.window.onDidChangeActiveTextEditor(() => this.releasePin()),
-      vscode.window.tabGroups.onDidChangeTabs(() => this.releasePin()),
+      vscode.window.onDidChangeActiveTextEditor(() => this.syncActiveFile()),
+      vscode.window.tabGroups.onDidChangeTabs(() => this.syncActiveFile()),
+      vscode.window.registerFileDecorationProvider({ provideFileDecoration: treeDecoration }),
     );
   }
 
@@ -280,7 +281,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (!active) {
       return;
     }
-    const node = this.rowForActive(active) ?? this.pin(active);
+    const node = this.rowForActive(active);
     if (!node) {
       void vscode.window.showInformationMessage(`${active.path} is not in the Review Plan.`);
       return;
@@ -305,35 +306,31 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     }
     if (state.mode === "staging") {
       const file = stagingRow(repository.changes, active);
-      return file && { kind: "file", file };
+      return file
+        ? { kind: "file", file }
+        : { kind: "unchangedFile", file: { repoRoot: active.repoRoot, path: active.path } };
     }
     const row = this.rowsFor(repository).find((candidate) => candidate.path === active.path);
     return row && deltaRowToNode(row);
   }
 
-  private pin(active: ActiveFile): Node | undefined {
-    if (this.review.getState().guided || !this.repository(active.repoRoot)) {
-      return undefined;
-    }
-    this.pinned = { repoRoot: active.repoRoot, path: active.path };
-    this.emitter.fire();
-    return { kind: "unchangedFile", file: this.pinned };
-  }
-
-  private releasePin(): void {
-    if (!this.pinned) {
-      return;
-    }
+  private syncActiveFile(): void {
     const active = this.review.activeFile();
-    if (active?.repoRoot === this.pinned.repoRoot && active.path === this.pinned.path) {
-      return;
+    const key = active && `${active.repoRoot}\0${active.path}`;
+    if (key !== this.activeKey) {
+      this.activeKey = key;
+      this.emitter.fire();
     }
-    this.pinned = undefined;
-    this.emitter.fire();
   }
 
-  private pinnedPaths(repoRoot: string): string[] {
-    return this.pinned?.repoRoot === repoRoot ? [this.pinned.path] : [];
+  private activePaths(repoRoot: string): string[] {
+    const active = this.review.activeFile();
+    return active?.repoRoot === repoRoot ? [active.path] : [];
+  }
+
+  private holdsActiveFile(repoRoot: string, folderPath: string): boolean {
+    const active = this.review.activeFile();
+    return active?.repoRoot === repoRoot && active.path.startsWith(`${folderPath}/`);
   }
 
   private onStateChanged(): void {
@@ -434,7 +431,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const { fileScope } = this.review.getState();
     const unchanged = [
       ...(fileScope === "all" ? (repository.files ?? []) : []),
-      ...this.pinnedPaths(repository.repoRoot),
+      ...this.activePaths(repository.repoRoot),
     ];
     return unchanged.length ? withUnchangedFiles(repository.repoRoot, deltas, unchanged) : deltas;
   }
@@ -634,7 +631,11 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const { mode } = this.review.getState();
         const files = filesInEntry(node.entry).filter(isDeltaFile);
         const checkbox = mode === "review" && files.length ? this.checkboxFor(files) : undefined;
-        const collapsed = folderCollapse(files, checkbox);
+        const collapsed = folderCollapse(
+          files,
+          checkbox,
+          this.holdsActiveFile(node.repoRoot, node.entry.path),
+        );
         const item = new vscode.TreeItem(
           node.entry.name,
           collapsed
@@ -642,7 +643,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
             : vscode.TreeItemCollapsibleState.Expanded,
         );
         item.id = `deltaFolder:${repoKey(node.repoRoot)}:${node.entry.path}${collapsed ? `:${collapsed}` : ""}`;
-        item.resourceUri = vscode.Uri.file(path.join(node.repoRoot, node.entry.path));
+        item.resourceUri = treeResourceUri(
+          path.join(node.repoRoot, node.entry.path),
+          files.length > 0,
+        );
         item.iconPath = vscode.ThemeIcon.Folder;
         item.contextValue = deltaContainerContext("deltaFolder", mode, files);
         item.checkboxState = checkbox;
@@ -849,12 +853,11 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     const { mode, layout } = this.review.getState();
     if (mode !== "staging") {
       const rows = this.rowsFor(repository);
-      if (!rows.length) {
-        return [placeholder("No changes")];
-      }
-      return layout === "flat"
-        ? sortByDirectory(rows).map(deltaRowToNode)
-        : buildFileTree(rows).map((e) => deltaEntryToNode(e, repository.repoRoot));
+      const nodes =
+        layout === "flat"
+          ? sortByDirectory(rows).map(deltaRowToNode)
+          : buildFileTree(rows).map((e) => deltaEntryToNode(e, repository.repoRoot));
+      return rows.some(isDeltaFile) ? nodes : [placeholder("No changes"), ...nodes];
     }
     const { changes, repoRoot } = repository;
     const groups: Node[] = [];
@@ -867,10 +870,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (changes.unstaged.length) {
       groups.push(groupNode(repoRoot, "unstaged", GROUP_LABELS.unstaged, changes.unstaged));
     }
-    if (this.pinned?.repoRoot === repoRoot && !stagingRow(changes, this.pinned)) {
-      groups.push({ kind: "unchangedFile", file: this.pinned });
-    }
-    return groups.length ? groups : [placeholder("No changes")];
+    const unchanged: Node[] = this.activePaths(repoRoot)
+      .filter((activePath) => !stagingRow(changes, { repoRoot, path: activePath }))
+      .map((activePath) => ({ kind: "unchangedFile", file: { repoRoot, path: activePath } }));
+    return groups.length ? [...groups, ...unchanged] : [placeholder("No changes"), ...unchanged];
   }
 
   private groupChildren(repoRoot: string, group: FileGroup): Node[] {
@@ -1037,16 +1040,38 @@ function deltaRowToNode(row: DeltaRow): Node {
 function folderCollapse(
   files: DeltaFile[],
   checkbox: vscode.TreeItemCheckboxState | undefined,
+  holdsActiveFile: boolean,
 ): "unchanged" | "seen" | undefined {
   if (!files.length) {
-    return "unchanged";
+    return holdsActiveFile ? undefined : "unchanged";
   }
   return checkbox === vscode.TreeItemCheckboxState.Checked ? "seen" : undefined;
 }
 
+const CHANGED_QUERY = "changed";
+
+function treeResourceUri(fsPath: string, changed: boolean): vscode.Uri {
+  return vscode.Uri.file(fsPath).with({
+    scheme: Schemes.tree,
+    query: changed ? CHANGED_QUERY : "",
+  });
+}
+
+export function treeDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+  if (uri.scheme !== Schemes.tree || uri.query !== CHANGED_QUERY) {
+    return undefined;
+  }
+  return new vscode.FileDecoration(
+    "M",
+    "Contains changes",
+    new vscode.ThemeColor("gitDecoration.modifiedResourceForeground"),
+  );
+}
+
 function unchangedFileItem(file: UnchangedFile): vscode.TreeItem {
   const uri = vscode.Uri.file(path.join(file.repoRoot, file.path));
-  const item = new vscode.TreeItem(uri, vscode.TreeItemCollapsibleState.None);
+  const item = new vscode.TreeItem(path.basename(file.path), vscode.TreeItemCollapsibleState.None);
+  item.resourceUri = treeResourceUri(uri.fsPath, false);
   item.id = `unchangedFile:${repoKey(file.repoRoot)}:${file.path}`;
   item.iconPath = vscode.ThemeIcon.File;
   const dir = path.dirname(file.path);

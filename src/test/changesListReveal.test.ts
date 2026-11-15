@@ -60,7 +60,7 @@ function state(groups: Partial<Record<FileGroup, RepoChangedFile[]>>): ReviewSta
 function buildTree(getState: () => ReviewState, revealed: FileGroup[]): Tree {
   return Object.assign(Object.create(MainTreeProvider.prototype), {
     emitter: { fire() {} },
-    review: { getState },
+    review: { getState, activeFile: () => undefined },
     view: {
       reveal(node: { file: RepoChangedFile }): Promise<void> {
         revealed.push(node.file.group);

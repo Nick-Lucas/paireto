@@ -68,6 +68,7 @@ export const Schemes = {
   review: "paireto-review",
   /** One changeset's description, as a read-only markdown document the reviewer can comment on. */
   changeset: "paireto-changeset",
+  tree: "paireto-tree",
 } as const;
 
 export const Views = {
