@@ -5,7 +5,7 @@ This document describes the layers of the shared visualisation core. The data mo
 ## Goals
 
 - One model for component graphs, class and entity diagrams, and sequence diagrams.
-- Two kinds of producer write into the same model. Programmatic producers use LSP, contract files and config. The agent uses MCP tools.
+- Two kinds of producer write into the same model. Programmatic producers use LSP, contract files and config. The agent edits a JSON file in `.paireto/viz/`, and MCP tools generate, check and open it.
 - The agent adds to a programmatic graph. It does not draw the whole graph again.
 - Every element can open code, show a code snippet, and hold a review thread.
 - Walkthrough, step-through and flow playback use one mechanism.
@@ -36,7 +36,7 @@ flowchart TB
     LSP["LSP producer<br/>symbols, references,<br/>call and type hierarchy"]
     Contract["Contract producer<br/>OpenAPI, AsyncAPI,<br/>proto, GraphQL"]
     Config["Config producer<br/>compose, k8s, Backstage"]
-    Agent["Agent producer<br/>MCP: query, show, patch"]
+    Agent["Agent producer<br/>.paireto/viz/&lt;name&gt;/agent.json"]
     Delta["Delta producer<br/>git diff of Compare To"]
   end
 
@@ -49,7 +49,7 @@ flowchart TB
   end
 
   subgraph Host["Host (VS Code)"]
-    Service["VizService<br/>store, panel, MCP handlers"]
+    Service["VizService<br/>viz files, watcher,<br/>panel, MCP handlers"]
     Threads["ReviewController<br/>FeedbackSession"]
     Docs["ChangesetDocProvider<br/>base and modified text"]
   end
@@ -87,7 +87,7 @@ A producer writes one **layer**. A layer is a partial model with a provenance ta
 - **LSP producer.** Uses `vscode.execute*Provider` commands, not raw LSP. This works for providers that do not use LSP, such as the TS extension. It probes each capability for each language and marks the layer `partial` when one is missing. See [05-seams.md](05-seams.md) for the coverage table.
 - **Delta producer.** Takes the Compare To diff and writes the delta overlay: status for each element, `signature` vs `body` for members, line counts and spans with a side. The logic comes from #77 `fileDiff.ts` and `lineDiff.ts`.
 - **Contract and config producers.** Turn API contracts and deploy config into endpoint and service nodes. These are later phases.
-- **Agent producer.** The MCP tools write agent layers. The agent can refer to ids from other layers.
+- **Agent producer.** The agent writes its layer as a JSON file with its normal file tools. It can refer to ids from other layers. See [04-protocols.md](04-protocols.md#1-viz-files-and-mcp-tools).
 
 ### Core
 
@@ -100,7 +100,8 @@ The core is pure TypeScript. It has no VS Code, React or xyflow imports.
 
 ### Host
 
-- `VizService` owns the doc store, the panel, and the MCP handlers. It keeps the injected ports from #74.
+- `VizService` owns the viz files, a file watcher, the panel, and the MCP handlers. It keeps the injected ports from #74.
+- The panel opens only from the skill, through `paireto_viz_open`. There is no programmatic diagram without the agent.
 - Comments go through the existing `ReviewController` and `FeedbackSession`, as in #77. No second comment system.
 - Code snippets come from `ChangesetDocProvider`, so both the base and the modified side work.
 
@@ -120,7 +121,7 @@ This is a proposal. Names can change.
 | `src/viz/model/` | Types, zod schemas, merge, compile, rules, index, refs | #74 model, rewritten for the new IR |
 | `src/viz/producers/lsp/` | Symbol extraction, relation queries, capability probe | #77 `symbols.ts`, `outline.ts`, `relations.ts` |
 | `src/viz/producers/delta/` | Delta overlay from the Compare To diff | #77 `fileDiff.ts`, `lineDiff.ts` |
-| `src/viz/producers/agent/` | MCP handlers, evidence verification | #74 `VizService` handlers |
+| `src/viz/producers/agent/` | Viz file read and write, MCP handlers, evidence verification | #74 `VizService` handlers |
 | `src/viz/views/` | Projection rules, view presets | #77 grouping, new |
 | `src/viz/layout/` | ELK adapter, sequence layout, worker entry | #74 `layout/*` |
 | `src/viz/export/` | Mermaid, D2 | #74 `mermaid.ts` |
@@ -135,7 +136,7 @@ Each step ends in a state that works and has tests.
 1. Move #74 onto the new IR. Ids, refs, groups as elements, edge ids. The overview and sequence views keep working.
 2. Add the `classBox` node type and the class view. Port the #77 symbol producer and delta producer as layers. Retire the #77 SVG renderer.
 3. Move #77 notes onto element refs, with code anchors that use `relocateReviewAnchor`. Notes work on every view.
-4. Add `paireto_viz_query` and `paireto_viz_patch`. The agent adds walks, roles and seam edges on top of a programmatic graph.
+4. Add the `.paireto/viz/` files and the `paireto_viz_create`, `paireto_viz_check` and `paireto_viz_refresh` tools. The agent adds walks, roles and seam edges on top of a programmatic graph.
 5. Add evidence verification for seam edges.
 6. Add code snippet preview and the exporters.
 7. Add contract and config producers.

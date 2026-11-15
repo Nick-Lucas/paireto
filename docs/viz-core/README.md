@@ -40,12 +40,18 @@ LSP builds the graph inside each language. The agent, and later contract and con
 7. ReactFlow renders every view. The #77 SVG renderer and its custom router go.
 8. ELK runs in a Web Worker. The sequence layout from #74 stays.
 9. Mermaid and D2 export only. JSON is the lossless format.
+10. The agent layer is a file, `.paireto/viz/<name>/agent.json`, that the agent edits with its file tools. Paireto writes `generated.json` beside it. Each file has one writer.
+11. A repo can hold many named vizzes. The panel opens only from the skill, through MCP.
+
+## Resolved questions
+
+1. **Agent-only diagrams.** Kept, as `paireto_viz_create(base: "none")`. It is the same pipeline with an empty programmatic layer. It is for a design that has no code yet, such as a proposed architecture during plan review.
+2. **When the LSP graph is built.** Only when the agent calls `paireto_viz_create` or `paireto_viz_refresh`. The panel opens only from the skill. The agent edits its layer as a file in `.paireto/viz/<name>/agent.json`. See [04-protocols.md](04-protocols.md#1-viz-files-and-mcp-tools).
+3. **PR #77 renderer.** Agreed to replace it with the shared ReactFlow renderer.
 
 ## Questions for the reviewer
 
-1. **Agent-only docs.** Do we keep `base: "none"`, so the agent can draw a diagram with no code under it? It costs little, but it keeps the 48-node agent cap and the "agent writes all" path.
-2. **One doc or many.** Does a window have one live doc that follows Compare To, with history snapshots? Or many named docs, as in #74? This plan assumes one live doc plus snapshots.
-3. **Who owns the "Changes" graph.** Does Paireto build the LSP layer when the panel opens, or only when the agent calls `paireto_viz_query`? Building on open gives #77's behaviour without an agent, but costs LSP time.
-4. **Code snippet colours.** Shiki in the webview, or plain text with diff marks first?
-5. **Contract producers.** Is OpenAPI and proto detection in scope for the first release, or do agent seam edges come first?
-6. **PR #77 author.** The plan retires much of #77's renderer. It keeps its model, producer, notes and core modules. This needs agreement with the PR author.
+1. **UML Diff without an agent.** #77 opens a class diagram from a button on the Changed Files row, with no agent. In this plan, a viz exists only after the agent makes one. Do we drop the button, or keep a command that runs `create` with only the generated layer?
+2. **Commit `.paireto/`?** This plan hides `.paireto/` through `.git/info/exclude`, so it never shows as a change. A team could want to commit a viz as design documentation. Is that a use case?
+3. **Code snippet colours.** Shiki in the webview, or plain text with diff marks first?
+4. **Contract producers.** Is OpenAPI and proto detection in scope for the first release, or do agent seam edges come first?

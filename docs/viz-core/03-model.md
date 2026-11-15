@@ -116,7 +116,7 @@ type VizRef =
   | { step: { walk: WalkId; index: number } };
 ```
 
-Structured refs replace the string grammar. The MCP schema accepts a bare string as shorthand for `{ element }` or `{ relation }`, because ids are unique across both sets in one doc.
+Structured refs replace the string grammar. `agent.json` accepts a bare string as shorthand for `{ element }` or `{ relation }`, because ids are unique across both sets in one doc.
 
 ## Elements
 
@@ -327,4 +327,4 @@ A layer never edits another layer's data in place. It adds new items or sends pa
 
 ## Size limits
 
-#74 caps an agent payload at 48 nodes and 96 edges. With a programmatic base, the agent layer stays small, so these caps apply to agent layers only. Programmatic layers have a separate cap for performance, such as the 250-file cap in #77.
+#74 caps an agent payload at 48 nodes and 96 edges. With a programmatic base, the agent layer stays small, so these caps apply to `agent.json` only. Programmatic layers have a separate cap for performance, such as the 250-file cap in #77.
