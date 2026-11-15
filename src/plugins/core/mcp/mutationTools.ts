@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { Harness } from "../../../protocol/types.js";
-import { VizFile } from "../../../protocol/viz.js";
+import { VizGenerateArgs, VizPresentArgs } from "../../../protocol/viz.js";
 import { connect, type RequestBody } from "../bridgeClient.js";
 import type { ReviewTarget, ToolResult } from "./reviewTool.js";
 import { NO_WINDOW_MESSAGE, textResult } from "./reviewTool.js";
@@ -12,7 +12,7 @@ export const MUTATION_TIMEOUT_MS = 10_000;
 
 export type MutationBody = Extract<
   RequestBody,
-  { t: "feedback.reply.request" | "changes.describe.request" | "viz.show.request" }
+  { t: "feedback.reply.request" | "viz.generate.request" | "viz.present.request" }
 >;
 
 export interface MutationOrigin {
@@ -83,58 +83,63 @@ export const FEEDBACK_REPLY_TOOL = mutationTool({
   }),
 });
 
-export const GET_CHANGES_TOOL = mutationTool({
-  name: "paireto_get_changes",
+export const VIZ_GENERATE_TOOL = mutationTool({
+  name: "paireto_viz_generate",
   description:
-    "List what the connected VS Code window compares: its Compare To, each repo, the changed " +
-    "files grouped by unit, and a level hint. Call this before paireto_show_viz.",
-  args: undefined,
+    "Write the viz file .paireto/viz/<name>.viz.json in the repo and return its path and a summary " +
+    "of what the connected VS Code window compares. base changes: Paireto builds class nodes from " +
+    "the Compare To diff. base none: an empty skeleton you fill. Then edit the file and call " +
+    "paireto_viz_present.",
+  args: VizGenerateArgs,
   pi: {
-    label: "Paireto Changes",
-    snippet: "List the connected VS Code window's Compare To, repos, changed files and units",
+    label: "Paireto Viz Generate",
+    snippet: "Write a Paireto viz file for the changes and return its path and the change summary",
     guidelines: [
-      "Call paireto_get_changes first when the user asks to visualize the changes, and read only " +
-        "what its Compare To covers.",
-    ],
-  },
-  request: (_args, origin) => ({
-    t: "changes.describe.request",
-    cwd: origin.cwd,
-    repoRoot: origin.repoRoot,
-    harness: origin.harness,
-    sessionId: origin.sessionId,
-  }),
-});
-
-export const SHOW_VIZ_TOOL = mutationTool({
-  name: "paireto_show_viz",
-  description:
-    "Show how the changes fit together in the connected VS Code window: an overview graph, flows " +
-    "as sequence diagrams, and a walkthrough. Returns at once: accepted with warnings, or every " +
-    "error to fix before you call it again.",
-  args: VizFile,
-  pi: {
-    label: "Paireto Viz",
-    snippet: "Show a diagram of how the changes fit together in the connected VS Code window",
-    guidelines: [
-      "Call paireto_show_viz after paireto_get_changes and after you read the diffs. On rejection, " +
-        "fix every error and call it again. Never delete elements to pass.",
+      "Call paireto_viz_generate first when the user asks to visualize the changes. Choose base " +
+        "changes for code structure and none for concepts the code does not name.",
+      "After paireto_viz_generate, read the diffs it lists, edit the viz file it wrote, then call " +
+        "paireto_viz_present.",
     ],
   },
   request: (args, origin) => ({
-    t: "viz.show.request",
+    t: "viz.generate.request",
     cwd: origin.cwd,
     repoRoot: origin.repoRoot,
     harness: origin.harness,
     sessionId: origin.sessionId,
-    viz: args,
+    args,
+  }),
+});
+
+export const VIZ_PRESENT_TOOL = mutationTool({
+  name: "paireto_viz_present",
+  description:
+    "Check the viz file .paireto/viz/<name>.viz.json and open it in the connected VS Code window. " +
+    "Returns at once: a summary with warnings, or every error with its JSON path to fix in the " +
+    "file before you call it again.",
+  args: VizPresentArgs,
+  pi: {
+    label: "Paireto Viz Present",
+    snippet: "Check a Paireto viz file and open it in the connected VS Code window",
+    guidelines: [
+      "Call paireto_viz_present after you edit the viz file. On errors, fix every one in the file " +
+        "and call it again. Never delete elements to pass.",
+    ],
+  },
+  request: (args, origin) => ({
+    t: "viz.present.request",
+    cwd: origin.cwd,
+    repoRoot: origin.repoRoot,
+    harness: origin.harness,
+    sessionId: origin.sessionId,
+    args,
   }),
 });
 
 export const MUTATION_TOOLS: readonly MutationTool[] = [
   FEEDBACK_REPLY_TOOL,
-  GET_CHANGES_TOOL,
-  SHOW_VIZ_TOOL,
+  VIZ_GENERATE_TOOL,
+  VIZ_PRESENT_TOOL,
 ];
 
 export async function runMutationTool(

@@ -24,7 +24,7 @@ const manifests = [
 
 suite("adapter version lockstep", () => {
   test("changed hook bundles advance past the prior installed version", () => {
-    assert.notStrictEqual(PLUGIN_VERSION, "0.7.0");
+    assert.notStrictEqual(PLUGIN_VERSION, "0.11.0");
   });
 
   for (const manifest of manifests) {

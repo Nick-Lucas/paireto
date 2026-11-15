@@ -2,6 +2,7 @@
 
 import type { ThreadItems } from "../comments/threadModel.js";
 import type { FileGroup } from "../types.js";
+import type { VizNotePlace, VizNoteTarget } from "../viz/protocol.js";
 
 export type { ThreadItem, ThreadItemAuthor } from "../comments/threadModel.js";
 export { getOpeningComment, getReviewerItems } from "../comments/threadModel.js";
@@ -13,12 +14,30 @@ export interface ReviewAnchor {
   lineHash: string;
 }
 
+export interface DiagramCode {
+  repoRoot: string;
+  path: string;
+  line: number;
+  side: "base" | "modified";
+}
+
+export type DiagramTarget = VizNoteTarget & { code?: DiagramCode };
+
+export interface DiagramAnchor {
+  viz: string;
+  title: string;
+  targets: DiagramTarget[];
+  place?: VizNotePlace;
+  readAt?: string;
+}
+
 export interface ReviewThread extends ThreadItems {
   sourceUri?: string;
 
   repoRoot: string;
   filePath: string;
   changeset?: { id: string; title: string };
+  diagram?: DiagramAnchor;
   side: "base" | "modified";
   line: number; // 0-based on the side's document
   anchor: ReviewAnchor;
@@ -26,6 +45,7 @@ export interface ReviewThread extends ThreadItems {
   createdAt: string;
   updatedAt: string;
   resolvedAt?: string;
+  sentAt?: string;
   sourceDocument?: { uri: string; markdown: string };
   attachment?: {
     group: FileGroup;

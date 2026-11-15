@@ -1,29 +1,18 @@
-import * as fs from "node:fs";
-
 import type { Envelope, Target } from "./emulator.ts";
 
-interface ChangesDescribeRequest extends Envelope {
-  t: "changes.describe.request";
+interface VizToolRequest extends Envelope {
+  t: "viz.generate.request" | "viz.present.request";
   id: string;
   cwd: string;
   repoRoot: string;
   harness: string;
   sessionId?: string;
+  args: Record<string, unknown>;
 }
 
-interface VizShowRequest extends Envelope {
-  t: "viz.show.request";
-  id: string;
-  cwd: string;
-  repoRoot: string;
-  harness: string;
-  sessionId?: string;
-  viz: unknown;
-}
+export type TextRequest = VizToolRequest;
 
-export type TextRequest = ChangesDescribeRequest | VizShowRequest;
-
-export type TextResponseType = "changes.describe.response" | "viz.show.response";
+export type TextResponseType = "viz.generate.response" | "viz.present.response";
 
 export interface VizCommandDeps {
   send(
@@ -37,48 +26,53 @@ export interface VizCommandDeps {
   fail(message: string): void;
 }
 
-export async function cmdChanges(deps: VizCommandDeps): Promise<void> {
+function request(
+  deps: VizCommandDeps,
+  t: VizToolRequest["t"],
+  args: Record<string, unknown>
+): (target: Target, id: string) => TextRequest {
+  return (target, id) => ({
+    t,
+    v: deps.version,
+    id,
+    ts: deps.now(),
+    cwd: target.cwd,
+    repoRoot: target.repoRoot,
+    harness: "claudecode",
+    sessionId: deps.session,
+    args,
+  });
+}
+
+export async function cmdVizGenerate(
+  name: string | undefined,
+  base: string | undefined,
+  title: string | undefined,
+  deps: VizCommandDeps
+): Promise<void> {
+  if (!name) {
+    deps.fail("Usage: node emulator.ts viz-generate <name> [--base changes|none] [--title <text>]");
+    return;
+  }
   await deps.send(
-    "Changes · paireto_get_changes",
-    (target, id) => ({
-      t: "changes.describe.request",
-      v: deps.version,
-      id,
-      ts: deps.now(),
-      cwd: target.cwd,
-      repoRoot: target.repoRoot,
-      harness: "claudecode",
-      sessionId: deps.session,
+    "Viz · paireto_viz_generate",
+    request(deps, "viz.generate.request", {
+      name,
+      base: base ?? "changes",
+      ...(title ? { title } : {}),
     }),
-    "changes.describe.response"
+    "viz.generate.response"
   );
 }
 
-export async function cmdViz(file: string | undefined, deps: VizCommandDeps): Promise<void> {
-  if (!file) {
-    deps.fail("Usage: node emulator.ts viz <file.json>");
-    return;
-  }
-  let viz: unknown;
-  try {
-    viz = JSON.parse(fs.readFileSync(file, "utf8"));
-  } catch (err) {
-    deps.fail(`Could not read ${file}: ${err instanceof Error ? err.message : String(err)}`);
+export async function cmdVizPresent(name: string | undefined, deps: VizCommandDeps): Promise<void> {
+  if (!name) {
+    deps.fail("Usage: node emulator.ts viz-present <name>");
     return;
   }
   await deps.send(
-    "Viz · paireto_show_viz",
-    (target, id) => ({
-      t: "viz.show.request",
-      v: deps.version,
-      id,
-      ts: deps.now(),
-      cwd: target.cwd,
-      repoRoot: target.repoRoot,
-      harness: "claudecode",
-      sessionId: deps.session,
-      viz,
-    }),
-    "viz.show.response"
+    "Viz · paireto_viz_present",
+    request(deps, "viz.present.request", { name }),
+    "viz.present.response"
   );
 }

@@ -288,10 +288,10 @@ export class SocketServer {
         });
         break;
       }
-      case "changes.describe.request": {
-        const result = await this.handlers.onChangesDescribe(msg);
+      case "viz.generate.request": {
+        const result = await this.handlers.onVizGenerate(msg);
         send({
-          t: "changes.describe.response",
+          t: "viz.generate.response",
           v: PLUGIN_VERSION,
           id: msg.id,
           ts: new Date().toISOString(),
@@ -300,10 +300,10 @@ export class SocketServer {
         });
         break;
       }
-      case "viz.show.request": {
-        const result = await this.handlers.onVizShow(msg);
+      case "viz.present.request": {
+        const result = await this.handlers.onVizPresent(msg);
         send({
-          t: "viz.show.response",
+          t: "viz.present.response",
           v: PLUGIN_VERSION,
           id: msg.id,
           ts: new Date().toISOString(),

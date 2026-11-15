@@ -67,10 +67,10 @@ export type MessageType =
   | "guided.review.await.response"
   | "feedback.reply.request"
   | "feedback.reply.response"
-  | "changes.describe.request"
-  | "changes.describe.response"
-  | "viz.show.request"
-  | "viz.show.response"
+  | "viz.generate.request"
+  | "viz.generate.response"
+  | "viz.present.request"
+  | "viz.present.response"
   | "stop.gate.request"
   | "stop.gate.response";
 
@@ -284,34 +284,35 @@ export interface FeedbackReplyResponse extends Envelope {
   message: string;
 }
 
-export interface ChangesDescribeRequest extends Envelope {
-  t: "changes.describe.request";
+export interface VizGenerateRequest extends Envelope {
+  t: "viz.generate.request";
   id: string;
   cwd: string;
   repoRoot: string;
   harness: Harness;
   sessionId?: string;
+  args: unknown;
 }
 
-export interface ChangesDescribeResponse extends Envelope {
-  t: "changes.describe.response";
+export interface VizGenerateResponse extends Envelope {
+  t: "viz.generate.response";
   id: string;
   ok: boolean;
   message: string;
 }
 
-export interface VizShowRequest extends Envelope {
-  t: "viz.show.request";
+export interface VizPresentRequest extends Envelope {
+  t: "viz.present.request";
   id: string;
   cwd: string;
   repoRoot: string;
   harness: Harness;
   sessionId?: string;
-  viz: unknown;
+  args: unknown;
 }
 
-export interface VizShowResponse extends Envelope {
-  t: "viz.show.response";
+export interface VizPresentResponse extends Envelope {
+  t: "viz.present.response";
   id: string;
   ok: boolean;
   message: string;
@@ -358,9 +359,9 @@ export type AnyMessage =
   | GuidedReviewAwaitResponse
   | FeedbackReplyRequest
   | FeedbackReplyResponse
-  | ChangesDescribeRequest
-  | ChangesDescribeResponse
-  | VizShowRequest
-  | VizShowResponse
+  | VizGenerateRequest
+  | VizGenerateResponse
+  | VizPresentRequest
+  | VizPresentResponse
   | StopGateRequest
   | StopGateResponse;

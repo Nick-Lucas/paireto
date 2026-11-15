@@ -113,7 +113,6 @@ suite("viz changes description", () => {
         "Units: (repo root) 1",
         "  M queues.tf +3 -1",
         "Level hint: service (3 units changed).",
-        "Read these diffs against the Compare To above, then call paireto_show_viz.",
       ].join("\n"),
     );
   });

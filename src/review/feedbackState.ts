@@ -2,6 +2,7 @@ import {
   appendReply,
   editComment,
   editReply,
+  getReviewerItems,
   removeReply,
   type ThreadItemAuthor,
 } from "../comments/threadModel.js";
@@ -45,7 +46,14 @@ export function removeFeedbackReply(
   itemId: string,
   at: string,
 ): ReviewThread {
-  return { ...removeReply(thread, itemId), updatedAt: at };
+  const removed = removeReply(thread, itemId);
+  const sentAt = thread.sentAt;
+  const unsent = getReviewerItems(removed).some((item) => !sentAt || item.at > sentAt);
+  return {
+    ...removed,
+    delivery: thread.delivery === "pending" && !unsent ? "sent" : thread.delivery,
+    updatedAt: at,
+  };
 }
 
 export function resolveThread(thread: ReviewThread, at: string): ReviewThread {

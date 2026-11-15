@@ -39,10 +39,10 @@ type MessageType =
   | "plan.review.response"
   | "review.await.request"
   | "review.await.response"
-  | "changes.describe.request"
-  | "changes.describe.response"
-  | "viz.show.request"
-  | "viz.show.response"
+  | "viz.generate.request"
+  | "viz.generate.response"
+  | "viz.present.request"
+  | "viz.present.response"
   | "stop.gate.request"
   | "stop.gate.response";
 
@@ -922,9 +922,9 @@ ${bold("Commands")}
   ${cyan("flow")}                    Fire a full simulated session lifecycle of events.
   ${cyan("agent")}                   Hold a live session open (liveness connection). Ctrl+C to
                           simulate the agent process being killed → the extension drops it.
-  ${cyan("changes")}                 Ask what the window compares (paireto_get_changes).
-  ${cyan("viz")} <file.json>         Send a viz payload (paireto_show_viz) and print the answer.
-                          Try src/viz/fixtures/multiService.json.
+  ${cyan("viz-generate")} <name>     Write .paireto/viz/<name>.viz.json (paireto_viz_generate) and
+                          print the change summary. --base changes|none, --title <text>.
+  ${cyan("viz-present")} <name>      Check the viz file and open it (paireto_viz_present).
   ${cyan("help")}                    Show this.
 
 ${bold("Options")}
@@ -976,11 +976,16 @@ async function main(): Promise<void> {
     case "agent":
       await cmdAgent(opts);
       break;
-    case "changes":
-      await vizCommands.cmdChanges(vizDeps(opts));
+    case "viz-generate":
+      await vizCommands.cmdVizGenerate(
+        rest[0] ?? strOpt(opts, "name"),
+        strOpt(opts, "base"),
+        strOpt(opts, "title"),
+        vizDeps(opts)
+      );
       break;
-    case "viz":
-      await vizCommands.cmdViz(rest[0] ?? strOpt(opts, "file"), vizDeps(opts));
+    case "viz-present":
+      await vizCommands.cmdVizPresent(rest[0] ?? strOpt(opts, "name"), vizDeps(opts));
       break;
     case "help":
     case "-h":

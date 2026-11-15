@@ -131,7 +131,6 @@ export function renderChanges(repos: RepoChanges[], units: ChangeUnit[]): string
   const level = levelHint(repos, units);
   lines.push(
     `Level hint: ${level} (${units.length} ${units.length === 1 ? "unit" : "units"} changed).`,
-    "Read these diffs against the Compare To above, then call paireto_show_viz.",
   );
   return lines.join("\n");
 }
@@ -141,6 +140,6 @@ function unitText(unit: ChangeUnit): string {
   return unit.manifest ? `${dir} [${unit.manifest}] ${unit.files}` : `${dir} ${unit.files}`;
 }
 
-function compareToText(compareTo: CompareTo): string {
+export function compareToText(compareTo: CompareTo): string {
   return compareTo.kind === "ref" && compareTo.ref ? `ref ${compareTo.ref}` : compareTo.kind;
 }

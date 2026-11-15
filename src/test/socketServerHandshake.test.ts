@@ -28,8 +28,8 @@ function stubHandlers(
     onSessionAttached: () => {},
     onSessionDetached: () => {},
     onFeedbackReply: () => Promise.resolve({ ok: true, message: "" }),
-    onChangesDescribe: () => Promise.resolve({ ok: true, message: "" }),
-    onVizShow: () => Promise.resolve({ ok: true, message: "" }),
+    onVizGenerate: () => Promise.resolve({ ok: true, message: "" }),
+    onVizPresent: () => Promise.resolve({ ok: true, message: "" }),
     onHandshakeRejected: (info) => rejections.push(info),
     ...overrides,
   };
@@ -131,42 +131,43 @@ suite("bridge handshake refusal", () => {
   test("viz requests reach their handlers and their answers come back", async () => {
     const seen: string[] = [];
     const created = await listen([], {
-      onChangesDescribe: (msg) => {
-        seen.push(`${msg.t} ${msg.harness}`);
-        return Promise.resolve({ ok: true, message: "Repo shop" });
+      onVizGenerate: (msg) => {
+        seen.push(`${msg.t} ${msg.harness} ${JSON.stringify(msg.args)}`);
+        return Promise.resolve({ ok: true, message: "Wrote x" });
       },
-      onVizShow: (msg) => {
-        seen.push(`${msg.t} ${JSON.stringify(msg.viz)}`);
+      onVizPresent: (msg) => {
+        seen.push(`${msg.t} ${JSON.stringify(msg.args)}`);
         return Promise.resolve({ ok: false, message: "Viz rejected." });
       },
     });
     const connected = await connect({ socketPath: created.socketPath, repoRoot: created.repoRoot });
     assert.ok(connected.ok);
     try {
-      const described = await connected.connection.request({
-        t: "changes.describe.request",
+      const generated = await connected.connection.request({
+        t: "viz.generate.request",
         cwd: repoRoot,
         repoRoot: created.repoRoot,
         harness: "codex",
+        args: { name: "x", base: "none" },
       });
-      const shown = await connected.connection.request({
-        t: "viz.show.request",
+      const presented = await connected.connection.request({
+        t: "viz.present.request",
         cwd: repoRoot,
         repoRoot: created.repoRoot,
         harness: "codex",
-        viz: { title: "x" },
+        args: { name: "x" },
       });
       assert.deepStrictEqual(
-        [described?.t, described?.ok, described?.message],
-        ["changes.describe.response", true, "Repo shop"],
+        [generated?.t, generated?.ok, generated?.message],
+        ["viz.generate.response", true, "Wrote x"],
       );
       assert.deepStrictEqual(
-        [shown?.t, shown?.ok, shown?.message],
-        ["viz.show.response", false, "Viz rejected."],
+        [presented?.t, presented?.ok, presented?.message],
+        ["viz.present.response", false, "Viz rejected."],
       );
       assert.deepStrictEqual(seen, [
-        "changes.describe.request codex",
-        'viz.show.request {"title":"x"}',
+        'viz.generate.request codex {"name":"x","base":"none"}',
+        'viz.present.request {"name":"x"}',
       ]);
     } finally {
       connected.connection.close();
