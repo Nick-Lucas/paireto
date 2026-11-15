@@ -1,9 +1,9 @@
 ---
-name: paireto-viz
-description: Draw how the current changes fit together as an interactive diagram in VS Code
+name: paireto-experimental-viz
+description: Experimental. Draw how the current changes fit together as an interactive diagram in VS Code
 ---
 
-# Paireto Viz
+# Paireto Viz (experimental)
 
 Draw how these changes fit together, so a human sees the shape of the change before they read the code. A viz is one JSON file in the repo, `.paireto/viz/<name>.viz.json`. Paireto shows it in the connected VS Code window.
 

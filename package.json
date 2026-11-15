@@ -526,7 +526,7 @@
         },
         {
           "command": "paireto.viz.openNewest",
-          "when": "paireto.reviewDiffActive",
+          "when": "paireto.reviewDiffActive && paireto.hasViz",
           "group": "navigation@2"
         },
         {
@@ -599,7 +599,7 @@
       "view/item/context": [
         {
           "command": "paireto.viz.openNewest",
-          "when": "view == paireto.main && viewItem =~ /^(section:files|repository)/",
+          "when": "view == paireto.main && viewItem =~ /^(section:files|repository)/ && paireto.hasViz",
           "group": "inline@1"
         },
         {

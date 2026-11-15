@@ -97,6 +97,7 @@ export interface VizServiceDeps {
   seen: VizSeen;
   generate: VizGenerator;
   openEditor(uri: vscode.Uri, options: VizOpenOptions): Thenable<unknown>;
+  setHasViz(value: boolean): void;
 }
 
 export type VizCheck =
@@ -113,17 +114,22 @@ export class VizService implements vscode.CustomTextEditorProvider, vscode.Dispo
   private readonly diagnostics = vscode.languages.createDiagnosticCollection("paireto-viz");
   private readonly disposables: vscode.Disposable[] = [];
   private timer: ReturnType<typeof setTimeout> | undefined;
+  private hasViz: boolean | undefined;
 
   constructor(private readonly deps: VizServiceDeps) {
     const watcher = vscode.workspace.createFileSystemWatcher("**/.paireto/viz/*.viz.json");
     this.disposables.push(
       this.diagnostics,
       watcher,
-      watcher.onDidCreate(() => this.postVizzes()),
-      watcher.onDidDelete(() => this.postVizzes()),
-      deps.review.onDidChangeState(() => this.scheduleReview()),
+      watcher.onDidCreate(() => this.onVizFilesChanged()),
+      watcher.onDidDelete(() => this.onVizFilesChanged()),
+      deps.review.onDidChangeState(() => {
+        this.refreshHasViz();
+        this.scheduleReview();
+      }),
       deps.seen.onDidChange(() => this.scheduleReview()),
     );
+    this.refreshHasViz();
   }
 
   async generate(msg: VizGenerateRequest): Promise<FeedbackMutationResult> {
@@ -150,6 +156,7 @@ export class VizService implements vscode.CustomTextEditorProvider, vscode.Dispo
       };
       const file = vizPathOf(target.root, name);
       const { replaced } = writeVizFile(file, viz);
+      this.refreshHasViz();
       return {
         ok: true,
         message: [
@@ -427,6 +434,19 @@ export class VizService implements vscode.CustomTextEditorProvider, vscode.Dispo
     }, REVIEW_DELAY_MS);
   }
 
+  private onVizFilesChanged(): void {
+    this.refreshHasViz();
+    this.postVizzes();
+  }
+
+  private refreshHasViz(): void {
+    const hasViz = listVizFiles(this.repos()).length > 0;
+    if (hasViz !== this.hasViz) {
+      this.hasViz = hasViz;
+      this.deps.setHasViz(hasViz);
+    }
+  }
+
   private postVizzes(): void {
     const vizzes = this.vizzes();
     for (const editor of this.editors) {
@@ -605,7 +625,7 @@ function rootOfArg(arg: unknown): string | undefined {
 
 function showNoViz(): void {
   void vscode.window.showInformationMessage(
-    "Paireto: this repo has no viz yet. Ask your agent for one with /paireto:viz.",
+    "Paireto: this repo has no viz yet. Ask your agent for one with /paireto:experimental-viz.",
   );
 }
 

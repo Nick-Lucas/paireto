@@ -77,7 +77,7 @@ A viz opens in a **custom editor**, not in a separate panel. Paireto contributes
 
 - "Most recent" means the newest modification time of a `.viz.json` file. The agent's last edit updates it, so the newest agent work wins.
 - In a multi-root window the button uses the repo of its row. The quick pick and the switcher list every repo and show the repo name.
-- With no viz file in the repo, the button opens an empty state. It explains how to ask the agent for a viz with `/paireto:viz`.
+- The button shows only when at least one repo in the window holds a viz file. The `paireto.hasViz` context key controls it.
 - The editor never writes the file. It is a read-only view of the `TextDocument`. The one-writer rule holds.
 - If the cache is missing or stale, the editor builds it before it draws. A `base: "changes"` viz needs LSP for this, but not the agent.
 
@@ -172,7 +172,7 @@ sequenceDiagram
   participant Core as merge + compile + verify
   participant Editor as Viz editor
 
-  User->>Agent: /paireto:viz
+  User->>Agent: /paireto:experimental-viz
   Agent->>MCP: paireto_get_changes
   MCP->>Host: changes request
   Host-->>Agent: Compare To, files, units, level hint

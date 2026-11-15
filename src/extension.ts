@@ -122,6 +122,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     seen: seenFiles,
     generate: (req) => generateViz({ repoRoot: req.repoRoot, title: req.title }, vizSource),
     openEditor: openVizEditor,
+    setHasViz: (value) =>
+      void vscode.commands.executeCommand("setContext", "paireto.hasViz", value),
   });
   const mainTree = new MainTreeProvider(
     agents,

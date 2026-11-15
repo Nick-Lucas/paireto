@@ -5,10 +5,10 @@ import * as path from "node:path";
 const repo = path.resolve(__dirname, "../..");
 
 const COPIES = [
-  "src/plugins/agent-plugin/skills/paireto-viz/SKILL.md",
-  "src/plugins/pi/assets/skills/paireto-viz/SKILL.md",
-  "src/plugins/opencode/assets/commands/paireto-viz.md",
-  "src/plugins/claude-code/assets/commands/viz.md",
+  "src/plugins/agent-plugin/skills/paireto-experimental-viz/SKILL.md",
+  "src/plugins/pi/assets/skills/paireto-experimental-viz/SKILL.md",
+  "src/plugins/opencode/assets/commands/paireto-experimental-viz.md",
+  "src/plugins/claude-code/assets/commands/experimental-viz.md",
 ];
 
 const FRONTMATTER = /^---\n([\s\S]*?)\n---\n/;
@@ -39,19 +39,22 @@ suite("viz skill copies", () => {
   });
 
   test("the skill copies are named for their slash command", () => {
-    assert.match(read(COPIES[0]).frontmatter, /^name: paireto-viz$/m);
-    assert.match(read(COPIES[1]).frontmatter, /^name: paireto-viz$/m);
+    assert.match(read(COPIES[0]).frontmatter, /^name: paireto-experimental-viz$/m);
+    assert.match(read(COPIES[1]).frontmatter, /^name: paireto-experimental-viz$/m);
   });
 
   test("the Claude Code copy names both tools by their plugin address", () => {
-    const body = read("src/plugins/claude-code/assets/commands/viz.md").body;
+    const body = read("src/plugins/claude-code/assets/commands/experimental-viz.md").body;
     assert.ok(body.includes("`mcp__plugin_paireto_bridge__paireto_viz_generate` tool"));
     assert.ok(body.includes("`mcp__plugin_paireto_bridge__paireto_viz_present` tool"));
   });
 
   test("the built Codex copy names both tools by their MCP address", () => {
     const built = fs.readFileSync(
-      path.join(repo, "dist/plugins/agent-plugin/com.openai.codex/skills/paireto-viz/SKILL.md"),
+      path.join(
+        repo,
+        "dist/plugins/agent-plugin/com.openai.codex/skills/paireto-experimental-viz/SKILL.md",
+      ),
       "utf8",
     );
     assert.ok(built.includes("`mcp__paireto__paireto_viz_generate` tool"));

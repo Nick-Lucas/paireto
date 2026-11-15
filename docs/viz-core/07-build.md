@@ -16,12 +16,12 @@ This plan replaces the layer design in [02-architecture.md](02-architecture.md) 
   - `paireto_viz_generate(name, base, title?)` writes the file and returns its path. With `base: "changes"`, Paireto builds class nodes from the Compare To diff with the symbol providers. With `base: "none"`, Paireto writes an empty skeleton. The result text includes the change summary that `paireto_get_changes` returned in #74.
   - `paireto_viz_present(name)` checks the file and opens it for the user. It returns errors with JSON paths.
   - `paireto_show_viz` and `paireto_get_changes` go.
-- The `paireto-viz` skill teaches the agent the two tools and the schema, and when to use each base.
+- The `paireto-experimental-viz` skill (`/paireto:experimental-viz` in Claude Code) teaches the agent the two tools and the schema, and when to use each base.
 - One viz UI. It has the look of #77 and the features of #74:
   - From #77: the look, class boxes with change badges and line counts, the toolbar (Show, Filter, View, Find), the review list (seen files, Next change), and notes as review threads with Send Feedback.
   - From #74: flows with playback, the walkthrough, the inspector, focus, search, keyboard help, Mermaid export, and the Compare To mismatch badge with Align.
   - New: the viz switcher, and "Ask agent to regenerate" when the window's Compare To differs from the viz's.
-- A `.viz.json` file opens in the viz custom editor by default. The viz button on the Changed Files row opens the newest viz.
+- A `.viz.json` file opens in the viz custom editor by default. The viz button on the Changed Files row opens the newest viz. It shows only when at least one viz file exists.
 - Paireto does not change `.gitignore`.
 
 ## Units

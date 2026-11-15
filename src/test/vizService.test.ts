@@ -53,6 +53,7 @@ interface Harness {
   aligned: CompareTo[];
   opened: { file: string; options: VizOpenOptions }[];
   generated: VizGeneratorRequest[];
+  hasViz: boolean[];
   threads: ReviewThread[];
   seenCalls: { paths: string[]; seen: boolean }[];
   setCompareTo(next: CompareTo): void;
@@ -149,6 +150,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
   const seenCalls: { paths: string[]; seen: boolean }[] = [];
   const opened: { file: string; options: VizOpenOptions }[] = [];
   const generated: VizGeneratorRequest[] = [];
+  const hasViz: boolean[] = [];
   const service = new VizService({
     extensionUri: vscode.Uri.file(root),
     workspaceState: memento(),
@@ -168,6 +170,9 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
     openEditor: async (uri, options) => {
       opened.push({ file: uri.fsPath, options });
     },
+    setHasViz: (value) => {
+      hasViz.push(value);
+    },
   });
   const envelope = (cwd: string) => ({
     v: "test",
@@ -184,6 +189,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
     aligned,
     opened,
     generated,
+    hasViz,
     threads,
     seenCalls,
     setCompareTo: (next) => {
@@ -314,6 +320,14 @@ suite("viz service", () => {
       `Read the diffs, then read and edit ${file}, then call paireto_viz_present with name "checkout".`,
     );
     assert.deepStrictEqual(current.generated, []);
+  });
+
+  test("the viz button shows only once a repo holds a viz", async () => {
+    current = harness(loadVizFixture("singleFrontend"));
+    assert.strictEqual(current.hasViz.at(-1), false);
+    const result = await current.generate({ name: "checkout", base: "none" });
+    assert.strictEqual(result.ok, true, result.message);
+    assert.strictEqual(current.hasViz.at(-1), true);
   });
 
   test("generate with base changes asks the generator and says when it replaced a file", async () => {
