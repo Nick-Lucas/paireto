@@ -29,5 +29,6 @@
   "[jsonc]": {
     "editor.defaultFormatter": "oxc.oxc-vscode"
   },
-  "paireto.logLevel": "debug"
+  "paireto.logLevel": "debug",
+  "js/ts.tsdk.path": "node_modules/typescript"
 }

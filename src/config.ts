@@ -46,6 +46,7 @@ export const Commands = {
   reviewResolveThread: "paireto.review.resolveThread",
   reviewUnresolveThread: "paireto.review.unresolveThread",
   reviewRevealComment: "paireto.review.revealComment",
+  reviewRevealActiveFile: "paireto.review.revealActiveFile",
   reviewDeleteComment: "paireto.review.deleteComment",
   reviewClearFeedback: "paireto.review.clearFeedback",
   /** Open the diff for a file named by the agent's review plan. */
@@ -68,6 +69,7 @@ export const Schemes = {
   review: "paireto-review",
   /** One changeset's description, as a read-only markdown document the reviewer can comment on. */
   changeset: "paireto-changeset",
+  tree: "paireto-tree",
 } as const;
 
 export const Views = {
@@ -95,6 +97,7 @@ export const StateKeys = {
   compareTo: "paireto.compareTo",
   fileLayout: "paireto.fileLayout",
   changesMode: "paireto.changesMode",
+  fileScope: "paireto.fileScope",
   seenFiles: "paireto.seenFiles",
   recentRefs: "paireto.recentRefs",
   vizDocs: "paireto.vizDocs",

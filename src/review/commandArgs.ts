@@ -14,7 +14,7 @@ import { z } from "zod";
 import { prettifyError } from "zod/v4";
 
 import { log } from "../log.js";
-import type { DeltaFile } from "./delta.js";
+import { isDeltaFile, type DeltaRow } from "./delta.js";
 import { filesInEntry, type TreeEntry } from "../views/fileTree.js";
 
 /** A changed file as the tree carries it. Spelled out rather than passed through, so the parsed
@@ -79,8 +79,12 @@ export const FilesArg = z.union([
     .object({ kind: z.literal("folder"), entry: z.custom<TreeEntry>() })
     .transform((node) => filesInEntry(node.entry) as ChangedFileArg[]),
   z
-    .object({ kind: z.literal("deltaFolder"), entry: z.custom<TreeEntry<DeltaFile>>() })
-    .transform((node) => filesInEntry(node.entry).flatMap((delta) => delta.layers)),
+    .object({ kind: z.literal("deltaFolder"), entry: z.custom<TreeEntry<DeltaRow>>() })
+    .transform((node) =>
+      filesInEntry(node.entry)
+        .filter(isDeltaFile)
+        .flatMap((delta) => delta.layers),
+    ),
   z
     .object({ kind: z.literal("deltaFile"), delta: DeltaLayersArg })
     .transform((node) => node.delta.layers),
