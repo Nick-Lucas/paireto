@@ -147,6 +147,10 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "paireto.review.revealActiveFile",
+        "title": "Paireto: Reveal Active File"
+      },
+      {
         "command": "paireto.review.pickViewMode",
         "title": "Paireto: View Modes…",
         "icon": "$(list-tree)"

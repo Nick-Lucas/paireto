@@ -12,6 +12,8 @@ export type FileLayout = "tree" | "flat";
 
 export type ChangesMode = "staging" | "delta" | "review";
 
+export type FileScope = "changed" | "all";
+
 /** Headline agent state derived from Claude hook telemetry; drives the status-bar glyph. */
 export type AgentState =
   | "idle"
