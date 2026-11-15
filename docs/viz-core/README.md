@@ -14,7 +14,7 @@ This is a plan for review. It is not final code.
 | [03-model.md](03-model.md) | The data model: elements, members, relations, walks, tours, views, layers |
 | [04-protocols.md](04-protocols.md) | MCP tools, host and webview messages, comments, snippets, exporters |
 | [05-seams.md](05-seams.md) | Cross-language seams, evidence, verification, LSP coverage |
-| [06-likec4.md](06-likec4.md) | Why the core does not use LikeC4 as its model or renderer, and where it connects |
+| [06-likec4.md](06-likec4.md) | LikeC4 as the model and renderer: fit, how to extend it, and the spike that decides it |
 
 ## Answers to the open questions
 
@@ -43,7 +43,7 @@ LSP builds the graph inside each language. The agent, and later contract and con
 9. Mermaid and D2 export only. JSON is the lossless format.
 10. A viz is a file, `.paireto/viz/<name>.viz.json`, that the agent edits with its file tools. Paireto writes derived data under `.paireto/cache/`. Each file has one writer.
 11. A repo can hold many vizzes. Only the agent makes one. A `.viz.json` file opens in a Paireto custom editor by default.
-12. LikeC4 is an export target and a later import producer, not the core model or renderer. See [06-likec4.md](06-likec4.md).
+12. LikeC4 as the model and renderer is open. A spike decides it. See [06-likec4.md](06-likec4.md#spike).
 
 ## Resolved questions
 
