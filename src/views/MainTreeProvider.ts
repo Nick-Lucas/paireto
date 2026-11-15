@@ -328,9 +328,25 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     return active?.repoRoot === repoRoot ? [active.path] : [];
   }
 
-  private holdsActiveFile(repoRoot: string, folderPath: string): boolean {
-    const active = this.review.activeFile();
-    return active?.repoRoot === repoRoot && active.path.startsWith(`${folderPath}/`);
+  private extraActivePath(repository: RepositoryReviewState): string | undefined {
+    const [active] = this.activePaths(repository.repoRoot);
+    if (active === undefined) {
+      return undefined;
+    }
+    const listed =
+      this.deltaFor(repository).some((delta) => delta.path === active) ||
+      this.listedUnchangedFiles(repository).includes(active);
+    return listed ? undefined : active;
+  }
+
+  private listedUnchangedFiles(repository: RepositoryReviewState): string[] {
+    return this.review.getState().fileScope === "all" ? (repository.files ?? []) : [];
+  }
+
+  private holdsOnlyActiveFile(node: Extract<Node, { kind: "deltaFolder" }>): boolean {
+    const repository = this.repository(node.repoRoot);
+    const extra = repository && this.extraActivePath(repository);
+    return extra !== undefined && filesInEntry(node.entry).every((row) => row.path === extra);
   }
 
   private onStateChanged(): void {
@@ -428,9 +444,8 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
 
   private rowsFor(repository: RepositoryReviewState): DeltaRow[] {
     const deltas = this.deltaFor(repository);
-    const { fileScope } = this.review.getState();
     const unchanged = [
-      ...(fileScope === "all" ? (repository.files ?? []) : []),
+      ...this.listedUnchangedFiles(repository),
       ...this.activePaths(repository.repoRoot),
     ];
     return unchanged.length ? withUnchangedFiles(repository.repoRoot, deltas, unchanged) : deltas;
@@ -631,11 +646,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
         const { mode } = this.review.getState();
         const files = filesInEntry(node.entry).filter(isDeltaFile);
         const checkbox = mode === "review" && files.length ? this.checkboxFor(files) : undefined;
-        const collapsed = folderCollapse(
-          files,
-          checkbox,
-          this.holdsActiveFile(node.repoRoot, node.entry.path),
-        );
+        const collapsed = folderCollapse(files, checkbox, this.holdsOnlyActiveFile(node));
         const item = new vscode.TreeItem(
           node.entry.name,
           collapsed
@@ -1040,10 +1051,10 @@ function deltaRowToNode(row: DeltaRow): Node {
 function folderCollapse(
   files: DeltaFile[],
   checkbox: vscode.TreeItemCheckboxState | undefined,
-  holdsActiveFile: boolean,
+  holdsOnlyActiveFile: boolean,
 ): "unchanged" | "seen" | undefined {
   if (!files.length) {
-    return holdsActiveFile ? undefined : "unchanged";
+    return holdsOnlyActiveFile ? undefined : "unchanged";
   }
   return checkbox === vscode.TreeItemCheckboxState.Checked ? "seen" : undefined;
 }

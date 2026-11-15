@@ -816,7 +816,7 @@ interface RevealTree extends TreeUnderTest {
 function revealTreeIn(
   mode: ChangesMode,
   repo: RepositoryReviewState,
-  options: { layout?: FileLayout; guided?: GuidedReviewState } = {},
+  options: { layout?: FileLayout; guided?: GuidedReviewState; fileScope?: FileScope } = {},
 ): {
   tree: RevealTree;
   focus: (file: ActiveFile | undefined) => void;
@@ -827,7 +827,7 @@ function revealTreeIn(
     compareTo: { kind: "head" },
     layout: options.layout ?? "tree",
     mode,
-    fileScope: "changed",
+    fileScope: options.fileScope ?? "changed",
     repositories: [repo],
     guided: options.guided,
   };
@@ -904,6 +904,35 @@ suite("Active file", () => {
       vscode.TreeItemCollapsibleState.Expanded,
     );
     assert.deepStrictEqual(listing(tree, docs), ["unchangedFile guide.md"]);
+  });
+
+  test("in All Files a folder keeps its row when the active file moves in and out of it", () => {
+    const allFiles = repository(
+      [layer("src/a.ts", "unstaged")],
+      [net("src/a.ts")],
+      ["docs/guide.md", "docs/intro.md", "notes/todo.md", "src/a.ts"],
+    );
+    const { tree, focus } = revealTreeIn("delta", allFiles, { fileScope: "all" });
+    const folderRows = (): Array<
+      [string | undefined, vscode.TreeItemCollapsibleState | undefined]
+    > =>
+      tree
+        .getChildren(filesSection(tree))
+        .filter((node) => labelOf(tree, node) !== "src")
+        .map((node) => {
+          const item = tree.getTreeItem(node);
+          return [item.id, item.collapsibleState];
+        });
+
+    focus({ repoRoot: REPO, path: "src/a.ts" });
+    const elsewhere = folderRows();
+    focus({ repoRoot: REPO, path: "docs/guide.md" });
+    const inDocs = folderRows();
+    focus({ repoRoot: REPO, path: "notes/todo.md" });
+    const inNotes = folderRows();
+
+    assert.deepStrictEqual(inDocs, elsewhere);
+    assert.deepStrictEqual(inNotes, elsewhere);
   });
 
   test("the file goes away when focus moves to another file", () => {
