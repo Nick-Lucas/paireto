@@ -36,7 +36,8 @@ import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
-import { skeletonGenerator } from "./viz/host/generator.js";
+import { generateViz } from "./viz/generate/generate.js";
+import { VscodeGenerateSource } from "./viz/generate/vscodeSource.js";
 import { openVizEditor, registerVizEditor, VizService } from "./viz/host/VizService.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
@@ -113,12 +114,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   const seenFiles = new SeenFiles(context.workspaceState);
+  const vizSource = new VscodeGenerateSource(reviewController);
   const viz = new VizService({
     extensionUri: context.extensionUri,
     workspaceState: context.workspaceState,
     review: reviewController,
     seen: seenFiles,
-    generate: skeletonGenerator,
+    generate: (req) => generateViz({ repoRoot: req.repoRoot, title: req.title }, vizSource),
     openEditor: openVizEditor,
   });
   const mainTree = new MainTreeProvider(

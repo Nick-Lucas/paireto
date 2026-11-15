@@ -25,6 +25,3 @@ export function skeletonViz(base: VizBase, compareTo: CompareTo, title?: string)
     nodes: [],
   };
 }
-
-export const skeletonGenerator: VizGenerator = (req) =>
-  Promise.resolve(skeletonViz("changes", req.compareTo, req.title));
