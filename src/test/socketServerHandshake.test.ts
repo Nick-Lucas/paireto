@@ -9,11 +9,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 
 import { SocketServer } from "../bridge/SocketServer.js";
+import { connect } from "../plugins/core/bridgeClient.js";
 import type { BridgeHandlers, HandshakeRejection } from "../bridge/types.js";
 import { AgentServiceLocator } from "../harness/AgentServiceLocator.js";
 import { PLUGIN_VERSION } from "../protocol/types.js";
 
-function stubHandlers(rejections: HandshakeRejection[]): BridgeHandlers {
+function stubHandlers(
+  rejections: HandshakeRejection[],
+  overrides: Partial<BridgeHandlers> = {},
+): BridgeHandlers {
   return {
     onHookEvent: () => {},
     onPlanReviewHook: () => Promise.resolve({ decision: "allow" as const }),
@@ -24,7 +28,10 @@ function stubHandlers(rejections: HandshakeRejection[]): BridgeHandlers {
     onSessionAttached: () => {},
     onSessionDetached: () => {},
     onFeedbackReply: () => Promise.resolve({ ok: true, message: "" }),
+    onVizGenerate: () => Promise.resolve({ ok: true, message: "" }),
+    onVizPresent: () => Promise.resolve({ ok: true, message: "" }),
     onHandshakeRejected: (info) => rejections.push(info),
+    ...overrides,
   };
 }
 
@@ -90,10 +97,13 @@ suite("bridge handshake refusal", () => {
     fs.rmSync(repoRoot, { recursive: true, force: true });
   });
 
-  async function listen(rejections: HandshakeRejection[]): Promise<SocketServer> {
+  async function listen(
+    rejections: HandshakeRejection[],
+    overrides: Partial<BridgeHandlers> = {},
+  ): Promise<SocketServer> {
     const created = new SocketServer({
       repoRoot,
-      handlers: stubHandlers(rejections),
+      handlers: stubHandlers(rejections, overrides),
       locator: new AgentServiceLocator(),
       isOwnedByLiveServer: () => false,
     });
@@ -116,5 +126,51 @@ suite("bridge handshake refusal", () => {
     assert.deepStrictEqual(rejections, [
       { pluginVersion: "0.0.1-stale", extVersion: PLUGIN_VERSION, repoRoot: created.repoRoot },
     ]);
+  });
+
+  test("viz requests reach their handlers and their answers come back", async () => {
+    const seen: string[] = [];
+    const created = await listen([], {
+      onVizGenerate: (msg) => {
+        seen.push(`${msg.t} ${msg.harness} ${JSON.stringify(msg.args)}`);
+        return Promise.resolve({ ok: true, message: "Wrote x" });
+      },
+      onVizPresent: (msg) => {
+        seen.push(`${msg.t} ${JSON.stringify(msg.args)}`);
+        return Promise.resolve({ ok: false, message: "Viz rejected." });
+      },
+    });
+    const connected = await connect({ socketPath: created.socketPath, repoRoot: created.repoRoot });
+    assert.ok(connected.ok);
+    try {
+      const generated = await connected.connection.request({
+        t: "viz.generate.request",
+        cwd: repoRoot,
+        repoRoot: created.repoRoot,
+        harness: "codex",
+        args: { name: "x", base: "none" },
+      });
+      const presented = await connected.connection.request({
+        t: "viz.present.request",
+        cwd: repoRoot,
+        repoRoot: created.repoRoot,
+        harness: "codex",
+        args: { name: "x" },
+      });
+      assert.deepStrictEqual(
+        [generated?.t, generated?.ok, generated?.message],
+        ["viz.generate.response", true, "Wrote x"],
+      );
+      assert.deepStrictEqual(
+        [presented?.t, presented?.ok, presented?.message],
+        ["viz.present.response", false, "Viz rejected."],
+      );
+      assert.deepStrictEqual(seen, [
+        'viz.generate.request codex {"name":"x","base":"none"}',
+        'viz.present.request {"name":"x"}',
+      ]);
+    } finally {
+      connected.connection.close();
+    }
   });
 });

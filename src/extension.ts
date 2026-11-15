@@ -36,6 +36,9 @@ import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
+import { generateViz } from "./viz/generate/generate.js";
+import { VscodeGenerateSource } from "./viz/generate/vscodeSource.js";
+import { openVizEditor, registerVizEditor, VizService } from "./viz/host/VizService.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
 import { exposeTestControlPlane } from "./testControlPlane.js";
@@ -111,6 +114,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   const seenFiles = new SeenFiles(context.workspaceState);
+  const vizSource = new VscodeGenerateSource(reviewController);
+  const viz = new VizService({
+    extensionUri: context.extensionUri,
+    workspaceState: context.workspaceState,
+    review: reviewController,
+    seen: seenFiles,
+    generate: (req) => generateViz({ repoRoot: req.repoRoot, title: req.title }, vizSource),
+    openEditor: openVizEditor,
+    setHasViz: (value) =>
+      void vscode.commands.executeCommand("setContext", "paireto.hasViz", value),
+  });
   const mainTree = new MainTreeProvider(
     agents,
     reviewController,
@@ -166,6 +180,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand(Commands.openWelcome, () =>
       WelcomePanel.show(context, installStatus),
     ),
+    viz,
+    registerVizEditor(viz),
+    vscode.commands.registerCommand(Commands.vizOpen, () => viz.pick()),
+    vscode.commands.registerCommand(Commands.vizOpenNewest, (arg?: unknown) => viz.openNewest(arg)),
+    vscode.commands.registerCommand(Commands.vizShowNote, (id: string) => viz.showNote(id)),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
     vscode.commands.registerCommand(Commands.gateApprove, () =>
       coordinator.answer((gate) => gate.approve()),
@@ -211,6 +230,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         planReview,
         reviewController,
         repoService,
+        viz,
       }),
     );
   }
@@ -404,6 +424,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         msg.harness,
         msg.sessionId,
       );
+    },
+    onVizGenerate: (msg) => {
+      warnForeignRepo(msg.repoRoot);
+      return viz.generate(msg);
+    },
+    onVizPresent: (msg) => {
+      warnForeignRepo(msg.repoRoot);
+      return viz.present(msg);
     },
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => {

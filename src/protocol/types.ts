@@ -67,6 +67,10 @@ export type MessageType =
   | "guided.review.await.response"
   | "feedback.reply.request"
   | "feedback.reply.response"
+  | "viz.generate.request"
+  | "viz.generate.response"
+  | "viz.present.request"
+  | "viz.present.response"
   | "stop.gate.request"
   | "stop.gate.response";
 
@@ -280,6 +284,40 @@ export interface FeedbackReplyResponse extends Envelope {
   message: string;
 }
 
+export interface VizGenerateRequest extends Envelope {
+  t: "viz.generate.request";
+  id: string;
+  cwd: string;
+  repoRoot: string;
+  harness: Harness;
+  sessionId?: string;
+  args: unknown;
+}
+
+export interface VizGenerateResponse extends Envelope {
+  t: "viz.generate.response";
+  id: string;
+  ok: boolean;
+  message: string;
+}
+
+export interface VizPresentRequest extends Envelope {
+  t: "viz.present.request";
+  id: string;
+  cwd: string;
+  repoRoot: string;
+  harness: Harness;
+  sessionId?: string;
+  args: unknown;
+}
+
+export interface VizPresentResponse extends Envelope {
+  t: "viz.present.response";
+  id: string;
+  ok: boolean;
+  message: string;
+}
+
 /**
  * Blocking turn-end (Stop) gate. Sent by the Stop hook on every turn-end; the extension holds it
  * open only when a review for this session is in progress or the turn touched files, then resolves
@@ -321,5 +359,9 @@ export type AnyMessage =
   | GuidedReviewAwaitResponse
   | FeedbackReplyRequest
   | FeedbackReplyResponse
+  | VizGenerateRequest
+  | VizGenerateResponse
+  | VizPresentRequest
+  | VizPresentResponse
   | StopGateRequest
   | StopGateResponse;

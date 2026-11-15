@@ -11,6 +11,8 @@ import type {
   ReviewAwaitRequest,
   ReviewStatus,
   StopGateRequest,
+  VizGenerateRequest,
+  VizPresentRequest,
 } from "../protocol/types.js";
 
 /** What an agent installer reports back to the Welcome card. */
@@ -91,6 +93,8 @@ export interface BridgeHandlers {
     signal: AbortSignal,
   ): Promise<ReviewGateResult>;
   onFeedbackReply(msg: FeedbackReplyRequest): Promise<FeedbackMutationResult>;
+  onVizGenerate(msg: VizGenerateRequest): Promise<FeedbackMutationResult>;
+  onVizPresent(msg: VizPresentRequest): Promise<FeedbackMutationResult>;
   /** Turn-end gated review session — resolve "allow" immediately unless a review is pending/in-progress for
    *  this session, in which case it holds until the user resolves the review. `signal` aborts on
    *  disconnect. */

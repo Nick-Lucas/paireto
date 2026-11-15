@@ -288,6 +288,30 @@ export class SocketServer {
         });
         break;
       }
+      case "viz.generate.request": {
+        const result = await this.handlers.onVizGenerate(msg);
+        send({
+          t: "viz.generate.response",
+          v: PLUGIN_VERSION,
+          id: msg.id,
+          ts: new Date().toISOString(),
+          ok: result.ok,
+          message: result.message,
+        });
+        break;
+      }
+      case "viz.present.request": {
+        const result = await this.handlers.onVizPresent(msg);
+        send({
+          t: "viz.present.response",
+          v: PLUGIN_VERSION,
+          id: msg.id,
+          ts: new Date().toISOString(),
+          ok: result.ok,
+          message: result.message,
+        });
+        break;
+      }
       case "stop.gate.request": {
         const ac = new AbortController();
         inflight.add(ac);

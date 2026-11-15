@@ -580,6 +580,31 @@ suite("provider-replay: fixture normalization", () => {
     assert.strictEqual(claude.httpResponse?.cookies, undefined);
   });
 
+  test("stores a UTF-8 stream body that MockServer captured as Latin-1 as real UTF-8", () => {
+    const captured = (body: string) =>
+      normalizeCapturedResponses(
+        [
+          {
+            httpRequest: { method: "POST", path: "/v1/responses" },
+            httpResponse: {
+              statusCode: 200,
+              headers: { "content-type": ["text/event-stream"] },
+              body,
+            },
+          },
+        ],
+        "kiro",
+      )[0].httpResponse?.body;
+
+    const utf8 = 'data: {"delta":"I see—the files ✔ exist"}\n\n';
+    const latin1Read = Buffer.from(utf8, "utf8").toString("latin1");
+
+    assert.strictEqual(captured(latin1Read), utf8);
+    assert.strictEqual(captured(utf8), utf8);
+    assert.strictEqual(captured("data: plain ascii\n\n"), "data: plain ascii\n\n");
+    assert.strictEqual(captured("café at the résumé"), "café at the résumé");
+  });
+
   test("normalizes Claude runtime policy, tool inventory, cache metadata, and workflow results", () => {
     const normalized = JSON.parse(
       normalizeClaudeBody(

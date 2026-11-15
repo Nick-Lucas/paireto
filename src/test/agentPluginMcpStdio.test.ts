@@ -38,6 +38,8 @@ suite("built Agent Plugin MCP stdio server", () => {
         "paireto_reply_to_feedback",
         "paireto_review",
         "paireto_start_guided_review",
+        "paireto_viz_generate",
+        "paireto_viz_present",
       ]);
       const result = await client.request(
         { method: "tools/call", params: { name: "paireto_review" } },

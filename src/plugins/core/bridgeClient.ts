@@ -16,6 +16,8 @@ import type {
   ReviewAwaitRequest,
   SessionAttachMessage,
   StopGateRequest,
+  VizGenerateRequest,
+  VizPresentRequest,
 } from "../../protocol/types.js";
 import { PLUGIN_VERSION } from "../../protocol/types.js";
 import type { HandshakeFailure } from "./ndjson.js";
@@ -46,6 +48,8 @@ export type RequestBody =
   | Omit<ReviewAwaitRequest, Stamped | "id">
   | Omit<GuidedReviewAwaitRequest, Stamped | "id">
   | Omit<FeedbackReplyRequest, Stamped | "id">
+  | Omit<VizGenerateRequest, Stamped | "id">
+  | Omit<VizPresentRequest, Stamped | "id">
   | Omit<StopGateRequest, Stamped | "id">;
 
 export type RequestTag = RequestBody["t"];
@@ -57,6 +61,8 @@ export interface ResponseTagOf {
   "review.await.request": "review.await.response";
   "guided.review.await.request": "guided.review.await.response";
   "feedback.reply.request": "feedback.reply.response";
+  "viz.generate.request": "viz.generate.response";
+  "viz.present.request": "viz.present.response";
   "stop.gate.request": "stop.gate.response";
 }
 
@@ -66,6 +72,8 @@ export const RESPONSE_TAG: ResponseTagOf = {
   "review.await.request": "review.await.response",
   "guided.review.await.request": "guided.review.await.response",
   "feedback.reply.request": "feedback.reply.response",
+  "viz.generate.request": "viz.generate.response",
+  "viz.present.request": "viz.present.response",
   "stop.gate.request": "stop.gate.response",
 };
 

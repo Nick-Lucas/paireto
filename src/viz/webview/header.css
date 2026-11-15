@@ -1,0 +1,124 @@
+.viz-header {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--viz-border);
+  background: var(--viz-side);
+}
+
+.viz-header__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 12px;
+}
+
+.viz-header__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 30%;
+}
+
+.viz-header__spacer {
+  flex: 1;
+}
+
+.viz-compare {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 9px 0 7px;
+  border: 1px solid var(--viz-border);
+  border-radius: 999px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viz-compare .viz-icon {
+  color: var(--viz-muted);
+}
+
+.viz-mismatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: var(--viz-changed);
+  background: color-mix(in srgb, var(--viz-changed) 12%, transparent);
+  white-space: nowrap;
+}
+
+.viz-select {
+  height: 22px;
+  max-width: 220px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-dropdown-border, var(--viz-border));
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--vscode-dropdown-foreground, var(--viz-fg));
+  background: var(--vscode-dropdown-background, var(--viz-panel));
+}
+
+.viz-feedback-state {
+  color: var(--viz-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viz-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+.viz-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-bottom: 2px solid transparent;
+  font-size: 12px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+}
+
+.viz-tab:hover {
+  color: var(--viz-fg);
+}
+
+.viz-tab--active {
+  color: var(--viz-fg);
+  border-bottom-color: var(--viz-accent);
+}
+
+.viz-tab kbd {
+  font-size: 9.5px;
+}
+
+.viz-tab__delta {
+  font-family: var(--viz-mono);
+  font-weight: 700;
+}
+
+.viz-summary {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 11.5px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 50%;
+}

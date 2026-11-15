@@ -476,8 +476,23 @@ export function normalizeCapturedResponses(
     if (contentType !== undefined) {
       response.headers["Content-Type"] = contentType;
     }
+    if (typeof response.body === "string") {
+      response.body = utf8ReadAsLatin1(response.body) ?? response.body;
+    }
   }
   return list;
+}
+
+function utf8ReadAsLatin1(body: string): string | undefined {
+  const codes = Array.from(body, (char) => char.charCodeAt(0));
+  if (!codes.some((code) => code >= 0x80) || codes.some((code) => code > 0xff)) {
+    return undefined;
+  }
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(body, "latin1"));
+  } catch {
+    return undefined;
+  }
 }
 
 /** Normalize a matcher body (string, or MockServer's `{type:"JSON", json}` shape) into a normalized

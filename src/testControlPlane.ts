@@ -11,6 +11,7 @@ import type { RepoService } from "./git/RepoService.js";
 import type { PlanReviewController } from "./plan/PlanReviewController.js";
 import type { ReviewController } from "./review/ReviewController.js";
 import type { MainTreeProvider } from "./views/MainTreeProvider.js";
+import type { VizService } from "./viz/host/VizService.js";
 import type { AddCommentArgs, InspectGuided, InspectSnapshot } from "./e2e/inspectTypes.js";
 
 export interface TestControlPlaneDeps {
@@ -20,6 +21,7 @@ export interface TestControlPlaneDeps {
   planReview: PlanReviewController;
   reviewController: ReviewController;
   repoService: RepoService;
+  viz: VizService;
 }
 
 /** The add-comment command for each (surface, kind) — the real commands the UI wires to gutter menus. */
@@ -99,6 +101,7 @@ export function exposeTestControlPlane(deps: TestControlPlaneDeps): vscode.Dispo
       })),
       turnBaselinePending: deps.reviewController.turns.capturing,
       guided: guidedSnapshot(),
+      viz: deps.viz.inspect(),
     };
   };
 

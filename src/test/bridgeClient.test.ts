@@ -36,6 +36,8 @@ suite("plugin bridge client", () => {
       "plan.review.tool.request",
       "review.await.request",
       "stop.gate.request",
+      "viz.generate.request",
+      "viz.present.request",
     ]);
   });
 

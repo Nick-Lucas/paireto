@@ -71,6 +71,60 @@ const webviewConfig: BuildOptions = {
   plugins: [esbuildProblemMatcherPlugin],
 };
 
+const vizWebviewConfig: BuildOptions = {
+  ...webviewConfig,
+  entryPoints: ["src/viz/webview/index.tsx"],
+  outfile: "dist/viz.js",
+};
+
+const vizPreview = process.argv.includes("--viz-preview");
+const vizPreviewConfig: BuildOptions = {
+  ...webviewConfig,
+  entryPoints: ["src/viz/webview/preview.tsx"],
+  outfile: "dist/viz-preview/preview.js",
+  minify: false,
+};
+
+function writeVizPreviewHtml(): void {
+  fs.mkdirSync("dist/viz-preview", { recursive: true });
+  fs.writeFileSync(
+    "dist/viz-preview/index.html",
+    `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link href="preview.css" rel="stylesheet" />
+  <title>Paireto viz preview</title>
+</head>
+<body>
+  <div id="root"></div>
+  <script src="preview.js"></script>
+</body>
+</html>
+`,
+  );
+}
+
+async function writeVizSchema(): Promise<void> {
+  const built = await esbuild.build({
+    entryPoints: ["src/protocol/vizSchema.ts"],
+    bundle: true,
+    format: "cjs",
+    platform: "node",
+    write: false,
+    logLevel: "silent",
+  });
+  const module = { exports: {} as { vizJsonSchema?: () => unknown; VIZ_SCHEMA_FILE?: string } };
+  new Function("module", "exports", built.outputFiles[0].text)(module, module.exports);
+  const { vizJsonSchema, VIZ_SCHEMA_FILE } = module.exports;
+  if (!vizJsonSchema || !VIZ_SCHEMA_FILE) {
+    throw new Error("src/protocol/vizSchema.ts must export vizJsonSchema and VIZ_SCHEMA_FILE");
+  }
+  fs.mkdirSync("dist", { recursive: true });
+  fs.writeFileSync(`dist/${VIZ_SCHEMA_FILE}`, `${JSON.stringify(vizJsonSchema(), null, 2)}\n`);
+}
+
 async function main(): Promise<void> {
   const ctx = { production, problemMatcher: esbuildProblemMatcherPlugin };
 
@@ -82,7 +136,19 @@ async function main(): Promise<void> {
 
   const configs: BuildOptions[] = emulatorBridgeOnly
     ? [emulatorBridgeConfig(ctx)]
-    : [extensionConfig, webviewConfig, ...pluginConfigs(ctx)];
+    : [
+        extensionConfig,
+        webviewConfig,
+        vizWebviewConfig,
+        ...(vizPreview ? [vizPreviewConfig] : []),
+        ...pluginConfigs(ctx),
+      ];
+  if (vizPreview) {
+    writeVizPreviewHtml();
+  }
+  if (!emulatorBridgeOnly) {
+    await writeVizSchema();
+  }
 
   const ctxs = await Promise.all(configs.map((config) => esbuild.context(config)));
   if (watch) {
