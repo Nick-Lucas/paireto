@@ -9,6 +9,8 @@ export const Commands = {
   /** Open the Welcome / onboarding webview (also shown once automatically on first install). */
   openWelcome: "paireto.openWelcome",
   vizOpen: "paireto.viz.open",
+  vizOpenNewest: "paireto.viz.openNewest",
+  vizShowNote: "paireto.viz.showNote",
   // Shared gate outcomes (dispatch to the active Plan or Review flow via the coordinator).
   gateApprove: "paireto.gate.approve",
   gateSendFeedback: "paireto.gate.sendFeedback",
@@ -100,5 +102,5 @@ export const StateKeys = {
   fileScope: "paireto.fileScope",
   seenFiles: "paireto.seenFiles",
   recentRefs: "paireto.recentRefs",
-  vizDocs: "paireto.vizDocs",
+  vizView: "paireto.vizView",
 } as const;

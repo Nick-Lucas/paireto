@@ -36,8 +36,8 @@ import { ReviewStore } from "./storage/ReviewStore.js";
 import { RepoSwitcher } from "./status/repoSwitcher.js";
 import { StatusBarController } from "./status/StatusBarController.js";
 import { MainTreeProvider } from "./views/MainTreeProvider.js";
-import { VIZ_VIEW_TYPE, VizPanel } from "./viz/host/VizPanel.js";
-import { VizService } from "./viz/host/VizService.js";
+import { skeletonGenerator } from "./viz/host/generator.js";
+import { openVizEditor, registerVizEditor, VizService } from "./viz/host/VizService.js";
 import { AgentInstallStatus } from "./welcome/AgentInstallStatus.js";
 import { WelcomePanel } from "./welcome/WelcomePanel.js";
 import { exposeTestControlPlane } from "./testControlPlane.js";
@@ -91,12 +91,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     reviewContent,
     coordinator,
   );
-  const viz = new VizService({
-    extensionUri: context.extensionUri,
-    memento: context.workspaceState,
-    review: reviewController,
-    createPanel: (title, events) => VizPanel.create(context.extensionUri, title, events),
-  });
 
   // The buckets and the comment threads of one commenting context. A branch or repository change
   // reports a new context, and the whole set is opened again from disk.
@@ -119,6 +113,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   );
 
   const seenFiles = new SeenFiles(context.workspaceState);
+  const viz = new VizService({
+    extensionUri: context.extensionUri,
+    workspaceState: context.workspaceState,
+    review: reviewController,
+    seen: seenFiles,
+    generate: skeletonGenerator,
+    openEditor: openVizEditor,
+  });
   const mainTree = new MainTreeProvider(
     agents,
     reviewController,
@@ -175,10 +177,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       WelcomePanel.show(context, installStatus),
     ),
     viz,
+    registerVizEditor(viz),
     vscode.commands.registerCommand(Commands.vizOpen, () => viz.pick()),
-    vscode.window.registerWebviewPanelSerializer(VIZ_VIEW_TYPE, {
-      deserializeWebviewPanel: async (panel, state) => viz.revive(panel, state),
-    }),
+    vscode.commands.registerCommand(Commands.vizOpenNewest, (arg?: unknown) => viz.openNewest(arg)),
+    vscode.commands.registerCommand(Commands.vizShowNote, (id: string) => viz.showNote(id)),
     // Shared gate outcomes dispatch to whichever flow (plan or review) is currently active.
     vscode.commands.registerCommand(Commands.gateApprove, () =>
       coordinator.answer((gate) => gate.approve()),
@@ -419,13 +421,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         msg.sessionId,
       );
     },
-    onChangesDescribe: (msg) => {
+    onVizGenerate: (msg) => {
       warnForeignRepo(msg.repoRoot);
-      return viz.describeChanges(msg);
+      return viz.generate(msg);
     },
-    onVizShow: (msg) => {
+    onVizPresent: (msg) => {
       warnForeignRepo(msg.repoRoot);
-      return viz.show(msg);
+      return viz.present(msg);
     },
     onSessionAttached: (sessionId) => agents.attachSession(sessionId),
     onSessionDetached: (sessionId) => {

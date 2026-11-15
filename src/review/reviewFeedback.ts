@@ -5,6 +5,7 @@ import dedent from "dedent";
 import { join } from "node:path";
 import { KIND_RANK } from "../comments/kinds.js";
 import { serialiseConversation } from "../comments/threadModel.js";
+import { diagramHeading, diagramTargetLine } from "./diagramComments.js";
 import { getOpeningComment, type ReviewThread } from "./reviewTypes.js";
 
 export function serialiseRejectedReviewFeedback(
@@ -26,7 +27,7 @@ export function serialiseRejectedReviewFeedback(
   const rendered = actionable
     .map((item) => {
       const feedback = getOpeningComment(item);
-      const quote = feedback.quote.trim() ? `\n> ${feedback.quote.trim()}` : "";
+      const quote = feedback.quote.trim() && !item.diagram ? `\n> ${feedback.quote.trim()}` : "";
       return `Feedback ID: ${item.id}\n${location(item, multiRepository)}${quote}\n${serialiseConversation(item)}`;
     })
     .join("\n\n");
@@ -49,6 +50,12 @@ function location(item: ReviewThread, multiRepository: boolean): string {
   const kind = `[${getOpeningComment(item).commentKind.toUpperCase()}]`;
   if (item.changeset) {
     return `Changeset "${item.changeset.title}"  ${kind}`;
+  }
+  if (item.diagram) {
+    const targets = item.diagram.targets.map(
+      (target) => `\n${diagramTargetLine(target, multiRepository)}`,
+    );
+    return `${diagramHeading(item.diagram)}  ${kind}${targets.join("")}`;
   }
   const filePath = multiRepository ? join(item.repoRoot, item.filePath) : item.filePath;
   return `${filePath}:${item.line + 1}  ${kind}`;

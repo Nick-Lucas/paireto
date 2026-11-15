@@ -75,6 +75,24 @@
     "zod": "^4.6.7"
   },
   "contributes": {
+    "customEditors": [
+      {
+        "viewType": "paireto.viz",
+        "displayName": "Paireto Viz",
+        "selector": [
+          {
+            "filenamePattern": "*.viz.json"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "jsonValidation": [
+      {
+        "fileMatch": "**/.paireto/viz/*.viz.json",
+        "url": "./dist/viz.schema.json"
+      }
+    ],
     "commands": [
       {
         "command": "paireto.switcher.open",
@@ -87,7 +105,16 @@
       },
       {
         "command": "paireto.viz.open",
-        "title": "Paireto: Open Change Visualization"
+        "title": "Paireto: Open Viz"
+      },
+      {
+        "command": "paireto.viz.openNewest",
+        "title": "Paireto: Open Newest Viz",
+        "icon": "$(type-hierarchy)"
+      },
+      {
+        "command": "paireto.viz.showNote",
+        "title": "Paireto: Show Viz Note"
       },
       {
         "command": "paireto.openWelcome",
@@ -339,6 +366,14 @@
           "when": "false"
         },
         {
+          "command": "paireto.viz.openNewest",
+          "when": "false"
+        },
+        {
+          "command": "paireto.viz.showNote",
+          "when": "false"
+        },
+        {
           "command": "paireto.submit",
           "when": "(paireto.planPending || paireto.reviewSessionActive) && !paireto.gateAnswered"
         },
@@ -490,6 +525,11 @@
           "group": "navigation@1"
         },
         {
+          "command": "paireto.viz.openNewest",
+          "when": "paireto.reviewDiffActive",
+          "group": "navigation@2"
+        },
+        {
           "command": "paireto.gate.approve",
           "when": "resourceScheme == paireto-plan && !paireto.gateHasFeedback && !paireto.gateAnswered",
           "group": "navigation@1"
@@ -558,14 +598,19 @@
       ],
       "view/item/context": [
         {
+          "command": "paireto.viz.openNewest",
+          "when": "view == paireto.main && viewItem =~ /^(section:files|repository)/",
+          "group": "inline@1"
+        },
+        {
           "command": "paireto.review.pickCompareTo",
           "when": "view == paireto.main && viewItem =~ /^section:files/",
-          "group": "inline@1"
+          "group": "inline@2"
         },
         {
           "command": "paireto.review.pickViewMode",
           "when": "view == paireto.main && viewItem =~ /^section:files/",
-          "group": "inline@2"
+          "group": "inline@3"
         },
         {
           "command": "paireto.review.unstageAll",
@@ -895,7 +940,6 @@
   "activationEvents": [
     "onFileSystem:paireto-changeset",
     "onFileSystem:paireto-review",
-    "onWebviewPanel:paireto.viz",
     "onStartupFinished"
   ],
   "icon": "media/PairetoAppIcon@2x.png",

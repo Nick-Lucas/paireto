@@ -71,10 +71,7 @@ export interface InspectFeedback {
  *  cheap fingerprint (`<sha1>:<length>`) so a re-proposed plan is detectable without shipping the
  *  whole markdown across the command boundary. */
 export interface InspectViz {
-  open: boolean;
-  vizId?: string;
-  title?: string;
-  stored: number;
+  open: { name: string; path: string; title?: string }[];
 }
 
 export interface InspectSnapshot {

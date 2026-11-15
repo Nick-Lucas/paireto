@@ -17,7 +17,7 @@ export function renderAccepted(viz: VizFile, issues: VizIssue[]): string {
   }
   return [
     head,
-    "Warnings. Fix them and call paireto_show_viz again if they matter:",
+    "Warnings. Fix them in the file and call paireto_viz_present again if they matter:",
     ...renderIssues(warnings),
   ].join("\n");
 }
@@ -26,7 +26,7 @@ export function renderRejected(issues: VizIssue[]): string {
   const errors = issues.filter((issue) => issue.severity === "error");
   const warnings = issues.filter((issue) => issue.severity === "warning");
   const lines = [
-    `Viz rejected. Fix all ${errors.length} and call paireto_show_viz again. Do not remove items to pass.`,
+    `Viz rejected. Fix all ${errors.length} in the file and call paireto_viz_present again. Do not remove items to pass.`,
     ...renderIssues(errors),
   ];
   if (warnings.length > 0) {

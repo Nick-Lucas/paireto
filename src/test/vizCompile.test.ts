@@ -482,7 +482,7 @@ suite("viz render", () => {
       ]),
       [
         'Viz "Retry soft-declined card charges" is open in VS Code: 12 nodes, 10 edges, 2 flows, 5 walkthrough steps.',
-        "Warnings. Fix them and call paireto_show_viz again if they matter:",
+        "Warnings. Fix them in the file and call paireto_viz_present again if they matter:",
         '- nodes[6]: node "notify" is alone.',
       ].join("\n"),
     );
@@ -505,7 +505,7 @@ suite("viz render", () => {
     assert.strictEqual(
       renderRejected(result.issues),
       [
-        "Viz rejected. Fix all 2 and call paireto_show_viz again. Do not remove items to pass.",
+        "Viz rejected. Fix all 2 in the file and call paireto_viz_present again. Do not remove items to pass.",
         '- edges[10]: edge has the default id "checkout>billing-api:call", already used by edges[0]. Give it its own id, or merge the two edges.',
         '- nodes[3].lane: unknown lane "sevrices". Valid: client, web, services, messaging, data, third-party. Did you mean "services"?',
       ].join("\n"),

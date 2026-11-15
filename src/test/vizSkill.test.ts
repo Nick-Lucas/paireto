@@ -45,8 +45,8 @@ suite("viz skill copies", () => {
 
   test("the Claude Code copy names both tools by their plugin address", () => {
     const body = read("src/plugins/claude-code/assets/commands/viz.md").body;
-    assert.ok(body.includes("`mcp__plugin_paireto_bridge__paireto_get_changes` tool"));
-    assert.ok(body.includes("`mcp__plugin_paireto_bridge__paireto_show_viz` tool"));
+    assert.ok(body.includes("`mcp__plugin_paireto_bridge__paireto_viz_generate` tool"));
+    assert.ok(body.includes("`mcp__plugin_paireto_bridge__paireto_viz_present` tool"));
   });
 
   test("the built Codex copy names both tools by their MCP address", () => {
@@ -54,7 +54,7 @@ suite("viz skill copies", () => {
       path.join(repo, "dist/plugins/agent-plugin/com.openai.codex/skills/paireto-viz/SKILL.md"),
       "utf8",
     );
-    assert.ok(built.includes("`mcp__paireto__paireto_get_changes` tool"));
-    assert.ok(built.includes("`mcp__paireto__paireto_show_viz` tool"));
+    assert.ok(built.includes("`mcp__paireto__paireto_viz_generate` tool"));
+    assert.ok(built.includes("`mcp__paireto__paireto_viz_present` tool"));
   });
 });
