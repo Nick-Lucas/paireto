@@ -1,0 +1,222 @@
+.viz-note {
+  position: relative;
+  box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+}
+
+.viz-note__shape {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.viz-note__box {
+  fill: var(--viz-note-bg);
+  stroke: var(--viz-note-border);
+  stroke-width: 1;
+}
+
+.viz-note--question .viz-note__box {
+  fill: var(--viz-question-bg);
+  stroke: var(--viz-question-border);
+}
+
+.viz-note__fold {
+  fill: none;
+  stroke: color-mix(in srgb, var(--viz-fg) 35%, transparent);
+  stroke-width: 1;
+}
+
+.viz-note:hover .viz-note__box,
+.viz-note--open .viz-note__box,
+.viz-note:focus-visible .viz-note__box {
+  stroke: var(--viz-accent);
+  stroke-width: 1.5;
+}
+
+.viz-note:focus {
+  outline: none;
+}
+
+.viz-note__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 24px 0 9px;
+  font-weight: 600;
+}
+
+.viz-note__head .viz-icon {
+  color: var(--viz-fg);
+}
+
+.viz-note__meta {
+  color: var(--viz-muted);
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-note__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 16px;
+  padding: 0 7px 0 5px;
+  border-radius: 8px;
+  color: var(--viz-agent);
+  background: color-mix(in srgb, var(--viz-agent) 18%, transparent);
+  white-space: nowrap;
+}
+
+.viz-dot--agent {
+  background: var(--viz-agent);
+  width: 6px;
+  height: 6px;
+}
+
+.viz-note__gap {
+  flex: 1;
+}
+
+.viz-note__resolve {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: var(--viz-muted);
+}
+
+.viz-note__resolve:hover {
+  color: var(--viz-fg);
+  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
+}
+
+.viz-note__body {
+  position: relative;
+  padding: 0 10px;
+}
+
+.viz-note__line {
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.viz-note--ghost .viz-note__box {
+  stroke-dasharray: 4 3;
+}
+
+.viz-note--ghost .viz-note__line,
+.viz-note--ghost .viz-note__meta {
+  color: var(--viz-muted);
+  font-style: italic;
+}
+
+.viz-note__handle {
+  position: absolute;
+  top: 50%;
+  right: -7px;
+  width: 10px;
+  height: 10px;
+  margin-top: -6px;
+  border-radius: 50%;
+  border: 1.5px solid var(--viz-accent);
+  background: var(--viz-node-bg);
+  cursor: crosshair;
+  opacity: 0;
+  transition: opacity var(--viz-duration);
+}
+
+.viz-note:hover .viz-note__handle,
+.viz-note:focus-within .viz-note__handle {
+  opacity: 1;
+}
+
+.viz-note__handle:hover {
+  background: var(--viz-accent);
+}
+
+.viz-linking,
+.viz-linking * {
+  cursor: crosshair !important;
+}
+
+.viz-link-drag {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.viz-link-drag line {
+  stroke: var(--viz-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 4 3;
+}
+
+.viz-link-hint {
+  position: absolute;
+  bottom: 56px;
+  left: 50%;
+  z-index: 15;
+  max-width: calc(100% - 24px);
+  padding: 4px 12px;
+  transform: translateX(-50%);
+  border: 1px solid var(--viz-accent);
+  border-radius: 999px;
+  background: var(--viz-panel);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.viz-context-menu {
+  position: fixed;
+  z-index: 30;
+  min-width: 200px;
+  max-width: 320px;
+  font-size: 13px;
+}
+
+.viz-context-menu__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-context-menu__item {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border-radius: 6px;
+  text-align: left;
+}
+
+.viz-context-menu__item:hover,
+.viz-context-menu__item:focus-visible {
+  background: var(--viz-hover);
+  outline: none;
+}
+
+.viz-toast {
+  position: absolute;
+  right: 12px;
+  bottom: 52px;
+  z-index: 15;
+  max-width: min(440px, calc(100% - 24px));
+  padding: 8px 12px;
+  border: 1px solid var(--vscode-notifications-border, var(--viz-border));
+  border-radius: 4px;
+  background: var(--vscode-notifications-background, var(--viz-panel));
+  color: var(--vscode-notifications-foreground, inherit);
+  box-shadow: var(--viz-shadow);
+  font-size: 12px;
+}

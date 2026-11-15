@@ -35,7 +35,7 @@ function checkInvariants(index: VizIndex, scene: OverviewScene): void {
     assert.ok(contains(band, node), `${node.id} sits inside lane ${lane}`);
     assert.ok(contains(scene.bounds, node), `${node.id} sits inside the bounds`);
   }
-  for (const group of scene.groups) {
+  for (const group of scene.frames) {
     for (const member of group.members) {
       assert.ok(
         contains(group, nodeRect(scene, member)),
@@ -70,7 +70,7 @@ suite("viz overview layout", () => {
       ["web", "services", "messaging", "data", "third-party"],
     );
     assert.deepStrictEqual(
-      scene.groups.map((group) => [group.label, [...group.members].sort()]),
+      scene.frames.map((group) => [group.label, [...group.members].sort()]),
       [
         ["billing", ["billing-api", "legacy-dunning", "retry-worker"]],
         ["notify", ["notify"]],
@@ -86,7 +86,7 @@ suite("viz overview layout", () => {
     const scene = await layoutOverview(index, makeElk());
     checkInvariants(index, scene);
     assert.deepStrictEqual(
-      scene.groups.map((group) => [group.label, group.lane]),
+      scene.frames.map((group) => [group.label, group.node?.lane]),
       [
         ["Billing: retries", "services"],
         ["notify", "services"],
@@ -102,7 +102,7 @@ suite("viz overview layout", () => {
       scene.lanes.map((lane) => lane.id),
       ["view", "state", "data"],
     );
-    assert.strictEqual(scene.groups.length, 0);
+    assert.strictEqual(scene.frames.length, 0);
   });
 
   test("leaves flow-only nodes out", async () => {

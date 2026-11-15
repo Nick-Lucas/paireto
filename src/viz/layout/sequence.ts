@@ -1,3 +1,4 @@
+import type { VizFragment } from "../../protocol/viz.js";
 import type { IndexedStep, VizIndex } from "../model/index.js";
 import { estimateTextWidth, type Rect } from "./geometry.js";
 
@@ -16,6 +17,9 @@ export const SEQ = {
   nestOffset: 6,
   messageHeight: 40,
   tail: 36,
+  fragmentHead: 26,
+  fragmentTail: 12,
+  fragmentInset: 10,
 } as const;
 
 export interface ParticipantColumn extends Rect {
@@ -46,6 +50,14 @@ export interface PhaseBand extends Rect {
   readonly firstStep: number;
 }
 
+export interface FragmentBox extends Rect {
+  readonly kind: VizFragment["kind"];
+  readonly label: string | undefined;
+  readonly from: number;
+  readonly to: number;
+  readonly depth: number;
+}
+
 export interface SequenceScene {
   readonly flow: string;
   readonly participants: readonly ParticipantColumn[];
@@ -54,6 +66,7 @@ export interface SequenceScene {
   readonly activations: readonly ActivationBar[];
   readonly messages: readonly PlacedMessage[];
   readonly phases: readonly PhaseBand[];
+  readonly fragments: readonly FragmentBox[];
   readonly bounds: Rect;
 }
 
@@ -63,6 +76,27 @@ interface OpenActivation {
   opener: number;
   caller: string;
   top: number;
+}
+
+interface OpenFragment {
+  readonly fragment: VizFragment;
+  readonly depth: number;
+  readonly top: number;
+}
+
+function fragmentDepths(fragments: readonly VizFragment[]): Map<VizFragment, number> {
+  const depths = new Map<VizFragment, number>();
+  const ordered = [...fragments].sort((a, b) => b.to - b.from - (a.to - a.from) || a.from - b.from);
+  for (const fragment of ordered) {
+    let depth = 0;
+    for (const [other, otherDepth] of depths) {
+      if (other.from <= fragment.from && other.to >= fragment.to) {
+        depth = Math.max(depth, otherDepth + 1);
+      }
+    }
+    depths.set(fragment, depth);
+  }
+  return depths;
 }
 
 export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
@@ -76,6 +110,7 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
       activations: [],
       messages: [],
       phases: [],
+      fragments: [],
       bounds: { x: 0, y: 0, width: 0, height: 0 },
     };
   }
@@ -132,6 +167,16 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
     return towards > centre ? barX + SEQ.activationWidth : barX;
   };
 
+  const depths = fragmentDepths(flow.fragments);
+  const byStart = new Map<number, VizFragment[]>();
+  const byEnd = new Map<number, VizFragment[]>();
+  for (const fragment of depths.keys()) {
+    byStart.set(fragment.from - 1, [...(byStart.get(fragment.from - 1) ?? []), fragment]);
+    byEnd.set(fragment.to - 1, [...(byEnd.get(fragment.to - 1) ?? []), fragment]);
+  }
+  const openFragments: OpenFragment[] = [];
+  const fragments: FragmentBox[] = [];
+
   const messages: PlacedMessage[] = [];
   let y = lifelineTop + SEQ.firstRow;
   for (const step of flow.steps) {
@@ -146,6 +191,14 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
         height: SEQ.phaseHeight,
       });
       y += SEQ.phaseHeight + SEQ.phaseGap;
+    }
+    for (const fragment of byStart.get(step.index) ?? []) {
+      openFragments.push({
+        fragment,
+        depth: depths.get(fragment) ?? 0,
+        top: y - SEQ.pitch / 2 + 6,
+      });
+      y += SEQ.fragmentHead;
     }
     const lineY = y;
     const self = step.from === step.to;
@@ -194,6 +247,27 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
       height,
     });
     y += self ? SEQ.selfPitch : SEQ.pitch;
+    for (const fragment of byEnd.get(step.index) ?? []) {
+      const at = openFragments.findIndex((candidate) => candidate.fragment === fragment);
+      const opened = at >= 0 ? openFragments.splice(at, 1)[0] : undefined;
+      if (!opened) {
+        continue;
+      }
+      const inset = SEQ.pad / 2 + opened.depth * SEQ.fragmentInset;
+      const bottom = y - SEQ.pitch / 2 + 2;
+      fragments.push({
+        kind: fragment.kind,
+        label: fragment.label,
+        from: fragment.from,
+        to: fragment.to,
+        depth: opened.depth,
+        x: inset,
+        y: opened.top,
+        width: width - inset * 2,
+        height: bottom - opened.top,
+      });
+      y += SEQ.fragmentTail;
+    }
   }
   const lifelineBottom = y + SEQ.tail;
   for (const bars of open.values()) {
@@ -202,6 +276,7 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
     }
   }
   activations.sort((a, b) => a.opener - b.opener);
+  fragments.sort((a, b) => a.depth - b.depth || a.from - b.from);
 
   return {
     flow: flowId,
@@ -211,6 +286,7 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
     activations,
     messages,
     phases,
+    fragments,
     bounds: { x: 0, y: 0, width, height: lifelineBottom + SEQ.pad },
   };
 }

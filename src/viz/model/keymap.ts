@@ -1,6 +1,6 @@
 import type { UiAction } from "./ui.js";
 
-export type KeyEffect = "search" | "export";
+export type KeyEffect = "search" | "export" | "nextChange";
 
 export type KeyCommand =
   | { readonly kind: "ui"; readonly action: UiAction }
@@ -16,12 +16,18 @@ export interface KeyBinding {
 const ui = (action: UiAction): KeyCommand => ({ kind: "ui", action });
 
 export const KEY_BINDINGS: readonly KeyBinding[] = [
-  { keys: ["0"], display: "0", label: "Overview", command: ui({ type: "stageAt", n: 0 }) },
+  { keys: ["0"], display: "0", label: "Diagram", command: ui({ type: "stageAt", n: 0 }) },
   {
     keys: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
     display: "1-9",
     label: "Flow 1 to 9",
     command: (key) => ui({ type: "stageAt", n: Number(key) }),
+  },
+  {
+    keys: ["n"],
+    display: "n",
+    label: "Next change",
+    command: { kind: "effect", effect: "nextChange" },
   },
   { keys: ["w"], display: "w", label: "Start the walkthrough", command: ui({ type: "walk" }) },
   { keys: ["ArrowLeft"], display: "←", label: "Previous step", command: ui({ type: "prev" }) },
@@ -33,7 +39,7 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     command: ui({ type: "playToggle" }),
   },
   { keys: ["f"], display: "f", label: "Focus the selected node", command: ui({ type: "focus" }) },
-  { keys: ["/"], display: "/", label: "Search", command: { kind: "effect", effect: "search" } },
+  { keys: ["/"], display: "/", label: "Find", command: { kind: "effect", effect: "search" } },
   {
     keys: ["Escape"],
     display: "esc",
@@ -41,6 +47,12 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     command: ui({ type: "escape" }),
   },
   { keys: ["?"], display: "?", label: "Keyboard help", command: ui({ type: "toggleHelp" }) },
+  {
+    keys: ["b"],
+    display: "b",
+    label: "Toggle the sidebar",
+    command: ui({ type: "toggleSidebar" }),
+  },
   {
     keys: ["m"],
     display: "m",

@@ -1,8 +1,14 @@
+import type { VizDelta } from "../../protocol/viz";
 import type { VizIndex } from "../model/index";
 import { KEY_BINDINGS } from "../model/keymap";
-import type { UiAction, UiState } from "../model/ui";
-import { UiIcon } from "./icons";
+import { renderIssue } from "../model/render";
+import type { VizIssue } from "../model/types";
+import { ALL_DELTAS, type UiAction, type UiState } from "../model/ui";
+import { DELTA_GLYPH } from "../model/delta";
+import type { VizListEntry } from "../protocol";
+import { DELTA_LABEL, UiIcon } from "./icons";
 import { ZOOM_KEY_LABEL } from "./platform";
+import { vscode } from "./vscode";
 import "./overlays.css";
 
 interface OverlayProps {
@@ -42,7 +48,7 @@ export function WalkCard({ index, ui, dispatch }: OverlayProps) {
           {index.walkthrough.map((_, i) => (
             <span
               key={i}
-              className={`viz-dot ${i === step.index ? "viz-dot--on" : i < step.index ? "viz-dot--done" : ""}`}
+              className={`viz-walk-dot ${i === step.index ? "viz-walk-dot--on" : i < step.index ? "viz-walk-dot--done" : ""}`}
             />
           ))}
         </div>
@@ -120,6 +126,26 @@ export function PlayBar({ index, ui, dispatch }: OverlayProps) {
   );
 }
 
+export function Legend({ index, ui, dispatch }: OverlayProps) {
+  return (
+    <div className="viz-legend" role="group" aria-label="Filter by change">
+      {ALL_DELTAS.map((delta: VizDelta) => (
+        <button
+          key={delta}
+          type="button"
+          className={`viz-legend__item viz-delta--${delta} ${ui.deltaFilter.has(delta) ? "" : "viz-legend__item--off"}`}
+          title={`${ui.deltaFilter.has(delta) ? "Dim" : "Show"} ${DELTA_LABEL[delta].toLowerCase()} parts`}
+          onClick={() => dispatch({ type: "toggleDelta", delta })}
+        >
+          <span className="viz-legend__swatch">{DELTA_GLYPH[delta]}</span>
+          {DELTA_LABEL[delta]}
+          <span className="viz-legend__count">{index.deltaCounts[delta]}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function HelpOverlay({ ui, dispatch }: Pick<OverlayProps, "ui" | "dispatch">) {
   if (!ui.help) {
     return null;
@@ -153,16 +179,37 @@ export function HelpOverlay({ ui, dispatch }: Pick<OverlayProps, "ui" | "dispatc
             </div>
           ))}
         </dl>
-        <p className="viz-inspector__hint">
-          Scroll or drag to pan. Pinch or hold {ZOOM_KEY_LABEL} and scroll to zoom. Click a part,
-          connection or step to inspect it.
+        <p className="viz-help__hint">
+          Scroll or drag to pan. Pinch or hold {ZOOM_KEY_LABEL} and scroll to zoom. Click a part, a
+          member, a link or a step to inspect it. Right-click to add a comment.
         </p>
       </div>
     </div>
   );
 }
 
-export function EmptyState({ error }: { error?: string }) {
+export function InvalidBanner({ name, issues }: { name: string; issues: VizIssue[] }) {
+  const errors = issues.filter((issue) => issue.severity === "error");
+  return (
+    <div className="viz-banner" role="alert">
+      <UiIcon name="warn" size={14} />
+      <div className="viz-banner__text">
+        <strong>
+          {name}.viz.json has {errors.length} error{errors.length === 1 ? "" : "s"}.
+        </strong>{" "}
+        The last good version stays on screen.
+        <ul>
+          {errors.slice(0, 5).map((issue, i) => (
+            <li key={i}>{renderIssue(issue)}</li>
+          ))}
+          {errors.length > 5 && <li>+{errors.length - 5} more</li>}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+export function EmptyState({ error, vizzes }: { error?: string; vizzes?: VizListEntry[] }) {
   return (
     <div className="viz-empty">
       <div className="viz-empty__art" aria-hidden="true">
@@ -182,6 +229,21 @@ export function EmptyState({ error }: { error?: string }) {
             Ask your agent to run the paireto viz skill on the current changes. The picture appears
             here.
           </p>
+          {vizzes && vizzes.length > 0 && (
+            <ul className="viz-empty__list">
+              {vizzes.map((entry) => (
+                <li key={entry.name}>
+                  <button
+                    type="button"
+                    className="viz-textbtn"
+                    onClick={() => vscode.postMessage({ type: "switch", name: entry.name })}
+                  >
+                    {entry.title} ({entry.repoName})
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </div>

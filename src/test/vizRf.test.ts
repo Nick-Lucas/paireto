@@ -5,16 +5,25 @@ import { layoutSequence } from "../viz/layout/sequence.js";
 import { emphasisOf } from "../viz/model/emphasis.js";
 import { OVERVIEW, refInStage, type Stage } from "../viz/model/index.js";
 import { formatVizRef, parseVizRef } from "../viz/model/refs.js";
-import { toOverviewRf, toSequenceRf, type CardData, type MessageData } from "../viz/model/rf.js";
+import { estimateMeasure } from "../viz/layout/measure.js";
+import {
+  NO_EXTRAS,
+  toOverviewRf,
+  toSequenceRf,
+  type CardData,
+  type EdgeData,
+  type MessageData,
+} from "../viz/model/rf.js";
 import { initialUi, reduceUi, type UiAction, type UiState } from "../viz/model/ui.js";
 import { makeElk } from "./vizElk.js";
 import { multiServiceIndex } from "./vizFixtures.js";
 
 const index = multiServiceIndex();
+const EXTRAS = { ...NO_EXTRAS, measure: estimateMeasure };
 const FLOW = { kind: "flow", flow: "soft-decline" } as const;
 
 function run(...actions: UiAction[]): UiState {
-  return actions.reduce((ui, action) => reduceUi(index, ui, action), initialUi());
+  return actions.reduce((ui, action) => reduceUi(index, ui, action), initialUi(index));
 }
 
 suite("viz rf adapters", () => {
@@ -24,10 +33,10 @@ suite("viz rf adapters", () => {
       { type: "toggleDelta", delta: "unchanged" },
       { type: "select", ref: { kind: "node", id: "retry-worker" } },
     );
-    const graph = toOverviewRf(scene, index, emphasisOf(index, ui), ui);
+    const graph = toOverviewRf(scene, index, emphasisOf(index, ui), ui, EXTRAS);
     const byType = (type: string) => graph.nodes.filter((node) => node.type === type);
     assert.strictEqual(byType("lane").length, 5);
-    assert.strictEqual(byType("group").length, 2);
+    assert.strictEqual(byType("frame").length, 2);
     assert.strictEqual(byType("card").length, 9);
     const worker = graph.nodes.find((node) => node.id === "retry-worker")?.data as CardData;
     assert.strictEqual(worker.selected, true);
@@ -43,34 +52,37 @@ suite("viz rf adapters", () => {
   test("overview edges keep their route, label, level and step count", async () => {
     const scene = await layoutOverview(index, makeElk());
     const ui = run({ type: "select", ref: { kind: "edge", id: "billing-api>stripe:call" } });
-    const graph = toOverviewRf(scene, index, emphasisOf(index, ui), ui);
+    const graph = toOverviewRf(scene, index, emphasisOf(index, ui), ui, EXTRAS);
     assert.strictEqual(graph.edges.length, 10);
     const edge = graph.edges.find((candidate) => candidate.id === "billing-api>stripe:call");
     assert.ok(edge);
     assert.strictEqual(edge.source, "billing-api");
     assert.strictEqual(edge.target, "stripe");
-    assert.strictEqual(edge.data.selected, true);
-    assert.strictEqual(edge.data.steps, 2);
-    assert.ok(edge.data.points.length >= 2);
-    assert.ok(edge.data.label);
+    const data = edge.data as EdgeData;
+    assert.strictEqual(data.selected, true);
+    assert.strictEqual(data.steps, 2);
+    assert.ok(data.points.length >= 2);
+    assert.ok(data.label);
   });
 
   test("a walkthrough step marks its focus bright and the rest dim", async () => {
     const scene = await layoutOverview(index, makeElk());
     const ui = run({ type: "walk" });
-    const graph = toOverviewRf(scene, index, emphasisOf(index, ui), ui);
+    const graph = toOverviewRf(scene, index, emphasisOf(index, ui), ui, EXTRAS);
     const level = (id: string) =>
       (graph.nodes.find((node) => node.id === id)!.data as CardData).level;
     assert.strictEqual(level("billing-api"), "bright");
     assert.strictEqual(level("notify"), "dim");
     assert.strictEqual(
-      graph.edges.find((edge) => edge.id === "billing-api>retry-queue:event")?.data.level,
+      (graph.edges.find((edge) => edge.id === "billing-api>retry-queue:event")!.data as EdgeData)
+        .level,
       "bright",
     );
     const notifyGroup = graph.nodes.find(
-      (node) => node.type === "group" && node.data.kind === "group" && node.data.label === "notify",
+      (node) =>
+        node.type === "frame" && node.data.kind === "frame" && node.data.frame.label === "notify",
     );
-    assert.strictEqual(notifyGroup?.data.kind === "group" && notifyGroup.data.level, "dim");
+    assert.strictEqual(notifyGroup?.data.kind === "frame" && notifyGroup.data.level, "dim");
   });
 
   test("sequence nodes cover participants, lifelines, activations, phases and messages", () => {
@@ -96,8 +108,8 @@ suite("viz rf adapters", () => {
 
   test("selectable ids are refs on the stage and other ids never parse as one", async () => {
     const scene = await layoutOverview(index, makeElk());
-    const ui = initialUi();
-    const overview = toOverviewRf(scene, index, emphasisOf(index, ui), ui);
+    const ui = initialUi(index);
+    const overview = toOverviewRf(scene, index, emphasisOf(index, ui), ui, EXTRAS);
     const flowUi = run({ type: "stage", stage: FLOW });
     const sequence = toSequenceRf(
       layoutSequence(index, "soft-decline"),

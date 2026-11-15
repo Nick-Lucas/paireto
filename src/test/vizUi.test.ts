@@ -8,12 +8,12 @@ const index: VizIndex = multiServiceIndex();
 const FLOW = { kind: "flow", flow: "soft-decline" } as const;
 
 function run(...actions: UiAction[]): UiState {
-  return actions.reduce((ui, action) => reduceUi(index, ui, action), initialUi());
+  return actions.reduce((ui, action) => reduceUi(index, ui, action), initialUi(index));
 }
 
 suite("viz ui reducer", () => {
   test("starts in explore on the overview with every delta shown", () => {
-    const ui = initialUi();
+    const ui = initialUi(index);
     assert.deepStrictEqual(ui.stage, { kind: "overview" });
     assert.deepStrictEqual(ui.mode, { kind: "explore" });
     assert.deepStrictEqual([...ui.deltaFilter].sort(), [

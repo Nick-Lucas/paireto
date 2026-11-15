@@ -1,23 +1,50 @@
 .viz-edge__hit {
   fill: none;
   stroke: transparent;
-  stroke-width: 14;
+  stroke-width: 12;
   pointer-events: stroke;
   cursor: pointer;
 }
 
+.viz-edge__casing {
+  fill: none;
+  stroke: var(--viz-bg);
+  stroke-width: 5;
+  stroke-linejoin: round;
+}
+
 .viz-edge__line {
   fill: none;
-  stroke: var(--viz-unchanged);
-  stroke-width: 1.5;
+  stroke: var(--viz-edge);
+  stroke-width: 1.25;
   stroke-linecap: round;
   stroke-linejoin: round;
   transition: stroke-width var(--viz-duration);
 }
 
 .viz-edge__head {
-  fill: var(--viz-unchanged);
-  stroke: none;
+  fill: var(--viz-edge);
+  stroke: var(--viz-edge);
+  stroke-width: 1.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.viz-edge__head--open {
+  fill: none;
+}
+
+.viz-edge__head--triangle,
+.viz-edge__head--diamond {
+  fill: var(--viz-bg);
+}
+
+.viz-edge--dashed .viz-edge__line {
+  stroke-dasharray: 6 4;
+}
+
+.viz-edge--data .viz-edge__line {
+  stroke-dasharray: 2 4;
 }
 
 .viz-edge__glow {
@@ -26,57 +53,88 @@
   stroke-width: 9;
   stroke-linecap: round;
   stroke-linejoin: round;
-  opacity: 0.18;
+  opacity: 0.16;
   filter: blur(2px);
 }
 
 .viz-edge--added .viz-edge__line,
-.viz-edge--added .viz-edge__glow {
-  stroke: var(--viz-added);
-}
 .viz-edge--added .viz-edge__head {
-  fill: var(--viz-added);
+  stroke: var(--viz-edge-added);
+}
+.viz-edge--added .viz-edge__head--arrow,
+.viz-edge--added .viz-edge__head--filledDiamond {
+  fill: var(--viz-edge-added);
 }
 .viz-edge--changed .viz-edge__line,
-.viz-edge--changed .viz-edge__glow {
-  stroke: var(--viz-changed);
-}
 .viz-edge--changed .viz-edge__head {
-  fill: var(--viz-changed);
+  stroke: var(--viz-edge-changed);
+}
+.viz-edge--changed .viz-edge__head--arrow,
+.viz-edge--changed .viz-edge__head--filledDiamond {
+  fill: var(--viz-edge-changed);
+}
+.viz-edge--removed .viz-edge__line,
+.viz-edge--removed .viz-edge__head {
+  stroke: var(--viz-edge-removed);
 }
 .viz-edge--removed .viz-edge__line {
-  stroke: var(--viz-removed);
   stroke-dasharray: 5 4;
-  opacity: 0.8;
 }
-.viz-edge--removed .viz-edge__head {
+.viz-edge--removed .viz-edge__head--arrow,
+.viz-edge--removed .viz-edge__head--filledDiamond {
+  fill: var(--viz-edge-removed);
+}
+
+.viz-edge--hero .viz-edge__line {
+  stroke-width: 2;
+}
+
+.viz-edge.viz-level--bright .viz-edge__line,
+.viz-edge.viz-level--bright .viz-edge__head {
+  stroke: var(--viz-edge-lit);
+  stroke-width: 1.75;
+}
+.viz-edge--added.viz-level--bright .viz-edge__line,
+.viz-edge--added.viz-level--bright .viz-edge__head {
+  stroke: var(--viz-added);
+}
+.viz-edge--changed.viz-level--bright .viz-edge__line,
+.viz-edge--changed.viz-level--bright .viz-edge__head {
+  stroke: var(--viz-changed);
+}
+.viz-edge--removed.viz-level--bright .viz-edge__line,
+.viz-edge--removed.viz-level--bright .viz-edge__head {
+  stroke: var(--viz-removed);
+}
+.viz-edge.viz-level--bright .viz-edge__head--arrow,
+.viz-edge.viz-level--bright .viz-edge__head--filledDiamond {
+  fill: var(--viz-edge-lit);
+}
+.viz-edge--added.viz-level--bright .viz-edge__head--arrow,
+.viz-edge--added.viz-level--bright .viz-edge__head--filledDiamond {
+  fill: var(--viz-added);
+}
+.viz-edge--changed.viz-level--bright .viz-edge__head--arrow,
+.viz-edge--changed.viz-level--bright .viz-edge__head--filledDiamond {
+  fill: var(--viz-changed);
+}
+.viz-edge--removed.viz-level--bright .viz-edge__head--arrow,
+.viz-edge--removed.viz-level--bright .viz-edge__head--filledDiamond {
   fill: var(--viz-removed);
 }
 
-.viz-edge--event .viz-edge__line {
-  stroke-dasharray: 7 5;
-}
-.viz-edge--data .viz-edge__line {
-  stroke-dasharray: 1.5 4;
-  stroke-linecap: round;
-}
-.viz-edge--uses .viz-edge__line {
-  stroke-width: 1;
-}
-.viz-edge--uses .viz-edge__head {
-  opacity: 0.6;
-}
-.viz-edge--hero .viz-edge__line {
-  stroke-width: 2.5;
-}
 .viz-edge--selected .viz-edge__line,
 .viz-edge--selected .viz-edge__head {
-  stroke-width: 3;
   stroke: var(--viz-accent);
+  stroke-width: 2;
+}
+.viz-edge--selected .viz-edge__head--arrow,
+.viz-edge--selected .viz-edge__head--filledDiamond {
   fill: var(--viz-accent);
 }
-.viz-edge--selected .viz-edge__head {
-  stroke: none;
+
+.viz-edge.viz-level--dim {
+  opacity: 0.3;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -90,7 +148,7 @@
 
 @keyframes viz-dash {
   to {
-    stroke-dashoffset: -12;
+    stroke-dashoffset: -10;
   }
 }
 
@@ -100,18 +158,16 @@
   align-items: center;
   gap: 5px;
   box-sizing: border-box;
-  height: 24px;
-  padding: 0 9px;
+  height: 22px;
+  padding: 0 8px;
   border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: 11.5px;
   white-space: nowrap;
   color: var(--viz-fg);
-  background: color-mix(in srgb, var(--viz-panel) 92%, var(--viz-fg));
-  border: 1px solid color-mix(in srgb, var(--viz-fg) 16%, transparent);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  background: var(--viz-panel);
+  border: 1px solid var(--viz-node-border);
   pointer-events: none;
-  transition: opacity 260ms ease;
+  transition: opacity 200ms ease;
 }
 
 .viz-edge-label__text {
@@ -129,11 +185,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 16px;
-  height: 16px;
+  min-width: 15px;
+  height: 15px;
   padding: 0 4px;
   border-radius: 999px;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 700;
   color: var(--vscode-badge-foreground, #f8f8f8);
   background: var(--vscode-badge-background, #616161);
@@ -145,5 +201,48 @@
 
 .viz-edge-label--selected {
   border-color: var(--viz-accent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--viz-accent) 40%, transparent);
+}
+
+.viz-edge-mult {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow:
+    0 0 3px var(--viz-bg),
+    0 0 3px var(--viz-bg);
+}
+
+.viz-notelink__line {
+  stroke: var(--viz-muted);
+  stroke-width: 1.25;
+  stroke-dasharray: 3 3;
+}
+
+.viz-notelink__head {
+  fill: var(--viz-muted);
+  stroke: none;
+}
+
+.viz-notelink--question .viz-notelink__line {
+  stroke: var(--viz-signature);
+}
+
+.viz-notelink--question .viz-notelink__head {
+  fill: var(--viz-signature);
+}
+
+.viz-notelink--lit .viz-notelink__line {
+  stroke: var(--viz-accent);
+  stroke-width: 2;
+}
+
+.viz-notelink--lit .viz-notelink__head {
+  fill: var(--viz-accent);
 }

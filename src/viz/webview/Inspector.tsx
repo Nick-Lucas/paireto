@@ -318,7 +318,8 @@ function StagePanel({ index, stage }: { index: VizIndex; stage: Stage }) {
       <>
         <h3>Overview</h3>
         <p className="viz-inspector__role">
-          {changed} of {index.overviewNodes.length} parts changed across {index.lanes.length} lanes.
+          {changed} of {index.overviewNodes.length} parts changed
+          {index.lanes.length > 0 ? ` across ${index.lanes.length} lanes.` : "."}
         </p>
         <p className="viz-inspector__hint">
           Select a part or a connection to read its role and files. Press ? for keys.
@@ -366,19 +367,5 @@ export function Inspector({ index, stage, selection, dispatch }: InspectorProps)
   } else {
     body = <StagePanel index={index} stage={{ kind: "flow", flow: selection.id }} />;
   }
-  return (
-    <aside className="viz-inspector">
-      {selection && (
-        <button
-          type="button"
-          className="viz-iconbtn viz-inspector__close"
-          title="Clear selection (esc)"
-          onClick={() => dispatch({ type: "select", ref: undefined })}
-        >
-          <UiIcon name="close" />
-        </button>
-      )}
-      {body}
-    </aside>
-  );
+  return <div className="viz-inspector">{body}</div>;
 }

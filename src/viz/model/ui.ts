@@ -1,6 +1,17 @@
 import type { VizDelta } from "../../protocol/viz.js";
+import type { Point } from "../layout/geometry.js";
+import {
+  DEFAULT_VIZ_VIEW_STATE,
+  type VizNotePlace,
+  type VizNoteTarget,
+  type VizViewState,
+} from "../protocol.js";
 import { OVERVIEW, refInStage, sameStage, type Stage, type VizIndex } from "./index.js";
+import type { NoteKind } from "./notes.js";
+import { formatVizRef } from "./refs.js";
+import type { ChangeCursor } from "./review.js";
 import type { VizRef } from "./types.js";
+import type { Grouping, Show } from "./visible.js";
 
 export type Mode =
   | { readonly kind: "explore" }
@@ -13,7 +24,23 @@ export type Mode =
       readonly running: boolean;
     };
 
+export type Thread =
+  | { readonly kind: "closed" }
+  | { readonly kind: "open"; readonly id: string }
+  | {
+      readonly kind: "draft";
+      readonly noteKind: NoteKind;
+      readonly targets: readonly VizNoteTarget[];
+      readonly place: VizNotePlace | undefined;
+      readonly at: Point;
+    };
+
 export const ALL_DELTAS: readonly VizDelta[] = ["added", "changed", "removed", "unchanged"];
+
+export interface Filters {
+  readonly notSeen: boolean;
+  readonly openThreads: boolean;
+}
 
 export interface UiState {
   readonly stage: Stage;
@@ -23,6 +50,15 @@ export interface UiState {
   readonly query: string;
   readonly help: boolean;
   readonly minimap: boolean;
+  readonly show: Show;
+  readonly filters: Filters;
+  readonly grouping: Grouping;
+  readonly sidebar: boolean;
+  readonly sidebarWidth: number;
+  readonly expanded: ReadonlySet<string>;
+  readonly cursor: ChangeCursor | undefined;
+  readonly thread: Thread;
+  readonly reveal: { readonly id: string; readonly seq: number } | undefined;
 }
 
 export type UiAction =
@@ -40,19 +76,67 @@ export type UiAction =
   | { readonly type: "query"; readonly query: string }
   | { readonly type: "toggleHelp" }
   | { readonly type: "toggleMinimap" }
+  | { readonly type: "show"; readonly show: Show }
+  | { readonly type: "filters"; readonly filters: Partial<Filters> }
+  | { readonly type: "grouping"; readonly grouping: Grouping }
+  | { readonly type: "toggleSidebar" }
+  | { readonly type: "sidebarWidth"; readonly width: number }
+  | { readonly type: "toggleExpanded"; readonly node: string }
+  | { readonly type: "changeStop"; readonly cursor: ChangeCursor; readonly ref: VizRef }
+  | { readonly type: "resetChanges" }
+  | { readonly type: "openThread"; readonly id: string }
+  | { readonly type: "closeThread" }
+  | {
+      readonly type: "startDraft";
+      readonly noteKind: NoteKind;
+      readonly targets: readonly VizNoteTarget[];
+      readonly place: VizNotePlace | undefined;
+      readonly at: Point;
+    }
+  | { readonly type: "draftKind"; readonly noteKind: NoteKind }
+  | { readonly type: "draftLink"; readonly target: VizNoteTarget }
+  | { readonly type: "draftUnlink"; readonly index: number }
   | { readonly type: "escape" };
 
 const EXPLORE: Mode = { kind: "explore" };
+const CLOSED: Thread = { kind: "closed" };
 
-export function initialUi(): UiState {
+export const SIDEBAR_MIN = 220;
+export const SIDEBAR_MAX = 520;
+
+export function stageFromView(index: VizIndex, stage: string): Stage {
+  return index.flowById.has(stage) ? { kind: "flow", flow: stage } : OVERVIEW;
+}
+
+export function initialUi(index: VizIndex, view: VizViewState = DEFAULT_VIZ_VIEW_STATE): UiState {
   return {
-    stage: OVERVIEW,
+    stage: stageFromView(index, view.stage),
     mode: EXPLORE,
     selection: undefined,
     deltaFilter: new Set(ALL_DELTAS),
     query: "",
     help: false,
     minimap: true,
+    show: view.show,
+    filters: view.filters,
+    grouping: view.grouping,
+    sidebar: view.sidebar,
+    sidebarWidth: view.sidebarWidth,
+    expanded: new Set(),
+    cursor: undefined,
+    thread: CLOSED,
+    reveal: undefined,
+  };
+}
+
+export function viewStateOf(ui: UiState): VizViewState {
+  return {
+    stage: ui.stage.kind === "overview" ? "diagram" : ui.stage.flow,
+    show: ui.show,
+    filters: ui.filters,
+    grouping: ui.grouping,
+    sidebar: ui.sidebar,
+    sidebarWidth: ui.sidebarWidth,
   };
 }
 
@@ -73,7 +157,7 @@ function stageOfRef(index: VizIndex, ref: VizRef, current: Stage): Stage {
 function enterStage(index: VizIndex, ui: UiState, stage: Stage): UiState {
   const selection =
     ui.selection && refInStage(index, ui.selection, stage) ? ui.selection : undefined;
-  return { ...ui, stage, mode: EXPLORE, selection };
+  return { ...ui, stage, mode: EXPLORE, selection, thread: CLOSED };
 }
 
 function walkTo(index: VizIndex, ui: UiState, step: number): UiState {
@@ -117,6 +201,20 @@ function move(index: VizIndex, ui: UiState, by: 1 | -1): UiState {
   }
 }
 
+function reveal(ui: UiState, ref: VizRef): UiState {
+  return { ...ui, reveal: { id: formatVizRef(ref), seq: (ui.reveal?.seq ?? 0) + 1 } };
+}
+
+function toggleIn(set: ReadonlySet<string>, key: string): Set<string> {
+  const next = new Set(set);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  return next;
+}
+
 export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiState {
   switch (action.type) {
     case "stage":
@@ -147,7 +245,8 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
       const entered = sameStage(stage, ui.stage)
         ? { ...ui, mode: EXPLORE }
         : enterStage(index, ui, stage);
-      return reduceUi(index, entered, { type: "select", ref: action.ref });
+      const selected = reduceUi(index, entered, { type: "select", ref: action.ref });
+      return selected.selection ? reveal(selected, action.ref) : selected;
     }
     case "focus": {
       if (ui.mode.kind === "focus") {
@@ -198,9 +297,83 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
       return { ...ui, help: !ui.help };
     case "toggleMinimap":
       return { ...ui, minimap: !ui.minimap };
+    case "show":
+      return { ...ui, show: action.show };
+    case "filters":
+      return { ...ui, filters: { ...ui.filters, ...action.filters } };
+    case "grouping":
+      return { ...ui, grouping: action.grouping };
+    case "toggleSidebar":
+      return { ...ui, sidebar: !ui.sidebar };
+    case "sidebarWidth":
+      return {
+        ...ui,
+        sidebarWidth: Math.round(Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, action.width))),
+      };
+    case "toggleExpanded":
+      return { ...ui, expanded: toggleIn(ui.expanded, action.node) };
+    case "changeStop": {
+      const moved = reduceUi(
+        index,
+        { ...ui, cursor: action.cursor },
+        { type: "goto", ref: action.ref },
+      );
+      return { ...moved, sidebar: true };
+    }
+    case "resetChanges":
+      return { ...ui, cursor: undefined };
+    case "openThread":
+      return {
+        ...ui,
+        thread: { kind: "open", id: action.id },
+        reveal: { id: `note/${action.id}`, seq: (ui.reveal?.seq ?? 0) + 1 },
+      };
+    case "closeThread":
+      return ui.thread.kind === "closed" ? ui : { ...ui, thread: CLOSED };
+    case "startDraft":
+      return {
+        ...ui,
+        thread: {
+          kind: "draft",
+          noteKind: action.noteKind,
+          targets: action.targets,
+          place: action.place,
+          at: action.at,
+        },
+      };
+    case "draftKind":
+      return ui.thread.kind === "draft"
+        ? { ...ui, thread: { ...ui.thread, noteKind: action.noteKind } }
+        : ui;
+    case "draftLink": {
+      if (ui.thread.kind !== "draft") {
+        return ui;
+      }
+      const key = (target: VizNoteTarget) =>
+        target.kind === "file"
+          ? `${target.kind}:${target.repo}:${target.path}`
+          : `${target.kind}:${target.id}`;
+      if (ui.thread.targets.some((target) => key(target) === key(action.target))) {
+        return ui;
+      }
+      return { ...ui, thread: { ...ui.thread, targets: [...ui.thread.targets, action.target] } };
+    }
+    case "draftUnlink":
+      return ui.thread.kind === "draft"
+        ? {
+            ...ui,
+            thread: {
+              ...ui.thread,
+              targets: ui.thread.targets.filter((_, i) => i !== action.index),
+            },
+          }
+        : ui;
     case "escape": {
       if (ui.help) {
         return { ...ui, help: false };
+      }
+      if (ui.thread.kind !== "closed") {
+        return { ...ui, thread: CLOSED };
       }
       if (ui.query) {
         return { ...ui, query: "" };
