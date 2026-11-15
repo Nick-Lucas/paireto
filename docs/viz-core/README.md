@@ -45,7 +45,7 @@ LSP builds the graph inside each language. The agent, and later contract and con
 
 ## Resolved questions
 
-1. **Agent-only diagrams.** Kept, as `paireto_viz_create(base: "none")`. It is the same pipeline with an empty programmatic layer. It is for a design that has no code yet, such as a proposed architecture during plan review.
+1. **Generated or bespoke diagrams.** Both stay, and the agent chooses for each viz. `paireto_viz_create(base: "changes")` starts from the LSP graph. `base: "none"` lets the agent draw a bespoke diagram, as in #74. A bespoke diagram can still carry code refs, comments and snippets. See [Choosing a base](04-protocols.md#choosing-a-base).
 2. **When the LSP graph is built.** Only when the agent calls `paireto_viz_create` or `paireto_viz_refresh`. The panel opens only from the skill. The agent edits its layer as a file in `.paireto/viz/<name>/agent.json`. See [04-protocols.md](04-protocols.md#1-viz-files-and-mcp-tools).
 3. **PR #77 renderer.** Agreed to replace it with the shared ReactFlow renderer.
 

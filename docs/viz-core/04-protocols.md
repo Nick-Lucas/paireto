@@ -90,10 +90,28 @@ interface VizOpenArgs { name: string; view?: ViewId; focus?: VizRef }
 interface VizRefreshArgs { name: string }
 ```
 
-- `base: "changes"` builds the LSP and delta layers for the current Compare To. This is the default.
-- `base: "none"` writes an empty `generated.json`. The agent draws everything, as in #74. This is for a design that has no code yet, such as a proposed architecture during plan review. It costs nothing extra, because it is the same pipeline with an empty programmatic layer.
+- `base: "changes"` builds the LSP and delta layers for the current Compare To.
+- `base: "none"` writes an empty `generated.json`. The agent draws everything, as in #74. It costs nothing extra, because it is the same pipeline with an empty programmatic layer.
+- The agent chooses the base. The tool has no default, so the agent must make the choice each time.
 - `status: "partial"` names the capabilities that are missing, such as `typeHierarchy` for TypeScript. The agent can then add those edges with evidence.
 - If `agent.json` does not set `views`, Paireto adds the presets: "Changes" (graph), "Types" (class) and one sequence view for each walk.
+
+### Choosing a base
+
+The skill tells the agent how to choose. The two modes are equal. Neither is a fallback.
+
+| Use `base: "changes"` when | Use `base: "none"` when |
+| --- | --- |
+| The diagram is about code structure: types, modules, calls | The diagram is about concepts the code does not name: a business process, a deploy topology, a trust boundary |
+| The user wants to see what a change touches | The diagram is a design for code that does not exist yet, such as during plan review |
+| The languages have good LSP support | The diagram crosses many repos or systems that are not open in the window |
+| The agent wants Paireto to keep the diagram true as code changes | The diagram is a one-off explanation, and a hand layout is clearer than the full graph |
+
+A bespoke diagram can still point at code.
+
+- Its elements, relations and steps can carry `code` refs. Paireto checks that each file and range exists, as #74 does.
+- Comments, snippets and "open diff" work on any element that has a `code` ref.
+- With `base: "changes"`, a bespoke view is also possible. The agent sets `views` to include only its own elements, and it refers to `sym:` ids where it wants a live link to a symbol. The generated graph stays in the doc but does not show in that view.
 
 ### Check result
 
