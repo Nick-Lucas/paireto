@@ -10,33 +10,44 @@
   cursor: pointer;
 }
 
+.viz-canvas .react-flow__node-note {
+  cursor: grab;
+}
+
+.viz-canvas .react-flow__node-note.dragging {
+  cursor: grabbing;
+}
+
 .viz-canvas .react-flow__node:focus,
 .viz-canvas .react-flow__node:focus-visible {
   outline: none;
   box-shadow: none;
 }
 
-.viz-canvas .react-flow__node.selected .viz-card,
-.viz-canvas .react-flow__node.selected .viz-participant {
-  box-shadow: none;
-}
-
 .viz-canvas .react-flow__background {
-  color: color-mix(in srgb, var(--viz-fg) 22%, transparent);
+  color: color-mix(in srgb, var(--viz-fg) 20%, transparent);
 }
 
 .viz-canvas .react-flow__controls {
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+  padding: 3px;
   box-shadow: var(--viz-shadow);
-  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--viz-fg) 10%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--viz-panel) 85%, transparent);
+  backdrop-filter: blur(10px);
   overflow: hidden;
 }
 
 .viz-canvas .react-flow__controls-button {
   width: 24px;
   height: 24px;
+  border: 0;
+  border-radius: 4px;
   color: var(--viz-fg);
-  background: var(--viz-panel);
-  border-bottom: 1px solid var(--viz-border);
+  background: transparent;
 }
 
 .viz-canvas .react-flow__controls-button:hover {
@@ -63,24 +74,25 @@
   stroke: none;
 }
 
-.viz-canvas .react-flow__node-group {
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
-  box-shadow: none;
-}
-
 .viz-canvas .react-flow__minimap svg {
   width: 150px;
   height: 100px;
 }
 
-.viz-canvas .react-flow__attribution {
-  background: transparent;
-  opacity: 0.45;
+.viz-canvas .react-flow__edge.selectable {
+  cursor: pointer;
 }
 
-.viz-canvas .react-flow__attribution a {
-  color: var(--vscode-descriptionForeground);
+.viz-canvas .react-flow__edge.selected .viz-edge__line {
+  stroke: var(--viz-accent);
+}
+
+.viz-loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--viz-muted);
+  font-size: 12px;
 }

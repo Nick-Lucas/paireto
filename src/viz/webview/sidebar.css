@@ -1,0 +1,245 @@
+.viz-sidebar {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--viz-border);
+  background: var(--viz-side);
+}
+
+.viz-sidebar__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  z-index: 2;
+  width: 6px;
+  cursor: col-resize;
+}
+
+.viz-sidebar__resize:hover {
+  background: var(--vscode-sash-hoverBorder, var(--viz-accent));
+}
+
+.viz-sidebar__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.viz-sidebar__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--viz-border);
+}
+
+.viz-sidebar__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--viz-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.viz-review__empty {
+  margin: 0;
+  padding: 12px;
+  font-size: 12px;
+}
+
+.viz-review__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--viz-border);
+  background: color-mix(in srgb, var(--viz-accent) 6%, transparent);
+}
+
+.viz-review__progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viz-progress {
+  display: flex;
+  flex: 1;
+  min-width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--viz-border);
+  overflow: hidden;
+}
+
+.viz-progress span {
+  height: 100%;
+  background: var(--vscode-progressBar-background, var(--viz-accent));
+}
+
+.viz-review__buttons {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.viz-review__next {
+  flex: 1;
+  justify-content: center;
+}
+
+.viz-review__next kbd {
+  color: inherit;
+  border-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.viz-rfiles {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+}
+
+.viz-rfiles > li + li {
+  border-top: 1px solid color-mix(in srgb, var(--viz-border) 60%, transparent);
+}
+
+.viz-rfile__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 4px 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.viz-rfile__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-rfile__dir {
+  color: var(--viz-muted);
+  font-weight: 400;
+  font-size: 11px;
+}
+
+.viz-rfile--seen .viz-rfile__name {
+  color: var(--viz-muted);
+}
+
+.viz-seen {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--viz-muted);
+  color: transparent;
+}
+
+.viz-seen:hover {
+  color: var(--viz-muted);
+}
+
+.viz-seen--on {
+  color: var(--viz-bg);
+  background: var(--viz-muted);
+  border-color: var(--viz-muted);
+}
+
+.viz-rfile__nodes,
+.viz-change__members {
+  margin: 0 0 4px;
+  padding: 0;
+  list-style: none;
+}
+
+.viz-change,
+.viz-member {
+  display: grid;
+  grid-template-columns: 12px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 6px;
+  width: 100%;
+  padding: 3px 12px 3px 22px;
+  text-align: left;
+  font-size: 12px;
+}
+
+.viz-change:hover,
+.viz-member:hover {
+  background: var(--viz-hover);
+}
+
+.viz-change--selected,
+.viz-member--selected {
+  background: var(--vscode-list-activeSelectionBackground, var(--viz-hover));
+  box-shadow: inset 3px 0 0 var(--viz-accent);
+  color: var(--vscode-list-activeSelectionForeground, inherit);
+}
+
+.viz-change__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.viz-change__bar {
+  grid-column: 2 / -1;
+  height: 3px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--viz-muted) 20%, transparent);
+  overflow: hidden;
+}
+
+.viz-change__fill {
+  display: flex;
+  justify-content: flex-end;
+  height: 100%;
+  min-width: 2px;
+  background: var(--viz-added);
+}
+
+.viz-change__fill-removed {
+  height: 100%;
+  background: var(--viz-removed);
+}
+
+.viz-member {
+  padding: 2px 12px 2px 36px;
+  color: var(--viz-muted);
+}
+
+.viz-member:hover,
+.viz-member--selected {
+  color: var(--vscode-list-activeSelectionForeground, var(--viz-fg));
+}
+
+.viz-member__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--viz-mono);
+  font-size: 11.5px;
+}
+
+.viz-inspect {
+  border-top: 1px solid var(--viz-border);
+}

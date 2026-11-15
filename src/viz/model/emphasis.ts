@@ -1,6 +1,7 @@
 import type { VizDelta } from "../../protocol/viz.js";
 import { searchMatches, stepAt, type Stage, type VizIndex } from "./index.js";
 import { formatVizRef } from "./refs.js";
+import { NO_MARKS, type ReviewMarks } from "./review.js";
 import type { VizRef } from "./types.js";
 import type { UiState } from "./ui.js";
 
@@ -33,14 +34,19 @@ function fill(levels: Levels, level: Level): void {
   }
 }
 
-function baseLevels(index: VizIndex, ui: UiState): Levels {
+function baseLevels(index: VizIndex, ui: UiState, marks: ReviewMarks): Levels {
   const levels: Levels = { nodes: new Map(), edges: new Map(), steps: new Map() };
   const shown = (delta: VizDelta) => ui.deltaFilter.has(delta);
   if (ui.stage.kind === "overview") {
-    for (const node of index.nodes) {
-      if (!node.flowOnly && !index.childrenByParent.has(node.id)) {
-        levels.nodes.set(node.id, shown(node.delta) ? "normal" : "dim");
+    for (const node of index.overviewNodes) {
+      if (index.childrenByParent.has(node.id)) {
+        continue;
       }
+      const passes =
+        shown(node.delta) &&
+        !(ui.filters.notSeen && marks.seen.has(node.id)) &&
+        !(ui.filters.openThreads && !marks.threads.has(node.id));
+      levels.nodes.set(node.id, passes ? "normal" : "dim");
     }
     for (const edge of index.edges) {
       const endpointsShown =
@@ -219,8 +225,36 @@ function applyQuery(levels: Levels, index: VizIndex, ui: UiState): void {
   }
 }
 
-export function emphasisOf(index: VizIndex, ui: UiState): Emphasis {
-  const levels = baseLevels(index, ui);
+function applySelection(levels: Levels, index: VizIndex, selection: VizRef): void {
+  const node =
+    selection.kind === "node"
+      ? selection.id
+      : selection.kind === "member"
+        ? selection.node
+        : undefined;
+  if (node === undefined) {
+    if (selection.kind === "edge" && levels.edges.has(selection.id)) {
+      for (const key of levels.edges.keys()) {
+        if (levels.edges.get(key) !== "dim") {
+          levels.edges.set(key, key === selection.id ? "bright" : "dim");
+        }
+      }
+    }
+    return;
+  }
+  const near = neighbourhood(index, node);
+  if (near.edges.size === 0) {
+    return;
+  }
+  for (const key of levels.edges.keys()) {
+    if (levels.edges.get(key) !== "dim") {
+      levels.edges.set(key, near.edges.has(key) ? "bright" : "dim");
+    }
+  }
+}
+
+export function emphasisOf(index: VizIndex, ui: UiState, marks: ReviewMarks = NO_MARKS): Emphasis {
+  const levels = baseLevels(index, ui, marks);
   const { mode } = ui;
   if (mode.kind === "walk") {
     const step = index.walkthrough[mode.step];
@@ -252,6 +286,8 @@ export function emphasisOf(index: VizIndex, ui: UiState): Emphasis {
   }
   if (ui.query.trim()) {
     applyQuery(levels, index, ui);
+  } else if (ui.selection && ui.stage.kind === "overview") {
+    applySelection(levels, index, ui.selection);
   }
   return { ...levels, camera: undefined, veil: false, cursor: undefined };
 }

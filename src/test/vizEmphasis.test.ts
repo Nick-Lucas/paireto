@@ -8,7 +8,7 @@ const index = multiServiceIndex();
 const FLOW = { kind: "flow", flow: "soft-decline" } as const;
 
 function run(...actions: UiAction[]): UiState {
-  return actions.reduce((ui, action) => reduceUi(index, ui, action), initialUi());
+  return actions.reduce((ui, action) => reduceUi(index, ui, action), initialUi(index));
 }
 
 function only(map: ReadonlyMap<string | number, string>, level: string): (string | number)[] {
@@ -17,7 +17,7 @@ function only(map: ReadonlyMap<string | number, string>, level: string): (string
 
 suite("viz emphasis", () => {
   test("explore shows every overview element at normal and leaves the camera alone", () => {
-    const emphasis = emphasisOf(index, initialUi());
+    const emphasis = emphasisOf(index, initialUi(index));
     assert.strictEqual(emphasis.nodes.size, 9);
     assert.strictEqual(emphasis.nodes.has("shopper"), false);
     assert.deepStrictEqual(only(emphasis.nodes, "normal").length, 9);

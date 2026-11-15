@@ -1,6 +1,6 @@
 import type ElkConstructor from "elkjs/lib/elk.bundled.js";
 
-import type { ElkLike } from "../viz/layout/overview.js";
+import type { ElkLike } from "../viz/layout/elk.js";
 
 const ELK = require("elkjs/lib/elk.bundled.js") as typeof ElkConstructor;
 

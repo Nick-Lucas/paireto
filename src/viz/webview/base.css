@@ -2,22 +2,45 @@
   --viz-added: var(--vscode-gitDecoration-addedResourceForeground, #81b88b);
   --viz-changed: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
   --viz-removed: var(--vscode-gitDecoration-deletedResourceForeground, #c74e39);
+  --viz-signature: var(--vscode-charts-blue, #3794ff);
   --viz-unchanged: var(--vscode-descriptionForeground, #9d9d9d);
+  --viz-agent: var(--vscode-charts-purple, #b180d7);
   --viz-bg: var(--vscode-editor-background, #1f1f1f);
   --viz-fg: var(--vscode-foreground, #ccc);
   --viz-muted: var(--vscode-descriptionForeground, #9d9d9d);
-  --viz-border: var(--vscode-widget-border, var(--vscode-panel-border, #313131));
-  --viz-panel: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #202020));
+  --viz-border: var(--vscode-panel-border, var(--vscode-widget-border, #3c3c3c));
+  --viz-panel: var(--vscode-editorWidget-background, var(--vscode-sideBar-background, #252526));
+  --viz-side: var(--vscode-sideBar-background, var(--viz-bg));
+  --viz-node-bg: var(--vscode-editorWidget-background, #252526);
+  --viz-node-border: var(
+    --vscode-contrastBorder,
+    var(--vscode-editorWidget-border, var(--vscode-widget-border, #454545))
+  );
+  --viz-header-bg: color-mix(in srgb, var(--viz-fg) 7%, var(--viz-node-bg));
+  --viz-edge: color-mix(in srgb, var(--viz-fg) 55%, var(--viz-bg));
+  --viz-edge-added: color-mix(in srgb, var(--viz-added) 55%, var(--viz-bg));
+  --viz-edge-changed: color-mix(in srgb, var(--viz-changed) 60%, var(--viz-bg));
+  --viz-edge-removed: color-mix(in srgb, var(--viz-removed) 60%, var(--viz-bg));
+  --viz-edge-lit: var(--viz-fg);
   --viz-accent: var(--vscode-focusBorder, #0078d4);
   --viz-link: var(--vscode-textLink-foreground, #4daafc);
   --viz-hover: var(--vscode-list-hoverBackground, #2a2d2e);
+  --viz-shadow: 0 8px 24px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.45));
   --viz-mono: var(--vscode-editor-font-family, Menlo, Monaco, monospace);
-  --viz-radius: 8px;
-  --viz-shadow: 0 1px 2px rgba(0, 0, 0, 0.18), 0 6px 18px rgba(0, 0, 0, 0.16);
-  --viz-card-bg: color-mix(in srgb, var(--viz-panel) 78%, var(--viz-bg));
-  --viz-lane-even: color-mix(in srgb, var(--viz-fg) 3%, transparent);
-  --viz-lane-odd: transparent;
-  --viz-duration: 180ms;
+  --viz-radius: 6px;
+  --viz-duration: 160ms;
+  --viz-note-bg: color-mix(
+    in srgb,
+    var(--vscode-editorWarning-foreground, #cca700) 10%,
+    var(--viz-node-bg)
+  );
+  --viz-note-border: color-mix(
+    in srgb,
+    var(--vscode-editorWarning-foreground, #cca700) 55%,
+    var(--viz-node-border)
+  );
+  --viz-question-bg: color-mix(in srgb, var(--viz-signature) 12%, var(--viz-node-bg));
+  --viz-question-border: color-mix(in srgb, var(--viz-signature) 60%, var(--viz-node-border));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -40,12 +63,13 @@ body {
   font-size: var(--vscode-font-size, 13px);
   color: var(--viz-fg);
   background: var(--viz-bg);
-  line-height: 1.45;
+  line-height: 1.4;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -58,23 +82,22 @@ button {
 }
 
 button:disabled {
-  opacity: 0.4;
+  opacity: 0.45;
   cursor: default;
 }
 
 :focus-visible {
-  outline: 1.5px solid var(--viz-accent);
-  outline-offset: 2px;
+  outline: 1px solid var(--viz-accent);
+  outline-offset: -1px;
 }
 
 kbd {
-  font-family: var(--viz-mono);
-  font-size: 10px;
+  font-family: var(--vscode-font-family, sans-serif);
+  font-size: 10.5px;
   line-height: 1;
-  padding: 2px 5px;
+  padding: 2px 4px;
   border-radius: 4px;
-  border: 1px solid var(--viz-border);
-  background: color-mix(in srgb, var(--viz-fg) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--viz-fg) 25%, transparent);
   color: var(--viz-muted);
 }
 
@@ -83,82 +106,182 @@ kbd {
   vertical-align: -2px;
 }
 
+.viz-muted {
+  color: var(--viz-muted);
+}
+
 .viz-app {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 
+.viz-app > .viz-body {
+  grid-row: 3;
+}
+
 .viz-body {
-  display: flex;
-  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: 0;
 }
 
 .viz-stage {
   position: relative;
-  flex: 1;
   min-width: 0;
+  min-height: 0;
+  container: stage / inline-size;
 }
 
 .viz-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
+  height: 24px;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: 3px;
   font-size: 12px;
-  font-weight: 500;
+  white-space: nowrap;
   color: var(--vscode-button-foreground, #fff);
   background: var(--vscode-button-background, #0078d4);
-  transition: background var(--viz-duration);
 }
 
-.viz-btn:hover {
+.viz-btn:hover:not(:disabled) {
   background: var(--vscode-button-hoverBackground, #026ec1);
 }
 
 .viz-btn--secondary {
   color: var(--vscode-button-secondaryForeground, var(--viz-fg));
-  background: var(--vscode-button-secondaryBackground, #313131);
+  background: var(--vscode-button-secondaryBackground, #3a3d41);
 }
 
-.viz-btn--secondary:hover {
-  background: var(--vscode-button-secondaryHoverBackground, #3c3c3c);
+.viz-btn--secondary:hover:not(:disabled) {
+  background: var(--vscode-button-secondaryHoverBackground, #45494e);
 }
 
 .viz-btn--active {
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--viz-accent) 45%, transparent);
+  box-shadow: inset 0 0 0 1px var(--viz-accent);
+}
+
+.viz-btn--danger {
+  background: var(--vscode-inputValidation-errorBorder, #be1100);
+}
+
+.viz-textbtn {
+  color: var(--viz-link);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viz-textbtn:hover {
+  text-decoration: underline;
 }
 
 .viz-iconbtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  color: var(--viz-muted);
-  transition:
-    background var(--viz-duration),
-    color var(--viz-duration);
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  color: var(--vscode-icon-foreground, var(--viz-fg));
 }
 
 .viz-iconbtn:hover:not(:disabled),
 .viz-iconbtn--active {
-  color: var(--viz-fg);
   background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
 }
 
 .viz-iconbtn--primary {
+  border-radius: 50%;
   color: var(--vscode-button-foreground, #fff);
   background: var(--vscode-button-background, #0078d4);
 }
 
 .viz-iconbtn--primary:hover:not(:disabled) {
-  color: var(--vscode-button-foreground, #fff);
   background: var(--vscode-button-hoverBackground, #026ec1);
+}
+
+.viz-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--viz-bg);
+  background: var(--viz-muted);
+}
+
+.viz-chip--A {
+  background: var(--viz-added);
+}
+.viz-chip--M {
+  background: var(--viz-changed);
+}
+.viz-chip--D {
+  background: var(--viz-removed);
+}
+.viz-chip--S {
+  background: var(--viz-signature);
+}
+
+.viz-chip--soft {
+  color: var(--viz-chip-tone, var(--viz-muted));
+  background: color-mix(in srgb, var(--viz-chip-tone, var(--viz-muted)) 22%, transparent);
+}
+.viz-chip--soft.viz-chip--A {
+  --viz-chip-tone: var(--viz-added);
+}
+.viz-chip--soft.viz-chip--M {
+  --viz-chip-tone: var(--viz-changed);
+}
+.viz-chip--soft.viz-chip--D {
+  --viz-chip-tone: var(--viz-removed);
+}
+.viz-chip--soft.viz-chip--S {
+  --viz-chip-tone: var(--viz-signature);
+}
+
+.viz-counts {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.viz-counts__added {
+  color: var(--viz-added);
+}
+.viz-counts__removed {
+  color: var(--viz-removed);
+}
+.viz-counts__sep {
+  color: var(--viz-muted);
+  margin: 0 2px;
+}
+.viz-counts__zero {
+  opacity: 0.55;
+}
+
+.viz-pill {
+  display: inline-flex;
+  align-items: center;
+  height: 16px;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid var(--viz-node-border);
+  background: color-mix(in srgb, var(--viz-fg) 9%, var(--viz-node-bg));
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.viz-pill--muted {
+  color: var(--viz-muted);
 }
 
 .viz-delta {
@@ -209,26 +332,93 @@ kbd {
   letter-spacing: 0;
 }
 
-.viz-kind-chip--level {
-  color: var(--viz-accent);
-  background: color-mix(in srgb, var(--viz-accent) 16%, transparent);
-}
-
 .viz-kind-chip--hero {
   color: var(--viz-bg);
   background: var(--viz-added);
 }
 
 .viz-level--dim {
-  opacity: 0.22;
+  opacity: 0.38;
 }
 
 .viz-canvas--veiled .viz-level--dim {
-  opacity: 0.12;
+  opacity: 0.16;
 }
 
 .viz-level--normal,
 .viz-level--bright,
 .viz-level--dim {
-  transition: opacity 260ms ease;
+  transition: opacity 200ms ease;
+}
+
+.viz-dot {
+  display: inline-block;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--vscode-notificationsInfoIcon-foreground, var(--viz-accent));
+}
+
+.viz-pop {
+  z-index: 20;
+  padding: 4px;
+  border: 1px solid var(--vscode-widget-border, var(--viz-border));
+  border-radius: 10px;
+  background: var(--viz-panel);
+  box-shadow: var(--viz-shadow);
+  white-space: normal;
+}
+
+.viz-pop__head {
+  padding: 6px 8px 4px;
+  color: var(--viz-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.viz-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.viz-option:hover {
+  background: var(--viz-hover);
+}
+
+.viz-option input {
+  margin: 2px 0 0;
+  accent-color: var(--vscode-checkbox-selectBackground, var(--viz-accent));
+}
+
+.viz-option__name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.viz-option__count {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+.viz-option__note {
+  display: block;
+  margin-top: 2px;
+  color: var(--viz-muted);
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.viz-struck {
+  text-decoration: line-through;
 }
