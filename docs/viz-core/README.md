@@ -40,18 +40,20 @@ LSP builds the graph inside each language. The agent, and later contract and con
 7. ReactFlow renders every view. The #77 SVG renderer and its custom router go.
 8. ELK runs in a Web Worker. The sequence layout from #74 stays.
 9. Mermaid and D2 export only. JSON is the lossless format.
-10. The agent layer is a file, `.paireto/viz/<name>/agent.json`, that the agent edits with its file tools. Paireto writes `generated.json` beside it. Each file has one writer.
-11. A repo can hold many named vizzes. The panel opens only from the skill, through MCP.
+10. A viz is a file, `.paireto/viz/<name>.viz.json`, that the agent edits with its file tools. Paireto writes derived data under `.paireto/cache/`. Each file has one writer.
+11. A repo can hold many vizzes. Only the agent makes one. A `.viz.json` file opens in a Paireto custom editor by default.
 
 ## Resolved questions
 
 1. **Generated or bespoke diagrams.** Both stay, and the agent chooses for each viz. `paireto_viz_create(base: "changes")` starts from the LSP graph. `base: "none"` lets the agent draw a bespoke diagram, as in #74. A bespoke diagram can still carry code refs, comments and snippets. See [Choosing a base](04-protocols.md#choosing-a-base).
-2. **When the LSP graph is built.** Only when the agent calls `paireto_viz_create` or `paireto_viz_refresh`. The panel opens only from the skill. The agent edits its layer as a file in `.paireto/viz/<name>/agent.json`. See [04-protocols.md](04-protocols.md#1-viz-files-and-mcp-tools).
+2. **When the LSP graph is built.** Only when the agent calls `paireto_viz_create` or `paireto_viz_refresh`. The agent edits the viz as a file, `.paireto/viz/<name>.viz.json`. See [04-protocols.md](04-protocols.md#1-viz-files-and-mcp-tools).
 3. **PR #77 renderer.** Agreed to replace it with the shared ReactFlow renderer.
+
+4. **UML Diff without an agent.** The #77 button stays. It opens the most recently changed viz in the repo, and a switcher in the viz header lists the others. A `.viz.json` file opens in the viz editor by default. See [Opening a viz](04-protocols.md#opening-a-viz).
+5. **Committing a viz.** The user decides. Paireto does not change `.gitignore` or `.git/info/exclude`. A new viz shows in the Changes list like any other file. Paireto ignores only its own `.paireto/cache/` folder, through a `.gitignore` inside `.paireto/`.
 
 ## Questions for the reviewer
 
-1. **UML Diff without an agent.** #77 opens a class diagram from a button on the Changed Files row, with no agent. In this plan, a viz exists only after the agent makes one. Do we drop the button, or keep a command that runs `create` with only the generated layer?
-2. **Commit `.paireto/`?** This plan hides `.paireto/` through `.git/info/exclude`, so it never shows as a change. A team could want to commit a viz as design documentation. Is that a use case?
-3. **Code snippet colours.** Shiki in the webview, or plain text with diff marks first?
-4. **Contract producers.** Is OpenAPI and proto detection in scope for the first release, or do agent seam edges come first?
+1. **Code snippet colours.** Shiki in the webview, or plain text with diff marks first?
+2. **Contract producers.** Is OpenAPI and proto detection in scope for the first release, or do agent seam edges come first?
+3. **The cache `.gitignore`.** Paireto writes `.paireto/.gitignore` with `cache/`, so derived files never show as changes. It never ignores a viz file. Is that acceptable, or must Paireto write nothing that changes what git sees?

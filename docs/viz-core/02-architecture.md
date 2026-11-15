@@ -36,7 +36,7 @@ flowchart TB
     LSP["LSP producer<br/>symbols, references,<br/>call and type hierarchy"]
     Contract["Contract producer<br/>OpenAPI, AsyncAPI,<br/>proto, GraphQL"]
     Config["Config producer<br/>compose, k8s, Backstage"]
-    Agent["Agent producer<br/>.paireto/viz/&lt;name&gt;/agent.json"]
+    Agent["Agent producer<br/>.paireto/viz/&lt;name&gt;.viz.json"]
     Delta["Delta producer<br/>git diff of Compare To"]
   end
 
@@ -49,7 +49,7 @@ flowchart TB
   end
 
   subgraph Host["Host (VS Code)"]
-    Service["VizService<br/>viz files, watcher,<br/>panel, MCP handlers"]
+    Service["VizService<br/>viz files, cache,<br/>custom editor, MCP handlers"]
     Threads["ReviewController<br/>FeedbackSession"]
     Docs["ChangesetDocProvider<br/>base and modified text"]
   end
@@ -100,8 +100,8 @@ The core is pure TypeScript. It has no VS Code, React or xyflow imports.
 
 ### Host
 
-- `VizService` owns the viz files, a file watcher, the panel, and the MCP handlers. It keeps the injected ports from #74.
-- The panel opens only from the skill, through `paireto_viz_open`. There is no programmatic diagram without the agent.
+- `VizService` owns the viz files, the cache, the custom editor for `*.viz.json`, and the MCP handlers. It keeps the injected ports from #74.
+- Only the agent makes a viz. Anyone can open one: from the file, from the viz button (most recent viz), from the switcher, or from `paireto_viz_open`.
 - Comments go through the existing `ReviewController` and `FeedbackSession`, as in #77. No second comment system.
 - Code snippets come from `ChangesetDocProvider`, so both the base and the modified side work.
 
@@ -136,7 +136,7 @@ Each step ends in a state that works and has tests.
 1. Move #74 onto the new IR. Ids, refs, groups as elements, edge ids. The overview and sequence views keep working.
 2. Add the `classBox` node type and the class view. Port the #77 symbol producer and delta producer as layers. Retire the #77 SVG renderer.
 3. Move #77 notes onto element refs, with code anchors that use `relocateReviewAnchor`. Notes work on every view.
-4. Add the `.paireto/viz/` files and the `paireto_viz_create`, `paireto_viz_check` and `paireto_viz_refresh` tools. The agent adds walks, roles and seam edges on top of a programmatic graph.
+4. Add the `.paireto/viz/*.viz.json` files, the custom editor, the switcher, and the `paireto_viz_create`, `paireto_viz_check` and `paireto_viz_refresh` tools. The agent adds walks, roles and seam edges on top of a programmatic graph.
 5. Add evidence verification for seam edges.
 6. Add code snippet preview and the exporters.
 7. Add contract and config producers.

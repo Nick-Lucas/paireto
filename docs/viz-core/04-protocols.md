@@ -9,35 +9,38 @@ This document describes four protocols:
 
 ## 1. Viz files and MCP tools
 
-The agent writes its part of a viz as a JSON file, with the same file tools it uses for code. MCP tools generate the programmatic part, check the result, and open the panel.
+A viz is one JSON file that the agent writes with the same file tools it uses for code. MCP tools generate the programmatic part, check the result, and open the viz.
 
-Agents edit files well. A file edit changes a few lines, and the agent does not have to send a 6 to 10 KB payload again on each retry, as it does in #74. The file also stays after the session ends.
+Agents edit files well. A file edit changes a few lines, and the agent does not have to send a 6 to 10 KB payload again on each retry, as it does in #74. The file also stays after the session ends, and a team can commit it.
 
 ### Files
 
 ```text
 <repo root>/.paireto/
+  .gitignore                 Paireto writes it. One line: cache/
   viz/
-    schema.json            JSON Schema for agent.json (made from the zod schema)
-    <name>/
-      generated.json       Programmatic layers: lsp, delta. Paireto writes it. Read-only for the agent
-      agent.json           The agent layer. Only the agent writes it
-      snapshot.json        The merged, compiled doc at the last successful check. Paireto writes it
+    <name>.viz.json          The viz source: the agent layer. Only the agent writes it
+  cache/
+    viz/<name>/
+      generated.json         Programmatic layers: lsp, delta. Paireto writes it. Read-only for the agent
+      snapshot.json          The merged, compiled doc at the last successful check. Paireto writes it
 ```
 
 Rules:
 
-- **One writer for each file.** Paireto writes `generated.json` and `snapshot.json`. The agent writes `agent.json`. A refresh of the generated layer never erases the agent's work.
+- **One writer for each file.** The agent writes `<name>.viz.json`. Paireto writes everything under `cache/`. A refresh of the generated layer never erases the agent's work.
 - **User state is not in these files.** Comments stay in the review store as `ReviewThread`s. Node positions, zoom and filters stay in `workspaceState`. So the user and the agent never write the same file.
-- **`.paireto/` must not show as a change.** Paireto lists changes, so its own files must not appear in the list. Paireto adds `.paireto/` to `.git/info/exclude` when it creates the folder. That file is local, so this does not change the user's `.gitignore`.
+- **The user decides what to commit.** Paireto does not change the user's `.gitignore` or `.git/info/exclude`. A new viz file shows in the Changes list like any other new file. The user can review it, commit it, or ignore it.
+- **The cache is not source.** `generated.json` and `snapshot.json` come from the code and the viz file, so Paireto can build them again at any time. The `.paireto/.gitignore` file ignores only `cache/`. It is inside Paireto's own folder, and it never ignores a viz file. When a colleague opens a committed viz, Paireto builds the cache from their checkout.
 - **`generated.json` is the query surface.** The agent finds `sym:` ids with `grep` or by reading the file. There is no separate query tool. The file holds the changed files and one hop of neighbours, so it stays small.
-- `agent.json` starts with `"$schema": "../schema.json"`. VS Code then checks the file in the editor for a human too.
+- **Schema without a `$schema` line.** Paireto contributes `jsonValidation` for `**/.paireto/viz/*.viz.json` with the schema that ships in the extension. VS Code checks the file for a human. The agent gets the schema from the skill.
 
 ```jsonc
 {
-  "$schema": "../schema.json",
   "title": "Order checkout",
   "summary": "Adds a billing step after an order is created.",
+  "base": "changes",
+  "compareTo": { "kind": "mergeBase" },
   "elements": [
     { "id": "order-created", "kind": "topic", "label": "orders.created" }
   ],
@@ -58,28 +61,47 @@ Rules:
 }
 ```
 
+`base` and `compareTo` are in the viz file, not only in the tool call. Paireto needs them to build the cache again for a colleague, or after a restart.
+
+### Opening a viz
+
+A viz opens in a **custom editor**, not in a separate panel. Paireto contributes a `CustomTextEditorProvider` for `*.viz.json` with `priority: "default"`.
+
+| Entry point | What opens |
+| --- | --- |
+| The user opens a `.viz.json` file from the Explorer, Quick Open or the Changes list | That viz. "Reopen Editor With > Text Editor" shows the JSON |
+| The viz button on the Changed Files row (the #77 button) | The most recently changed viz file in the repo |
+| `Paireto: Open Viz` | A quick pick of all viz files, newest first |
+| The switcher in the viz header | The same list. A choice opens that viz in the same tab |
+| `paireto_viz_open` from the agent | The named viz, at a view and a focus if given |
+
+- "Most recent" means the newest modification time of a `.viz.json` file. The agent's last edit updates it, so the newest agent work wins.
+- In a multi-root window the button uses the repo of its row. The quick pick and the switcher list every repo and show the repo name.
+- With no viz file in the repo, the button opens an empty state. It explains how to ask the agent for a viz with `/paireto:viz`.
+- The editor never writes the file. It is a read-only view of the `TextDocument`. The one-writer rule holds.
+- If the cache is missing or stale, the editor builds it before it draws. A `base: "changes"` viz needs LSP for this, but not the agent.
+
 ### MCP tools
 
 | Tool | Purpose | Replaces |
 | --- | --- | --- |
 | `paireto_get_changes` | Compare To, changed files, units, level hint | Same tool in #74 |
-| `paireto_viz_create` | Make `.paireto/viz/<name>/`. Write `generated.json` and an empty `agent.json` | New |
+| `paireto_viz_create` | Write `<name>.viz.json` with `base` and `compareTo`. Build the cache | New |
 | `paireto_viz_check` | Merge, compile and verify. Write `snapshot.json`. Return errors | The validation half of `paireto_show_viz` |
-| `paireto_viz_open` | Open the panel on a viz and a view | The panel half of `paireto_show_viz` |
+| `paireto_viz_open` | Open the viz editor at a view and a focus | The panel half of `paireto_show_viz` |
 | `paireto_viz_refresh` | Build `generated.json` again for the current Compare To. Report agent refs that broke | New |
-| `paireto_viz_list` | List the vizzes, their Compare To and the date of the last check | #74 history picker |
+| `paireto_viz_list` | List the viz files, their Compare To and the date of the last check | #74 history picker |
 
 ```ts
 interface VizCreateArgs {
   name: string;
-  base?: "changes" | "none";
+  base: "changes" | "none";
   scope?: { paths?: string[]; hops?: number };
 }
 
 interface VizCreateResult {
-  dir: string;
+  file: string;
   generated: string;
-  agent: string;
   status: "complete" | "partial";
   missing?: string[];
   counts: { elements: number; relations: number };
@@ -94,7 +116,7 @@ interface VizRefreshArgs { name: string }
 - `base: "none"` writes an empty `generated.json`. The agent draws everything, as in #74. It costs nothing extra, because it is the same pipeline with an empty programmatic layer.
 - The agent chooses the base. The tool has no default, so the agent must make the choice each time.
 - `status: "partial"` names the capabilities that are missing, such as `typeHierarchy` for TypeScript. The agent can then add those edges with evidence.
-- If `agent.json` does not set `views`, Paireto adds the presets: "Changes" (graph), "Types" (class) and one sequence view for each walk.
+- If the viz file does not set `views`, Paireto adds the presets: "Changes" (graph), "Types" (class) and one sequence view for each walk.
 
 ### Choosing a base
 
@@ -115,7 +137,7 @@ A bespoke diagram can still point at code.
 
 ### Check result
 
-`paireto_viz_check` and `paireto_viz_refresh` return the same shape. It keeps the #74 error style. Every error has a path into `agent.json` and a suggestion.
+`paireto_viz_check` and `paireto_viz_refresh` return the same shape. It keeps the #74 error style. Every error has a path into the viz file and a suggestion.
 
 ```ts
 interface VizCheckResult {
@@ -129,11 +151,11 @@ interface VizCheckResult {
 
 ### Live updates
 
-Paireto watches `agent.json` while the panel is open. When the file changes, Paireto checks it again.
+The viz editor follows its `TextDocument`. When the agent saves the file, VS Code reloads the document, and Paireto checks it again.
 
-- If the check passes, the panel shows the new doc.
-- If the check fails, the panel keeps the last good doc and shows an error banner. The same errors appear as VS Code diagnostics on `agent.json`.
-- The agent still calls `paireto_viz_check` to get the errors as a tool result. The watcher is for the human who watches the panel.
+- If the check passes, the editor shows the new doc.
+- If the check fails, the editor keeps the last good doc and shows an error banner. The same errors appear as VS Code diagnostics on the file.
+- The agent still calls `paireto_viz_check` to get the errors as a tool result. The live update is for the human who watches the editor.
 
 ### Agent flow
 
@@ -145,38 +167,65 @@ sequenceDiagram
   participant MCP as MCP server
   participant Host as VizService
   participant LSP as LSP producer
-  participant FS as .paireto/viz/name
+  participant File as name.viz.json
+  participant Cache as cache/viz/name
   participant Core as merge + compile + verify
-  participant View as Webview
+  participant Editor as Viz editor
 
   User->>Agent: /paireto:viz
   Agent->>MCP: paireto_get_changes
   MCP->>Host: changes request
   Host-->>Agent: Compare To, files, units, level hint
-  Agent->>MCP: paireto_viz_create(name)
+  Agent->>MCP: paireto_viz_create(name, base: changes)
   MCP->>Host: create request
   Host->>LSP: build layers for Compare To
   LSP-->>Host: lsp layer, delta layer (partial: typeHierarchy)
-  Host->>FS: write generated.json, empty agent.json
+  Host->>Cache: write generated.json
+  Host->>File: write base, compareTo, empty layer
   Host-->>Agent: paths, counts, missing capabilities
-  Agent->>FS: grep generated.json for sym: ids
+  Agent->>Cache: grep generated.json for sym: ids
   Note over Agent: Read diffs. Find seams that LSP cannot follow.
-  Agent->>FS: edit agent.json (walks, roles, seam edges)
+  Agent->>File: edit (walks, roles, seam edges)
   Agent->>MCP: paireto_viz_check(name)
   MCP->>Host: check request
-  Host->>FS: read generated.json, agent.json
   Host->>Core: merge, compile, verify seam evidence
   alt errors
-    Core-->>Agent: ok false, errors with paths in agent.json
-    Agent->>FS: fix agent.json
+    Core-->>Agent: ok false, errors with paths in the viz file
+    Agent->>File: fix
     Agent->>MCP: paireto_viz_check(name)
   end
   Core-->>Host: doc, index, seam results
-  Host->>FS: write snapshot.json
+  Host->>Cache: write snapshot.json
   Host-->>Agent: ok true, counts, seam results
   Agent->>MCP: paireto_viz_open(name)
   MCP->>Host: open request
-  Host->>View: load(doc, index, threads)
+  Host->>Editor: open name.viz.json, load(doc, index, threads)
+```
+
+### Opening a committed viz
+
+```mermaid
+sequenceDiagram
+  autonumber
+  actor User
+  participant Editor as Viz editor
+  participant Host as VizService
+  participant Cache as cache/viz/name
+  participant LSP as LSP producer
+  participant Core as merge + compile + verify
+
+  User->>Editor: Open name.viz.json
+  Editor->>Host: ready(file)
+  Host->>Cache: read generated.json
+  alt cache missing or older than the code
+    Host->>LSP: build layers for the compareTo in the file
+    LSP-->>Host: lsp layer, delta layer
+    Host->>Cache: write generated.json
+  end
+  Host->>Core: merge, compile, verify
+  Core-->>Host: doc, index, errors
+  Host->>Editor: load(doc, index, threads, errors)
+  Note over Editor: Errors show as a banner. Refs to symbols that are gone show as orphans.
 ```
 
 ### Refresh after code changes
@@ -187,13 +236,14 @@ sequenceDiagram
   participant Agent
   participant Host as VizService
   participant LSP as LSP producer
-  participant FS as .paireto/viz/name
+  participant File as name.viz.json
+  participant Cache as cache/viz/name
   participant Core as merge + compile + verify
 
   Agent->>Host: paireto_viz_refresh(name)
   Host->>LSP: build layers for Compare To
-  Host->>FS: write generated.json
-  Host->>FS: read agent.json
+  Host->>Cache: write generated.json
+  Host->>File: read
   Host->>Core: merge, compile, verify
   Core-->>Host: refs to sym: ids that are gone, seams that now fail
   Host-->>Agent: errors with suggestions (renamed symbols)
@@ -231,7 +281,7 @@ type WebviewToHost =
 ```
 
 - The host checks every incoming message with zod at the boundary, as #74 does.
-- `layer` arrives when `agent.json` passes a check, or when a producer finishes late. The webview merges it and lays out again only the views that change.
+- `layer` arrives when the viz file passes a check, or when a producer finishes late. The webview merges it and lays out again only the views that change.
 - `delta` arrives when the working tree changes. A delta change does not change the graph shape, so layout often stays the same.
 - The comment messages come from #77, with `VizRef` in place of `typeId` and `memberId`.
 
@@ -260,7 +310,7 @@ interface NotePlace { ref?: VizRef; x: number; y: number }
 
 - Each target keeps a `ReviewAnchor` (line text and context) next to its `CodeRef`. When the code moves, `relocateReviewAnchor` finds the new line. #77 stores a fixed `file:line` copy.
 - If the element id is gone after a refresh, the thread still has its code anchor. The note shows as orphaned on the diagram, and it still opens the code. This uses the same idea as `orphanComments.ts`.
-- The agent receives the thread through the normal feedback text. Each target renders as `- <label> (<kind>) at <path>:<line>`, plus the element id, so the agent can find it in `generated.json` or `agent.json`.
+- The agent receives the thread through the normal feedback text. Each target renders as `- <label> (<kind>) at <path>:<line>`, plus the element id, so the agent can find it in `generated.json` or the viz file.
 
 ```mermaid
 sequenceDiagram
