@@ -286,6 +286,47 @@ suite("Delta view — one row per file", () => {
       [{ path: "undo.ts", additions: 0, deletions: 0 }],
     );
   });
+
+  test("a file added and then removed from disk gets no row", async () => {
+    const { root, git, write } = makeRepo();
+    try {
+      write("brief.txt", "brief\n");
+      git(["add", "brief.txt"]);
+      fs.rmSync(path.join(root, "brief.txt"));
+
+      const changes = await new DiffService().getChanges(root, { kind: "head" });
+      const withRoot = (files: typeof changes.staged): RepoChangedFile[] =>
+        files.map((file) => ({ ...file, repoRoot: root }));
+      const rows = buildDelta(root, {
+        ...changes,
+        staged: withRoot(changes.staged),
+        unstaged: withRoot(changes.unstaged),
+        committed: withRoot(changes.committed),
+      });
+
+      assert.deepStrictEqual(
+        rows.map((row) => row.path),
+        [],
+      );
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test("a file added in a commit and then removed from disk gets no row", () => {
+    const rows = buildDelta(
+      REPO,
+      repository(
+        [
+          layer("brief.ts", "committed", { status: "A" }),
+          layer("brief.ts", "unstaged", { status: "D" }),
+        ],
+        [],
+      ).changes,
+    );
+
+    assert.deepStrictEqual(rows, []);
+  });
 });
 
 function deltaRow(stage: "unstaged" | "partial" | "staged" | "committed"): DeltaFile {

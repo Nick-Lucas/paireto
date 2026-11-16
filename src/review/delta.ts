@@ -77,6 +77,9 @@ export function buildDelta(repoRoot: string, changes: RepositoryChangesModel): D
     });
   }
   for (const [path, layers] of layersByPath) {
+    if (layers[0].status === "D" && layers[layers.length - 1].status === "A") {
+      continue;
+    }
     rows.push({
       repoRoot,
       path,
