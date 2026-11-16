@@ -63,6 +63,31 @@ suite("agent install status cache", () => {
     }
   });
 
+  test("a refresh asked for after an install reads the state the install left", async () => {
+    const world = { installState: "not-installed" as AgentInstallRow["installState"] };
+    const releases: Array<() => void> = [];
+    const probe = (): Promise<AgentInstallRow[]> => {
+      const seen = world.installState;
+      return new Promise((resolve) => {
+        releases.push(() => resolve([row("codex", seen)]));
+      });
+    };
+    const status = new AgentInstallStatus(context, probe);
+    try {
+      const before = status.refresh();
+      world.installState = "installed";
+      const after = status.refresh();
+      while (releases.length) {
+        releases.shift()?.();
+        await tick();
+      }
+      await Promise.all([before, after]);
+      assert.strictEqual(status.snapshot()[0]?.installState, "installed");
+    } finally {
+      status.dispose();
+    }
+  });
+
   test("a later refresh probes again", async () => {
     const { state, probe } = countingProbe([[row("codex", "installed")]]);
     const status = new AgentInstallStatus(context, probe);
