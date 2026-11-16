@@ -984,26 +984,25 @@ suite("Active file", () => {
     assert.strictEqual(filesSection(tree).description, "HEAD · 0/2 seen");
   });
 
-  test("in Staging mode a file outside the diff is listed below the groups", async () => {
+  test("in Staging mode a file outside the diff is not listed", async () => {
     const { tree, focus, revealed } = revealTreeIn("staging", repo);
     focus({ repoRoot: REPO, path: "src/other.ts" });
 
     assert.deepStrictEqual(listing(tree, filesSection(tree)), [
       "group Staged",
       "group Working Tree",
-      "unchangedFile other.ts",
     ]);
 
     await tree.revealActiveFile();
 
-    assert.deepStrictEqual(
-      revealed.map(({ node }) => node.kind),
-      ["unchangedFile"],
-    );
-    assert.strictEqual(
-      (tree.getParent(revealed[0].node) as { kind: string; id?: string }).id,
-      "files",
-    );
+    assert.deepStrictEqual(revealed, []);
+  });
+
+  test("in Staging mode with no changes the active file is not listed", () => {
+    const { tree, focus } = revealTreeIn("staging", repository([], []));
+    focus({ repoRoot: REPO, path: "z.txt" });
+
+    assert.deepStrictEqual(listing(tree, filesSection(tree)), ["placeholder No changes"]);
   });
 
   test("Reveal Active File selects and focuses a changed file's row", async () => {
