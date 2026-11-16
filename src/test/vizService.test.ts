@@ -404,7 +404,7 @@ suite("viz service", () => {
     assert.strictEqual(result.ok, true, result.message);
     assert.match(result.message, /^Viz "Retry soft-declined card charges" is open in VS Code/);
     assert.deepStrictEqual(current.opened, [
-      { file, options: { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true } },
+      { file, options: { viewColumn: vscode.ViewColumn.One, preserveFocus: true } },
     ]);
     const missing = await current.present("nope");
     assert.strictEqual(missing.ok, false);
