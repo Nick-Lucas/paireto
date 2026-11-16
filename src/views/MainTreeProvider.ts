@@ -306,9 +306,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     }
     if (state.mode === "staging") {
       const file = stagingRow(repository.changes, active);
-      return file
-        ? { kind: "file", file }
-        : { kind: "unchangedFile", file: { repoRoot: active.repoRoot, path: active.path } };
+      return file && { kind: "file", file };
     }
     const row = this.rowsFor(repository).find((candidate) => candidate.path === active.path);
     return row && deltaRowToNode(row);
@@ -548,12 +546,10 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
           (e) => e.type === "file" && e.file.path === node.delta.path,
         );
       case "unchangedFile":
-        return this.review.getState().mode === "staging"
-          ? this.filesTop(node.file.repoRoot)
-          : this.deltaParent(
-              node.file.repoRoot,
-              (e) => e.type === "file" && e.file.path === node.file.path,
-            );
+        return this.deltaParent(
+          node.file.repoRoot,
+          (e) => e.type === "file" && e.file.path === node.file.path,
+        );
       case "agent":
         return { kind: "section", id: "agents", label: "Agents" };
       case "reviewComment":
@@ -881,10 +877,7 @@ export class MainTreeProvider implements vscode.TreeDataProvider<Node>, vscode.D
     if (changes.unstaged.length) {
       groups.push(groupNode(repoRoot, "unstaged", GROUP_LABELS.unstaged, changes.unstaged));
     }
-    const unchanged: Node[] = this.activePaths(repoRoot)
-      .filter((activePath) => !stagingRow(changes, { repoRoot, path: activePath }))
-      .map((activePath) => ({ kind: "unchangedFile", file: { repoRoot, path: activePath } }));
-    return groups.length ? [...groups, ...unchanged] : [placeholder("No changes"), ...unchanged];
+    return groups.length ? groups : [placeholder("No changes")];
   }
 
   private groupChildren(repoRoot: string, group: FileGroup): Node[] {
