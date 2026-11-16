@@ -1,32 +1,54 @@
 // Cached agent install status for the extension host. Owns the InstallContext paths and the probe
 // cache so the sidebar can render the setup nudge without probing (the Codex probe shells out).
 
+import * as fs from "node:fs";
+
 import * as vscode from "vscode";
 
-import type { InstallContext } from "./agents.js";
+import { log } from "../log.js";
+import { type InstallContext, type OnboardingAgent, ONBOARDING_AGENTS } from "./agents.js";
 import {
   type AgentInstallRow,
   type SetupPrompt,
-  probeAgentInstallStates,
+  agentInstallRow,
   setupPrompt,
 } from "./installStatus.js";
 
-/** The probe pass this cache runs. Injected so a test can count the passes. */
-type ProbeAgents = (
-  installContextFor: (agentId: string) => InstallContext,
-) => Promise<AgentInstallRow[]>;
+export interface AgentStatusRow extends AgentInstallRow {
+  installing: boolean;
+}
+
+class AgentLane {
+  private tail: Promise<void> = Promise.resolve();
+  private queuedProbe?: Promise<void>;
+
+  run(op: () => Promise<void>): Promise<void> {
+    const next = this.tail.then(op);
+    this.tail = next.catch(() => undefined);
+    return next;
+  }
+
+  probe(op: () => Promise<void>): Promise<void> {
+    this.queuedProbe ??= this.run(() => {
+      this.queuedProbe = undefined;
+      return op();
+    });
+    return this.queuedProbe;
+  }
+}
 
 export class AgentInstallStatus implements vscode.Disposable {
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.emitter.event;
-  private rows: AgentInstallRow[] = [];
-  private inFlight?: Promise<AgentInstallRow[]>;
+  private readonly rows = new Map<string, AgentInstallRow>();
+  private readonly installing = new Set<string>();
+  private readonly lanes = new Map<string, AgentLane>();
   private timer?: ReturnType<typeof setTimeout>;
   private disposed = false;
 
   constructor(
     private readonly context: vscode.ExtensionContext,
-    private readonly probeAgents: ProbeAgents = probeAgentInstallStates,
+    private readonly agents: readonly OnboardingAgent[] = ONBOARDING_AGENTS,
   ) {}
 
   /** Paths an install / probe needs: the shipped plugin tree, plus this agent's writable dir. Pure
@@ -38,42 +60,79 @@ export class AgentInstallStatus implements vscode.Disposable {
     };
   }
 
-  /** The result of the last probe. Empty until the first one lands, so nothing renders a guess. */
-  snapshot(): AgentInstallRow[] {
-    return this.rows;
+  snapshot(): AgentStatusRow[] {
+    return this.agents.flatMap((agent) => {
+      const row = this.rows.get(agent.id);
+      return row ? [{ ...row, installing: this.installing.has(agent.id) }] : [];
+    });
   }
 
-  /** Probe every agent and cache the result, firing onDidChange when anything moved.
-   *
-   *  A caller that arrives while a probe runs joins that probe, and a probe waiting on the next tick
-   *  is dropped in favour of this one, so the agents are asked once however many surfaces want an
-   *  answer at the same moment. */
-  refresh(): Promise<AgentInstallRow[]> {
+  prompt(): SetupPrompt | undefined {
+    if (this.rows.size < this.agents.length) {
+      return undefined;
+    }
+    return setupPrompt(this.agents.flatMap((agent) => this.rows.get(agent.id) ?? []));
+  }
+
+  refresh(): Promise<void> {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = undefined;
     }
-    this.inFlight ??= this.probe();
-    return this.inFlight;
+    const probes = this.agents
+      .filter((agent) => !this.installing.has(agent.id))
+      .map((agent) => this.lane(agent.id).probe(() => this.probe(agent)));
+    return Promise.all(probes).then(() => undefined);
   }
 
-  private async probe(): Promise<AgentInstallRow[]> {
-    try {
-      const rows = await this.probeAgents((id) => this.installContext(id));
-      const changed = JSON.stringify(rows) !== JSON.stringify(this.rows);
-      this.rows = rows;
-      if (changed && !this.disposed) {
-        this.emitter.fire();
+  install(agentId: string): Promise<void> {
+    const agent = this.agents.find((a) => a.id === agentId);
+    const installer = agent?.available ? agent.install : undefined;
+    if (!agent || !installer || this.installing.has(agentId)) {
+      return Promise.resolve();
+    }
+    this.installing.add(agentId);
+    this.fire();
+    return this.lane(agentId).run(async () => {
+      const ctx = this.installContext(agentId);
+      try {
+        fs.mkdirSync(ctx.stableDir, { recursive: true });
+        const result = await installer(ctx);
+        log.info(`[welcome] install ${agentId}: ok=${result.ok} ${result.detail}`);
+      } catch (err) {
+        log.error(
+          `[welcome] install ${agentId} threw: ${err instanceof Error ? err.message : err}`,
+        );
       }
-      return rows;
-    } finally {
-      this.inFlight = undefined;
+      const row = await agentInstallRow(agent, ctx);
+      this.installing.delete(agentId);
+      this.rows.set(agentId, row);
+      this.fire();
+    });
+  }
+
+  private lane(agentId: string): AgentLane {
+    let lane = this.lanes.get(agentId);
+    if (!lane) {
+      lane = new AgentLane();
+      this.lanes.set(agentId, lane);
+    }
+    return lane;
+  }
+
+  private async probe(agent: OnboardingAgent): Promise<void> {
+    const row = await agentInstallRow(agent, this.installContext(agent.id));
+    const changed = JSON.stringify(row) !== JSON.stringify(this.rows.get(agent.id));
+    this.rows.set(agent.id, row);
+    if (changed) {
+      this.fire();
     }
   }
 
-  /** The cached nudge. Undefined until the first probe, so no row flashes during activation. */
-  prompt(): SetupPrompt | undefined {
-    return setupPrompt(this.rows);
+  private fire(): void {
+    if (!this.disposed) {
+      this.emitter.fire();
+    }
   }
 
   /** Probe on the next tick, coalescing repeat calls, so the Codex CLI call stays off the
