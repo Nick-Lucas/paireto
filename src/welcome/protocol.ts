@@ -9,6 +9,7 @@ export interface AgentState {
   name: string;
   available: boolean;
   installState: InstallState;
+  installing: boolean;
   /** The plugin version this agent's own registry reports. Absent when it carries no plugin, or
    *  when the agent could not be asked (its CLI is not on PATH). */
   installedVersion?: string;
@@ -52,10 +53,7 @@ export interface WelcomeState {
 }
 
 /** Extension host → webview. */
-export type OutboundMessage =
-  | { type: "state"; state: WelcomeState }
-  | { type: "agentBusy"; agentId: string }
-  | { type: "agentResult"; agentId: string; ok: boolean; detail: string };
+export type OutboundMessage = { type: "state"; state: WelcomeState };
 
 /** Webview → extension host. */
 export type InboundMessage =
