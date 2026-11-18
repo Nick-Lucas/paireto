@@ -78,8 +78,8 @@ suite("viz mermaid export", () => {
     assert.ok(lines.includes('    n9[("~ payments")]'));
     assert.ok(lines.includes('    n7[["+ charge-retries"]]'));
     assert.ok(!lines.some((line) => /\bn0\b/.test(line)), "flow-only nodes stay out");
-    assert.ok(lines.includes('  n3 == "enqueue retry" ==> n7'));
-    assert.ok(lines.includes('  n7 -.- "deliver after backoff" -.-> n4'));
+    assert.ok(lines.includes('  n3 ==>|"enqueue retry"| n7'));
+    assert.ok(lines.includes('  n7 -.->|"deliver after backoff"| n4'));
     assert.ok(lines.includes("  n8 -.-> n6"));
     assert.ok(text.endsWith("\n"));
   });
@@ -131,7 +131,7 @@ suite("viz mermaid export", () => {
   test("renders the single-frontend fixture on both stages", () => {
     const index = singleFrontendIndex();
     const overview = toMermaid(index, { kind: "overview" });
-    assert.ok(overview.includes('  n2 == "mutate(text)" ==> n4'));
+    assert.ok(overview.includes('  n2 ==>|"mutate(text)"| n4'));
     assert.ok(overview.includes("  n5 --- n6"));
     const flow = toMermaid(index, { kind: "flow", flow: "edit-rollback" });
     assert.ok(flow.includes("  n8-->>n7: 409 conflict"));
@@ -146,7 +146,7 @@ suite("viz mermaid export", () => {
     assert.ok(lines.includes('      n1["+ A#59; b"]'));
     assert.ok(lines.includes('    n2["~ A #35;b"]'));
     assert.ok(lines.includes('    n3["End #quot;x#quot;"]'));
-    assert.ok(lines.includes('  n1 -- "x#59; y" --> n2'));
+    assert.ok(lines.includes('  n1 -->|"x#59; y"| n2'));
     assert.ok(lines.includes("  n2 --> n3"));
     assert.ok(!withoutEntities(text).includes(";"));
     assert.ok(!withoutEntities(text).includes("#"));
