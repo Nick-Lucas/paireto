@@ -19,6 +19,7 @@ const CODEX_NAMESPACE = "com.openai.codex";
 const PROBE_TIMEOUT_MS = 5000;
 const PLUGIN_NAME = "paireto";
 const PLUGIN_ID = `${PLUGIN_NAME}@${MARKETPLACE_NAME}`;
+const LIST_PLUGIN_ARGS = ["plugin", "list", "--marketplace", MARKETPLACE_NAME, "--json"];
 
 export interface CodexMarketplacePlan {
   sourcePlugin: string;
@@ -305,7 +306,7 @@ export async function installCodex(
       };
     }
 
-    const listed = await run(bin, ["plugin", "list", "--json"], baseEnv);
+    const listed = await run(bin, LIST_PLUGIN_ARGS, baseEnv);
     const installedPlugins = parsePluginList(listed.stdout);
     const existing = installedPlugins.find((entry) => entry.pluginId === PLUGIN_ID);
     if (existing && existing.version !== version) {
@@ -349,7 +350,7 @@ export async function codexInstalledProbe(ctx: { pluginsRoot: string }): Promise
   if (!bin) {
     return { state: "not-installed" };
   }
-  const listed = await run(bin, ["plugin", "list", "--json"], env, PROBE_TIMEOUT_MS);
+  const listed = await run(bin, LIST_PLUGIN_ARGS, env, PROBE_TIMEOUT_MS);
   // An unavailable plugin registry reads as not installed.
   if (listed.code !== 0) {
     return { state: "not-installed" };
