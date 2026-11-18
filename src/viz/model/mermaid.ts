@@ -134,10 +134,8 @@ function overview(index: VizIndex): string {
     .filter((node) => node.lane === undefined || !index.laneIndex.has(node.lane))
     .forEach((node) => emit(node, "  "));
   for (const edge of index.edges) {
-    const label = edge.label
-      ? `${arrow(edge).slice(0, -1)} ${quote(edge.label)} ${arrow(edge)}`
-      : arrow(edge);
-    lines.push(`  ${id(edge.from)} ${label} ${id(edge.to)}`);
+    const label = edge.label ? `|${quote(edge.label)}|` : "";
+    lines.push(`  ${id(edge.from)} ${arrow(edge)}${label} ${id(edge.to)}`);
   }
   return `${lines.join("\n")}\n`;
 }
