@@ -1,6 +1,7 @@
 import type { Node, NodeProps } from "@xyflow/react";
 
 import { DELTA_GLYPH } from "../model/delta";
+import { stepTarget } from "../model/notes";
 import type {
   ActivationData,
   FragmentData,
@@ -9,6 +10,7 @@ import type {
   PhaseData,
 } from "../model/rf";
 import { chipOf } from "../model/visible";
+import { noteTargetAttr, useViz } from "./context";
 import { KindIcon } from "./icons";
 import { ChipMark } from "./parts";
 import "./sequence.css";
@@ -22,7 +24,11 @@ export function ParticipantNode({ data }: NodeProps<Node<ParticipantData, "parti
     data.selected ? "viz-participant--selected" : "",
   ].join(" ");
   return (
-    <div className={classes} title={node.role}>
+    <div
+      className={classes}
+      title={node.role}
+      {...noteTargetAttr({ kind: "node", id: node.id, label: node.label })}
+    >
       <span className={`viz-card__icon viz-card__icon--${node.delta}`}>
         <KindIcon kind={node.kind} />
       </span>
@@ -67,6 +73,8 @@ const ARROW = 7;
 
 export function MessageNode({ data, width, height }: NodeProps<Node<MessageData, "message">>) {
   const { step } = data;
+  const { index } = useViz();
+  const target = stepTarget(index, step.flow, step.index);
   const w = width ?? 0;
   const h = height ?? 0;
   const classes = [
@@ -100,7 +108,11 @@ export function MessageNode({ data, width, height }: NodeProps<Node<MessageData,
       ? { left: data.fromX + 44, top: y - 2, transform: "translateY(-50%)" }
       : { left: w / 2, top: y - 6, transform: "translate(-50%, -100%)" };
   return (
-    <div className={classes} style={{ width: w, height: h }}>
+    <div
+      className={classes}
+      style={{ width: w, height: h }}
+      {...(target && noteTargetAttr(target))}
+    >
       <svg className="viz-message__svg" width={w} height={h} viewBox={`0 0 ${w} ${h}`}>
         <path className="viz-message__hit" d={line} />
         <path className="viz-message__line" d={line} strokeDasharray={dashed ? "6 4" : undefined} />

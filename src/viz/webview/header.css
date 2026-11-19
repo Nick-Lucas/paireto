@@ -193,7 +193,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  height: 30px;
+  height: 34px;
   padding: 0 8px 0 12px;
   background: var(--vscode-breadcrumb-background, var(--viz-bg));
   font-size: 12px;
@@ -357,16 +357,6 @@
   color: var(--viz-fg);
 }
 
-.viz-agent__notes {
-  font-size: 12px;
-  color: var(--viz-muted);
-  white-space: nowrap;
-}
-
-.viz-agent .viz-btn .viz-icon {
-  margin-left: -2px;
-}
-
 .viz-agent__pulse {
   flex: none;
   width: 7px;
@@ -388,47 +378,36 @@
   }
 }
 
-.viz-actionbar {
-  container-type: inline-size;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 0 10px;
-  border-top: 1px solid var(--viz-border);
-  background: var(--viz-side);
-  white-space: nowrap;
-}
-
-.viz-actionbar__sep {
-  flex: none;
-  width: 1px;
-  height: 16px;
-  margin: 0 4px;
-  background: var(--vscode-widget-border, var(--viz-border));
-}
-
-.viz-actionbar__agent {
+.viz-agent {
   display: inline-flex;
+  flex: 0 100 auto;
   min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  margin-right: 4px;
 }
 
-@container (max-width: 980px) {
-  .viz-actionbar .viz-agent__notes,
+.viz-changebar .viz-btn {
+  flex: none;
+}
+
+.viz-changebar .viz-btn .viz-icon {
+  margin-left: -2px;
+}
+
+@container (max-width: 1100px) {
   .viz-diagrambar .viz-filepick__next kbd {
     display: none;
   }
 }
 
-@container (max-width: 820px) {
-  .viz-actionbar .viz-barlabel {
+@container (max-width: 1000px) {
+  .viz-changebar .viz-agent__status {
     display: none;
   }
 }
 
-@container (max-width: 640px) {
+@container (max-width: 860px) {
   .viz-changebar .viz-barlabel,
   .viz-changebar .viz-action__label,
   .viz-diagrambar .viz-filepick__label,

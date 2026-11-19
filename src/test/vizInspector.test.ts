@@ -86,4 +86,15 @@ suite("viz inspector", () => {
       ["m"],
     );
   });
+
+  test("a step's comments are the ones on that step of that flow", () => {
+    const onStep = note("s", { kind: "step", flow: "deliver", index: 1, label: "throws" });
+    const otherStep = note("o", { kind: "step", flow: "deliver", index: 2, label: "send" });
+    assert.deepStrictEqual(
+      notesAbout([onStep, otherStep], { kind: "step", flow: "deliver", index: 1 }).map(
+        (found) => found.id,
+      ),
+      ["s"],
+    );
+  });
 });

@@ -70,6 +70,8 @@ export function notesAbout(notes: readonly VizNote[], ref: VizRef): VizNote[] {
             return target.kind === "member" && target.id === ref.id;
           case "edge":
             return target.kind === "edge" && target.id === ref.id;
+          case "step":
+            return target.kind === "step" && target.flow === ref.flow && target.index === ref.index;
           default:
             return false;
         }

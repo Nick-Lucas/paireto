@@ -11,6 +11,12 @@ const NoteTarget = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("node"), id: short, label: short }),
   z.object({ kind: z.literal("member"), id: short, node: short, label: short }),
   z.object({ kind: z.literal("edge"), id: short, label: short }),
+  z.object({
+    kind: z.literal("step"),
+    flow: short,
+    index: z.number().int().min(0),
+    label: short,
+  }),
   z.object({ kind: z.literal("file"), repo: short, path: short, label: short }),
 ]);
 

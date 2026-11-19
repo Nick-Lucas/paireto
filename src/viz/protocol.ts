@@ -35,6 +35,7 @@ export type VizNoteTarget =
   | { kind: "node"; id: string; label: string }
   | { kind: "member"; id: string; node: string; label: string }
   | { kind: "edge"; id: string; label: string }
+  | { kind: "step"; flow: string; index: number; label: string }
   | { kind: "file"; repo: string; path: string; label: string };
 
 export interface VizNotePlace {

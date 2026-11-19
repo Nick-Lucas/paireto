@@ -23,12 +23,13 @@ import {
   memberTarget,
   nodeTarget,
   relativePlace,
+  stepTarget,
   type NoteKind,
   type PlacedNote,
 } from "../model/notes";
 import { parseVizRef } from "../model/refs";
 import type { RfGraph } from "../model/rf";
-import { commentsAllowed, type UiAction, type UiState } from "../model/ui";
+import type { UiAction, UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
 import { VizContext, type MenuTarget, type VizActions } from "./context";
 import { ContextMenu, type MenuItem, type MenuState } from "./ContextMenu";
@@ -168,7 +169,7 @@ export function Canvas(props: CanvasProps) {
     }
   };
   const noteItems = (targets: VizNoteTarget[], at: Point): MenuItem[] =>
-    (commentsAllowed(ui.stage) ? (["comment", "question"] as NoteKind[]) : []).map((noteKind) => ({
+    (["comment", "question"] as NoteKind[]).map((noteKind) => ({
       label: noteKind === "comment" ? "Add comment" : "Add question",
       run: () =>
         dispatch({
@@ -224,9 +225,30 @@ export function Canvas(props: CanvasProps) {
         items = noteItems(noteTarget ? [noteTarget] : [], { x: 0, y: 0 });
         break;
       }
+      case "step": {
+        const step = index.flowById.get(target.flow)?.steps[target.index];
+        const noteTarget = stepTarget(index, target.flow, target.index);
+        title = noteTarget?.label;
+        items = [
+          ...noteItems(noteTarget ? [noteTarget] : [], { x: 0, y: 0 }),
+          ...fileItems(step?.files[0]),
+          ...(step
+            ? [
+                {
+                  label: "Show in Overview",
+                  run: () => dispatch({ type: "goto", ref: step.overviewRef }),
+                },
+              ]
+            : []),
+        ];
+        break;
+      }
       case "pane":
         title = "Diagram";
-        items = noteItems([], target.at).map((item) => ({ ...item, label: `${item.label} here` }));
+        items =
+          ui.stage.kind === "overview"
+            ? noteItems([], target.at).map((item) => ({ ...item, label: `${item.label} here` }))
+            : [];
         break;
       case "note":
         items = [
@@ -289,6 +311,14 @@ export function Canvas(props: CanvasProps) {
           }}
           onNodeContextMenu={(event, node) => {
             event.preventDefault();
+            if (node.type === "message" && node.data.kind === "message") {
+              select(node.id);
+              openMenu(
+                { kind: "step", flow: node.data.step.flow, index: node.data.step.index },
+                { x: event.clientX, y: event.clientY },
+              );
+              return;
+            }
             if (node.type === "classBox" || node.type === "card" || node.type === "participant") {
               select(node.id);
               openMenu(

@@ -8,7 +8,7 @@ import { emphasisOf } from "../model/emphasis";
 import { buildVizIndex, type VizIndex } from "../model/index";
 import { resolveKey } from "../model/keymap";
 import { toMermaid } from "../model/mermaid";
-import { allTargets, placeNotes, type NoteDraft } from "../model/notes";
+import { allTargets, placeNotes, placeSequenceNotes, type NoteDraft } from "../model/notes";
 import { resolveFocus } from "../model/refs";
 import { toOverviewRf, toSequenceRf, type RfGraph } from "../model/rf";
 import { nextChange, reviewMarks } from "../model/review";
@@ -21,7 +21,6 @@ import type {
   VizViewState,
   VizWindowState,
 } from "../protocol";
-import { ActionBar } from "./ActionBar";
 import { Canvas } from "./Canvas";
 import { Header } from "./Header";
 import { UiIcon } from "./icons";
@@ -106,12 +105,15 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
       thread.kind === "draft"
         ? { kind: thread.noteKind, targets: thread.targets, place: thread.place }
         : undefined;
+    if (sequence) {
+      return placeSequenceNotes(sequence, index, review.notes, draft, measure);
+    }
     return scene ? placeNotes(scene, index, review.notes, draft, measure) : [];
-  }, [scene, index, review.notes, thread, measure]);
+  }, [sequence, scene, index, review.notes, thread, measure]);
   const targets = useMemo(() => allTargets(index, review.files), [index, review.files]);
   const graph: RfGraph | undefined = useMemo(() => {
     if (ui.stage.kind === "flow" && sequence) {
-      return toSequenceRf(sequence, index, emphasis, ui);
+      return toSequenceRf(sequence, index, emphasis, ui, notes);
     }
     return scene ? toOverviewRf(scene, index, emphasis, ui, { notes, marks, measure }) : undefined;
   }, [ui, sequence, scene, index, emphasis, notes, marks, measure]);
@@ -224,7 +226,7 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
               index={index}
               emphasis={emphasis}
               ui={ui}
-              scene={scene}
+              scene={sequence ? undefined : scene}
               notes={notes}
               review={review}
               targets={targets}
@@ -259,7 +261,6 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
         </main>
         {ui.sidebar && <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} />}
       </div>
-      <ActionBar review={review} />
       <HelpOverlay ui={ui} dispatch={dispatch} />
     </div>
   );

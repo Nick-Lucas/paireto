@@ -4,6 +4,7 @@ import type { UiAction, UiState } from "../model/ui";
 import { overviewKind } from "../model/visible";
 import type { VizListEntry, VizReviewState, VizWindowState } from "../protocol";
 import type { VizDelta } from "../../protocol/viz.js";
+import { AgentActions, AgentStatus } from "./AgentControls";
 import { ChangedFiles } from "./ChangedFiles";
 import { UiIcon, type UiIconName } from "./icons";
 import { plural } from "./parts";
@@ -171,7 +172,6 @@ export function Header({
           <VizTitle doc={doc} vizzes={vizzes} />
         </span>
         <DiffBox doc={doc} window={window} />
-        <span className="viz-header__spacer" />
         {index.walkthrough.length > 0 && (
           <button
             type="button"
@@ -181,9 +181,12 @@ export function Header({
             onClick={() => dispatch({ type: "walk" })}
           >
             <UiIcon name="play" size={14} />
-            <span className="viz-action__label">Walk through the changes</span>
+            <span className="viz-action__label">Walk through</span>
           </button>
         )}
+        <span className="viz-header__spacer" />
+        <AgentStatus review={review} />
+        <AgentActions review={review} />
       </div>
       <nav className="viz-tabbar viz-tabs" role="tablist" aria-label="Diagrams">
         <DiagramTab

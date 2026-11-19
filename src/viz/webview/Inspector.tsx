@@ -15,10 +15,10 @@ import {
   nodeContextChips,
   notesAbout,
 } from "../model/inspector";
-import { edgeTarget, memberTarget, nodeTarget } from "../model/notes";
+import { edgeTarget, memberTarget, nodeTarget, stepTarget } from "../model/notes";
 import { changedMembers, rankedNodes } from "../model/review";
 import type { VizRef } from "../model/types";
-import { commentsAllowed, type UiAction } from "../model/ui";
+import type { UiAction } from "../model/ui";
 import { chipOf, overviewKind } from "../model/visible";
 import type { VizNote, VizNoteTarget, VizReviewState } from "../protocol";
 import { KindIcon, UiIcon, type UiIconName } from "./icons";
@@ -370,13 +370,11 @@ function NodePanel({
   index,
   node,
   review,
-  commentable,
   dispatch,
 }: {
   index: VizIndex;
   node: VizNode;
   review: VizReviewState;
-  commentable: boolean;
   dispatch: Dispatch;
 }) {
   const out = (index.outEdges.get(node.id) ?? []).map((id) => index.edgeById.get(id)!);
@@ -416,14 +414,9 @@ function NodePanel({
             Open file
           </ActionButton>
         )}
-        {commentable && (
-          <ActionButton
-            icon="comment"
-            onClick={() => comment(dispatch, nodeTarget(index, node.id))}
-          >
-            Comment
-          </ActionButton>
-        )}
+        <ActionButton icon="comment" onClick={() => comment(dispatch, nodeTarget(index, node.id))}>
+          Comment
+        </ActionButton>
       </Actions>
       {changed.length > 0 && (
         <Section title="What changed" count={plural(changed.length, "member")}>
@@ -456,14 +449,12 @@ function MemberPanel({
   node,
   member,
   review,
-  commentable,
   dispatch,
 }: {
   index: VizIndex;
   node: VizNode;
   member: VizMember;
   review: VizReviewState;
-  commentable: boolean;
   dispatch: Dispatch;
 }) {
   const file = member.file ?? node.files?.[0];
@@ -508,14 +499,12 @@ function MemberPanel({
             {file.line ? `Open diff at line ${file.line}` : "Open diff"}
           </ActionButton>
         )}
-        {commentable && (
-          <ActionButton
-            icon="comment"
-            onClick={() => comment(dispatch, memberTarget(index, member.id))}
-          >
-            Comment
-          </ActionButton>
-        )}
+        <ActionButton
+          icon="comment"
+          onClick={() => comment(dispatch, memberTarget(index, member.id))}
+        >
+          Comment
+        </ActionButton>
       </Actions>
       <Section title="Signature">
         {member.previous && member.previous !== member.label ? (
@@ -555,13 +544,11 @@ function EdgePanel({
   index,
   id,
   review,
-  commentable,
   dispatch,
 }: {
   index: VizIndex;
   id: string;
   review: VizReviewState;
-  commentable: boolean;
   dispatch: Dispatch;
 }) {
   const edge = index.edgeById.get(id);
@@ -615,11 +602,9 @@ function EdgePanel({
             Open diff
           </ActionButton>
         )}
-        {commentable && (
-          <ActionButton icon="comment" onClick={() => comment(dispatch, edgeTarget(index, id))}>
-            Comment
-          </ActionButton>
-        )}
+        <ActionButton icon="comment" onClick={() => comment(dispatch, edgeTarget(index, id))}>
+          Comment
+        </ActionButton>
       </Actions>
       {causes.length > 0 && (
         <Section title="Caused by" count={plural(causes.length, "member")}>
@@ -678,6 +663,7 @@ function StepPanel({
   const goStep = (at: number) =>
     dispatch({ type: "goto", ref: { kind: "step", flow: step.flow, index: at } });
   const goNode = (nodeId: string) => dispatch({ type: "goto", ref: { kind: "node", id: nodeId } });
+  const notes = notesAbout(review.notes, { kind: "step", flow: step.flow, index: step.index });
   return (
     <>
       <Head
@@ -728,6 +714,12 @@ function StepPanel({
         >
           Show in Overview
         </ActionButton>
+        <ActionButton
+          icon="comment"
+          onClick={() => comment(dispatch, stepTarget(index, step.flow, step.index))}
+        >
+          Comment
+        </ActionButton>
       </Actions>
       {step.note && <p className="viz-inspector__role">{step.note}</p>}
       {step.request && (
@@ -741,6 +733,7 @@ function StepPanel({
         </Section>
       )}
       <FilesSection files={step.files} review={review} />
+      <CommentsSection notes={notes} dispatch={dispatch} />
     </>
   );
 }
@@ -818,20 +811,13 @@ function StagePanel({
 }
 
 export function Inspector({ index, stage, selection, review, dispatch }: InspectorProps) {
-  const commentable = commentsAllowed(stage);
   let body: ReactNode;
   if (!selection) {
     body = <StagePanel index={index} stage={stage} dispatch={dispatch} />;
   } else if (selection.kind === "node") {
     const node = index.nodeById.get(selection.id);
     body = node ? (
-      <NodePanel
-        index={index}
-        node={node}
-        review={review}
-        commentable={commentable}
-        dispatch={dispatch}
-      />
+      <NodePanel index={index} node={node} review={review} dispatch={dispatch} />
     ) : null;
   } else if (selection.kind === "member") {
     const found = index.memberById.get(selection.id);
@@ -841,20 +827,11 @@ export function Inspector({ index, stage, selection, review, dispatch }: Inspect
         node={found.node}
         member={found.member}
         review={review}
-        commentable={commentable}
         dispatch={dispatch}
       />
     ) : null;
   } else if (selection.kind === "edge") {
-    body = (
-      <EdgePanel
-        index={index}
-        id={selection.id}
-        review={review}
-        commentable={commentable}
-        dispatch={dispatch}
-      />
-    );
+    body = <EdgePanel index={index} id={selection.id} review={review} dispatch={dispatch} />;
   } else if (selection.kind === "step") {
     const step = stepAt(index, selection);
     body = step ? (

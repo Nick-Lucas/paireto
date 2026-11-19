@@ -15,7 +15,7 @@ import {
 import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { DiagramAnchor, DiagramTarget } from "../review/reviewTypes.js";
 import { issueRange } from "../viz/host/issueRange.js";
-import { diagramTargets, vizNotes } from "../viz/host/notes.js";
+import { diagramTargets, sameTarget, vizNotes } from "../viz/host/notes.js";
 import { VIZ_DOC_FORMAT, type VizDoc } from "../viz/model/types.js";
 import { loadVizFixture } from "./vizFixtures.js";
 
@@ -102,8 +102,14 @@ suite("viz note threads", () => {
       code: { repoRoot: "/repo", path: "src/price.ts", line: 1, side: "modified" },
     };
     const edge: DiagramTarget = { kind: "edge", id: "cart>price:call", label: "prices" };
+    const step: DiagramTarget = {
+      kind: "step",
+      flow: "checkout",
+      index: 1,
+      label: "Checkout, step 2: price(cart)",
+    };
     assert.strictEqual(
-      serialiseRejectedReviewFeedback([thread([cart, file, edge])]),
+      serialiseRejectedReviewFeedback([thread([cart, file, edge, step])]),
       dedent`
         Code review feedback received from the user:
 
@@ -119,6 +125,7 @@ suite("viz note threads", () => {
         - Cart (node) at src/cart.ts:10 [id: cart]
         - price.ts (file) at src/price.ts:1
         - prices (edge) [id: cart>price:call]
+        - Checkout, step 2: price(cart) (step) [flow: checkout, step: 2]
         Should the cart own pricing?
       `,
     );
@@ -182,6 +189,34 @@ suite("viz note threads", () => {
         { kind: "node", id: "user", label: "User" },
       ],
     );
+  });
+
+  test("a step target takes its code location from the part that sends it", () => {
+    const viz = loadVizFixture("singleFrontend");
+    const doc: VizDoc = {
+      format: VIZ_DOC_FORMAT,
+      meta: {
+        name: "comments",
+        path: "/repo/.paireto/viz/comments.viz.json",
+        repoRoot: "/repo",
+        repoName: "shop",
+        repos: [{ name: "shop", root: "/repo" }],
+        checkedAt: AT,
+      },
+      viz,
+    };
+    const sender = viz.nodes.find((node) => node.id === "comment-editor")!.files![0];
+    const [found] = diagramTargets(doc, [
+      { kind: "step", flow: "edit-rollback", index: 1, label: "mutate(text)" },
+    ]);
+    assert.deepStrictEqual(found.code, {
+      repoRoot: "/repo",
+      path: sender.path,
+      line: sender.line ?? 1,
+      side: "modified",
+    });
+    assert.ok(sameTarget(found, { kind: "step", flow: "edit-rollback", index: 1, label: "" }));
+    assert.ok(!sameTarget(found, { kind: "step", flow: "edit-rollback", index: 2, label: "" }));
   });
 });
 

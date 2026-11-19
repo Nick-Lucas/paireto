@@ -8,6 +8,7 @@ const TARGET_ICONS: Record<VizNoteTarget["kind"], UiIconName> = {
   node: "symbolClass",
   member: "symbolMethod",
   edge: "arrow",
+  step: "flow",
   file: "file",
 };
 
@@ -15,6 +16,7 @@ const TARGET_WORDS: Record<VizNoteTarget["kind"], string> = {
   node: "part",
   member: "member",
   edge: "link",
+  step: "step",
   file: "file",
 };
 

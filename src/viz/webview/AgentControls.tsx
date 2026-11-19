@@ -1,41 +1,49 @@
 import type { VizReviewState } from "../protocol";
-import { BarLabel } from "./Header";
 import { UiIcon } from "./icons";
 import { vscode } from "./vscode";
 
-interface ActionBarProps {
-  review: VizReviewState;
+function commentsText(pending: number): string {
+  return `${pending} ${pending === 1 ? "comment" : "comments"}`;
 }
 
-function agentStatus(waiting: boolean, comments: string, pending: number): string {
+function agentStatus(waiting: boolean, pending: number): string {
   if (waiting) {
-    return "Waiting for your review";
+    return "Agent is waiting for your review";
   }
   if (pending > 0) {
-    return `${comments} not sent yet`;
+    return `${commentsText(pending)} not sent yet`;
   }
-  return "Not waiting for you";
+  return "Agent is not waiting for you";
 }
 
-export function ActionBar({ review }: ActionBarProps) {
+export function AgentStatus({ review }: { review: VizReviewState }) {
   const { waiting, pending } = review.feedback;
-  const comments = `${pending} ${pending === 1 ? "comment" : "comments"}`;
+  const status = agentStatus(waiting, pending);
   return (
-    <footer className={`viz-actionbar ${waiting ? "viz-agent--waiting" : ""}`}>
-      <section className="viz-actionbar__agent" aria-label="Agent">
-        <BarLabel>Agent</BarLabel>
-        {waiting && <span className="viz-agent__pulse" aria-hidden />}
-        <span className="viz-agent__status">{agentStatus(waiting, comments, pending)}</span>
-        {waiting && pending > 0 && <span className="viz-agent__notes">· {comments} not sent</span>}
-      </section>
-      <span className="viz-header__spacer" />
+    <section
+      className={`viz-agent ${waiting ? "viz-agent--waiting" : ""}`}
+      aria-label="Agent"
+      title={status}
+    >
+      {waiting && <span className="viz-agent__pulse" aria-hidden />}
+      <span className="viz-agent__status">{status}</span>
+    </section>
+  );
+}
+
+export function AgentActions({ review }: { review: VizReviewState }) {
+  const { waiting, pending } = review.feedback;
+  const comments = commentsText(pending);
+  return (
+    <>
       <button
         type="button"
         className="viz-tool"
         title="Add a note that asks the agent to make this diagram again. It goes to the agent with Send comments."
         onClick={() => vscode.postMessage({ type: "regenerate" })}
       >
-        <UiIcon name="reset" size={14} /> Ask to redraw
+        <UiIcon name="reset" size={14} />
+        <span className="viz-action__label">Ask to redraw</span>
       </button>
       {pending > 0 && (
         <button
@@ -57,6 +65,6 @@ export function ActionBar({ review }: ActionBarProps) {
           <UiIcon name="check" size={13} /> Approve
         </button>
       )}
-    </footer>
+    </>
   );
 }

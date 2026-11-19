@@ -21,9 +21,16 @@ export function diagramTargets(doc: VizDoc, targets: readonly VizNoteTarget[]): 
 }
 
 export function sameTarget(a: VizNoteTarget, b: VizNoteTarget): boolean {
-  return a.kind === "file"
-    ? b.kind === "file" && a.repo === b.repo && a.path === b.path
-    : a.kind === b.kind && a.id === b.id;
+  if (a.kind === "file") {
+    return b.kind === "file" && a.repo === b.repo && a.path === b.path;
+  }
+  if (a.kind === "step") {
+    return b.kind === "step" && a.flow === b.flow && a.index === b.index;
+  }
+  if (b.kind === "step" || b.kind === "file") {
+    return false;
+  }
+  return a.kind === b.kind && a.id === b.id;
 }
 
 export function noteTarget(target: DiagramTarget): VizNoteTarget {
@@ -33,6 +40,8 @@ export function noteTarget(target: DiagramTarget): VizNoteTarget {
       return { kind: target.kind, id: target.id, label: target.label };
     case "member":
       return { kind: "member", id: target.id, node: target.node, label: target.label };
+    case "step":
+      return { kind: "step", flow: target.flow, index: target.index, label: target.label };
     case "file":
       return { kind: "file", repo: target.repo, path: target.path, label: target.label };
   }
@@ -94,6 +103,11 @@ function codeOf(doc: VizDoc, target: VizNoteTarget): DiagramCode | undefined {
       const edge = viz.edges?.find((candidate) => edgeId(candidate) === target.id);
       const from = edge && viz.nodes.find((node) => node.id === edge.from);
       return located(doc, edge?.files?.[0] ?? from?.files?.[0]);
+    }
+    case "step": {
+      const step = viz.flows?.find((flow) => flow.id === target.flow)?.steps[target.index];
+      const from = step && viz.nodes.find((node) => node.id === step.from);
+      return located(doc, step?.files?.[0] ?? from?.files?.[0]);
     }
     case "file":
       return located(doc, {

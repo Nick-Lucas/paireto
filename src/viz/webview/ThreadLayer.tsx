@@ -109,6 +109,9 @@ export function ThreadLayer(props: ThreadLayerProps) {
       case "edge":
         dispatch({ type: "goto", ref: { kind: "edge", id: target.id } });
         break;
+      case "step":
+        dispatch({ type: "goto", ref: { kind: "step", flow: target.flow, index: target.index } });
+        break;
       case "file": {
         const node = index.overviewNodes.find(
           (candidate) => candidate.files?.[0]?.path === target.path,
@@ -213,8 +216,8 @@ export function ThreadLayer(props: ThreadLayerProps) {
       {linking && (
         <div className="viz-link-hint" role="status">
           {linking.kind === "drag"
-            ? "Drop on a part, a member or a frame to link it. Esc cancels."
-            : "Click a part, a member or a frame to link it. Esc cancels."}
+            ? "Drop on a part, a member, a frame or a step to link it. Esc cancels."
+            : "Click a part, a member, a frame or a step to link it. Esc cancels."}
         </div>
       )}
       {from && pointer && (
