@@ -62,13 +62,13 @@ export interface FileEntry {
   readonly nodes: readonly { readonly node: VizNode; readonly members: readonly VizMember[] }[];
 }
 
-function changedMembers(node: VizNode): VizMember[] {
+export function changedMembers(node: VizNode): VizMember[] {
   return (node.members ?? [])
     .filter((member) => (member.delta ?? "unchanged") !== "unchanged")
     .sort((a, b) => changeSize(b) - changeSize(a));
 }
 
-function rankedNodes(index: VizIndex): VizNode[] {
+export function rankedNodes(index: VizIndex): VizNode[] {
   return index.overviewNodes
     .filter((node) => node.delta !== "unchanged")
     .sort((a, b) => changeSize(b) - changeSize(a) || a.label.localeCompare(b.label));

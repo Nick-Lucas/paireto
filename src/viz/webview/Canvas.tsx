@@ -28,7 +28,7 @@ import {
 } from "../model/notes";
 import { parseVizRef } from "../model/refs";
 import type { RfGraph } from "../model/rf";
-import type { UiAction, UiState } from "../model/ui";
+import { commentsAllowed, type UiAction, type UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
 import { VizContext, type MenuTarget, type VizActions } from "./context";
 import { ContextMenu, type MenuItem, type MenuState } from "./ContextMenu";
@@ -168,7 +168,7 @@ export function Canvas(props: CanvasProps) {
     }
   };
   const noteItems = (targets: VizNoteTarget[], at: Point): MenuItem[] =>
-    (["comment", "question"] as NoteKind[]).map((noteKind) => ({
+    (commentsAllowed(ui.stage) ? (["comment", "question"] as NoteKind[]) : []).map((noteKind) => ({
       label: noteKind === "comment" ? "Add comment" : "Add question",
       run: () =>
         dispatch({
@@ -243,7 +243,9 @@ export function Canvas(props: CanvasProps) {
         ];
         break;
     }
-    setMenu({ x: screen.x, y: screen.y, title, items });
+    if (items.length > 0) {
+      setMenu({ x: screen.x, y: screen.y, title, items });
+    }
   };
   const actions: VizActions = {
     index,

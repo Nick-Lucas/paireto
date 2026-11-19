@@ -161,24 +161,28 @@ export function ChangedFiles({ index, ui, review, dispatch, onNext }: ChangedFil
   };
   return (
     <div className="viz-filepick" ref={boxRef}>
+      <span className="viz-filepick__label">Review</span>
       <button
         type="button"
-        className={`viz-action viz-filepick__toggle ${open ? "viz-action--on" : ""}`}
+        className={`viz-filepick__toggle ${open ? "viz-filepick__toggle--open" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="The changed files in this Overview, and which ones you have seen"
+        title="Open the list of changed files in this Overview. Tick a file when you have seen it."
         onClick={() => setOpen(!open)}
       >
-        <UiIcon name="file" size={14} /> Changed files · {progress.seen} of {progress.total} seen
+        <UiIcon name="files" size={14} />
+        {progress.seen} of {progress.total} files seen
         <UiIcon name="down" size={12} />
       </button>
       <button
         type="button"
-        className="viz-action"
+        className="viz-filepick__next"
         title="Go to the next change in the Overview (n)"
         onClick={onNext}
       >
-        <UiIcon name="arrowDown" size={14} /> Next change
+        <UiIcon name="arrowDown" size={14} />
+        Next change
+        <kbd>N</kbd>
       </button>
       {open && (
         <div className="viz-filepick__pop" role="dialog" aria-label="Changed files in the Overview">

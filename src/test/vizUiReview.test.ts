@@ -3,6 +3,7 @@ import * as assert from "node:assert";
 import { emphasisOf } from "../viz/model/emphasis.js";
 import { reviewMarks } from "../viz/model/review.js";
 import {
+  commentsAllowed,
   initialUi,
   reduceUi,
   SIDEBAR_MAX,
@@ -62,6 +63,13 @@ suite("viz ui review state", () => {
       viewStateOf(run({ type: "stage", stage: FLOW }, { type: "stageAt", n: 0 })).stage,
       "diagram",
     );
+  });
+
+  test("a comment can start on the Overview but not on a sequence diagram", () => {
+    assert.strictEqual(run(DRAFT).thread.kind, "draft");
+    assert.strictEqual(run({ type: "stage", stage: FLOW }, DRAFT).thread.kind, "closed");
+    assert.strictEqual(commentsAllowed({ kind: "overview" }), true);
+    assert.strictEqual(commentsAllowed(FLOW), false);
   });
 
   test("the sidebar width stays within its bounds", () => {

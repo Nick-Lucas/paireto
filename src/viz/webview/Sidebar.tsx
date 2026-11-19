@@ -2,6 +2,7 @@ import { useRef } from "react";
 
 import type { VizIndex } from "../model/index";
 import type { UiAction, UiState } from "../model/ui";
+import type { VizReviewState } from "../protocol";
 import { UiIcon } from "./icons";
 import { Inspector } from "./Inspector";
 import "./sidebar.css";
@@ -9,10 +10,11 @@ import "./sidebar.css";
 interface SidebarProps {
   index: VizIndex;
   ui: UiState;
+  review: VizReviewState;
   dispatch: (action: UiAction) => void;
 }
 
-export function Sidebar({ index, ui, dispatch }: SidebarProps) {
+export function Sidebar({ index, ui, review, dispatch }: SidebarProps) {
   const dragRef = useRef<number>(0);
   return (
     <aside className="viz-sidebar" aria-label="Selection" style={{ width: ui.sidebarWidth }}>
@@ -56,7 +58,13 @@ export function Sidebar({ index, ui, dispatch }: SidebarProps) {
               <UiIcon name="next" size={12} />
             </button>
           </header>
-          <Inspector index={index} stage={ui.stage} selection={ui.selection} dispatch={dispatch} />
+          <Inspector
+            index={index}
+            stage={ui.stage}
+            selection={ui.selection}
+            review={review}
+            dispatch={dispatch}
+          />
         </section>
       </div>
     </aside>

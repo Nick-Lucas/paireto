@@ -6,6 +6,7 @@ import type { VizListEntry, VizReviewState, VizWindowState } from "../protocol";
 import type { VizDelta } from "../../protocol/viz.js";
 import { ChangedFiles } from "./ChangedFiles";
 import { UiIcon, type UiIconName } from "./icons";
+import { plural } from "./parts";
 import { vscode } from "./vscode";
 import "./header.css";
 
@@ -45,15 +46,6 @@ function compareTitle(doc: VizDoc, window: VizWindowState): string {
     case "blocked":
       return `${made} ${window.alignment.reason}`;
   }
-}
-
-function RowLabel({ icon, children }: { icon: UiIconName; children: string }) {
-  return (
-    <span className="viz-header__label">
-      <UiIcon name={icon} size={14} />
-      {children}
-    </span>
-  );
 }
 
 function VizTitle({ doc, vizzes }: { doc: VizDoc; vizzes: VizListEntry[] }) {
@@ -113,66 +105,45 @@ function DiagramTab({ active, icon, name, kind, delta, title, onClick }: Diagram
   );
 }
 
-function Chevron() {
-  return (
-    <span className="viz-crumbs__sep" aria-hidden>
-      <UiIcon name="next" size={12} />
-    </span>
-  );
+export function BarLabel({ children }: { children: string }) {
+  return <span className="viz-barlabel">{children}</span>;
 }
 
-function agentStatus(waiting: boolean, comments: string, pending: number): string {
-  if (waiting) {
-    return "Waiting for your review";
-  }
-  if (pending > 0) {
-    return `${comments} not sent yet`;
-  }
-  return "Not waiting for you";
-}
-
-function AgentRow({ review }: { review: VizReviewState }) {
-  const { waiting, pending } = review.feedback;
-  const comments = `${pending} ${pending === 1 ? "comment" : "comments"}`;
+function DiffBox({ doc, window }: { doc: VizDoc; window: VizWindowState }) {
+  const mismatch = window.alignment.kind !== "aligned";
   return (
-    <section
-      className={`viz-header__row viz-agent ${waiting ? "viz-agent--waiting" : ""}`}
-      aria-label="Agent"
+    <span
+      className={`viz-diff ${mismatch ? "viz-diff--mismatch" : ""}`}
+      title={`The diagrams show the changes from ${doc.meta.compareLabel ?? "base"} to the files on disk now, with the changes not yet committed. ${compareTitle(doc, window)}`}
     >
-      <RowLabel icon="agent">Agent</RowLabel>
-      {waiting && <span className="viz-agent__pulse" aria-hidden />}
-      <span className="viz-agent__status">{agentStatus(waiting, comments, pending)}</span>
-      {waiting && pending > 0 && <span className="viz-agent__notes">· {comments} not sent</span>}
-      <span className="viz-header__spacer" />
-      <button
-        type="button"
-        className="viz-tool"
-        title="Add a note that asks the agent to make this diagram again. It goes to the agent with Send comments."
-        onClick={() => vscode.postMessage({ type: "regenerate" })}
-      >
-        <UiIcon name="reset" size={14} /> Ask to redraw
-      </button>
-      {pending > 0 && (
-        <button
-          type="button"
-          className="viz-btn"
-          title={`Send ${comments} to the agent`}
-          onClick={() => vscode.postMessage({ type: "gate", action: "sendFeedback" })}
-        >
-          <UiIcon name="send" size={13} /> Send comments · {pending}
-        </button>
+      <BarLabel>Diff</BarLabel>
+      <span className="viz-diff__ref viz-diff__ref--base">
+        <UiIcon name="commit" size={14} />
+        {doc.meta.compareLabel ?? "base"}
+      </span>
+      <span className="viz-diff__arrow" aria-label="to">
+        →
+      </span>
+      <span className="viz-diff__ref">
+        <UiIcon name="file" size={14} />
+        your files now
+      </span>
+      {mismatch && (
+        <span className="viz-diff__warn">
+          <UiIcon name="warn" size={12} />
+          VS Code is on {window.compareLabel}
+          {window.alignment.kind === "available" && (
+            <button
+              type="button"
+              className="viz-textbtn"
+              onClick={() => vscode.postMessage({ type: "align" })}
+            >
+              Align
+            </button>
+          )}
+        </span>
       )}
-      {waiting && (
-        <button
-          type="button"
-          className={`viz-btn ${pending > 0 ? "viz-btn--secondary" : ""}`}
-          title="Tell the agent the change is good"
-          onClick={() => vscode.postMessage({ type: "gate", action: "approve" })}
-        >
-          <UiIcon name="check" size={13} /> Approve
-        </button>
-      )}
-    </section>
+    </span>
   );
 }
 
@@ -193,60 +164,59 @@ export function Header({
   const open = current > 0 ? index.flows[current - 1] : undefined;
   return (
     <header className="viz-header">
-      <div className="viz-tabbar">
-        <nav className="viz-tabs" role="tablist" aria-label="Diagrams">
-          <DiagramTab
-            active={current === 0 && !walking}
-            icon="hierarchy"
-            name="Overview"
-            kind={kind}
-            title={`Overview: every changed part and how they connect, as a ${kind} (0)`}
-            onClick={() => dispatch({ type: "stageAt", n: 0 })}
-          />
-          {index.flows.map((flow, i) => (
-            <DiagramTab
-              key={flow.id}
-              active={current === i + 1 && !walking}
-              icon="flow"
-              name={flow.title}
-              kind="sequence diagram"
-              delta={flow.delta}
-              title={`${flow.title}: one flow, call by call, as a sequence diagram. This flow is ${CHANGE_WORD[flow.delta]}. (${i + 1})`}
-              onClick={() => dispatch({ type: "stageAt", n: i + 1 })}
-            />
-          ))}
-        </nav>
+      <div className="viz-changebar">
+        <span className="viz-changebar__name">
+          <BarLabel>Change</BarLabel>
+          <UiIcon name="graph" size={14} />
+          <VizTitle doc={doc} vizzes={vizzes} />
+        </span>
+        <DiffBox doc={doc} window={window} />
+        <span className="viz-header__spacer" />
         {index.walkthrough.length > 0 && (
           <button
             type="button"
             className={`viz-action viz-action--walk ${walking ? "viz-action--on" : ""}`}
-            title="A guided tour through the changes, one step at a time (w)"
+            title="A guided tour through the changes, one step at a time, across all the diagrams (w)"
             aria-pressed={walking}
             onClick={() => dispatch({ type: "walk" })}
           >
-            <UiIcon name="play" size={14} /> Walk through the changes
+            <UiIcon name="play" size={14} />
+            <span className="viz-action__label">Walk through the changes</span>
           </button>
         )}
       </div>
-      <div className="viz-crumbs">
-        <span className="viz-crumbs__part" title={compareTitle(doc, window)}>
-          <UiIcon name="compare" size={14} />
-          <VizTitle doc={doc} vizzes={vizzes} />
-        </span>
-        <Chevron />
+      <nav className="viz-tabbar viz-tabs" role="tablist" aria-label="Diagrams">
+        <DiagramTab
+          active={current === 0 && !walking}
+          icon="hierarchy"
+          name="Overview"
+          kind={kind}
+          title={`Overview: every changed part and how they connect, as a ${kind} (0)`}
+          onClick={() => dispatch({ type: "stageAt", n: 0 })}
+        />
+        {index.flows.map((flow, i) => (
+          <DiagramTab
+            key={flow.id}
+            active={current === i + 1 && !walking}
+            icon="flow"
+            name={flow.title}
+            kind="sequence diagram"
+            delta={flow.delta}
+            title={`${flow.title}: one flow, call by call, as a sequence diagram. This flow is ${CHANGE_WORD[flow.delta]}. (${i + 1})`}
+            onClick={() => dispatch({ type: "stageAt", n: i + 1 })}
+          />
+        ))}
+      </nav>
+      <div className="viz-diagrambar" aria-label="Actions for this diagram">
         {open ? (
-          <>
-            <span className="viz-crumbs__part">Sequence diagrams</span>
-            <Chevron />
-            <span className="viz-crumbs__part viz-crumbs__here">{open.title}</span>
-            <span className={`viz-crumbs__change viz-crumbs__change--${open.delta}`}>
+          <span className="viz-diagrambar__about">
+            {plural(open.steps.length, "step")} · {plural(open.participants.length, "participant")}
+            <span className={`viz-diagrambar__change viz-diagrambar__change--${open.delta}`}>
               {CHANGE_WORD[open.delta]}
             </span>
-          </>
+          </span>
         ) : (
-          <>
-            <span className="viz-crumbs__part viz-crumbs__here">Overview</span>
-            <span className="viz-crumbs__kind">{kind}</span>
+          !walking && (
             <ChangedFiles
               index={index}
               ui={ui}
@@ -254,37 +224,19 @@ export function Header({
               dispatch={dispatch}
               onNext={onNext}
             />
-          </>
-        )}
-        <span className="viz-compare" title={compareTitle(doc, window)}>
-          · working tree compared with <strong>{doc.meta.compareLabel ?? "base"}</strong>
-        </span>
-        {window.alignment.kind !== "aligned" && (
-          <span className="viz-mismatch" title={compareTitle(doc, window)}>
-            <UiIcon name="warn" size={12} />
-            <span>window is on {window.compareLabel}</span>
-            {window.alignment.kind === "available" && (
-              <button
-                type="button"
-                className="viz-textbtn"
-                onClick={() => vscode.postMessage({ type: "align" })}
-              >
-                Align
-              </button>
-            )}
-          </span>
+          )
         )}
         <span className="viz-header__spacer" />
         <button
           type="button"
-          className="viz-action"
+          className="viz-action viz-action--copy"
           title="Copy the open diagram as Mermaid text (e)"
           onClick={onExport}
         >
-          <UiIcon name="copy" size={14} /> Copy this diagram as Mermaid
+          <UiIcon name="copy" size={14} />
+          <span className="viz-action__label">Copy as Mermaid</span>
         </button>
       </div>
-      <AgentRow review={review} />
     </header>
   );
 }

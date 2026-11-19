@@ -21,6 +21,7 @@ import type {
   VizViewState,
   VizWindowState,
 } from "../protocol";
+import { ActionBar } from "./ActionBar";
 import { Canvas } from "./Canvas";
 import { Header } from "./Header";
 import { UiIcon } from "./icons";
@@ -256,8 +257,9 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
             </button>
           )}
         </main>
-        {ui.sidebar && <Sidebar index={index} ui={ui} dispatch={dispatch} />}
+        {ui.sidebar && <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} />}
       </div>
+      <ActionBar review={review} />
       <HelpOverlay ui={ui} dispatch={dispatch} />
     </div>
   );

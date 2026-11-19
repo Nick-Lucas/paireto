@@ -129,6 +129,10 @@ export function initialUi(index: VizIndex, view: VizViewState = DEFAULT_VIZ_VIEW
   };
 }
 
+export function commentsAllowed(stage: Stage): boolean {
+  return stage.kind === "overview";
+}
+
 export function viewStateOf(ui: UiState): VizViewState {
   return {
     stage: ui.stage.kind === "overview" ? "diagram" : ui.stage.flow,
@@ -331,6 +335,9 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
     case "closeThread":
       return ui.thread.kind === "closed" ? ui : { ...ui, thread: CLOSED };
     case "startDraft":
+      if (!commentsAllowed(ui.stage)) {
+        return ui;
+      }
       return {
         ...ui,
         thread: {
