@@ -16,7 +16,7 @@ export interface KeyBinding {
 const ui = (action: UiAction): KeyCommand => ({ kind: "ui", action });
 
 export const KEY_BINDINGS: readonly KeyBinding[] = [
-  { keys: ["0"], display: "0", label: "Diagram", command: ui({ type: "stageAt", n: 0 }) },
+  { keys: ["0"], display: "0", label: "Overview", command: ui({ type: "stageAt", n: 0 }) },
   {
     keys: ["1", "2", "3", "4", "5", "6", "7", "8", "9"],
     display: "1-9",

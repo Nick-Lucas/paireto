@@ -82,7 +82,7 @@ const UI_PATHS = {
   search: "M7 2.5a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9Zm3.2 7.7L13.5 13.5",
   help: "M8 2.5a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Zm-1.8 4a1.8 1.8 0 1 1 2.6 1.6c-.5.3-.8.6-.8 1.2M8 11h.01",
   copy: "M5.5 5.5h7v8h-7zM3.5 10.5v-8h7",
-  walk: "M2.5 8h11m-4-4 4 4-4 4",
+  walk: "M2.5 12.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M10.5 3.5a1.5 1.5 0 1 0 3 0 1.5 1.5 0 1 0-3 0M5.5 12.5h5a2.25 2.25 0 0 0 0-4.5H5.5a2.25 2.25 0 0 1 0-4.5h5",
   map: "M2.5 4 6 2.5l4 1.5 3.5-1.5v9L10 13.5 6 12l-3.5 1.5zM6 2.5V12m4-8v9.5",
   diff: "M3 3.5h4v9H3zM9 3.5h4v9H9zM4 6h2M4 8.5h2M10 6h2",
   file: "M4 2.5h5l3 3v8H4zM9 2.5v3h3",
@@ -107,6 +107,10 @@ const UI_PATHS = {
   symbolClass: "M2 6h4v4H2ZM10 2.5h4v3.5h-4ZM10 10h4v3.5h-4ZM6 8h2M8 4.25v7.5M8 4.25h2M8 11.75h2",
   symbolMethod: "M8 1.75l5.5 3v6.5L8 14.25l-5.5-3v-6.5ZM2.5 4.75 8 7.75l5.5-3M8 7.75v6.5",
   sidebar: "M2.5 3h11v10h-11zM10 3v10",
+  hierarchy:
+    "M6.25 2.5h3.5v3h-3.5zM2.5 10.5h3.5v3H2.5zM10 10.5h3.5v3H10zM8 5.5v2.5M4.25 10.5V8h7.5v2.5",
+  agent: "M4 5.5h8v7H4zM8 5.5V3M8 3h.01M6.25 8.5v.5M9.75 8.5v.5M2.5 8.5v2M13.5 8.5v2",
+  flow: "M2.5 5h11m-2-2 2 2-2 2M13.5 11h-11m2-2-2 2 2 2",
 } as const;
 
 export type UiIconName = keyof typeof UI_PATHS;

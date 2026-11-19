@@ -10,24 +10,19 @@
   border-radius: var(--viz-radius);
   background: var(--viz-node-bg);
   border: 1px solid var(--viz-node-border);
-  border-top-width: 3px;
-  border-top-color: var(--viz-unchanged);
 }
 
 .viz-participant--added {
-  border-top-color: var(--viz-added);
-}
-.viz-participant--changed {
-  border-top-color: var(--viz-changed);
+  border-color: color-mix(in srgb, var(--viz-added) 70%, var(--viz-node-border));
 }
 .viz-participant--removed {
-  border-top-color: var(--viz-removed);
+  border-color: color-mix(in srgb, var(--viz-removed) 75%, var(--viz-node-border));
   border-style: dashed;
-  border-top-style: solid;
 }
 
 .viz-participant--selected {
   border-color: var(--viz-accent);
+  border-style: solid;
   box-shadow: 0 0 0 1px var(--viz-accent);
 }
 

@@ -157,6 +157,60 @@ suite("viz notes", () => {
     assert.ok(rect.y > home.y && rect.y + rect.height < home.y + home.height);
   });
 
+  test("a link to a member stops on the class box border beside that row", async () => {
+    const laid = await scene();
+    const target = memberTarget(index, `${EMAIL}.send`);
+    assert.ok(target);
+    const [sticky] = placeNotes(
+      laid,
+      index,
+      [note("n1", { targets: [target], place: { node: EMAIL, x: 0, y: -160 } })],
+      undefined,
+      estimateMeasure,
+    );
+    const row = targetRect(laid, index, target);
+    assert.ok(row);
+    const { to } = sticky.links[0];
+    assert.ok(
+      onBorder(nodeRect(laid, EMAIL), to),
+      `ends on the box border, not at ${to.x},${to.y}`,
+    );
+    assert.ok(to.y >= row.y && to.y <= row.y + row.height, "ends level with the row");
+  });
+
+  test("a note with no free spot beside its target goes to the nearest free spot", async () => {
+    const laid = await scene();
+    const home = nodeRect(laid, EMAIL);
+    const height = placeNotes(laid, index, [note("probe")], undefined, estimateMeasure)[0].height;
+    const spots = [
+      { x: home.width + NOTE.gap, y: 0 },
+      { x: -NOTE.gap - NOTE.width, y: 0 },
+      { x: 0, y: -NOTE.gap - height },
+      { x: 0, y: home.height + NOTE.gap },
+    ];
+    const blockers = spots.map((spot, at) =>
+      note(`block${at}`, { place: { node: EMAIL, ...spot } }),
+    );
+    const far = note("far", { place: { x: laid.bounds.x - 2000, y: laid.bounds.y - 2000 } });
+    const placed = placeNotes(
+      laid,
+      index,
+      [...blockers, far, note("n1")],
+      undefined,
+      estimateMeasure,
+    );
+    const sticky = placed[placed.length - 1];
+    for (const other of [...laid.nodes, ...placed.slice(0, -1)]) {
+      assert.ok(!overlaps(sticky, other), `note stays off ${other.id}`);
+    }
+    const dx = Math.max(home.x - sticky.x - sticky.width, 0, sticky.x - home.x - home.width);
+    const dy = Math.max(home.y - sticky.y - sticky.height, 0, sticky.y - home.y - home.height);
+    assert.ok(
+      Math.hypot(dx, dy) < 200,
+      `note is ${Math.round(Math.hypot(dx, dy))}px from its target`,
+    );
+  });
+
   test("target search ranks name matches before path matches and honours the limit", () => {
     const targets = allTargets(index, FILES);
     const hits = searchTargets(targets, "notif");

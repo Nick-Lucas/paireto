@@ -1,6 +1,7 @@
 import {
   Background,
   BackgroundVariant,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
@@ -31,6 +32,7 @@ import type { UiAction, UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
 import { VizContext, type MenuTarget, type VizActions } from "./context";
 import { ContextMenu, type MenuItem, type MenuState } from "./ContextMenu";
+import { UiIcon } from "./icons";
 import { NODE_TYPES, EDGE_TYPES } from "./nodes";
 import { ZOOM_KEY } from "./platform";
 import { ThreadLayer, type Linking } from "./ThreadLayer";
@@ -316,7 +318,15 @@ export function Canvas(props: CanvasProps) {
             size={1.2}
             className="viz-dots-bg"
           />
-          <Controls showInteractive={false} position="bottom-left" fitViewOptions={FIT} />
+          <Controls showInteractive={false} position="bottom-left" fitViewOptions={FIT}>
+            <ControlButton
+              title="Keyboard shortcuts (?)"
+              aria-label="Keyboard shortcuts"
+              onClick={() => dispatch({ type: "toggleHelp" })}
+            >
+              <UiIcon name="help" size={14} />
+            </ControlButton>
+          </Controls>
           {ui.minimap && (
             <MiniMap
               pannable

@@ -1,6 +1,3 @@
-import { createRoot } from "react-dom/client";
-import { useEffect, useState } from "react";
-
 import { VizFile } from "../../protocol/viz";
 import classDiagramJson from "../fixtures/classDiagram.json";
 import multiServiceJson from "../fixtures/multiService.json";
@@ -17,7 +14,7 @@ import {
   type VizWindowState,
   type WebviewToHost,
 } from "../protocol";
-import { applyPreviewTheme, type PreviewTheme } from "./previewThemes";
+import { applyPreviewTheme } from "./previewThemes";
 
 const FIXTURES = {
   classDiagram: classDiagramJson,
@@ -135,8 +132,14 @@ function reviewFor(viz: VizFile): VizReviewState {
   return { files, notes, feedback: { waiting: true, pending: 1 } };
 }
 
+const params = new URLSearchParams(location.search);
+
+function isFixture(name: string | null): name is FixtureName {
+  return name !== null && name in FIXTURES;
+}
+
 const state = {
-  name: "classDiagram" as FixtureName,
+  name: (isFixture(params.get("viz")) ? params.get("viz") : "classDiagram") as FixtureName,
   review: undefined as VizReviewState | undefined,
   view: DEFAULT_VIZ_VIEW_STATE as VizViewState,
 };
@@ -156,10 +159,11 @@ function handle(message: WebviewToHost): void {
   const review = state.review;
   switch (message.type) {
     case "ready":
-      send(state.name, ALIGNMENTS[0]);
+      send(state.name, startAlignment);
+      postStartState();
       return;
     case "switch":
-      send(message.name as FixtureName, ALIGNMENTS[0]);
+      send(message.name as FixtureName, startAlignment);
       return;
     case "viewState":
       state.view = message.state;
@@ -336,74 +340,32 @@ function send(name: FixtureName, alignment: VizAlignment): void {
   });
 }
 
-function PreviewBar() {
-  const [theme, setTheme] = useState<PreviewTheme>("dark");
-  const [alignAt, setAlignAt] = useState(0);
-  const alignment = ALIGNMENTS[alignAt];
-  useEffect(() => applyPreviewTheme(theme), [theme]);
-  return (
-    <div className="preview-bar">
-      <span className="preview-bar__title">viz preview</span>
-      {(Object.keys(FIXTURES) as FixtureName[]).map((name) => (
-        <button key={name} type="button" onClick={() => send(name, alignment)}>
-          {name}
-        </button>
-      ))}
-      <button type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
-        theme: {theme}
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          const next = (alignAt + 1) % ALIGNMENTS.length;
-          setAlignAt(next);
-          post({ type: "window", window: windowState(ALIGNMENTS[next]) });
-        }}
-      >
-        compare: {alignment.kind}
-      </button>
-      <button
-        type="button"
-        onClick={() =>
-          post({
-            type: "invalid",
-            name: state.name,
-            issues: [
-              {
-                severity: "error",
-                rule: "ref",
-                path: "edges[0].to",
-                message: "Unknown node id order-svc",
-                suggestion: "orders",
-              },
-            ],
-          })
-        }
-      >
-        invalid
-      </button>
-      <button type="button" onClick={() => post({ type: "empty", vizzes: [] })}>
-        empty
-      </button>
-    </div>
-  );
+const startAlignment =
+  ALIGNMENTS.find((alignment) => alignment.kind === params.get("compare")) ?? ALIGNMENTS[0];
+
+function postStartState(): void {
+  switch (params.get("state")) {
+    case "invalid":
+      post({
+        type: "invalid",
+        name: state.name,
+        issues: [
+          {
+            severity: "error",
+            rule: "ref",
+            path: "edges[0].to",
+            message: "Unknown node id order-svc",
+            suggestion: "orders",
+          },
+        ],
+      });
+      return;
+    case "empty":
+      post({ type: "empty", vizzes: [] });
+      return;
+  }
 }
 
-const style = document.createElement("style");
-style.textContent = `
-  #preview-root { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 1000; opacity: .35; transition: opacity .2s; }
-  #preview-root:hover { opacity: 1; }
-  .preview-bar { display: flex; gap: 4px; align-items: center; padding: 4px 6px; border-radius: 8px; background: #000c; color: #eee; font: 11px system-ui; }
-  .preview-bar__title { opacity: .6; margin-right: 4px; }
-  .preview-bar button { font: inherit; color: inherit; background: #ffffff22; border: 0; border-radius: 4px; padding: 3px 7px; cursor: pointer; }
-  .preview-bar button:hover { background: #ffffff44; }
-`;
-document.head.appendChild(style);
-
-const bar = document.createElement("div");
-bar.id = "preview-root";
-document.body.appendChild(bar);
-createRoot(bar).render(<PreviewBar />);
-applyPreviewTheme("dark");
+applyPreviewTheme(params.get("theme") === "light" ? "light" : "dark");
 
 void import("./index");

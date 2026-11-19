@@ -268,6 +268,18 @@ export function clipToRect(rect: Rect, from: Point): Point {
   return { x: to.x - dx * scale, y: to.y - dy * scale };
 }
 
+function linkEnd(scene: OverviewScene, target: VizNoteTarget, rect: Rect, from: Point): Point {
+  if (target.kind !== "member") {
+    return clipToRect(rect, from);
+  }
+  const node = scene.nodes.find((candidate) => candidate.id === target.node);
+  if (!node) {
+    return clipToRect(rect, from);
+  }
+  const left = from.x < node.x + node.width / 2;
+  return { x: left ? node.x : node.x + node.width, y: rect.y + rect.height / 2 };
+}
+
 function overlaps(a: Rect, b: Rect, margin: number): boolean {
   return (
     a.x < b.x + b.width + margin &&
@@ -276,6 +288,8 @@ function overlaps(a: Rect, b: Rect, margin: number): boolean {
     a.y + a.height + margin > b.y
   );
 }
+
+const SEARCH_RINGS = 60;
 
 function placeOf(
   scene: OverviewScene,
@@ -300,21 +314,47 @@ function placeOf(
       ? scene.nodes.find((candidate) => candidate.id === (targets[0] as { node: string }).node)
       : undefined;
   const anchor = node ?? home;
-  const candidates: Point[] = [
-    { x: anchor.x + anchor.width + NOTE.gap, y: home.y },
-    { x: anchor.x - NOTE.gap - NOTE.width, y: home.y },
-    { x: anchor.x, y: anchor.y - NOTE.gap - size.height },
-    { x: anchor.x, y: anchor.y + anchor.height + NOTE.gap },
-  ];
   const blockers = [...scene.nodes, ...taken];
-  for (const at of candidates) {
-    const box: Rect = { ...at, width: NOTE.width, height: size.height };
-    if (!blockers.some((blocker) => overlaps(box, blocker, 6))) {
-      return at;
+  const free = (at: Point) =>
+    !blockers.some((blocker) =>
+      overlaps({ ...at, width: NOTE.width, height: size.height }, blocker, 6),
+    );
+  for (let ring = 0; ring <= SEARCH_RINGS; ring++) {
+    const found = spotsAround(anchor, home.y, size.height, ring * NOTE.gap).find(free);
+    if (found) {
+      return found;
     }
   }
-  const last = taken[taken.length - 1];
-  return last ? { x: last.x, y: last.y + last.height + 10 } : candidates[0];
+  return spotsAround(anchor, home.y, size.height, 0)[0];
+}
+
+function spotsAround(anchor: Rect, rowY: number, height: number, reach: number): Point[] {
+  const right = anchor.x + anchor.width + NOTE.gap;
+  const left = anchor.x - NOTE.gap - NOTE.width;
+  const above = anchor.y - NOTE.gap - height;
+  const below = anchor.y + anchor.height + NOTE.gap;
+  if (reach === 0) {
+    return [
+      { x: right, y: rowY },
+      { x: left, y: rowY },
+      { x: anchor.x, y: above },
+      { x: anchor.x, y: below },
+    ];
+  }
+  return [
+    { x: right, y: rowY + reach },
+    { x: right, y: rowY - reach },
+    { x: left, y: rowY + reach },
+    { x: left, y: rowY - reach },
+    { x: anchor.x + reach, y: above },
+    { x: anchor.x - reach, y: above },
+    { x: anchor.x + reach, y: below },
+    { x: anchor.x - reach, y: below },
+    { x: right + reach, y: rowY },
+    { x: left - reach, y: rowY },
+    { x: anchor.x, y: above - reach },
+    { x: anchor.x, y: below + reach },
+  ];
 }
 
 export function placeNotes(
@@ -341,7 +381,7 @@ export function placeNotes(
       if (!rect) {
         return [];
       }
-      const to = clipToRect(rect, centre(box));
+      const to = linkEnd(scene, target, rect, centre(box));
       const from = clipToRect(box, to);
       return [{ index: linkIndex, target, from, to }];
     });

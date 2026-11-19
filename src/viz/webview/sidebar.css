@@ -243,3 +243,29 @@
 .viz-inspect {
   border-top: 1px solid var(--viz-border);
 }
+
+.viz-show-files {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 6;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--viz-fg) 10%, transparent);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--viz-fg);
+  background: var(--viz-panel);
+  box-shadow: var(--viz-shadow);
+}
+
+.viz-show-files .viz-icon {
+  color: var(--viz-muted);
+}
+
+.viz-show-files:hover {
+  background: var(--viz-hover);
+}

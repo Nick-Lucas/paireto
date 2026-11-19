@@ -23,6 +23,7 @@ import type {
 } from "../protocol";
 import { Canvas } from "./Canvas";
 import { Header } from "./Header";
+import { UiIcon } from "./icons";
 import { createMeasure } from "./measure";
 import { EmptyState, HelpOverlay, InvalidBanner, Legend, PlayBar, WalkCard } from "./overlays";
 import { Sidebar } from "./Sidebar";
@@ -243,6 +244,16 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
           )}
           <PlayBar index={index} ui={ui} dispatch={dispatch} />
           <WalkCard index={index} ui={ui} dispatch={dispatch} />
+          {!ui.sidebar && (
+            <button
+              type="button"
+              className="viz-show-files"
+              title="Show where the changes are (b)"
+              onClick={() => dispatch({ type: "toggleSidebar" })}
+            >
+              <UiIcon name="sidebar" size={14} /> Show files
+            </button>
+          )}
         </main>
         {ui.sidebar && (
           <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} onNext={onNext} />
