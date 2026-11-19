@@ -21,6 +21,7 @@ import type {
   VizViewState,
   VizWindowState,
 } from "../protocol";
+import { AgentBar } from "./AgentControls";
 import { Canvas } from "./Canvas";
 import { Header } from "./Header";
 import { UiIcon } from "./icons";
@@ -227,6 +228,7 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
               emphasis={emphasis}
               ui={ui}
               scene={sequence ? undefined : scene}
+              sequence={sequence}
               notes={notes}
               review={review}
               targets={targets}
@@ -261,6 +263,7 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
         </main>
         {ui.sidebar && <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} />}
       </div>
+      <AgentBar review={review} />
       <HelpOverlay ui={ui} dispatch={dispatch} />
     </div>
   );

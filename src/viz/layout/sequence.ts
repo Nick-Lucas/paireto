@@ -1,6 +1,6 @@
 import type { VizFragment } from "../../protocol/viz.js";
 import type { IndexedStep, VizIndex } from "../model/index.js";
-import { estimateTextWidth, type Rect } from "./geometry.js";
+import { estimateTextWidth, type Point, type Rect } from "./geometry.js";
 
 export const SEQ = {
   pad: 24,
@@ -289,4 +289,28 @@ export function layoutSequence(index: VizIndex, flowId: string): SequenceScene {
     fragments,
     bounds: { x: 0, y: 0, width, height: lifelineBottom + SEQ.pad },
   };
+}
+
+export type SequenceSpot =
+  | { readonly kind: "step"; readonly index: number }
+  | { readonly kind: "participant"; readonly id: string };
+
+export function sequenceSpotAt(scene: SequenceScene, at: Point): SequenceSpot | undefined {
+  const { bounds } = scene;
+  if (at.x < bounds.x || at.x > bounds.x + bounds.width) {
+    return undefined;
+  }
+  const row = scene.messages
+    .map((message) => ({ message, gap: Math.abs(message.lineY - at.y) }))
+    .filter((near) => near.gap <= SEQ.pitch / 2)
+    .sort((a, b) => a.gap - b.gap)[0];
+  if (row) {
+    return { kind: "step", index: row.message.index };
+  }
+  const column = scene.participants
+    .filter((participant) => at.y >= participant.y && at.y <= scene.lifelineBottom)
+    .map((participant) => ({ participant, gap: Math.abs(participant.lifelineX - at.x) }))
+    .filter((near) => near.gap <= SEQ.columnWidth / 2)
+    .sort((a, b) => a.gap - b.gap)[0];
+  return column && { kind: "participant", id: column.participant.id };
 }

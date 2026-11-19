@@ -3,7 +3,7 @@ import * as assert from "node:assert";
 import { BOX } from "../viz/layout/classBox.js";
 import type { Rect } from "../viz/layout/geometry.js";
 import { estimateMeasure } from "../viz/layout/measure.js";
-import { layoutSequence } from "../viz/layout/sequence.js";
+import { layoutSequence, sequenceSpotAt } from "../viz/layout/sequence.js";
 import {
   DEFAULT_OVERVIEW_OPTIONS,
   layoutOverview,
@@ -313,6 +313,28 @@ suite("viz notes on a sequence diagram", () => {
     assert.deepStrictEqual(
       placed.map((found) => found.id),
       ["draft"],
+    );
+  });
+
+  test("a right-click on a step's row picks the step, and on a lifeline past the rows its participant", () => {
+    const row = seq.messages[1];
+    const middle = seq.bounds.x + seq.bounds.width / 2;
+    assert.deepStrictEqual(sequenceSpotAt(seq, { x: middle, y: row.lineY + 12 }), {
+      kind: "step",
+      index: 1,
+    });
+    const email = seq.participants.find((candidate) => candidate.id === EMAIL)!;
+    assert.deepStrictEqual(
+      sequenceSpotAt(seq, { x: email.lifelineX + 20, y: seq.lifelineBottom - 2 }),
+      { kind: "participant", id: EMAIL },
+    );
+    assert.deepStrictEqual(
+      sequenceSpotAt(seq, { x: email.lifelineX, y: email.y + email.height / 2 }),
+      { kind: "participant", id: EMAIL },
+    );
+    assert.strictEqual(
+      sequenceSpotAt(seq, { x: seq.bounds.x + seq.bounds.width + 200, y: row.lineY }),
+      undefined,
     );
   });
 

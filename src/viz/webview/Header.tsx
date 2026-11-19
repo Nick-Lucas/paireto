@@ -4,7 +4,6 @@ import type { UiAction, UiState } from "../model/ui";
 import { overviewKind } from "../model/visible";
 import type { VizListEntry, VizReviewState, VizWindowState } from "../protocol";
 import type { VizDelta } from "../../protocol/viz.js";
-import { AgentActions, AgentStatus } from "./AgentControls";
 import { ChangedFiles } from "./ChangedFiles";
 import { UiIcon, type UiIconName } from "./icons";
 import { plural } from "./parts";
@@ -110,39 +109,22 @@ export function BarLabel({ children }: { children: string }) {
   return <span className="viz-barlabel">{children}</span>;
 }
 
-function DiffBox({ doc, window }: { doc: VizDoc; window: VizWindowState }) {
-  const mismatch = window.alignment.kind !== "aligned";
+function Mismatch({ doc, window }: { doc: VizDoc; window: VizWindowState }) {
+  if (window.alignment.kind === "aligned") {
+    return null;
+  }
   return (
-    <span
-      className={`viz-diff ${mismatch ? "viz-diff--mismatch" : ""}`}
-      title={`The diagrams show the changes from ${doc.meta.compareLabel ?? "base"} to the files on disk now, with the changes not yet committed. ${compareTitle(doc, window)}`}
-    >
-      <BarLabel>Diff</BarLabel>
-      <span className="viz-diff__ref viz-diff__ref--base">
-        <UiIcon name="commit" size={14} />
-        {doc.meta.compareLabel ?? "base"}
-      </span>
-      <span className="viz-diff__arrow" aria-label="to">
-        →
-      </span>
-      <span className="viz-diff__ref">
-        <UiIcon name="file" size={14} />
-        your files now
-      </span>
-      {mismatch && (
-        <span className="viz-diff__warn">
-          <UiIcon name="warn" size={12} />
-          VS Code is on {window.compareLabel}
-          {window.alignment.kind === "available" && (
-            <button
-              type="button"
-              className="viz-textbtn"
-              onClick={() => vscode.postMessage({ type: "align" })}
-            >
-              Align
-            </button>
-          )}
-        </span>
+    <span className="viz-mismatch" title={compareTitle(doc, window)}>
+      <UiIcon name="warn" size={12} />
+      Made against {doc.meta.compareLabel ?? "base"}, VS Code is on {window.compareLabel}
+      {window.alignment.kind === "available" && (
+        <button
+          type="button"
+          className="viz-textbtn"
+          onClick={() => vscode.postMessage({ type: "align" })}
+        >
+          Align
+        </button>
       )}
     </span>
   );
@@ -166,12 +148,16 @@ export function Header({
   return (
     <header className="viz-header">
       <div className="viz-changebar">
-        <span className="viz-changebar__name">
+        <span
+          className="viz-changebar__name"
+          title={`The changes from ${doc.meta.compareLabel ?? "base"} to the files on disk now, with the changes not yet committed.`}
+        >
           <BarLabel>Change</BarLabel>
           <UiIcon name="graph" size={14} />
           <VizTitle doc={doc} vizzes={vizzes} />
         </span>
-        <DiffBox doc={doc} window={window} />
+        <Mismatch doc={doc} window={window} />
+        <span className="viz-header__spacer" />
         {index.walkthrough.length > 0 && (
           <button
             type="button"
@@ -181,12 +167,9 @@ export function Header({
             onClick={() => dispatch({ type: "walk" })}
           >
             <UiIcon name="play" size={14} />
-            <span className="viz-action__label">Walk through</span>
+            <span className="viz-action__label">Walk through the changes</span>
           </button>
         )}
-        <span className="viz-header__spacer" />
-        <AgentStatus review={review} />
-        <AgentActions review={review} />
       </div>
       <nav className="viz-tabbar viz-tabs" role="tablist" aria-label="Diagrams">
         <DiagramTab

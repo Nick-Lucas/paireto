@@ -27,6 +27,7 @@ import {
   type NoteKind,
   type PlacedNote,
 } from "../model/notes";
+import { sequenceSpotAt, type SequenceScene } from "../layout/sequence";
 import { parseVizRef } from "../model/refs";
 import type { RfGraph } from "../model/rf";
 import type { UiAction, UiState } from "../model/ui";
@@ -47,6 +48,7 @@ export interface CanvasProps {
   emphasis: Emphasis;
   ui: UiState;
   scene: OverviewScene | undefined;
+  sequence: SequenceScene | undefined;
   notes: readonly PlacedNote[];
   review: VizReviewState;
   targets: readonly VizNoteTarget[];
@@ -153,7 +155,7 @@ function Reveal({ reveal, graph }: { reveal: UiState["reveal"]; graph: RfGraph }
 }
 
 export function Canvas(props: CanvasProps) {
-  const { stageKey, graph, index, emphasis, ui, scene, dispatch, openFile } = props;
+  const { stageKey, graph, index, emphasis, ui, scene, sequence, dispatch, openFile } = props;
   const frames = useMemo(() => {
     const [all, ...parts] = openingFrames(index, ui.stage);
     const notes = graph.nodes.filter((node) => node.type === "note").map((node) => node.id);
@@ -243,13 +245,23 @@ export function Canvas(props: CanvasProps) {
         ];
         break;
       }
-      case "pane":
+      case "pane": {
+        if (sequence) {
+          const spot = sequenceSpotAt(sequence, target.at);
+          if (spot?.kind === "step") {
+            const ref = { kind: "step", flow: sequence.flow, index: spot.index } as const;
+            dispatch({ type: "select", ref });
+            openMenu(ref, screen);
+          } else if (spot?.kind === "participant") {
+            dispatch({ type: "select", ref: { kind: "node", id: spot.id } });
+            openMenu({ kind: "node", id: spot.id }, screen);
+          }
+          return;
+        }
         title = "Diagram";
-        items =
-          ui.stage.kind === "overview"
-            ? noteItems([], target.at).map((item) => ({ ...item, label: `${item.label} here` }))
-            : [];
+        items = noteItems([], target.at).map((item) => ({ ...item, label: `${item.label} here` }));
         break;
+      }
       case "note":
         items = [
           { label: "Link to a part…", run: () => setLinking({ note: target.id, kind: "pick" }) },
@@ -370,7 +382,14 @@ export function Canvas(props: CanvasProps) {
           )}
           <Camera camera={emphasis.camera} frames={frames} graph={graph} />
           <Reveal reveal={ui.reveal} graph={graph} />
-          <PaneMenu openMenu={openMenu} />
+          <PaneMenu
+            openMenu={openMenu}
+            skip={
+              sequence
+                ? ".react-flow__node-message, .react-flow__node-participant, .react-flow__node-note, .viz-thread, .viz-tb"
+                : ".react-flow__node, .react-flow__edge, .viz-thread, .viz-tb"
+            }
+          />
           <ThreadLayer
             ui={ui}
             index={index}
@@ -389,7 +408,13 @@ export function Canvas(props: CanvasProps) {
   );
 }
 
-function PaneMenu({ openMenu }: { openMenu(target: MenuTarget, screen: Point): void }) {
+function PaneMenu({
+  openMenu,
+  skip,
+}: {
+  openMenu(target: MenuTarget, screen: Point): void;
+  skip: string;
+}) {
   const { screenToFlowPosition } = useReactFlow();
   const domNode = useStore((state) => state.domNode);
   useEffect(() => {
@@ -398,7 +423,7 @@ function PaneMenu({ openMenu }: { openMenu(target: MenuTarget, screen: Point): v
     }
     const onContext = (event: MouseEvent) => {
       const element = event.target as HTMLElement | null;
-      if (element?.closest(".react-flow__node, .react-flow__edge, .viz-thread, .viz-tb")) {
+      if (element?.closest(skip)) {
         return;
       }
       event.preventDefault();
@@ -407,6 +432,6 @@ function PaneMenu({ openMenu }: { openMenu(target: MenuTarget, screen: Point): v
     };
     domNode.addEventListener("contextmenu", onContext);
     return () => domNode.removeEventListener("contextmenu", onContext);
-  }, [domNode, openMenu, screenToFlowPosition]);
+  }, [domNode, openMenu, screenToFlowPosition, skip]);
   return null;
 }

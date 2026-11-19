@@ -1,4 +1,5 @@
 import type { VizReviewState } from "../protocol";
+import { BarLabel } from "./Header";
 import { UiIcon } from "./icons";
 import { vscode } from "./vscode";
 
@@ -8,15 +9,15 @@ function commentsText(pending: number): string {
 
 function agentStatus(waiting: boolean, pending: number): string {
   if (waiting) {
-    return "Agent is waiting for your review";
+    return "Waiting for your review";
   }
   if (pending > 0) {
     return `${commentsText(pending)} not sent yet`;
   }
-  return "Agent is not waiting for you";
+  return "Not waiting for you";
 }
 
-export function AgentStatus({ review }: { review: VizReviewState }) {
+function AgentStatus({ review }: { review: VizReviewState }) {
   const { waiting, pending } = review.feedback;
   const status = agentStatus(waiting, pending);
   return (
@@ -31,7 +32,7 @@ export function AgentStatus({ review }: { review: VizReviewState }) {
   );
 }
 
-export function AgentActions({ review }: { review: VizReviewState }) {
+function AgentActions({ review }: { review: VizReviewState }) {
   const { waiting, pending } = review.feedback;
   const comments = commentsText(pending);
   return (
@@ -66,5 +67,16 @@ export function AgentActions({ review }: { review: VizReviewState }) {
         </button>
       )}
     </>
+  );
+}
+
+export function AgentBar({ review }: { review: VizReviewState }) {
+  return (
+    <footer className="viz-agentbar">
+      <BarLabel>Agent</BarLabel>
+      <AgentStatus review={review} />
+      <span className="viz-header__spacer" />
+      <AgentActions review={review} />
+    </footer>
   );
 }
