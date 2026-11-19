@@ -20,7 +20,6 @@ const vscode = acquireVsCodeApi();
 
 export function Welcome() {
   const [state, setState] = useState<WelcomeState | undefined>();
-  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     function onMessage(event: MessageEvent) {
@@ -30,25 +29,12 @@ export function Welcome() {
       }
       if (msg.type === "state") {
         setState(msg.state);
-      } else if (msg.type === "agentBusy") {
-        setBusy((prev) => new Set(prev).add(msg.agentId));
-      } else if (msg.type === "agentResult") {
-        setBusy((prev) => {
-          const next = new Set(prev);
-          next.delete(msg.agentId);
-          return next;
-        });
       }
     }
     window.addEventListener("message", onMessage);
     vscode.postMessage({ type: "requestState" });
     return () => window.removeEventListener("message", onMessage);
   }, []);
-
-  function setupAgent(id: string) {
-    setBusy((prev) => new Set(prev).add(id));
-    vscode.postMessage({ type: "setupAgent", agentId: id });
-  }
 
   return (
     <>
@@ -71,8 +57,8 @@ export function Welcome() {
             <AgentRow
               key={a.id}
               agent={a}
-              busy={busy.has(a.id)}
-              onSetupPlugin={() => setupAgent(a.id)}
+              busy={a.installing}
+              onSetupPlugin={() => vscode.postMessage({ type: "setupAgent", agentId: a.id })}
               onConfigureProfile={() => vscode.postMessage({ type: "setupProfile", agentId: a.id })}
             />
           ))}

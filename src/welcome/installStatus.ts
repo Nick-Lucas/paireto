@@ -2,7 +2,7 @@
 // one probe result. Pure node code (no vscode API) — the host supplies the per-agent InstallContext.
 
 import { log } from "../log.js";
-import { type InstallContext, type OnboardingAgent, ONBOARDING_AGENTS } from "./agents.js";
+import type { InstallContext, OnboardingAgent } from "./agents.js";
 import type { InstallProbe } from "./installProbe.js";
 import type { InstallState } from "./protocol.js";
 
@@ -41,27 +41,22 @@ export async function agentInstallProbe(
   }
 }
 
-/** Probe every registered agent at once. Slow — Codex asks its CLI — so keep this off render
- *  paths and read the cache there instead. */
-export function probeAgentInstallStates(
-  installContextFor: (agentId: string) => InstallContext,
-): Promise<AgentInstallRow[]> {
-  return Promise.all(
-    ONBOARDING_AGENTS.map(async (agent) => {
-      const probe = await agentInstallProbe(agent, installContextFor(agent.id));
-      const versions =
-        probe.state === "not-installed"
-          ? {}
-          : { installedVersion: probe.installedVersion, shippedVersion: probe.shippedVersion };
-      return {
-        id: agent.id,
-        name: agent.name,
-        available: agent.available,
-        installState: probe.state,
-        ...versions,
-      };
-    }),
-  );
+export async function agentInstallRow(
+  agent: OnboardingAgent,
+  ctx: InstallContext,
+): Promise<AgentInstallRow> {
+  const probe = await agentInstallProbe(agent, ctx);
+  const versions =
+    probe.state === "not-installed"
+      ? {}
+      : { installedVersion: probe.installedVersion, shippedVersion: probe.shippedVersion };
+  return {
+    id: agent.id,
+    name: agent.name,
+    available: agent.available,
+    installState: probe.state,
+    ...versions,
+  };
 }
 
 /** The nudge for a set of probe results. A stale plugin always wins, because a mismatched plugin

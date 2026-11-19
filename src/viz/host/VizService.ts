@@ -367,7 +367,7 @@ export class VizService implements vscode.CustomTextEditorProvider, vscode.Dispo
       return;
     }
     await this.deps.openEditor(vscode.Uri.file(file), {
-      viewColumn: options.viewColumn ?? vscode.ViewColumn.Beside,
+      viewColumn: options.viewColumn ?? vscode.ViewColumn.One,
       preserveFocus: options.preserveFocus,
     });
   }

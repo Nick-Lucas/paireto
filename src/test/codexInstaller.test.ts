@@ -2,12 +2,16 @@
 
 import * as assert from "node:assert";
 import * as fs from "node:fs";
+import * as http from "node:http";
+import type { AddressInfo } from "node:net";
 import * as os from "node:os";
 import * as path from "node:path";
 
 import {
+  codexInstalledProbe,
   codexMarketplacePlan,
   codexPluginInstallState,
+  installCodex,
   materializeCodexPlugin,
   readCodexPluginVersion,
   renderCodexMarketplace,
@@ -176,5 +180,77 @@ suite("Codex native plugin probe", () => {
       "not-installed",
     );
     assert.strictEqual(codexPluginInstallState("not json", "0.5.7"), "not-installed");
+  });
+});
+
+const jwt = (payload: Record<string, unknown>): string =>
+  [{ alg: "none", typ: "JWT" }, payload]
+    .map((part) => Buffer.from(JSON.stringify(part), "utf8").toString("base64url"))
+    .concat("sig")
+    .join(".");
+
+function chatGptLogin(): string {
+  const claims = {
+    exp: 4_000_000_000,
+    email: "test@example.com",
+    "https://api.openai.com/auth": {
+      chatgpt_account_id: "account-1",
+      chatgpt_plan_type: "plus",
+      chatgpt_user_id: "user-1",
+    },
+  };
+  return JSON.stringify({
+    auth_mode: "chatgpt",
+    OPENAI_API_KEY: null,
+    tokens: {
+      id_token: jwt(claims),
+      access_token: jwt(claims),
+      refresh_token: "refresh-1",
+      account_id: "account-1",
+    },
+    last_refresh: new Date().toISOString(),
+  });
+}
+
+suite("Codex install against the real CLI", () => {
+  test("a slow ChatGPT plugin catalog does not hide a finished install", async function () {
+    this.timeout(60000);
+    const catalog = http.createServer((_req, res) => {
+      setTimeout(() => {
+        res.writeHead(401, { "content-type": "application/json" });
+        res.end('{"error":{"message":"slow catalog"}}');
+      }, 10000);
+    });
+    await new Promise<void>((resolve) => catalog.listen(0, "127.0.0.1", resolve));
+    const { port } = catalog.address() as AddressInfo;
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "paireto-codex-slow-catalog-"));
+    const codexHome = path.join(root, "codex");
+    fs.mkdirSync(codexHome);
+    fs.writeFileSync(path.join(codexHome, "auth.json"), chatGptLogin());
+    fs.writeFileSync(
+      path.join(codexHome, "config.toml"),
+      `chatgpt_base_url = "http://127.0.0.1:${port}/backend-api/"\n`,
+    );
+    const previousHome = process.env.CODEX_HOME;
+    process.env.CODEX_HOME = codexHome;
+    const ctx = { pluginsRoot: path.dirname(bundledPlugin), stableDir: path.join(root, "stable") };
+    try {
+      const result = await installCodex(ctx);
+      assert.ok(result.ok, result.detail);
+      assert.deepStrictEqual(await codexInstalledProbe(ctx), {
+        state: "installed",
+        installedVersion: PLUGIN_VERSION,
+        shippedVersion: PLUGIN_VERSION,
+      });
+    } finally {
+      if (previousHome === undefined) {
+        delete process.env.CODEX_HOME;
+      } else {
+        process.env.CODEX_HOME = previousHome;
+      }
+      catalog.closeAllConnections();
+      catalog.close();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 });

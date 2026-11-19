@@ -98,7 +98,7 @@ export class WelcomePanel {
         this.postState();
         return;
       case "setupAgent":
-        await this.setupAgent(String(msg.agentId));
+        void this.status.install(String(msg.agentId));
         return;
       case "setupProfile":
         await this.setupProfile(String(msg.agentId));
@@ -243,27 +243,6 @@ export class WelcomePanel {
       text = applyShortcut(text, s, platform);
     }
     this.writeKeybindings(text);
-  }
-
-  private async setupAgent(agentId: string): Promise<void> {
-    const agent = findAgent(agentId);
-    if (!agent?.available || !agent.install) {
-      return;
-    }
-    void this.panel.webview.postMessage({ type: "agentBusy", agentId });
-    const ctx = this.status.installContext(agent.id);
-    // The installer stages files here and stamps the installed version — mkdirp it first.
-    fs.mkdirSync(ctx.stableDir, { recursive: true });
-    const result = await agent.install(ctx);
-    void this.panel.webview.postMessage({
-      type: "agentResult",
-      agentId,
-      ok: result.ok,
-      detail: result.detail,
-    });
-    // The user waits on this one, so the card shows the state the install left behind.
-    await this.status.refresh();
-    this.post();
   }
 
   /** Add the agent's terminal profile to User settings (so it shows in the new-terminal-with-profile
