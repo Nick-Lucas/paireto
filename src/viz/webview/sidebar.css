@@ -240,11 +240,41 @@
   font-size: 11.5px;
 }
 
-.viz-inspect {
-  border-top: 1px solid var(--viz-border);
+.viz-filepick {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+  margin-left: 10px;
 }
 
-.viz-show-files {
+.viz-filepick__toggle {
+  border: 1px solid var(--vscode-widget-border, var(--viz-border));
+}
+
+.viz-filepick__pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  width: 360px;
+  max-height: min(60vh, 520px);
+  overflow: auto;
+  border: 1px solid var(--vscode-widget-border, var(--viz-border));
+  border-radius: 6px;
+  background: var(--vscode-quickInput-background, var(--viz-side));
+  box-shadow: var(--viz-shadow);
+  color: var(--viz-fg);
+  white-space: normal;
+}
+
+.viz-filepick__progress {
+  display: flex;
+  padding: 8px 12px 2px;
+}
+
+.viz-show-side {
   position: absolute;
   top: 12px;
   right: 12px;
@@ -262,10 +292,10 @@
   box-shadow: var(--viz-shadow);
 }
 
-.viz-show-files .viz-icon {
+.viz-show-side .viz-icon {
   color: var(--viz-muted);
 }
 
-.viz-show-files:hover {
+.viz-show-side:hover {
   background: var(--viz-hover);
 }

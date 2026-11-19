@@ -207,6 +207,7 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
         review={review}
         dispatch={dispatch}
         onExport={onExport}
+        onNext={onNext}
       />
       {loaded.invalid && (
         <InvalidBanner name={loaded.invalid.name} issues={loaded.invalid.issues} />
@@ -247,17 +248,15 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
           {!ui.sidebar && (
             <button
               type="button"
-              className="viz-show-files"
-              title="Show where the changes are (b)"
+              className="viz-show-side"
+              title="Show the selection side bar (b)"
               onClick={() => dispatch({ type: "toggleSidebar" })}
             >
-              <UiIcon name="sidebar" size={14} /> Show files
+              <UiIcon name="sidebar" size={14} /> Show selection
             </button>
           )}
         </main>
-        {ui.sidebar && (
-          <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} onNext={onNext} />
-        )}
+        {ui.sidebar && <Sidebar index={index} ui={ui} dispatch={dispatch} />}
       </div>
       <HelpOverlay ui={ui} dispatch={dispatch} />
     </div>

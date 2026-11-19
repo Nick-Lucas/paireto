@@ -1,4 +1,6 @@
 .viz-header {
+  position: relative;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--viz-border);
@@ -182,6 +184,7 @@
 
 .viz-crumbs__part:first-child {
   flex: 0 1 auto;
+  min-width: 90px;
 }
 
 .viz-crumbs__here {
@@ -197,6 +200,13 @@
 .viz-crumbs__change {
   flex: none;
   margin-left: 2px;
+}
+
+.viz-crumbs__kind {
+  flex: 0 50 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .viz-crumbs__change {
@@ -248,6 +258,7 @@
 }
 
 .viz-compare {
+  flex: 0 100 auto;
   min-width: 0;
   margin-left: 6px;
   overflow: hidden;

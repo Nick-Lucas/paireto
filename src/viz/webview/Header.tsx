@@ -4,6 +4,7 @@ import type { UiAction, UiState } from "../model/ui";
 import { overviewKind } from "../model/visible";
 import type { VizListEntry, VizReviewState, VizWindowState } from "../protocol";
 import type { VizDelta } from "../../protocol/viz.js";
+import { ChangedFiles } from "./ChangedFiles";
 import { UiIcon, type UiIconName } from "./icons";
 import { vscode } from "./vscode";
 import "./header.css";
@@ -17,6 +18,7 @@ interface HeaderProps {
   review: VizReviewState;
   dispatch: (action: UiAction) => void;
   onExport: () => void;
+  onNext: () => void;
 }
 
 const CHANGE_LETTER: Record<VizDelta, string> = {
@@ -183,6 +185,7 @@ export function Header({
   review,
   dispatch,
   onExport,
+  onNext,
 }: HeaderProps) {
   const current = stageNumber(index, ui.stage);
   const walking = ui.mode.kind === "walk";
@@ -244,6 +247,13 @@ export function Header({
           <>
             <span className="viz-crumbs__part viz-crumbs__here">Overview</span>
             <span className="viz-crumbs__kind">{kind}</span>
+            <ChangedFiles
+              index={index}
+              ui={ui}
+              review={review}
+              dispatch={dispatch}
+              onNext={onNext}
+            />
           </>
         )}
         <span className="viz-compare" title={compareTitle(doc, window)}>
