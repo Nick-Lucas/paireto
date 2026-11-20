@@ -64,6 +64,11 @@ suite("viz ui review state", () => {
     );
   });
 
+  test("a comment can start on the Overview and on a sequence diagram", () => {
+    assert.strictEqual(run(DRAFT).thread.kind, "draft");
+    assert.strictEqual(run({ type: "stage", stage: FLOW }, DRAFT).thread.kind, "draft");
+  });
+
   test("the sidebar width stays within its bounds", () => {
     assert.strictEqual(run({ type: "sidebarWidth", width: 10 }).sidebarWidth, SIDEBAR_MIN);
     assert.strictEqual(run({ type: "sidebarWidth", width: 9000 }).sidebarWidth, SIDEBAR_MAX);

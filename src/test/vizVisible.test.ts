@@ -7,10 +7,11 @@ import {
   formatCounts,
   MAX_ROWS,
   memberMatches,
+  overviewKind,
   showCounts,
   summaryText,
 } from "../viz/model/visible.js";
-import { classDiagramIndex, singleFrontendIndex } from "./vizFixtures.js";
+import { classDiagramIndex, multiServiceIndex, singleFrontendIndex } from "./vizFixtures.js";
 
 const index = classDiagramIndex();
 const EMAIL = "src/notify/emailChannel.ts#EmailChannel";
@@ -36,6 +37,12 @@ suite("viz visible", () => {
     const card = frontend.nodeById.get("comment-editor");
     assert.ok(card);
     assert.strictEqual(componentOf(frontend, card), "card");
+  });
+
+  test("the overview is named for the boxes it draws", () => {
+    assert.strictEqual(overviewKind(index), "class diagram");
+    assert.strictEqual(overviewKind(multiServiceIndex()), "component diagram");
+    assert.strictEqual(overviewKind(singleFrontendIndex()), "class and component diagram");
   });
 
   test("a box shows the changed members in their compartments", () => {

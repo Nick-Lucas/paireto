@@ -1,6 +1,7 @@
 import {
   Background,
   BackgroundVariant,
+  ControlButton,
   Controls,
   MiniMap,
   ReactFlow,
@@ -22,15 +23,18 @@ import {
   memberTarget,
   nodeTarget,
   relativePlace,
+  stepTarget,
   type NoteKind,
   type PlacedNote,
 } from "../model/notes";
+import { sequenceSpotAt, type SequenceScene } from "../layout/sequence";
 import { parseVizRef } from "../model/refs";
 import type { RfGraph } from "../model/rf";
 import type { UiAction, UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
 import { VizContext, type MenuTarget, type VizActions } from "./context";
 import { ContextMenu, type MenuItem, type MenuState } from "./ContextMenu";
+import { UiIcon } from "./icons";
 import { NODE_TYPES, EDGE_TYPES } from "./nodes";
 import { ZOOM_KEY } from "./platform";
 import { ThreadLayer, type Linking } from "./ThreadLayer";
@@ -44,6 +48,7 @@ export interface CanvasProps {
   emphasis: Emphasis;
   ui: UiState;
   scene: OverviewScene | undefined;
+  sequence: SequenceScene | undefined;
   notes: readonly PlacedNote[];
   review: VizReviewState;
   targets: readonly VizNoteTarget[];
@@ -150,7 +155,7 @@ function Reveal({ reveal, graph }: { reveal: UiState["reveal"]; graph: RfGraph }
 }
 
 export function Canvas(props: CanvasProps) {
-  const { stageKey, graph, index, emphasis, ui, scene, dispatch, openFile } = props;
+  const { stageKey, graph, index, emphasis, ui, scene, sequence, dispatch, openFile } = props;
   const frames = useMemo(() => {
     const [all, ...parts] = openingFrames(index, ui.stage);
     const notes = graph.nodes.filter((node) => node.type === "note").map((node) => node.id);
@@ -222,10 +227,41 @@ export function Canvas(props: CanvasProps) {
         items = noteItems(noteTarget ? [noteTarget] : [], { x: 0, y: 0 });
         break;
       }
-      case "pane":
+      case "step": {
+        const step = index.flowById.get(target.flow)?.steps[target.index];
+        const noteTarget = stepTarget(index, target.flow, target.index);
+        title = noteTarget?.label;
+        items = [
+          ...noteItems(noteTarget ? [noteTarget] : [], { x: 0, y: 0 }),
+          ...fileItems(step?.files[0]),
+          ...(step
+            ? [
+                {
+                  label: "Show in Overview",
+                  run: () => dispatch({ type: "goto", ref: step.overviewRef }),
+                },
+              ]
+            : []),
+        ];
+        break;
+      }
+      case "pane": {
+        if (sequence) {
+          const spot = sequenceSpotAt(sequence, target.at);
+          if (spot?.kind === "step") {
+            const ref = { kind: "step", flow: sequence.flow, index: spot.index } as const;
+            dispatch({ type: "select", ref });
+            openMenu(ref, screen);
+          } else if (spot?.kind === "participant") {
+            dispatch({ type: "select", ref: { kind: "node", id: spot.id } });
+            openMenu({ kind: "node", id: spot.id }, screen);
+          }
+          return;
+        }
         title = "Diagram";
         items = noteItems([], target.at).map((item) => ({ ...item, label: `${item.label} here` }));
         break;
+      }
       case "note":
         items = [
           { label: "Link to a part…", run: () => setLinking({ note: target.id, kind: "pick" }) },
@@ -241,7 +277,9 @@ export function Canvas(props: CanvasProps) {
         ];
         break;
     }
-    setMenu({ x: screen.x, y: screen.y, title, items });
+    if (items.length > 0) {
+      setMenu({ x: screen.x, y: screen.y, title, items });
+    }
   };
   const actions: VizActions = {
     index,
@@ -285,6 +323,14 @@ export function Canvas(props: CanvasProps) {
           }}
           onNodeContextMenu={(event, node) => {
             event.preventDefault();
+            if (node.type === "message" && node.data.kind === "message") {
+              select(node.id);
+              openMenu(
+                { kind: "step", flow: node.data.step.flow, index: node.data.step.index },
+                { x: event.clientX, y: event.clientY },
+              );
+              return;
+            }
             if (node.type === "classBox" || node.type === "card" || node.type === "participant") {
               select(node.id);
               openMenu(
@@ -316,7 +362,15 @@ export function Canvas(props: CanvasProps) {
             size={1.2}
             className="viz-dots-bg"
           />
-          <Controls showInteractive={false} position="bottom-left" fitViewOptions={FIT} />
+          <Controls showInteractive={false} position="bottom-left" fitViewOptions={FIT}>
+            <ControlButton
+              title="Keyboard shortcuts (?)"
+              aria-label="Keyboard shortcuts"
+              onClick={() => dispatch({ type: "toggleHelp" })}
+            >
+              <UiIcon name="help" size={14} />
+            </ControlButton>
+          </Controls>
           {ui.minimap && (
             <MiniMap
               pannable
@@ -328,7 +382,14 @@ export function Canvas(props: CanvasProps) {
           )}
           <Camera camera={emphasis.camera} frames={frames} graph={graph} />
           <Reveal reveal={ui.reveal} graph={graph} />
-          <PaneMenu openMenu={openMenu} />
+          <PaneMenu
+            openMenu={openMenu}
+            skip={
+              sequence
+                ? ".react-flow__node-message, .react-flow__node-participant, .react-flow__node-note, .viz-thread, .viz-tb"
+                : ".react-flow__node, .react-flow__edge, .viz-thread, .viz-tb"
+            }
+          />
           <ThreadLayer
             ui={ui}
             index={index}
@@ -347,7 +408,13 @@ export function Canvas(props: CanvasProps) {
   );
 }
 
-function PaneMenu({ openMenu }: { openMenu(target: MenuTarget, screen: Point): void }) {
+function PaneMenu({
+  openMenu,
+  skip,
+}: {
+  openMenu(target: MenuTarget, screen: Point): void;
+  skip: string;
+}) {
   const { screenToFlowPosition } = useReactFlow();
   const domNode = useStore((state) => state.domNode);
   useEffect(() => {
@@ -356,7 +423,7 @@ function PaneMenu({ openMenu }: { openMenu(target: MenuTarget, screen: Point): v
     }
     const onContext = (event: MouseEvent) => {
       const element = event.target as HTMLElement | null;
-      if (element?.closest(".react-flow__node, .react-flow__edge, .viz-thread, .viz-tb")) {
+      if (element?.closest(skip)) {
         return;
       }
       event.preventDefault();
@@ -365,6 +432,6 @@ function PaneMenu({ openMenu }: { openMenu(target: MenuTarget, screen: Point): v
     };
     domNode.addEventListener("contextmenu", onContext);
     return () => domNode.removeEventListener("contextmenu", onContext);
-  }, [domNode, openMenu, screenToFlowPosition]);
+  }, [domNode, openMenu, screenToFlowPosition, skip]);
   return null;
 }

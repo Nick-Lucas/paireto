@@ -224,3 +224,15 @@ export function folderOf(node: VizNode): string | undefined {
   const cut = path.lastIndexOf("/");
   return cut > 0 ? path.slice(0, cut) : ".";
 }
+
+export function overviewKind(index: VizIndex): string {
+  const kinds = new Set(
+    index.overviewNodes
+      .map((node) => componentOf(index, node))
+      .filter((component) => component !== "frame"),
+  );
+  if (kinds.has("classBox") && kinds.has("card")) {
+    return "class and component diagram";
+  }
+  return kinds.has("classBox") ? "class diagram" : "component diagram";
+}

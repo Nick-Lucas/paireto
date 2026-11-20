@@ -7,7 +7,7 @@ import {
   type VizViewState,
 } from "../protocol.js";
 import { OVERVIEW, refInStage, sameStage, type Stage, type VizIndex } from "./index.js";
-import type { NoteKind } from "./notes.js";
+import { sameTarget, type NoteKind } from "./notes.js";
 import { formatVizRef } from "./refs.js";
 import type { ChangeCursor } from "./review.js";
 import type { VizRef } from "./types.js";
@@ -349,11 +349,7 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
       if (ui.thread.kind !== "draft") {
         return ui;
       }
-      const key = (target: VizNoteTarget) =>
-        target.kind === "file"
-          ? `${target.kind}:${target.repo}:${target.path}`
-          : `${target.kind}:${target.id}`;
-      if (ui.thread.targets.some((target) => key(target) === key(action.target))) {
+      if (ui.thread.targets.some((target) => sameTarget(target, action.target))) {
         return ui;
       }
       return { ...ui, thread: { ...ui.thread, targets: [...ui.thread.targets, action.target] } };

@@ -112,13 +112,17 @@ kbd {
 
 .viz-app {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 
 .viz-app > .viz-body {
   grid-row: 3;
+}
+
+.viz-app > .viz-agentbar {
+  grid-row: 4;
 }
 
 .viz-body {

@@ -3,6 +3,7 @@ import * as assert from "node:assert";
 import { BOX } from "../viz/layout/classBox.js";
 import type { Rect } from "../viz/layout/geometry.js";
 import { estimateMeasure } from "../viz/layout/measure.js";
+import { layoutSequence, sequenceSpotAt } from "../viz/layout/sequence.js";
 import {
   DEFAULT_OVERVIEW_OPTIONS,
   layoutOverview,
@@ -14,8 +15,10 @@ import {
   NOTE,
   noteStatus,
   placeNotes,
+  placeSequenceNotes,
   relativePlace,
   searchTargets,
+  stepTarget,
   targetRect,
   timeAgo,
 } from "../viz/model/notes.js";
@@ -157,6 +160,60 @@ suite("viz notes", () => {
     assert.ok(rect.y > home.y && rect.y + rect.height < home.y + home.height);
   });
 
+  test("a link to a member stops on the class box border beside that row", async () => {
+    const laid = await scene();
+    const target = memberTarget(index, `${EMAIL}.send`);
+    assert.ok(target);
+    const [sticky] = placeNotes(
+      laid,
+      index,
+      [note("n1", { targets: [target], place: { node: EMAIL, x: 0, y: -160 } })],
+      undefined,
+      estimateMeasure,
+    );
+    const row = targetRect(laid, index, target);
+    assert.ok(row);
+    const { to } = sticky.links[0];
+    assert.ok(
+      onBorder(nodeRect(laid, EMAIL), to),
+      `ends on the box border, not at ${to.x},${to.y}`,
+    );
+    assert.ok(to.y >= row.y && to.y <= row.y + row.height, "ends level with the row");
+  });
+
+  test("a note with no free spot beside its target goes to the nearest free spot", async () => {
+    const laid = await scene();
+    const home = nodeRect(laid, EMAIL);
+    const height = placeNotes(laid, index, [note("probe")], undefined, estimateMeasure)[0].height;
+    const spots = [
+      { x: home.width + NOTE.gap, y: 0 },
+      { x: -NOTE.gap - NOTE.width, y: 0 },
+      { x: 0, y: -NOTE.gap - height },
+      { x: 0, y: home.height + NOTE.gap },
+    ];
+    const blockers = spots.map((spot, at) =>
+      note(`block${at}`, { place: { node: EMAIL, ...spot } }),
+    );
+    const far = note("far", { place: { x: laid.bounds.x - 2000, y: laid.bounds.y - 2000 } });
+    const placed = placeNotes(
+      laid,
+      index,
+      [...blockers, far, note("n1")],
+      undefined,
+      estimateMeasure,
+    );
+    const sticky = placed[placed.length - 1];
+    for (const other of [...laid.nodes, ...placed.slice(0, -1)]) {
+      assert.ok(!overlaps(sticky, other), `note stays off ${other.id}`);
+    }
+    const dx = Math.max(home.x - sticky.x - sticky.width, 0, sticky.x - home.x - home.width);
+    const dy = Math.max(home.y - sticky.y - sticky.height, 0, sticky.y - home.y - home.height);
+    assert.ok(
+      Math.hypot(dx, dy) < 200,
+      `note is ${Math.round(Math.hypot(dx, dy))}px from its target`,
+    );
+  });
+
   test("target search ranks name matches before path matches and honours the limit", () => {
     const targets = allTargets(index, FILES);
     const hits = searchTargets(targets, "notif");
@@ -199,5 +256,90 @@ suite("viz notes", () => {
     assert.strictEqual(timeAgo("2026-01-02T11:18:00Z", now), "42 min ago");
     assert.strictEqual(timeAgo("2026-01-02T11:00:00Z", now), "1 hour ago");
     assert.strictEqual(timeAgo("2025-12-30T12:00:00Z", now), "3 days ago");
+  });
+});
+
+suite("viz notes on a sequence diagram", () => {
+  const NOTIFIER = "src/notify/notifier.ts#Notifier";
+  const CHANNEL = "src/notify/channel.ts#Channel";
+  const seq = layoutSequence(index, "deliver");
+  const STEP = stepTarget(index, "deliver", 2)!;
+  const place = (notes: VizNote[], draft?: Parameters<typeof placeSequenceNotes>[3]) =>
+    placeSequenceNotes(seq, index, notes, draft, estimateMeasure);
+
+  test("a step target names its flow, its number and its message", () => {
+    assert.deepStrictEqual(STEP, {
+      kind: "step",
+      flow: "deliver",
+      index: 2,
+      label: "Deliver with fallback, step 3: send(message)",
+    });
+    assert.strictEqual(stepTarget(index, "deliver", 99), undefined);
+  });
+
+  test("a step note sits right of the diagram at its step, with an arrow to the end of the step", () => {
+    const [placed] = place([note("s", { targets: [STEP] })]);
+    const message = seq.messages[2];
+    assert.ok(placed.x >= seq.bounds.x + seq.bounds.width);
+    assert.ok(placed.y <= message.lineY && placed.y + placed.height >= message.lineY);
+    assert.deepStrictEqual(placed.links[0].to, {
+      x: Math.max(message.fromX, message.toX),
+      y: message.lineY,
+    });
+    assert.ok(onBorder(placed, placed.links[0].from));
+  });
+
+  test("notes on the same step stack without covering each other", () => {
+    const [a, b] = place([note("a", { targets: [STEP] }), note("b", { targets: [STEP] })]);
+    assert.ok(!overlaps(a, b));
+  });
+
+  test("a part note sits above its participant, and notes about other parts stay off", () => {
+    const placed = place([
+      note("p"),
+      note("x", { targets: [{ kind: "node", id: CHANNEL, label: "Channel" }] }),
+    ]);
+    assert.deepStrictEqual(
+      placed.map((found) => found.id),
+      ["p"],
+    );
+    const head = seq.participants.find((candidate) => candidate.id === EMAIL)!;
+    assert.ok(placed[0].y + placed[0].height <= head.y);
+    assert.deepStrictEqual(placed[0].links[0].to, { x: head.x + head.width / 2, y: head.y });
+  });
+
+  test("a draft on a step gets its own sticky", () => {
+    const placed = place([], { kind: "comment", targets: [STEP], place: undefined });
+    assert.deepStrictEqual(
+      placed.map((found) => found.id),
+      ["draft"],
+    );
+  });
+
+  test("a right-click on a step's row picks the step, and on a lifeline past the rows its participant", () => {
+    const row = seq.messages[1];
+    const middle = seq.bounds.x + seq.bounds.width / 2;
+    assert.deepStrictEqual(sequenceSpotAt(seq, { x: middle, y: row.lineY + 12 }), {
+      kind: "step",
+      index: 1,
+    });
+    const email = seq.participants.find((candidate) => candidate.id === EMAIL)!;
+    assert.deepStrictEqual(
+      sequenceSpotAt(seq, { x: email.lifelineX + 20, y: seq.lifelineBottom - 2 }),
+      { kind: "participant", id: EMAIL },
+    );
+    assert.deepStrictEqual(
+      sequenceSpotAt(seq, { x: email.lifelineX, y: email.y + email.height / 2 }),
+      { kind: "participant", id: EMAIL },
+    );
+    assert.strictEqual(
+      sequenceSpotAt(seq, { x: seq.bounds.x + seq.bounds.width + 200, y: row.lineY }),
+      undefined,
+    );
+  });
+
+  test("on the Overview a step note points at the part that sends the step", async () => {
+    const placed = await scene();
+    assert.deepStrictEqual(targetRect(placed, index, STEP), nodeRect(placed, NOTIFIER));
   });
 });

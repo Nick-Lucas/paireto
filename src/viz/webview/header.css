@@ -1,124 +1,410 @@
 .viz-header {
+  position: relative;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   border-bottom: 1px solid var(--viz-border);
   background: var(--viz-side);
 }
 
-.viz-header__row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding: 6px 12px;
-}
-
-.viz-header__title {
-  margin: 0;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 30%;
-}
-
 .viz-header__spacer {
   flex: 1;
 }
 
-.viz-compare {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 22px;
-  padding: 0 9px 0 7px;
-  border: 1px solid var(--viz-border);
-  border-radius: 999px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.viz-compare .viz-icon {
-  color: var(--viz-muted);
-}
-
-.viz-mismatch {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 22px;
-  padding: 0 9px;
-  border-radius: 999px;
-  font-size: 11.5px;
-  color: var(--viz-changed);
-  background: color-mix(in srgb, var(--viz-changed) 12%, transparent);
-  white-space: nowrap;
-}
-
-.viz-select {
-  height: 22px;
-  max-width: 220px;
-  padding: 0 6px;
-  border: 1px solid var(--vscode-dropdown-border, var(--viz-border));
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--vscode-dropdown-foreground, var(--viz-fg));
-  background: var(--vscode-dropdown-background, var(--viz-panel));
-}
-
-.viz-feedback-state {
-  color: var(--viz-muted);
-  font-size: 12px;
-  white-space: nowrap;
+.viz-tabbar {
+  display: flex;
+  align-items: stretch;
+  border-top: 1px solid var(--vscode-editorGroupHeader-tabsBorder, var(--viz-border));
+  height: 35px;
+  min-width: 0;
+  background: var(--vscode-editorGroupHeader-tabsBackground, var(--viz-side));
+  border-bottom: 1px solid var(--vscode-editorGroupHeader-tabsBorder, var(--viz-border));
 }
 
 .viz-tabs {
   display: flex;
-  align-items: center;
-  gap: 2px;
   min-width: 0;
-  padding: 0 8px;
   overflow: hidden;
 }
 
 .viz-tab {
+  position: relative;
   display: inline-flex;
+  flex: 0 1 auto;
   align-items: center;
   gap: 6px;
-  height: 28px;
-  padding: 0 10px;
-  border-bottom: 2px solid transparent;
-  font-size: 12px;
-  color: var(--viz-muted);
+  min-width: 0;
+  padding: 0 12px;
+  border-right: 1px solid var(--vscode-tab-border, var(--viz-border));
+  background: var(--vscode-tab-inactiveBackground, transparent);
+  font-size: 13px;
+  color: var(--vscode-tab-inactiveForeground, var(--viz-muted));
   white-space: nowrap;
 }
 
+.viz-tab:first-child {
+  flex: none;
+}
+
+.viz-tab .viz-icon {
+  flex: none;
+}
+
 .viz-tab:hover {
-  color: var(--viz-fg);
+  background: var(--vscode-tab-hoverBackground, var(--viz-hover));
 }
 
-.viz-tab--active {
-  color: var(--viz-fg);
-  border-bottom-color: var(--viz-accent);
+.viz-tab--active,
+.viz-tab--active:hover {
+  margin-bottom: -1px;
+  border-bottom: 1px solid var(--vscode-tab-activeBackground, var(--viz-bg));
+  background: var(--vscode-tab-activeBackground, var(--viz-bg));
+  color: var(--vscode-tab-activeForeground, var(--viz-fg));
 }
 
-.viz-tab kbd {
-  font-size: 9.5px;
+.viz-tab--active::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--vscode-tab-activeBorderTop, var(--vscode-focusBorder, var(--viz-accent)));
 }
 
-.viz-tab__delta {
-  font-family: var(--viz-mono);
-  font-weight: 700;
+.viz-tab__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.viz-summary {
+.viz-tab__kind {
+  flex: 0 100 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--vscode-descriptionForeground, var(--viz-muted));
+}
+
+.viz-tab__letter {
+  flex: none;
+  margin-left: 2px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.viz-tab--added .viz-tab__name,
+.viz-tab--added .viz-tab__letter,
+.viz-diagrambar__change--added {
+  color: var(--vscode-gitDecoration-addedResourceForeground, var(--viz-added));
+}
+
+.viz-tab--changed .viz-tab__name,
+.viz-tab--changed .viz-tab__letter,
+.viz-diagrambar__change--changed {
+  color: var(--vscode-gitDecoration-modifiedResourceForeground, var(--viz-changed));
+}
+
+.viz-tab--removed .viz-tab__name,
+.viz-tab--removed .viz-tab__letter,
+.viz-diagrambar__change--removed {
+  color: var(--vscode-gitDecoration-deletedResourceForeground, var(--viz-removed));
+}
+
+.viz-tab--removed .viz-tab__name {
+  text-decoration: line-through;
+}
+
+.viz-action {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  align-self: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--vscode-icon-foreground, var(--viz-fg));
+  white-space: nowrap;
+}
+
+.viz-action--copy {
+  flex: 0 1 auto;
+  min-width: 28px;
+}
+
+.viz-action .viz-icon {
+  flex: none;
+}
+
+.viz-action__label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.viz-action:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+}
+
+.viz-action--on {
+  background: var(--vscode-toolbar-activeBackground, var(--viz-hover));
+  color: var(--vscode-tab-activeForeground, var(--viz-fg));
+}
+
+.viz-changebar {
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  font-size: 12px;
+  color: var(--vscode-breadcrumb-foreground, var(--viz-muted));
+  white-space: nowrap;
+}
+
+.viz-changebar__name {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--vscode-breadcrumb-focusForeground, var(--viz-fg));
+}
+
+.viz-changebar__name > .viz-icon,
+.viz-changebar__name > .viz-barlabel {
+  flex: none;
+}
+
+.viz-changebar .viz-header__title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.viz-diagrambar {
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  background: var(--vscode-breadcrumb-background, var(--viz-bg));
+  font-size: 12px;
+  color: var(--vscode-breadcrumb-foreground, var(--viz-muted));
+  white-space: nowrap;
+}
+
+.viz-diagrambar .viz-filepick {
+  margin-left: 0;
+}
+
+.viz-diagrambar__about {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.viz-diagrambar__change {
+  flex: none;
+  margin-left: 2px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+.viz-header__title {
+  min-width: 0;
   margin: 0;
-  padding: 0 4px;
-  font-size: 11.5px;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: inherit;
+}
+
+.viz-header__switch {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0 3px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.viz-header__switch:hover {
+  color: var(--vscode-breadcrumb-focusForeground, var(--viz-fg));
+  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+}
+
+.viz-header__switch:focus-within {
+  outline: 1px solid var(--vscode-focusBorder, var(--viz-accent));
+}
+
+.viz-header__switch .viz-icon {
+  flex: none;
+}
+
+.viz-header__select {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.viz-barlabel {
+  flex: none;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vscode-descriptionForeground, var(--viz-muted));
+}
+
+.viz-tool {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--vscode-icon-foreground, var(--viz-fg));
+  white-space: nowrap;
+}
+
+.viz-tool .viz-icon {
+  color: var(--viz-muted);
+}
+
+.viz-tool:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+}
+
+.viz-agent__status {
+  font-size: 12px;
   color: var(--viz-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 50%;
+}
+
+.viz-agent--waiting .viz-agent__status {
+  color: var(--viz-fg);
+}
+
+.viz-agent__pulse {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--viz-accent);
+  animation: viz-agent-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes viz-agent-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .viz-agent__pulse {
+    animation: none;
+  }
+}
+
+.viz-agent {
+  display: inline-flex;
+  flex: 0 100 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  margin-right: 4px;
+}
+
+.viz-agentbar {
+  container-type: inline-size;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  border-top: 1px solid var(--viz-border);
+  background: var(--viz-side);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.viz-agentbar .viz-btn {
+  flex: none;
+}
+
+.viz-agentbar .viz-btn .viz-icon {
+  margin-left: -2px;
+}
+
+.viz-mismatch {
+  display: inline-flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  height: 22px;
+  margin-left: 8px;
+  padding: 0 8px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--viz-changed) 55%, transparent);
+  border-radius: 4px;
+  color: var(--viz-changed);
+}
+
+.viz-mismatch .viz-icon {
+  flex: none;
+}
+
+@container (max-width: 1100px) {
+  .viz-diagrambar .viz-filepick__next kbd {
+    display: none;
+  }
+}
+
+@container (max-width: 560px) {
+  .viz-agentbar .viz-agent__status {
+    display: none;
+  }
+}
+
+@container (max-width: 700px) {
+  .viz-agentbar .viz-barlabel,
+  .viz-agentbar .viz-action__label {
+    display: none;
+  }
+}
+
+@container (max-width: 860px) {
+  .viz-changebar .viz-barlabel,
+  .viz-changebar .viz-action__label,
+  .viz-diagrambar .viz-filepick__label,
+  .viz-diagrambar .viz-action__label {
+    display: none;
+  }
 }

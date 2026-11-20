@@ -8,6 +8,7 @@ const TARGET_ICONS: Record<VizNoteTarget["kind"], UiIconName> = {
   node: "symbolClass",
   member: "symbolMethod",
   edge: "arrow",
+  step: "flow",
   file: "file",
 };
 
@@ -15,6 +16,7 @@ const TARGET_WORDS: Record<VizNoteTarget["kind"], string> = {
   node: "part",
   member: "member",
   edge: "link",
+  step: "step",
   file: "file",
 };
 
@@ -305,7 +307,7 @@ export function Composer({
           title={
             variant === "edit"
               ? "Save the change (Enter). Shift+Enter adds a line. Esc cancels."
-              : `${submitLabel} (Enter). Shift+Enter adds a line. It is saved in the review and goes to the agent with Send Feedback.`
+              : `${submitLabel} (Enter). Shift+Enter adds a line. It is saved in the review and goes to the agent with Send comments.`
           }
           disabled={disabled || !body.trim()}
           onClick={submit}

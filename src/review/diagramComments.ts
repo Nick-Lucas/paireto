@@ -16,7 +16,12 @@ export function diagramTargetLine(target: DiagramTarget, multiRepository: boolea
   const at = code
     ? ` at ${multiRepository ? join(code.repoRoot, code.path) : code.path}:${code.line}`
     : "";
-  const id = target.kind === "file" ? "" : ` [id: ${target.id}]`;
+  const id =
+    target.kind === "file"
+      ? ""
+      : target.kind === "step"
+        ? ` [flow: ${target.flow}, step: ${target.index + 1}]`
+        : ` [id: ${target.id}]`;
   return `- ${target.label} (${target.kind})${at}${id}`;
 }
 

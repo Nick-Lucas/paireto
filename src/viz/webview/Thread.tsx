@@ -139,7 +139,7 @@ export function NewThread({
         onSubmit={onPost}
       />
       <div className="viz-thread__hint">
-        Saved in the review when you post. It goes to the agent with Send Feedback.
+        Saved in the review when you post. It goes to the agent with Send comments.
       </div>
     </div>
   );
@@ -400,7 +400,7 @@ export function ThreadPopup({
           <span className="viz-composer__gap" />
           {feedback.waiting ? (
             <button type="button" className="viz-textbtn" onClick={onSendFeedback}>
-              Send Feedback
+              Send comments
             </button>
           ) : (
             <span className="viz-thread__later">They go at the agent's next review.</span>

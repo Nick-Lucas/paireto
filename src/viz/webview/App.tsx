@@ -8,7 +8,7 @@ import { emphasisOf } from "../model/emphasis";
 import { buildVizIndex, type VizIndex } from "../model/index";
 import { resolveKey } from "../model/keymap";
 import { toMermaid } from "../model/mermaid";
-import { allTargets, placeNotes, type NoteDraft } from "../model/notes";
+import { allTargets, placeNotes, placeSequenceNotes, type NoteDraft } from "../model/notes";
 import { resolveFocus } from "../model/refs";
 import { toOverviewRf, toSequenceRf, type RfGraph } from "../model/rf";
 import { nextChange, reviewMarks } from "../model/review";
@@ -21,8 +21,10 @@ import type {
   VizViewState,
   VizWindowState,
 } from "../protocol";
+import { AgentBar } from "./AgentControls";
 import { Canvas } from "./Canvas";
 import { Header } from "./Header";
+import { UiIcon } from "./icons";
 import { createMeasure } from "./measure";
 import { EmptyState, HelpOverlay, InvalidBanner, Legend, PlayBar, WalkCard } from "./overlays";
 import { Sidebar } from "./Sidebar";
@@ -104,12 +106,15 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
       thread.kind === "draft"
         ? { kind: thread.noteKind, targets: thread.targets, place: thread.place }
         : undefined;
+    if (sequence) {
+      return placeSequenceNotes(sequence, index, review.notes, draft, measure);
+    }
     return scene ? placeNotes(scene, index, review.notes, draft, measure) : [];
-  }, [scene, index, review.notes, thread, measure]);
+  }, [sequence, scene, index, review.notes, thread, measure]);
   const targets = useMemo(() => allTargets(index, review.files), [index, review.files]);
   const graph: RfGraph | undefined = useMemo(() => {
     if (ui.stage.kind === "flow" && sequence) {
-      return toSequenceRf(sequence, index, emphasis, ui);
+      return toSequenceRf(sequence, index, emphasis, ui, notes);
     }
     return scene ? toOverviewRf(scene, index, emphasis, ui, { notes, marks, measure }) : undefined;
   }, [ui, sequence, scene, index, emphasis, notes, marks, measure]);
@@ -206,6 +211,7 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
         review={review}
         dispatch={dispatch}
         onExport={onExport}
+        onNext={onNext}
       />
       {loaded.invalid && (
         <InvalidBanner name={loaded.invalid.name} issues={loaded.invalid.issues} />
@@ -221,7 +227,8 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
               index={index}
               emphasis={emphasis}
               ui={ui}
-              scene={scene}
+              scene={sequence ? undefined : scene}
+              sequence={sequence}
               notes={notes}
               review={review}
               targets={targets}
@@ -243,11 +250,20 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
           )}
           <PlayBar index={index} ui={ui} dispatch={dispatch} />
           <WalkCard index={index} ui={ui} dispatch={dispatch} />
+          {!ui.sidebar && (
+            <button
+              type="button"
+              className="viz-show-side"
+              title="Show the selection side bar (b)"
+              onClick={() => dispatch({ type: "toggleSidebar" })}
+            >
+              <UiIcon name="sidebar" size={14} /> Show selection
+            </button>
+          )}
         </main>
-        {ui.sidebar && (
-          <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} onNext={onNext} />
-        )}
+        {ui.sidebar && <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} />}
       </div>
+      <AgentBar review={review} />
       <HelpOverlay ui={ui} dispatch={dispatch} />
     </div>
   );

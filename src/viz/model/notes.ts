@@ -3,6 +3,7 @@ import { BOX } from "../layout/classBox.js";
 import type { Point, Rect } from "../layout/geometry.js";
 import { wrapText, type Measure } from "../layout/measure.js";
 import type { OverviewScene, PlacedFrame } from "../layout/overview.js";
+import type { ParticipantColumn, PlacedMessage, SequenceScene } from "../layout/sequence.js";
 import type { VizNote, VizNoteTarget, VizNotePlace, VizReviewFile } from "../protocol.js";
 import type { VizIndex } from "./index.js";
 
@@ -32,6 +33,8 @@ export function targetKey(target: VizNoteTarget): string {
       return `m:${target.id}`;
     case "edge":
       return `e:${target.id}`;
+    case "step":
+      return `s:${target.flow}:${target.index}`;
     case "file":
       return `f:${target.repo}:${target.path}`;
   }
@@ -109,6 +112,24 @@ export function edgeTarget(index: VizIndex, id: string): VizNoteTarget | undefin
   };
 }
 
+export function stepTarget(
+  index: VizIndex,
+  flowId: string,
+  step: number,
+): VizNoteTarget | undefined {
+  const flow = index.flowById.get(flowId);
+  const found = flow?.steps[step];
+  return (
+    flow &&
+    found && {
+      kind: "step",
+      flow: flowId,
+      index: step,
+      label: `${flow.title}, step ${step + 1}: ${found.label}`,
+    }
+  );
+}
+
 export function fileTarget(file: VizReviewFile): VizNoteTarget {
   return { kind: "file", repo: file.repo, path: file.path, label: file.path };
 }
@@ -135,6 +156,14 @@ export function allTargets(index: VizIndex, files: readonly VizReviewFile[]): Vi
         label: `${node.label}.${member.short ?? member.label}`,
       });
     }
+  }
+  for (const flow of index.flows) {
+    flow.steps.forEach((_, step) => {
+      const target = stepTarget(index, flow.id, step);
+      if (target) {
+        targets.push(target);
+      }
+    });
   }
   for (const file of files) {
     targets.push(fileTarget(file));
@@ -244,6 +273,17 @@ export function targetRect(
       const mid = edge.points[Math.floor(edge.points.length / 2)];
       return mid ? { x: mid.x - 4, y: mid.y - 4, width: 8, height: 8 } : undefined;
     }
+    case "step": {
+      const ref = index.flowById.get(target.flow)?.steps[target.index]?.overviewRef;
+      switch (ref?.kind) {
+        case "edge":
+          return targetRect(scene, index, { kind: "edge", id: ref.id, label: "" });
+        case "node":
+          return nodeRect(ref.id);
+        default:
+          return undefined;
+      }
+    }
     case "file": {
       const node = index.overviewNodes.find((candidate) => sameFile(candidate.files?.[0], target));
       return node ? nodeRect(node.id) : undefined;
@@ -268,6 +308,18 @@ export function clipToRect(rect: Rect, from: Point): Point {
   return { x: to.x - dx * scale, y: to.y - dy * scale };
 }
 
+function linkEnd(scene: OverviewScene, target: VizNoteTarget, rect: Rect, from: Point): Point {
+  if (target.kind !== "member") {
+    return clipToRect(rect, from);
+  }
+  const node = scene.nodes.find((candidate) => candidate.id === target.node);
+  if (!node) {
+    return clipToRect(rect, from);
+  }
+  const left = from.x < node.x + node.width / 2;
+  return { x: left ? node.x : node.x + node.width, y: rect.y + rect.height / 2 };
+}
+
 function overlaps(a: Rect, b: Rect, margin: number): boolean {
   return (
     a.x < b.x + b.width + margin &&
@@ -276,6 +328,8 @@ function overlaps(a: Rect, b: Rect, margin: number): boolean {
     a.y + a.height + margin > b.y
   );
 }
+
+const SEARCH_RINGS = 60;
 
 function placeOf(
   scene: OverviewScene,
@@ -300,21 +354,47 @@ function placeOf(
       ? scene.nodes.find((candidate) => candidate.id === (targets[0] as { node: string }).node)
       : undefined;
   const anchor = node ?? home;
-  const candidates: Point[] = [
-    { x: anchor.x + anchor.width + NOTE.gap, y: home.y },
-    { x: anchor.x - NOTE.gap - NOTE.width, y: home.y },
-    { x: anchor.x, y: anchor.y - NOTE.gap - size.height },
-    { x: anchor.x, y: anchor.y + anchor.height + NOTE.gap },
-  ];
   const blockers = [...scene.nodes, ...taken];
-  for (const at of candidates) {
-    const box: Rect = { ...at, width: NOTE.width, height: size.height };
-    if (!blockers.some((blocker) => overlaps(box, blocker, 6))) {
-      return at;
+  const free = (at: Point) =>
+    !blockers.some((blocker) =>
+      overlaps({ ...at, width: NOTE.width, height: size.height }, blocker, 6),
+    );
+  for (let ring = 0; ring <= SEARCH_RINGS; ring++) {
+    const found = spotsAround(anchor, home.y, size.height, ring * NOTE.gap).find(free);
+    if (found) {
+      return found;
     }
   }
-  const last = taken[taken.length - 1];
-  return last ? { x: last.x, y: last.y + last.height + 10 } : candidates[0];
+  return spotsAround(anchor, home.y, size.height, 0)[0];
+}
+
+function spotsAround(anchor: Rect, rowY: number, height: number, reach: number): Point[] {
+  const right = anchor.x + anchor.width + NOTE.gap;
+  const left = anchor.x - NOTE.gap - NOTE.width;
+  const above = anchor.y - NOTE.gap - height;
+  const below = anchor.y + anchor.height + NOTE.gap;
+  if (reach === 0) {
+    return [
+      { x: right, y: rowY },
+      { x: left, y: rowY },
+      { x: anchor.x, y: above },
+      { x: anchor.x, y: below },
+    ];
+  }
+  return [
+    { x: right, y: rowY + reach },
+    { x: right, y: rowY - reach },
+    { x: left, y: rowY + reach },
+    { x: left, y: rowY - reach },
+    { x: anchor.x + reach, y: above },
+    { x: anchor.x - reach, y: above },
+    { x: anchor.x + reach, y: below },
+    { x: anchor.x - reach, y: below },
+    { x: right + reach, y: rowY },
+    { x: left - reach, y: rowY },
+    { x: anchor.x, y: above - reach },
+    { x: anchor.x, y: below + reach },
+  ];
 }
 
 export function placeNotes(
@@ -341,7 +421,7 @@ export function placeNotes(
       if (!rect) {
         return [];
       }
-      const to = clipToRect(rect, centre(box));
+      const to = linkEnd(scene, target, rect, centre(box));
       const from = clipToRect(box, to);
       return [{ index: linkIndex, target, from, to }];
     });
@@ -378,4 +458,126 @@ export function relativePlace(scene: OverviewScene, at: Point): VizNotePlace {
     .filter((near) => near.gap <= reach)
     .sort((a, b) => a.gap - b.gap)[0]?.node;
   return home ? { node: home.id, x: at.x - home.x, y: at.y - home.y } : { x: at.x, y: at.y };
+}
+
+type SequenceAnchor =
+  | { readonly kind: "step"; readonly message: PlacedMessage }
+  | { readonly kind: "head"; readonly head: ParticipantColumn };
+
+const SELF_LOOP = { width: 36, drop: 12 } as const;
+
+function sequenceAnchor(
+  scene: SequenceScene,
+  index: VizIndex,
+  target: VizNoteTarget,
+): SequenceAnchor | undefined {
+  const head = (id: string): SequenceAnchor | undefined => {
+    const found = scene.participants.find((candidate) => candidate.id === id);
+    return found && { kind: "head", head: found };
+  };
+  const step = (at: number): SequenceAnchor | undefined => {
+    const found = scene.messages.find((candidate) => candidate.index === at);
+    return found && { kind: "step", message: found };
+  };
+  switch (target.kind) {
+    case "step":
+      return target.flow === scene.flow ? step(target.index) : undefined;
+    case "node":
+      return head(target.id);
+    case "member":
+      return head(target.node);
+    case "edge": {
+      const travel = (index.stepsByEdge.get(target.id) ?? []).find(
+        (locator) => locator.flow === scene.flow,
+      );
+      return travel ? step(travel.index) : undefined;
+    }
+    case "file":
+      return undefined;
+  }
+}
+
+function anchorPoint(anchor: SequenceAnchor): Point {
+  if (anchor.kind === "head") {
+    return { x: anchor.head.x + anchor.head.width / 2, y: anchor.head.y };
+  }
+  const { message } = anchor;
+  return message.direction === "self"
+    ? { x: message.fromX + SELF_LOOP.width, y: message.lineY + SELF_LOOP.drop }
+    : { x: Math.max(message.fromX, message.toX), y: message.lineY };
+}
+
+function firstFree(at: Point, height: number, taken: readonly Rect[], up: boolean): Point {
+  let y = at.y;
+  for (;;) {
+    const box = { x: at.x, y, width: NOTE.width, height };
+    const hits = taken.filter((other) => overlaps(box, other, NOTE.gap / 3));
+    if (hits.length === 0) {
+      return { x: at.x, y };
+    }
+    y = up
+      ? Math.min(...hits.map((other) => other.y)) - NOTE.gap / 2 - height
+      : Math.max(...hits.map((other) => other.y + other.height)) + NOTE.gap / 2;
+  }
+}
+
+export function placeSequenceNotes(
+  scene: SequenceScene,
+  index: VizIndex,
+  notes: readonly VizNote[],
+  draft: NoteDraft | undefined,
+  measure: Measure,
+): PlacedNote[] {
+  const placed: PlacedNote[] = [];
+  const column = scene.bounds.x + scene.bounds.width + NOTE.gap * 2;
+  const add = (
+    id: string,
+    note: VizNote | undefined,
+    kind: NoteKind,
+    body: string,
+    targets: readonly VizNoteTarget[],
+  ) => {
+    const anchors = targets.map((target) => sequenceAnchor(scene, index, target));
+    const first = anchors.find((anchor) => anchor?.kind === "step") ?? anchors.find(Boolean);
+    if (!first) {
+      return;
+    }
+    const size = noteSize(body, measure);
+    const at =
+      first.kind === "step"
+        ? firstFree(
+            { x: column, y: anchorPoint(first).y - NOTE.headHeight / 2 },
+            size.height,
+            placed,
+            false,
+          )
+        : firstFree(
+            {
+              x: first.head.x + first.head.width / 2 - NOTE.width / 2,
+              y: first.head.y - NOTE.gap - size.height,
+            },
+            size.height,
+            placed,
+            true,
+          );
+    const box: Rect = { ...at, width: NOTE.width, height: size.height };
+    const links = targets.flatMap((target, linkIndex): NoteLink[] => {
+      const anchor = anchors[linkIndex];
+      if (!anchor) {
+        return [];
+      }
+      const to = anchorPoint(anchor);
+      return [{ index: linkIndex, target, from: clipToRect(box, to), to }];
+    });
+    placed.push({ id, note, kind, lines: size.lines, links, ...box });
+  };
+  for (const note of notes) {
+    if (!note.resolved) {
+      add(note.id, note, note.kind, note.body, note.targets);
+    }
+  }
+  if (draft) {
+    add("draft", undefined, draft.kind, "Type it in the thread beside it.", draft.targets);
+  }
+  return placed;
 }

@@ -12,6 +12,7 @@ export type MenuTarget =
   | { kind: "member"; id: string; node: string }
   | { kind: "frame"; frame: PlacedFrame }
   | { kind: "edge"; id: string }
+  | { kind: "step"; flow: string; index: number }
   | { kind: "note"; id: string }
   | { kind: "pane"; at: Point };
 

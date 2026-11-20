@@ -58,6 +58,12 @@
   fill: currentColor;
 }
 
+.viz-canvas .react-flow__controls-button svg.viz-icon {
+  max-width: 14px;
+  max-height: 14px;
+  fill: none;
+}
+
 .viz-canvas .react-flow__minimap {
   background: var(--viz-panel);
   border: 1px solid var(--viz-border);

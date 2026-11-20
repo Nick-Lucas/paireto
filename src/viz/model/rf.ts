@@ -247,18 +247,14 @@ export function toOverviewRf(
       });
     }
   }
-  const openNote = ui.thread.kind === "open" ? ui.thread.id : undefined;
-  for (const note of notes) {
-    nodes.push({
-      id: noteNodeId(note.id),
-      type: "note",
-      ...rect(note),
-      data: { kind: "note", note, open: note.id === openNote },
-      selectable: false,
-      draggable: note.note !== undefined,
-      zIndex: Z.note,
-    });
-  }
+  const noteParts = notesRf(notes, ui, true, (link) =>
+    link.target.kind === "member"
+      ? link.target.node
+      : link.target.kind === "node"
+        ? link.target.id
+        : undefined,
+  );
+  nodes.push(...noteParts.nodes);
 
   const edges: RfEdge[] = [];
   for (const routed of scene.edges) {
@@ -288,31 +284,43 @@ export function toOverviewRf(
       zIndex: selected || level === "bright" ? Z.card + 1 : Z.edge,
     });
   }
-  for (const note of notes) {
-    for (const link of note.links) {
-      const targetNode =
-        link.target.kind === "member"
-          ? link.target.node
-          : link.target.kind === "node"
-            ? link.target.id
-            : undefined;
-      edges.push({
-        id: decorId("notelink", note.id, link.index),
-        source: noteNodeId(note.id),
-        target: targetNode ?? noteNodeId(note.id),
-        type: "noteLink",
-        data: {
-          kind: "noteLink",
-          note: note.id,
-          link,
-          noteKind: note.kind,
-          lit: note.id === openNote,
-        },
-        selectable: false,
-        zIndex: Z.note - 1,
-      });
-    }
-  }
+  edges.push(...noteParts.edges);
+  return { nodes, edges };
+}
+
+function notesRf(
+  notes: readonly PlacedNote[],
+  ui: UiState,
+  draggable: boolean,
+  targetNode: (link: NoteLink) => string | undefined,
+): RfGraph {
+  const openNote = ui.thread.kind === "open" ? ui.thread.id : undefined;
+  const nodes: RfNode[] = notes.map((note) => ({
+    id: noteNodeId(note.id),
+    type: "note",
+    ...rect(note),
+    data: { kind: "note", note, open: note.id === openNote },
+    selectable: false,
+    draggable: draggable && note.note !== undefined,
+    zIndex: Z.note,
+  }));
+  const edges: RfEdge[] = notes.flatMap((note) =>
+    note.links.map((link): RfEdge => ({
+      id: decorId("notelink", note.id, link.index),
+      source: noteNodeId(note.id),
+      target: targetNode(link) ?? noteNodeId(note.id),
+      type: "noteLink",
+      data: {
+        kind: "noteLink",
+        note: note.id,
+        link,
+        noteKind: note.kind,
+        lit: note.id === openNote,
+      },
+      selectable: false,
+      zIndex: Z.note - 1,
+    })),
+  );
   return { nodes, edges };
 }
 
@@ -321,6 +329,7 @@ export function toSequenceRf(
   index: VizIndex,
   emphasis: Emphasis,
   ui: UiState,
+  notes: readonly PlacedNote[],
 ): RfGraph {
   const nodes: RfNode[] = [];
   for (const phase of scene.phases) {
@@ -405,7 +414,8 @@ export function toSequenceRf(
       zIndex: Z.message,
     });
   }
-  return { nodes, edges: [] };
+  const noteParts = notesRf(notes, ui, false, () => undefined);
+  return { nodes: [...nodes, ...noteParts.nodes], edges: noteParts.edges };
 }
 
 export const NO_EXTRAS: Omit<OverviewExtras, "measure"> = { notes: [], marks: NO_MARKS };

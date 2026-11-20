@@ -1,9 +1,12 @@
 import { stageNumber, type VizIndex } from "../model/index";
 import type { VizDoc } from "../model/types";
 import type { UiAction, UiState } from "../model/ui";
+import { overviewKind } from "../model/visible";
 import type { VizListEntry, VizReviewState, VizWindowState } from "../protocol";
-import { DELTA_GLYPH } from "../model/delta";
-import { UiIcon } from "./icons";
+import type { VizDelta } from "../../protocol/viz.js";
+import { ChangedFiles } from "./ChangedFiles";
+import { UiIcon, type UiIconName } from "./icons";
+import { plural } from "./parts";
 import { vscode } from "./vscode";
 import "./header.css";
 
@@ -16,7 +19,22 @@ interface HeaderProps {
   review: VizReviewState;
   dispatch: (action: UiAction) => void;
   onExport: () => void;
+  onNext: () => void;
 }
+
+const CHANGE_LETTER: Record<VizDelta, string> = {
+  added: "A",
+  changed: "M",
+  removed: "D",
+  unchanged: "",
+};
+
+const CHANGE_WORD: Record<VizDelta, string> = {
+  added: "new",
+  changed: "modified",
+  removed: "removed",
+  unchanged: "unchanged",
+};
 
 function compareTitle(doc: VizDoc, window: VizWindowState): string {
   const made = `This viz was made against ${doc.meta.compareLabel ?? "the compare target"}. The window now compares to ${window.compareLabel}.`;
@@ -30,6 +48,88 @@ function compareTitle(doc: VizDoc, window: VizWindowState): string {
   }
 }
 
+function VizTitle({ doc, vizzes }: { doc: VizDoc; vizzes: VizListEntry[] }) {
+  if (vizzes.length < 2) {
+    return (
+      <h1 className="viz-header__title" title={doc.viz.summary}>
+        {doc.viz.title}
+      </h1>
+    );
+  }
+  return (
+    <div className="viz-header__switch" title={doc.viz.summary}>
+      <h1 className="viz-header__title">{doc.viz.title}</h1>
+      <UiIcon name="down" size={12} />
+      <select
+        className="viz-header__select"
+        aria-label="Open another visualization"
+        value={doc.meta.name}
+        onChange={(event) => vscode.postMessage({ type: "switch", name: event.target.value })}
+      >
+        {vizzes.map((entry) => (
+          <option key={entry.name} value={entry.name}>
+            {entry.title} ({entry.repoName})
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+interface DiagramTabProps {
+  active: boolean;
+  icon: UiIconName;
+  name: string;
+  kind: string;
+  delta?: VizDelta;
+  title: string;
+  onClick: () => void;
+}
+
+function DiagramTab({ active, icon, name, kind, delta, title, onClick }: DiagramTabProps) {
+  const letter = delta ? CHANGE_LETTER[delta] : "";
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      className={`viz-tab ${active ? "viz-tab--active" : ""} ${delta ? `viz-tab--${delta}` : ""}`}
+      title={title}
+      onClick={onClick}
+    >
+      <UiIcon name={icon} size={14} />
+      <span className="viz-tab__name">{name}</span>
+      <span className="viz-tab__kind">{kind}</span>
+      {letter && <span className="viz-tab__letter">{letter}</span>}
+    </button>
+  );
+}
+
+export function BarLabel({ children }: { children: string }) {
+  return <span className="viz-barlabel">{children}</span>;
+}
+
+function Mismatch({ doc, window }: { doc: VizDoc; window: VizWindowState }) {
+  if (window.alignment.kind === "aligned") {
+    return null;
+  }
+  return (
+    <span className="viz-mismatch" title={compareTitle(doc, window)}>
+      <UiIcon name="warn" size={12} />
+      Made against {doc.meta.compareLabel ?? "base"}, VS Code is on {window.compareLabel}
+      {window.alignment.kind === "available" && (
+        <button
+          type="button"
+          className="viz-textbtn"
+          onClick={() => vscode.postMessage({ type: "align" })}
+        >
+          Align
+        </button>
+      )}
+    </span>
+  );
+}
+
 export function Header({
   doc,
   index,
@@ -39,142 +139,90 @@ export function Header({
   review,
   dispatch,
   onExport,
+  onNext,
 }: HeaderProps) {
   const current = stageNumber(index, ui.stage);
-  const { feedback } = review;
+  const walking = ui.mode.kind === "walk";
+  const kind = overviewKind(index);
+  const open = current > 0 ? index.flows[current - 1] : undefined;
   return (
     <header className="viz-header">
-      <div className="viz-header__row">
-        <h1 className="viz-header__title" title={doc.viz.summary}>
-          {doc.viz.title}
-        </h1>
-        <span className="viz-compare" title={compareTitle(doc, window)}>
-          <UiIcon name="compare" size={14} />
-          <span className="viz-compare__label">
-            Working tree <span className="viz-muted">vs</span> {doc.meta.compareLabel ?? "base"}
-          </span>
+      <div className="viz-changebar">
+        <span
+          className="viz-changebar__name"
+          title={`The changes from ${doc.meta.compareLabel ?? "base"} to the files on disk now, with the changes not yet committed.`}
+        >
+          <BarLabel>Change</BarLabel>
+          <UiIcon name="graph" size={14} />
+          <VizTitle doc={doc} vizzes={vizzes} />
         </span>
-        {window.alignment.kind !== "aligned" && (
-          <span className="viz-mismatch" title={compareTitle(doc, window)}>
-            <UiIcon name="warn" size={12} />
-            <span>window is on {window.compareLabel}</span>
-            {window.alignment.kind === "available" && (
-              <button
-                type="button"
-                className="viz-textbtn"
-                onClick={() => vscode.postMessage({ type: "align" })}
-              >
-                Align
-              </button>
-            )}
-            <button
-              type="button"
-              className="viz-textbtn"
-              onClick={() => vscode.postMessage({ type: "regenerate" })}
-            >
-              Ask agent to regenerate
-            </button>
-          </span>
-        )}
-        {vizzes.length > 1 && (
-          <select
-            className="viz-select"
-            title="Other visualizations"
-            value={doc.meta.name}
-            onChange={(event) => vscode.postMessage({ type: "switch", name: event.target.value })}
-          >
-            {vizzes.map((entry) => (
-              <option key={entry.name} value={entry.name}>
-                {entry.title} ({entry.repoName})
-              </option>
-            ))}
-          </select>
-        )}
+        <Mismatch doc={doc} window={window} />
         <span className="viz-header__spacer" />
-        {feedback.waiting && (
-          <span className="viz-feedback-state">The agent is waiting for your review</span>
-        )}
-        {feedback.pending > 0 && (
-          <button
-            type="button"
-            className="viz-btn"
-            title="Send the notes that were not sent yet to the agent"
-            onClick={() => vscode.postMessage({ type: "gate", action: "sendFeedback" })}
-          >
-            Send Feedback · {feedback.pending}
-          </button>
-        )}
-        {feedback.waiting && (
-          <button
-            type="button"
-            className={`viz-btn ${feedback.pending > 0 ? "viz-btn--secondary" : ""}`}
-            title="Tell the agent the change is good"
-            onClick={() => vscode.postMessage({ type: "gate", action: "approve" })}
-          >
-            Approve
-          </button>
-        )}
         {index.walkthrough.length > 0 && (
           <button
             type="button"
-            className={`viz-btn viz-btn--secondary ${ui.mode.kind === "walk" ? "viz-btn--active" : ""}`}
-            title="Walkthrough (w)"
+            className={`viz-action viz-action--walk ${walking ? "viz-action--on" : ""}`}
+            title="A guided tour through the changes, one step at a time, across all the diagrams (w)"
+            aria-pressed={walking}
             onClick={() => dispatch({ type: "walk" })}
           >
-            <UiIcon name="walk" /> Walkthrough
+            <UiIcon name="play" size={14} />
+            <span className="viz-action__label">Walk through the changes</span>
           </button>
         )}
+      </div>
+      <nav className="viz-tabbar viz-tabs" role="tablist" aria-label="Diagrams">
+        <DiagramTab
+          active={current === 0 && !walking}
+          icon="hierarchy"
+          name="Overview"
+          kind={kind}
+          title={`Overview: every changed part and how they connect, as a ${kind} (0)`}
+          onClick={() => dispatch({ type: "stageAt", n: 0 })}
+        />
+        {index.flows.map((flow, i) => (
+          <DiagramTab
+            key={flow.id}
+            active={current === i + 1 && !walking}
+            icon="flow"
+            name={flow.title}
+            kind="sequence diagram"
+            delta={flow.delta}
+            title={`${flow.title}: one flow, call by call, as a sequence diagram. This flow is ${CHANGE_WORD[flow.delta]}. (${i + 1})`}
+            onClick={() => dispatch({ type: "stageAt", n: i + 1 })}
+          />
+        ))}
+      </nav>
+      <div className="viz-diagrambar" aria-label="Actions for this diagram">
+        {open ? (
+          <span className="viz-diagrambar__about">
+            {plural(open.steps.length, "step")} · {plural(open.participants.length, "participant")}
+            <span className={`viz-diagrambar__change viz-diagrambar__change--${open.delta}`}>
+              {CHANGE_WORD[open.delta]}
+            </span>
+          </span>
+        ) : (
+          !walking && (
+            <ChangedFiles
+              index={index}
+              ui={ui}
+              review={review}
+              dispatch={dispatch}
+              onNext={onNext}
+            />
+          )
+        )}
+        <span className="viz-header__spacer" />
         <button
           type="button"
-          className="viz-iconbtn"
-          title="Copy as Mermaid (e)"
+          className="viz-action viz-action--copy"
+          title="Copy the open diagram as Mermaid text (e)"
           onClick={onExport}
         >
-          <UiIcon name="copy" size={15} />
-        </button>
-        <button
-          type="button"
-          className={`viz-iconbtn ${ui.help ? "viz-iconbtn--active" : ""}`}
-          title="Keyboard help (?)"
-          onClick={() => dispatch({ type: "toggleHelp" })}
-        >
-          <UiIcon name="help" size={15} />
-        </button>
-        <button
-          type="button"
-          className={`viz-iconbtn ${ui.sidebar ? "viz-iconbtn--active" : ""}`}
-          title="Toggle the sidebar (b)"
-          onClick={() => dispatch({ type: "toggleSidebar" })}
-        >
-          <UiIcon name="sidebar" size={15} />
+          <UiIcon name="copy" size={14} />
+          <span className="viz-action__label">Copy as Mermaid</span>
         </button>
       </div>
-      <nav className="viz-tabs" aria-label="Stages">
-        <button
-          type="button"
-          className={`viz-tab ${current === 0 ? "viz-tab--active" : ""}`}
-          onClick={() => dispatch({ type: "stageAt", n: 0 })}
-        >
-          <kbd>0</kbd> Diagram
-        </button>
-        {index.flows.map((flow, i) => (
-          <button
-            key={flow.id}
-            type="button"
-            className={`viz-tab ${current === i + 1 ? "viz-tab--active" : ""}`}
-            onClick={() => dispatch({ type: "stageAt", n: i + 1 })}
-          >
-            <kbd>{i + 1}</kbd> {flow.title}
-            <span className={`viz-tab__delta viz-delta--${flow.delta}`}>
-              {DELTA_GLYPH[flow.delta]}
-            </span>
-          </button>
-        ))}
-        <span className="viz-header__spacer" />
-        <p className="viz-summary" title={doc.viz.summary}>
-          {doc.viz.summary}
-        </p>
-      </nav>
     </header>
   );
 }
