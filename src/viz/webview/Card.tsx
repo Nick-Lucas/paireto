@@ -4,7 +4,7 @@ import type { CardData } from "../model/rf";
 import { chipOf } from "../model/visible";
 import { noteTargetAttr, useViz } from "./context";
 import { KindIcon, UiIcon } from "./icons";
-import { ChipMark, Counts, plural } from "./parts";
+import { ChipMark, Counts, FileRefTag, plural } from "./parts";
 import "./cards.css";
 
 export function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
@@ -47,9 +47,15 @@ export function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
       </div>
       {node.sub && <div className="viz-card__sub">{node.sub}</div>}
       <div className="viz-card__meta">
-        <span>
+        <span className="viz-card__kind">
           {node.kind}
-          {data.files > 0 && ` · ${plural(data.files, "file")}`}
+          {file && (
+            <>
+              {" · "}
+              <FileRefTag file={file} />
+            </>
+          )}
+          {data.files > 1 && ` · ${plural(data.files, "file")}`}
         </span>
         <span className="viz-card__right">
           {data.threads > 0 && (

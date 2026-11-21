@@ -1,5 +1,7 @@
-import type { VizLineCounts } from "../../protocol/viz";
+import type { VizFileRef, VizLineCounts } from "../../protocol/viz";
+import { fileRefLabel, fileRefTitle } from "../model/refs";
 import { CHIP_WORDS, type Chip } from "../model/visible";
+import { useViz } from "./context";
 
 export function ChipMark({ chip, soft = false }: { chip: Chip | undefined; soft?: boolean }) {
   if (!chip) {
@@ -40,6 +42,22 @@ export function CountsText({ text }: { text: string }) {
       <span className={`viz-counts__removed ${removed === "−0" ? "viz-counts__zero" : ""}`}>
         {removed}
       </span>
+    </span>
+  );
+}
+
+export function FileRefTag({ file, text }: { file: VizFileRef; text?: string }) {
+  const viz = useViz();
+  return (
+    <span
+      className="viz-fileref"
+      title={`${fileRefTitle(file)} · Double-click to open`}
+      onDoubleClick={(event) => {
+        event.stopPropagation();
+        viz.openFile(file, "file");
+      }}
+    >
+      {text ?? fileRefLabel(file)}
     </span>
   );
 }

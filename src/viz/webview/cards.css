@@ -126,3 +126,14 @@
   gap: 3px;
   color: var(--vscode-editorCommentsWidget-unresolvedBorder, var(--viz-accent));
 }
+
+.viz-card__kind {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.viz-card__right {
+  flex-shrink: 0;
+}

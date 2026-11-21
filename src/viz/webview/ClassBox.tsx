@@ -4,7 +4,7 @@ import { BOX, type BoxRowLayout } from "../layout/classBox";
 import type { ClassBoxData } from "../model/rf";
 import { noteTargetAttr, useViz } from "./context";
 import { UiIcon } from "./icons";
-import { ChipMark, CountsText } from "./parts";
+import { ChipMark, CountsText, FileRefTag } from "./parts";
 import "./classbox.css";
 
 function Row({
@@ -153,6 +153,7 @@ export function ClassBoxNode({ data }: NodeProps<Node<ClassBoxData, "classBox">>
           )}
           {box.noDiff && <span className="viz-pill viz-pill--muted">no diff</span>}
         </div>
+        {file && box.ref && <FileRefTag file={file} text={box.ref} />}
       </header>
       {box.dividers.map((y) => (
         <span key={y} className="viz-box__divider" style={{ top: y }} />

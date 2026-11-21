@@ -1,4 +1,4 @@
-import type { VizEdge, VizFocus } from "../../protocol/viz.js";
+import type { VizEdge, VizFileRef, VizFocus } from "../../protocol/viz.js";
 import type { VizRef } from "./types.js";
 
 export interface VizRefLookup {
@@ -14,6 +14,16 @@ export function edgeId(edge: Pick<VizEdge, "id" | "from" | "to" | "kind">): stri
 
 export function formatVizRef(ref: VizRef): string {
   return ref.kind === "step" ? `${ref.flow} ${ref.index + 1}` : ref.id;
+}
+
+export function fileRefLabel(ref: VizFileRef): string {
+  const name = ref.path.slice(ref.path.lastIndexOf("/") + 1);
+  return ref.line === undefined ? name : `${name}:${ref.line}`;
+}
+
+export function fileRefTitle(ref: VizFileRef): string {
+  const place = ref.line === undefined ? ref.path : `${ref.path}:${ref.line}`;
+  return ref.repo ? `${ref.repo}:${place}` : place;
 }
 
 export function resolveId(id: string, lookup: VizRefLookup): VizRef | undefined {
