@@ -46,15 +46,14 @@ export function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
         )}
       </div>
       {node.sub && <div className="viz-card__sub">{node.sub}</div>}
+      {file && (
+        <div className="viz-card__ref">
+          <FileRefTag file={file} />
+        </div>
+      )}
       <div className="viz-card__meta">
-        <span className="viz-card__kind">
+        <span>
           {node.kind}
-          {file && (
-            <>
-              {" · "}
-              <FileRefTag file={file} />
-            </>
-          )}
           {data.files > 1 && ` · ${plural(data.files, "file")}`}
         </span>
         <span className="viz-card__right">

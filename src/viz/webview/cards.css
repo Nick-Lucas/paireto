@@ -127,13 +127,8 @@
   color: var(--vscode-editorCommentsWidget-unresolvedBorder, var(--viz-accent));
 }
 
-.viz-card__kind {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.viz-card__right {
-  flex-shrink: 0;
+.viz-card__ref {
+  margin-top: 3px;
+  padding-left: 31px;
+  line-height: 15px;
 }
