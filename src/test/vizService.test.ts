@@ -515,7 +515,7 @@ suite("viz service", () => {
       target: { kind: "node", id: "comment-editor", label: "CommentEditor" },
     });
     assert.strictEqual(current.threads[0].diagram?.title, "CommentThread and 1 more");
-    assert.strictEqual(current.threads[0].diagram?.targets[1].code?.line, 1);
+    assert.strictEqual(current.threads[0].diagram?.targets[1].code?.line, 14);
   });
 
   test("regenerate leaves a question note that asks the agent to generate this viz again", async () => {

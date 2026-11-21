@@ -101,7 +101,7 @@ A flow draws as a sequence diagram.
 - One walkthrough step focuses on items of the diagram only, or on items of one flow only. Refer to a flow step as `{ "flow": "checkout", "step": 2 }`.
 - A `files` path is repo-relative, and the file is in the changes or on disk. For removed code, set `side` to `base`. For a file in another repo, set `repo`.
 - Put each changed file on a node, member, edge or step.
-- Give each changed node a `role` and `files`.
+- Give each changed node a `role` and `files`. Give each node file a `line`: the first line that matters.
 
 ## 7. Present it
 

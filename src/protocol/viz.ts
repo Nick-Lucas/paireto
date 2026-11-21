@@ -168,7 +168,7 @@ export const VizNode = z.strictObject({
     .array(VizFileRef)
     .max(VIZ_LIMITS.filesPerItem)
     .optional()
-    .describe("Where it lives. Required unless unchanged."),
+    .describe("Where it lives, with the first line. Required unless unchanged."),
   flowOnly: z.boolean().optional().describe("Shown only in flows, e.g. the user or the browser."),
 });
 export type VizNode = z.infer<typeof VizNode>;

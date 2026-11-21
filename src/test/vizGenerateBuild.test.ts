@@ -308,7 +308,7 @@ suite("Viz generate — VizFile from a diffed file", () => {
         kind: "file",
         delta: "added",
         counts: { added: 3, removed: 0 },
-        files: [{ path: "README.md" }],
+        files: [{ path: "README.md", line: 1 }],
       },
       {
         id: "shop/old/notes.txt",
@@ -316,7 +316,7 @@ suite("Viz generate — VizFile from a diffed file", () => {
         kind: "file",
         delta: "removed",
         counts: { added: 0, removed: 2 },
-        files: [{ path: "old/notes.txt", side: "base" }],
+        files: [{ path: "old/notes.txt", line: 1, side: "base" }],
       },
     ]);
     assert.match(viz.summary, /2 files without class or function symbols show as a file box\./);

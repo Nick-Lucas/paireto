@@ -210,6 +210,7 @@ export function buildVizFile(input: BuildVizInput): VizFile {
         files: [
           {
             ...fileRef(file),
+            line: 1,
             ...(file.status === "D" && { side: "base" as const }),
           },
         ],

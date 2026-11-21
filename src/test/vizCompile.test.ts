@@ -241,6 +241,12 @@ const MUTATIONS: Mutation[] = [
     path: "nodes[1].files[0].endLine",
   },
   {
+    rule: "missing-line",
+    viz: (viz) => delete viz.nodes[1].files![0].line,
+    path: "nodes[1].files[0].line",
+    message: /has no line: give the first line that matters/,
+  },
+  {
     rule: "self-edge",
     viz: (viz) => viz.edges!.push({ from: "notify", to: "notify", kind: "call", delta: "added" }),
     path: "edges[10]",
