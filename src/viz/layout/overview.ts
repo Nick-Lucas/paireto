@@ -15,7 +15,7 @@ import { autoGroups } from "./grouping.js";
 import { estimateMeasure, fitText, type Measure } from "./measure.js";
 import { boxPorts, edgeEntry } from "./ports.js";
 
-export const CARD = { width: 224, height: 76, subHeight: 20 } as const;
+export const CARD = { width: 224, height: 76, subHeight: 20, refHeight: 18 } as const;
 export const FRAME = { title: 26, inset: 14, maxTitle: 360 } as const;
 const SCENE = { pad: 28, laneHeader: 40 } as const;
 
@@ -223,7 +223,8 @@ function nodeEntry(build: Build, node: VizNode, depth: number): ElkNode {
   return {
     id: node.id,
     width: CARD.width,
-    height: CARD.height + (node.sub ? CARD.subHeight : 0),
+    height:
+      CARD.height + (node.sub ? CARD.subHeight : 0) + (node.files?.length ? CARD.refHeight : 0),
     layoutOptions: partitionOf(index, lane),
   };
 }

@@ -53,7 +53,8 @@
           "endLine": 118
         },
         {
-          "path": "web/lib/usePaymentStatus.ts"
+          "path": "web/lib/usePaymentStatus.ts",
+          "line": 6
         }
       ]
     },
@@ -79,7 +80,8 @@
           "endLine": 180
         },
         {
-          "path": "services/billing/status.go"
+          "path": "services/billing/status.go",
+          "line": 18
         }
       ],
       "parent": "billing-system"
@@ -93,10 +95,12 @@
       "role": "Re-charges with exponential backoff, at most three attempts, then emits payment.failed.",
       "files": [
         {
-          "path": "services/billing/retry/worker.go"
+          "path": "services/billing/retry/worker.go",
+          "line": 22
         },
         {
-          "path": "services/billing/retry/backoff.go"
+          "path": "services/billing/retry/backoff.go",
+          "line": 3
         }
       ],
       "parent": "billing-system"
@@ -158,7 +162,8 @@
       "role": "Gains a payment_attempts table that records each try and its outcome.",
       "files": [
         {
-          "path": "services/billing/migrations/0042_payment_attempts.sql"
+          "path": "services/billing/migrations/0042_payment_attempts.sql",
+          "line": 1
         }
       ]
     },
@@ -179,7 +184,8 @@
       "role": "The nightly retry job is removed; the retry worker replaces it.",
       "files": [
         {
-          "path": "services/billing/cron/dunning.go"
+          "path": "services/billing/cron/dunning.go",
+          "line": 30
         }
       ],
       "parent": "billing-system"

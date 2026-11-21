@@ -426,3 +426,20 @@ kbd {
 .viz-struck {
   text-decoration: line-through;
 }
+
+.viz-fileref {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+  font-family: var(--viz-mono);
+  font-size: 11px;
+  color: var(--viz-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.viz-fileref:hover {
+  text-decoration: underline;
+}

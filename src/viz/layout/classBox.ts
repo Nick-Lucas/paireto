@@ -10,12 +10,14 @@ import {
   type Show,
   type SummaryRow,
 } from "../model/visible.js";
+import { fileRefLabel } from "../model/refs.js";
 import { fitText, type Measure } from "./measure.js";
 
 export const BOX = {
   padX: 10,
   headerPadY: 7,
   stereotypeHeight: 14,
+  refHeight: 14,
   nameHeight: 18,
   rowHeight: 20,
   compartmentPadY: 5,
@@ -71,6 +73,7 @@ export interface ClassBoxLayout {
   readonly headerHeight: number;
   readonly stereotype: string | undefined;
   readonly title: string;
+  readonly ref: string | undefined;
   readonly chip: Chip | undefined;
   readonly counts: string | undefined;
   readonly noDiff: boolean;
@@ -124,11 +127,14 @@ export function measureClassBox(
     (counts ? BOX.gap + pillWidth(counts, measure) : 0) +
     (noDiff ? BOX.gap + pillWidth(NO_DIFF, measure) : BOX.readSlot) +
     (threads > 0 ? BOX.gap + BOX.threadIcon + measure(String(threads), "small") : 0);
+  const file = node.files?.[0];
+  const refText = file ? fileRefLabel(file) : undefined;
   const headerNeed =
     BOX.padX * 2 +
     Math.max(
       BOX.chipWidth + measure(node.label, "title") + headerExtras,
       BOX.chipWidth + (stereotypeText ? measure(stereotypeText, "small") : 0),
+      refText ? measure(refText, "small") : 0,
     );
   const specs = rowSpecs(boxRows(node, show, expanded));
   const rowNeed = Math.max(
@@ -147,7 +153,10 @@ export function measureClassBox(
   const titleRoom = width - BOX.padX * 2 - BOX.chipWidth - headerExtras;
   const title = fitText(node.label, "title", titleRoom, measure);
   const headerHeight =
-    BOX.headerPadY * 2 + BOX.nameHeight + (stereotypeText ? BOX.stereotypeHeight : 0);
+    BOX.headerPadY * 2 +
+    BOX.nameHeight +
+    (stereotypeText ? BOX.stereotypeHeight : 0) +
+    (refText ? BOX.refHeight : 0);
 
   const rows: BoxRowLayout[] = [];
   const dividers: number[] = [];
@@ -199,6 +208,7 @@ export function measureClassBox(
     headerHeight,
     stereotype: stereotypeText,
     title,
+    ref: refText ? fitText(refText, "small", width - BOX.padX * 2, measure) : undefined,
     chip,
     counts,
     noDiff,

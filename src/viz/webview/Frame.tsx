@@ -3,7 +3,7 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { FrameData, LaneData } from "../model/rf";
 import { noteTargetAttr, useViz } from "./context";
 import { UiIcon } from "./icons";
-import { CountsText } from "./parts";
+import { CountsText, FileRefTag } from "./parts";
 import "./frame.css";
 
 export function LaneNode({ data }: NodeProps<Node<LaneData, "lane">>) {
@@ -41,6 +41,7 @@ export function FrameNode({ data }: NodeProps<Node<FrameData, "frame">>) {
       >
         <UiIcon name={frame.kind === "folder" ? "folder" : "group"} size={13} />
         <span className="viz-frame__title">{data.title}</span>
+        {frame.node?.files?.[0] && <FileRefTag file={frame.node.files[0]} />}
         {frame.counts && (
           <span className="viz-pill">
             <CountsText text={frame.counts} />

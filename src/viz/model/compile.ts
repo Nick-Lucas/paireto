@@ -81,6 +81,7 @@ const RULES = {
   "self-edge": { severity: "warning", check: selfEdges },
   "missing-role": { severity: "warning", check: missingRoles },
   "missing-files": { severity: "warning", check: missingFiles },
+  "missing-line": { severity: "warning", check: missingLines },
   coverage: { severity: "warning", check: coverage },
   "delta-mismatch": { severity: "warning", check: deltaMismatches },
   "isolated-node": { severity: "warning", check: isolatedNodes },
@@ -580,6 +581,21 @@ function badLineRanges(_index: VizIndex, files: Files): Found[] {
           },
         ]
       : [],
+  );
+}
+
+function missingLines(index: VizIndex): Found[] {
+  return index.nodes.flatMap((node, at) =>
+    (node.files ?? []).flatMap((ref, fileAt) =>
+      ref.line === undefined
+        ? [
+            {
+              path: ["nodes", at, "files", fileAt, "line"],
+              message: `node "${node.id}" file ${ref.path} has no line: give the first line that matters.`,
+            },
+          ]
+        : [],
+    ),
   );
 }
 

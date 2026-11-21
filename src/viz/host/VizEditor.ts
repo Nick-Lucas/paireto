@@ -360,7 +360,7 @@ export class VizEditor {
     const editor = await vscode.window.showTextDocument(uri, {
       viewColumn: vscode.ViewColumn.Beside,
       preserveFocus: true,
-      preview: true,
+      preview: false,
     });
     revealLines(editor, ref);
   }

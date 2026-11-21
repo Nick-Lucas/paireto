@@ -121,7 +121,7 @@
       "parent": "src/notify",
       "counts": { "added": 31, "removed": 0 },
       "role": "Sends the message as a text when email fails.",
-      "files": [{ "path": "src/notify/smsChannel.ts" }],
+      "files": [{ "path": "src/notify/smsChannel.ts", "line": 5 }],
       "members": [
         {
           "id": "src/notify/smsChannel.ts#SmsChannel.constructor",
@@ -190,7 +190,7 @@
       "kind": "struct",
       "delta": "unchanged",
       "parent": "src/notify",
-      "files": [{ "path": "src/notify/message.ts" }],
+      "files": [{ "path": "src/notify/message.ts", "line": 1 }],
       "members": [
         {
           "id": "src/notify/message.ts#Message.to",
