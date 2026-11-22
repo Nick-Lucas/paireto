@@ -80,6 +80,7 @@ export interface VizReview {
   openAgainstCompareToAt(
     file: RepoChangedFile,
     focus: { side: "base" | "modified"; start: number; end: number },
+    viewColumn: vscode.ViewColumn,
   ): Promise<vscode.TextEditor | undefined>;
 }
 

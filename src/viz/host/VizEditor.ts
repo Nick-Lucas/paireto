@@ -345,11 +345,15 @@ export class VizEditor {
     const changed = this.host.changedFile(repo.root, relPath);
     if (changed && (mode === "diff" || side === "base")) {
       const start = (ref.line ?? 1) - 1;
-      await this.host.review.openAgainstCompareToAt(changed, {
-        side,
-        start,
-        end: (ref.endLine ?? ref.line ?? 1) - 1,
-      });
+      await this.host.review.openAgainstCompareToAt(
+        changed,
+        {
+          side,
+          start,
+          end: (ref.endLine ?? ref.line ?? 1) - 1,
+        },
+        vscode.ViewColumn.Active,
+      );
       return;
     }
     const uri = vscode.Uri.file(path.join(repo.root, relPath));

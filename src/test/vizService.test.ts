@@ -53,6 +53,7 @@ interface Harness {
   service: VizService;
   aligned: CompareTo[];
   opened: { file: string; options: VizOpenOptions }[];
+  diffs: { path: string; viewColumn: vscode.ViewColumn | undefined }[];
   generated: VizGeneratorRequest[];
   hasViz: boolean[];
   threads: ReviewThread[];
@@ -103,6 +104,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
       ),
     })),
   ];
+  const diffs: { path: string; viewColumn: vscode.ViewColumn | undefined }[] = [];
   const emitter = new vscode.EventEmitter<void>();
   let compareTo: CompareTo = { kind: "mergeBase" };
   const aligned: CompareTo[] = [];
@@ -145,7 +147,10 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
     readDiagramComment: () => true,
     moveDiagramComment: () => true,
     resolveComment: () => undefined,
-    openAgainstCompareToAt: async () => undefined,
+    openAgainstCompareToAt: async (file, _focus, viewColumn) => {
+      diffs.push({ path: file.path, viewColumn });
+      return undefined;
+    },
   };
   const seenEmitter = new vscode.EventEmitter<void>();
   const seenCalls: { paths: string[]; seen: boolean }[] = [];
@@ -189,6 +194,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
     service,
     aligned,
     opened,
+    diffs,
     generated,
     hasViz,
     threads,
@@ -597,6 +603,18 @@ suite("viz service", () => {
     assert.strictEqual(first.panel.closed(), false);
     await first.panel.send({ type: "switch", name: "old" });
     assert.strictEqual(first.panel.closed(), true);
+  });
+
+  test("open diff shows the diff in the current tab group", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz);
+    const { panel } = await current.openEditor(current.writeViz("diff", viz));
+    await panel.send({ type: "ready" });
+    const file = viz.nodes.find((node) => node.files?.length)!.files![0];
+    await panel.send({ type: "open", file, mode: "diff" });
+    assert.deepStrictEqual(current.diffs, [
+      { path: file.path, viewColumn: vscode.ViewColumn.Active },
+    ]);
   });
 
   test("open file shows the file in the current tab group with focus, at the line", async () => {

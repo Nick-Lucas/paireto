@@ -2329,11 +2329,12 @@ export class ReviewController implements vscode.Disposable {
   async openAgainstCompareToAt(
     file: RepoChangedFile,
     focus: { side: "base" | "modified"; start: number; end: number },
+    viewColumn: vscode.ViewColumn,
   ): Promise<vscode.TextEditor | undefined> {
     const changes = this.changesFor(file.repoRoot);
     const opened = await this.openDiff(file, {
-      viewColumn: vscode.ViewColumn.Beside,
-      preserveFocus: true,
+      viewColumn,
+      preserveFocus: false,
       baseComparison: changes
         ? plannedBaseComparison(this.diff.fileSides(file, changes.compareRef), changes)
         : undefined,
