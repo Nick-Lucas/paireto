@@ -1,4 +1,4 @@
-import type { Edge, Node } from "@xyflow/react";
+import type { Edge, Node, NodeChange } from "@xyflow/react";
 
 import type { VizNode } from "../../protocol/viz.js";
 import type { ClassBoxLayout } from "../layout/classBox.js";
@@ -419,3 +419,58 @@ export function toSequenceRf(
 }
 
 export const NO_EXTRAS: Omit<OverviewExtras, "measure"> = { notes: [], marks: NO_MARKS };
+
+export interface NoteDrag {
+  readonly from: Point;
+  readonly to: Point;
+  readonly dragging: boolean;
+}
+
+export type NoteDrags = ReadonlyMap<string, NoteDrag>;
+
+function samePoint(a: Point, b: Point): boolean {
+  return a.x === b.x && a.y === b.y;
+}
+
+function holds(node: RfNode | undefined, drag: NoteDrag): node is RfNode {
+  return node !== undefined && (drag.dragging || samePoint(node.position, drag.from));
+}
+
+export function dragNotes(
+  nodes: readonly RfNode[],
+  drags: NoteDrags,
+  changes: readonly NodeChange<RfNode>[],
+): NoteDrags {
+  const byId = new Map(nodes.map((node) => [node.id, node] as const));
+  const next = new Map([...drags].filter(([id, drag]) => holds(byId.get(id), drag)));
+  let changed = next.size !== drags.size;
+  for (const change of changes) {
+    if (change.type !== "position" || !change.position) {
+      continue;
+    }
+    const node = byId.get(change.id);
+    if (!node) {
+      continue;
+    }
+    changed = true;
+    next.set(change.id, {
+      from: next.get(change.id)?.from ?? node.position,
+      to: change.position,
+      dragging: change.dragging ?? false,
+    });
+  }
+  return changed ? next : drags;
+}
+
+export function withNoteDrags(nodes: RfNode[], drags: NoteDrags): RfNode[] {
+  let moved = false;
+  const placed = nodes.map((node) => {
+    const drag = drags.get(node.id);
+    if (!drag || !holds(node, drag) || samePoint(node.position, drag.to)) {
+      return node;
+    }
+    moved = true;
+    return { ...node, position: drag.to };
+  });
+  return moved ? placed : nodes;
+}

@@ -1,5 +1,6 @@
 import { stageNumber, type VizIndex } from "../model/index";
 import type { VizDoc } from "../model/types";
+import { hasChanges } from "../model/review";
 import type { UiAction, UiState } from "../model/ui";
 import { overviewKind } from "../model/visible";
 import type { VizListEntry, VizReviewState, VizWindowState } from "../protocol";
@@ -202,7 +203,8 @@ export function Header({
             </span>
           </span>
         ) : (
-          !walking && (
+          !walking &&
+          hasChanges(index, review.files) && (
             <ChangedFiles
               index={index}
               ui={ui}

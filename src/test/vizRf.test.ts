@@ -1,5 +1,7 @@
 import * as assert from "node:assert";
 
+import type { NodeChange } from "@xyflow/react";
+
 import { layoutOverview } from "../viz/layout/overview.js";
 import { layoutSequence } from "../viz/layout/sequence.js";
 import { emphasisOf } from "../viz/model/emphasis.js";
@@ -7,12 +9,15 @@ import { OVERVIEW, refInStage, type Stage } from "../viz/model/index.js";
 import { formatVizRef, parseVizRef } from "../viz/model/refs.js";
 import { estimateMeasure } from "../viz/layout/measure.js";
 import {
+  dragNotes,
   NO_EXTRAS,
   toOverviewRf,
   toSequenceRf,
   type CardData,
   type EdgeData,
   type MessageData,
+  type RfNode,
+  withNoteDrags,
 } from "../viz/model/rf.js";
 import { initialUi, reduceUi, type UiAction, type UiState } from "../viz/model/ui.js";
 import { makeElk } from "./vizElk.js";
@@ -132,5 +137,54 @@ suite("viz rf adapters", () => {
     check([...overview.nodes, ...overview.edges], OVERVIEW);
     check([...sequence.nodes], FLOW);
     assert.ok(sequence.nodes.some((node) => node.id === "soft-decline 2"));
+  });
+});
+
+function band(id: string, x: number, y: number): RfNode {
+  return {
+    id,
+    type: "lane",
+    position: { x, y },
+    width: 100,
+    height: 40,
+    data: { kind: "lane", label: id, even: false },
+    selectable: false,
+    draggable: true,
+    zIndex: 0,
+  };
+}
+
+function moved(id: string, x: number, y: number, dragging: boolean): NodeChange<RfNode> {
+  return { type: "position", id, position: { x, y }, dragging };
+}
+
+suite("viz note drags", () => {
+  const graph = [band("note:a", 10, 10), band("note:b", 200, 10)];
+
+  test("a dragged note follows the pointer and keeps its drop place until the host moves it", () => {
+    let drags = dragNotes(graph, new Map(), [moved("note:a", 30, 40, true)]);
+    assert.deepStrictEqual(withNoteDrags(graph, drags)[0]?.position, { x: 30, y: 40 });
+    assert.strictEqual(withNoteDrags(graph, drags)[1], graph[1]);
+    drags = dragNotes(graph, drags, [moved("note:a", 60, 70, false)]);
+    assert.deepStrictEqual(withNoteDrags(graph, drags)[0]?.position, { x: 60, y: 70 });
+    const rebuilt = [band("note:a", 10, 10), band("note:b", 200, 10)];
+    assert.deepStrictEqual(withNoteDrags(rebuilt, drags)[0]?.position, { x: 60, y: 70 });
+    const saved = [band("note:a", 60, 70), band("note:b", 200, 10)];
+    assert.strictEqual(withNoteDrags(saved, drags), saved);
+    assert.strictEqual(dragNotes(saved, drags, []).size, 0);
+  });
+
+  test("changes that do not move a known node keep the drags", () => {
+    const drags = dragNotes(graph, new Map(), [
+      { type: "select", id: "note:a", selected: true },
+      moved("missing", 1, 1, true),
+    ]);
+    assert.strictEqual(drags.size, 0);
+    assert.strictEqual(withNoteDrags(graph, drags), graph);
+    const held = dragNotes(graph, new Map(), [moved("note:a", 30, 40, true)]);
+    assert.strictEqual(
+      dragNotes(graph, held, [{ type: "select", id: "note:a", selected: true }]),
+      held,
+    );
   });
 });

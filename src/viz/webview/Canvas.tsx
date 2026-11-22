@@ -29,7 +29,7 @@ import {
 } from "../model/notes";
 import { sequenceSpotAt, type SequenceScene } from "../layout/sequence";
 import { parseVizRef } from "../model/refs";
-import type { RfGraph } from "../model/rf";
+import { dragNotes, withNoteDrags, type NoteDrags, type RfGraph } from "../model/rf";
 import type { UiAction, UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
 import { VizContext, type MenuTarget, type VizActions } from "./context";
@@ -163,6 +163,8 @@ export function Canvas(props: CanvasProps) {
   }, [index, ui.stage, graph]);
   const [menu, setMenu] = useState<MenuState>();
   const [linking, setLinking] = useState<Linking>();
+  const [drags, setDrags] = useState<NoteDrags>(() => new Map());
+  const nodes = useMemo(() => withNoteDrags(graph.nodes, drags), [graph.nodes, drags]);
   const closeMenu = useCallback(() => setMenu(undefined), []);
   const select = (id: string) => {
     const ref = parseVizRef(id, index);
@@ -293,13 +295,16 @@ export function Canvas(props: CanvasProps) {
       <ReactFlowProvider key={stageKey}>
         <ReactFlow
           className={`viz-canvas ${emphasis.veil ? "viz-canvas--veiled" : ""} ${linking ? "viz-linking" : ""}`}
-          nodes={graph.nodes}
+          nodes={nodes}
           edges={graph.edges}
           nodeTypes={NODE_TYPES}
           edgeTypes={EDGE_TYPES}
           minZoom={MIN_ZOOM}
           maxZoom={2}
           nodesDraggable={false}
+          onNodesChange={(changes) =>
+            setDrags((current) => dragNotes(graph.nodes, current, changes))
+          }
           nodesConnectable={false}
           elementsSelectable
           selectNodesOnDrag={false}

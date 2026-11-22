@@ -84,6 +84,10 @@ export function reviewFiles(index: VizIndex, files: readonly VizReviewFile[]): F
   }));
 }
 
+export function hasChanges(index: VizIndex, files: readonly VizReviewFile[]): boolean {
+  return reviewFiles(index, files).some((entry) => entry.nodes.length > 0);
+}
+
 export interface ChangeCursor {
   readonly file: string;
   readonly index: number;
