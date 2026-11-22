@@ -40,7 +40,7 @@ export interface VizEditorHost {
   viewState(file: string): VizViewState;
   saveViewState(file: string, state: VizViewState): Promise<void>;
   takePendingNote(file: string): string | undefined;
-  switchTo(name: string, from: string, viewColumn: vscode.ViewColumn | undefined): Promise<void>;
+  switchTo(name: string, from: string, viewColumn: vscode.ViewColumn | undefined): Promise<boolean>;
   deltaFiles(): { repo: string; delta: DeltaFile }[];
   changedFile(repoRoot: string, relPath: string): RepoChangedFile | undefined;
 }
@@ -204,7 +204,9 @@ export class VizEditor {
         await this.askToRegenerate();
         return;
       case "switch":
-        await this.host.switchTo(message.name, this.file, this.panel.viewColumn);
+        if (await this.host.switchTo(message.name, this.file, this.panel.viewColumn)) {
+          this.panel.dispose();
+        }
         return;
       case "copy":
         await vscode.env.clipboard.writeText(message.text);
@@ -358,8 +360,8 @@ export class VizEditor {
       return;
     }
     const editor = await vscode.window.showTextDocument(uri, {
-      viewColumn: vscode.ViewColumn.Beside,
-      preserveFocus: true,
+      viewColumn: vscode.ViewColumn.Active,
+      preserveFocus: false,
       preview: false,
     });
     revealLines(editor, ref);

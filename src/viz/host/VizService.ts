@@ -376,14 +376,16 @@ export class VizService implements vscode.CustomTextEditorProvider, vscode.Dispo
     name: string,
     from: string,
     viewColumn: vscode.ViewColumn | undefined,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const file = this.findViz(name, repoRootOfViz(from));
-    if (file) {
-      await this.open(file, {
-        preserveFocus: false,
-        viewColumn: viewColumn ?? vscode.ViewColumn.Active,
-      });
+    if (!file) {
+      return false;
     }
+    await this.open(file, {
+      preserveFocus: false,
+      viewColumn: viewColumn ?? vscode.ViewColumn.Active,
+    });
+    return canonicalize(file) !== canonicalize(from);
   }
 
   private editorFor(file: string): VizEditor | undefined {

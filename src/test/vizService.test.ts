@@ -39,6 +39,7 @@ interface FakePanel {
   posts: HostToWebview[];
   send(message: WebviewToHost): Promise<void>;
   dispose(): void;
+  closed(): boolean;
 }
 
 interface OtherRepo {
@@ -230,6 +231,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
         },
         onDidReceiveMessage: received.event,
       };
+      let closed = false;
       const panel = {
         webview,
         title: "",
@@ -237,6 +239,10 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
         viewColumn: vscode.ViewColumn.Two,
         reveal: () => undefined,
         onDidDispose: disposed.event,
+        dispose: () => {
+          closed = true;
+          disposed.fire();
+        },
       };
       service.resolveCustomTextEditor(document, panel as unknown as vscode.WebviewPanel);
       return {
@@ -249,6 +255,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
             await tick();
           },
           dispose: () => disposed.fire(),
+          closed: () => closed,
         },
       };
     },
@@ -577,6 +584,33 @@ suite("viz service", () => {
       file: old,
       options: { viewColumn: vscode.ViewColumn.Two, preserveFocus: false },
     });
+  });
+
+  test("switch replaces the viz tab, and a switch to the same viz keeps it", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz);
+    current.writeViz("old", viz);
+    const newer = current.writeViz("newer", viz);
+    const first = await current.openEditor(newer);
+    await first.panel.send({ type: "ready" });
+    await first.panel.send({ type: "switch", name: "newer" });
+    assert.strictEqual(first.panel.closed(), false);
+    await first.panel.send({ type: "switch", name: "old" });
+    assert.strictEqual(first.panel.closed(), true);
+  });
+
+  test("open file shows the file in the current tab group with focus, at the line", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz);
+    const { panel } = await current.openEditor(current.writeViz("open", viz));
+    await panel.send({ type: "ready" });
+    await panel.send({ type: "open", file: { path: "web/package.json", line: 1 }, mode: "file" });
+    await settle();
+    const editor = vscode.window.activeTextEditor;
+    assert.strictEqual(editor?.document.uri.fsPath, path.join(current.root, "web", "package.json"));
+    assert.strictEqual(editor.viewColumn, vscode.ViewColumn.One);
+    assert.strictEqual(vscode.window.tabGroups.all.length, 1);
+    assert.strictEqual(vscode.window.tabGroups.activeTabGroup.activeTab?.isPreview, false);
   });
 
   test("align sets the window Compare To back to the viz's Compare To", async () => {
