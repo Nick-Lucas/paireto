@@ -245,3 +245,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.viz-participant__label {
+  line-height: 16px;
+}
+
+.viz-participant__sub,
+.viz-participant__text .viz-fileref {
+  line-height: 14px;
+}

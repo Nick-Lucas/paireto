@@ -12,11 +12,12 @@ import type {
 import { chipOf } from "../model/visible";
 import { noteTargetAttr, useViz } from "./context";
 import { KindIcon } from "./icons";
-import { ChipMark } from "./parts";
+import { ChipMark, FileRefTag } from "./parts";
 import "./sequence.css";
 
 export function ParticipantNode({ data }: NodeProps<Node<ParticipantData, "participant">>) {
   const { node } = data;
+  const file = node.files?.[0];
   const classes = [
     "viz-participant",
     `viz-participant--${node.delta}`,
@@ -37,6 +38,7 @@ export function ParticipantNode({ data }: NodeProps<Node<ParticipantData, "parti
           {node.label}
         </span>
         {node.sub && <span className="viz-participant__sub">{node.sub}</span>}
+        {file && <FileRefTag file={file} />}
       </span>
       <ChipMark chip={chipOf(node)} />
     </div>

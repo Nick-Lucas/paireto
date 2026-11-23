@@ -40,7 +40,7 @@ export interface VizEditorHost {
   viewState(file: string): VizViewState;
   saveViewState(file: string, state: VizViewState): Promise<void>;
   takePendingNote(file: string): string | undefined;
-  switchTo(name: string, from: string, viewColumn: vscode.ViewColumn | undefined): Promise<void>;
+  switchTo(name: string, from: string, viewColumn: vscode.ViewColumn | undefined): Promise<boolean>;
   deltaFiles(): { repo: string; delta: DeltaFile }[];
   changedFile(repoRoot: string, relPath: string): RepoChangedFile | undefined;
 }
@@ -204,7 +204,9 @@ export class VizEditor {
         await this.askToRegenerate();
         return;
       case "switch":
-        await this.host.switchTo(message.name, this.file, this.panel.viewColumn);
+        if (await this.host.switchTo(message.name, this.file, this.panel.viewColumn)) {
+          this.panel.dispose();
+        }
         return;
       case "copy":
         await vscode.env.clipboard.writeText(message.text);
@@ -343,11 +345,15 @@ export class VizEditor {
     const changed = this.host.changedFile(repo.root, relPath);
     if (changed && (mode === "diff" || side === "base")) {
       const start = (ref.line ?? 1) - 1;
-      await this.host.review.openAgainstCompareToAt(changed, {
-        side,
-        start,
-        end: (ref.endLine ?? ref.line ?? 1) - 1,
-      });
+      await this.host.review.openAgainstCompareToAt(
+        changed,
+        {
+          side,
+          start,
+          end: (ref.endLine ?? ref.line ?? 1) - 1,
+        },
+        vscode.ViewColumn.Active,
+      );
       return;
     }
     const uri = vscode.Uri.file(path.join(repo.root, relPath));
@@ -358,9 +364,9 @@ export class VizEditor {
       return;
     }
     const editor = await vscode.window.showTextDocument(uri, {
-      viewColumn: vscode.ViewColumn.Beside,
-      preserveFocus: true,
-      preview: true,
+      viewColumn: vscode.ViewColumn.Active,
+      preserveFocus: false,
+      preview: false,
     });
     revealLines(editor, ref);
   }

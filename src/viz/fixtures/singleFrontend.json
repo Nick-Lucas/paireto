@@ -50,7 +50,8 @@
       "role": "Inline editor that submits through useEditComment and shows a saving state.",
       "files": [
         {
-          "path": "web/src/comments/CommentEditor.tsx"
+          "path": "web/src/comments/CommentEditor.tsx",
+          "line": 14
         }
       ]
     },
@@ -63,7 +64,8 @@
       "role": "The modal editor is removed; inline editing replaces it.",
       "files": [
         {
-          "path": "web/src/comments/EditCommentDialog.tsx"
+          "path": "web/src/comments/EditCommentDialog.tsx",
+          "line": 8
         }
       ]
     },
@@ -76,7 +78,8 @@
       "role": "Patches the cached thread before the request and restores the snapshot if it fails.",
       "files": [
         {
-          "path": "web/src/comments/useEditComment.ts"
+          "path": "web/src/comments/useEditComment.ts",
+          "line": 5
         }
       ]
     },

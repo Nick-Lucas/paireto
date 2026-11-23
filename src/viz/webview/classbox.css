@@ -197,3 +197,8 @@
   pointer-events: none;
   border: 0;
 }
+
+.viz-box__head .viz-fileref {
+  line-height: 14px;
+  height: 14px;
+}

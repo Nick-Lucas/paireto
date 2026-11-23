@@ -1,7 +1,7 @@
 import * as assert from "node:assert";
 
 import type { Rect } from "../viz/layout/geometry.js";
-import { layoutOverview, type OverviewScene } from "../viz/layout/overview.js";
+import { CARD, layoutOverview, type OverviewScene } from "../viz/layout/overview.js";
 import { buildVizIndex, type VizIndex } from "../viz/model/index.js";
 import { makeElk } from "./vizElk.js";
 import { loadVizFixture, multiServiceIndex, singleFrontendIndex } from "./vizFixtures.js";
@@ -103,6 +103,16 @@ suite("viz overview layout", () => {
       ["view", "state", "data"],
     );
     assert.strictEqual(scene.frames.length, 0);
+  });
+
+  test("gives a card with a file ref a row for the ref", async () => {
+    const scene = await layoutOverview(multiServiceIndex(), makeElk());
+    assert.strictEqual(nodeRect(scene, "retry-worker").height, CARD.height + CARD.refHeight);
+    assert.strictEqual(nodeRect(scene, "stripe").height, CARD.height);
+    assert.strictEqual(
+      nodeRect(scene, "billing-api").height,
+      CARD.height + CARD.subHeight + CARD.refHeight,
+    );
   });
 
   test("leaves flow-only nodes out", async () => {

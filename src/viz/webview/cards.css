@@ -126,3 +126,9 @@
   gap: 3px;
   color: var(--vscode-editorCommentsWidget-unresolvedBorder, var(--viz-accent));
 }
+
+.viz-card__ref {
+  margin-top: 3px;
+  padding-left: 31px;
+  line-height: 15px;
+}

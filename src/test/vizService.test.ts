@@ -39,6 +39,7 @@ interface FakePanel {
   posts: HostToWebview[];
   send(message: WebviewToHost): Promise<void>;
   dispose(): void;
+  closed(): boolean;
 }
 
 interface OtherRepo {
@@ -52,6 +53,7 @@ interface Harness {
   service: VizService;
   aligned: CompareTo[];
   opened: { file: string; options: VizOpenOptions }[];
+  diffs: { path: string; viewColumn: vscode.ViewColumn | undefined }[];
   generated: VizGeneratorRequest[];
   hasViz: boolean[];
   threads: ReviewThread[];
@@ -102,6 +104,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
       ),
     })),
   ];
+  const diffs: { path: string; viewColumn: vscode.ViewColumn | undefined }[] = [];
   const emitter = new vscode.EventEmitter<void>();
   let compareTo: CompareTo = { kind: "mergeBase" };
   const aligned: CompareTo[] = [];
@@ -144,7 +147,10 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
     readDiagramComment: () => true,
     moveDiagramComment: () => true,
     resolveComment: () => undefined,
-    openAgainstCompareToAt: async () => undefined,
+    openAgainstCompareToAt: async (file, _focus, viewColumn) => {
+      diffs.push({ path: file.path, viewColumn });
+      return undefined;
+    },
   };
   const seenEmitter = new vscode.EventEmitter<void>();
   const seenCalls: { paths: string[]; seen: boolean }[] = [];
@@ -188,6 +194,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
     service,
     aligned,
     opened,
+    diffs,
     generated,
     hasViz,
     threads,
@@ -230,6 +237,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
         },
         onDidReceiveMessage: received.event,
       };
+      let closed = false;
       const panel = {
         webview,
         title: "",
@@ -237,6 +245,10 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
         viewColumn: vscode.ViewColumn.Two,
         reveal: () => undefined,
         onDidDispose: disposed.event,
+        dispose: () => {
+          closed = true;
+          disposed.fire();
+        },
       };
       service.resolveCustomTextEditor(document, panel as unknown as vscode.WebviewPanel);
       return {
@@ -249,6 +261,7 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
             await tick();
           },
           dispose: () => disposed.fire(),
+          closed: () => closed,
         },
       };
     },
@@ -515,7 +528,7 @@ suite("viz service", () => {
       target: { kind: "node", id: "comment-editor", label: "CommentEditor" },
     });
     assert.strictEqual(current.threads[0].diagram?.title, "CommentThread and 1 more");
-    assert.strictEqual(current.threads[0].diagram?.targets[1].code?.line, 1);
+    assert.strictEqual(current.threads[0].diagram?.targets[1].code?.line, 14);
   });
 
   test("regenerate leaves a question note that asks the agent to generate this viz again", async () => {
@@ -577,6 +590,45 @@ suite("viz service", () => {
       file: old,
       options: { viewColumn: vscode.ViewColumn.Two, preserveFocus: false },
     });
+  });
+
+  test("switch replaces the viz tab, and a switch to the same viz keeps it", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz);
+    current.writeViz("old", viz);
+    const newer = current.writeViz("newer", viz);
+    const first = await current.openEditor(newer);
+    await first.panel.send({ type: "ready" });
+    await first.panel.send({ type: "switch", name: "newer" });
+    assert.strictEqual(first.panel.closed(), false);
+    await first.panel.send({ type: "switch", name: "old" });
+    assert.strictEqual(first.panel.closed(), true);
+  });
+
+  test("open diff shows the diff in the current tab group", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz);
+    const { panel } = await current.openEditor(current.writeViz("diff", viz));
+    await panel.send({ type: "ready" });
+    const file = viz.nodes.find((node) => node.files?.length)!.files![0];
+    await panel.send({ type: "open", file, mode: "diff" });
+    assert.deepStrictEqual(current.diffs, [
+      { path: file.path, viewColumn: vscode.ViewColumn.Active },
+    ]);
+  });
+
+  test("open file shows the file in the current tab group with focus, at the line", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz);
+    const { panel } = await current.openEditor(current.writeViz("open", viz));
+    await panel.send({ type: "ready" });
+    await panel.send({ type: "open", file: { path: "web/package.json", line: 1 }, mode: "file" });
+    await settle();
+    const editor = vscode.window.activeTextEditor;
+    assert.strictEqual(editor?.document.uri.fsPath, path.join(current.root, "web", "package.json"));
+    assert.strictEqual(editor.viewColumn, vscode.ViewColumn.One);
+    assert.strictEqual(vscode.window.tabGroups.all.length, 1);
+    assert.strictEqual(vscode.window.tabGroups.activeTabGroup.activeTab?.isPreview, false);
   });
 
   test("align sets the window Compare To back to the viz's Compare To", async () => {
