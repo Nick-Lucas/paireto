@@ -1,13 +1,20 @@
-import { useStore } from "@xyflow/react";
+import { useReactFlow, useStore } from "@xyflow/react";
 import { useCallback, useEffect, useState } from "react";
 
 import type { Point } from "../layout/geometry";
 import type { OverviewScene } from "../layout/overview";
 import type { VizIndex } from "../model/index";
-import { relativePlace, searchTargets, targetsTitle, type PlacedNote } from "../model/notes";
+import {
+  refTarget,
+  relativePlace,
+  searchTargets,
+  targetsTitle,
+  type PlacedNote,
+} from "../model/notes";
 import type { UiAction, UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
-import { noteTargetAt } from "./context";
+import { noteTargetAt, noteTargetElementAt } from "./context";
+import { UiIcon } from "./icons";
 import { NewThread, ThreadPopup, type ThreadActions } from "./Thread";
 import { vscode } from "./vscode";
 
@@ -22,6 +29,7 @@ interface ThreadLayerProps {
   notes: readonly PlacedNote[];
   review: VizReviewState;
   targets: readonly VizNoteTarget[];
+  spot: Point | undefined;
   linking: Linking | undefined;
   setLinking(linking: Linking | undefined): void;
   dispatch: (action: UiAction) => void;
@@ -30,9 +38,11 @@ interface ThreadLayerProps {
 const GAP = 16;
 
 export function ThreadLayer(props: ThreadLayerProps) {
-  const { ui, index, scene, notes, review, targets, linking, setLinking, dispatch } = props;
+  const { ui, index, scene, notes, review, targets, spot, linking, setLinking, dispatch } = props;
   const [tx, ty, zoom] = useStore((state) => state.transform);
   const domNode = useStore((state) => state.domNode);
+  const { screenToFlowPosition } = useReactFlow();
+  const placing = ui.thread.kind === "placing";
   const [pointer, setPointer] = useState<Point>();
   const toScreen = (p: Point): Point => ({ x: p.x * zoom + tx, y: p.y * zoom + ty });
 
@@ -97,6 +107,43 @@ export function ThreadLayer(props: ThreadLayerProps) {
       window.removeEventListener("keydown", key, true);
     };
   }, [linking, domNode, applyTarget, setLinking]);
+
+  useEffect(() => {
+    if (!placing || !domNode) {
+      return;
+    }
+    let lit: HTMLElement | undefined;
+    const light = (element: HTMLElement | undefined) => {
+      lit?.classList.remove("viz-target--lit");
+      lit = element;
+      lit?.classList.add("viz-target--lit");
+    };
+    const move = (event: PointerEvent) => light(noteTargetElementAt(event.clientX, event.clientY));
+    const click = (event: MouseEvent) => {
+      const element = event.target as HTMLElement | null;
+      if (element?.closest(".viz-thread, .react-flow__controls, .react-flow__minimap")) {
+        return;
+      }
+      event.stopPropagation();
+      event.preventDefault();
+      const target = noteTargetAt(event.clientX, event.clientY);
+      const at = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+      dispatch({
+        type: "startDraft",
+        noteKind: "comment",
+        targets: target ? [target] : [],
+        place: !target && scene ? relativePlace(scene, at) : undefined,
+        at,
+      });
+    };
+    domNode.addEventListener("pointermove", move, true);
+    domNode.addEventListener("click", click, true);
+    return () => {
+      light(undefined);
+      domNode.removeEventListener("pointermove", move, true);
+      domNode.removeEventListener("click", click, true);
+    };
+  }, [placing, domNode, scene, screenToFlowPosition, dispatch]);
 
   const show = (target: VizNoteTarget) => {
     switch (target.kind) {
@@ -210,9 +257,38 @@ export function ThreadLayer(props: ThreadLayerProps) {
   const from = dragFrom
     ? toScreen({ x: dragFrom.x + dragFrom.width, y: dragFrom.y + dragFrom.height / 2 })
     : undefined;
+  const spotTarget = ui.selection && refTarget(index, ui.selection);
+  const spotAt =
+    spot && spotTarget && ui.thread.kind === "closed" && !linking ? toScreen(spot) : undefined;
   return (
     <>
       {thread}
+      {spotAt && spotTarget && (
+        <button
+          type="button"
+          className="viz-spot-comment"
+          style={{ left: spotAt.x, top: spotAt.y }}
+          title={`Comment on ${spotTarget.label} (c)`}
+          aria-label={`Comment on ${spotTarget.label}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            dispatch({
+              type: "startDraft",
+              noteKind: "comment",
+              targets: [spotTarget],
+              place: undefined,
+              at: spot ?? { x: 0, y: 0 },
+            });
+          }}
+        >
+          <UiIcon name="comment" size={13} />
+        </button>
+      )}
+      {placing && (
+        <div className="viz-link-hint" role="status">
+          Click a part to comment on it, or empty space for a free comment. Esc cancels.
+        </div>
+      )}
       {linking && (
         <div className="viz-link-hint" role="status">
           {linking.kind === "drag"

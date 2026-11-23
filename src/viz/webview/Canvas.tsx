@@ -29,7 +29,7 @@ import {
 } from "../model/notes";
 import { sequenceSpotAt, type SequenceScene } from "../layout/sequence";
 import { parseVizRef } from "../model/refs";
-import { dragNotes, withNoteDrags, type NoteDrags, type RfGraph } from "../model/rf";
+import { commentSpot, dragNotes, withNoteDrags, type NoteDrags, type RfGraph } from "../model/rf";
 import type { UiAction, UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
 import { VizContext, type MenuTarget, type VizActions } from "./context";
@@ -294,7 +294,7 @@ export function Canvas(props: CanvasProps) {
     <VizContext.Provider value={actions}>
       <ReactFlowProvider key={stageKey}>
         <ReactFlow
-          className={`viz-canvas ${emphasis.veil ? "viz-canvas--veiled" : ""} ${linking ? "viz-linking" : ""}`}
+          className={`viz-canvas ${emphasis.veil ? "viz-canvas--veiled" : ""} ${linking || ui.thread.kind === "placing" ? "viz-linking" : ""}`}
           nodes={nodes}
           edges={graph.edges}
           nodeTypes={NODE_TYPES}
@@ -402,6 +402,7 @@ export function Canvas(props: CanvasProps) {
             notes={props.notes}
             review={props.review}
             targets={props.targets}
+            spot={ui.selection && commentSpot(nodes, ui.selection)}
             linking={linking}
             setLinking={setLinking}
             dispatch={dispatch}

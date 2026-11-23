@@ -263,7 +263,7 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
         </main>
         {ui.sidebar && <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} />}
       </div>
-      <AgentBar review={review} />
+      <AgentBar review={review} placing={ui.thread.kind === "placing"} dispatch={dispatch} />
       <HelpOverlay ui={ui} dispatch={dispatch} />
     </div>
   );

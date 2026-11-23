@@ -38,8 +38,11 @@ export function noteTargetAttr(target: VizNoteTarget): { "data-note-target": str
   return { "data-note-target": JSON.stringify(target) };
 }
 
+export function noteTargetElementAt(x: number, y: number): HTMLElement | undefined {
+  return document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-note-target]") ?? undefined;
+}
+
 export function noteTargetAt(x: number, y: number): VizNoteTarget | undefined {
-  const element = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-note-target]");
-  const raw = element?.dataset.noteTarget;
+  const raw = noteTargetElementAt(x, y)?.dataset.noteTarget;
   return raw ? (JSON.parse(raw) as VizNoteTarget) : undefined;
 }

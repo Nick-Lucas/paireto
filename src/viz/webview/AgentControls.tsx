@@ -1,3 +1,4 @@
+import type { UiAction } from "../model/ui";
 import type { VizReviewState } from "../protocol";
 import { BarLabel } from "./Header";
 import { UiIcon } from "./icons";
@@ -32,11 +33,28 @@ function AgentStatus({ review }: { review: VizReviewState }) {
   );
 }
 
-function AgentActions({ review }: { review: VizReviewState }) {
+interface AgentBarProps {
+  review: VizReviewState;
+  placing: boolean;
+  dispatch: (action: UiAction) => void;
+}
+
+function AgentActions({ review, placing, dispatch }: AgentBarProps) {
   const { waiting, pending } = review.feedback;
   const comments = commentsText(pending);
   return (
     <>
+      <button
+        type="button"
+        className={`viz-tool ${placing ? "viz-tool--on" : ""}`}
+        title="Add a comment. Click a part to comment on it, or empty space for a free comment (c)"
+        aria-pressed={placing}
+        onClick={() => dispatch({ type: "placeComment" })}
+      >
+        <UiIcon name="comment" size={14} />
+        <span className="viz-action__label">Comment</span>
+        <kbd>C</kbd>
+      </button>
       <button
         type="button"
         className="viz-tool"
@@ -70,13 +88,13 @@ function AgentActions({ review }: { review: VizReviewState }) {
   );
 }
 
-export function AgentBar({ review }: { review: VizReviewState }) {
+export function AgentBar(props: AgentBarProps) {
   return (
     <footer className="viz-agentbar">
       <BarLabel>Agent</BarLabel>
-      <AgentStatus review={review} />
+      <AgentStatus review={props.review} />
       <span className="viz-header__spacer" />
-      <AgentActions review={review} />
+      <AgentActions {...props} />
     </footer>
   );
 }

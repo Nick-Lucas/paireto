@@ -39,6 +39,12 @@ export const KEY_BINDINGS: readonly KeyBinding[] = [
     command: ui({ type: "playToggle" }),
   },
   { keys: ["f"], display: "f", label: "Focus the selected node", command: ui({ type: "focus" }) },
+  {
+    keys: ["c"],
+    display: "c",
+    label: "Add a comment",
+    command: ui({ type: "placeComment" }),
+  },
   { keys: ["/"], display: "/", label: "Find", command: { kind: "effect", effect: "search" } },
   {
     keys: ["Escape"],

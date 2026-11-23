@@ -27,6 +27,7 @@ export type Mode =
 export type Thread =
   | { readonly kind: "closed" }
   | { readonly kind: "open"; readonly id: string }
+  | { readonly kind: "placing" }
   | {
       readonly kind: "draft";
       readonly noteKind: NoteKind;
@@ -86,6 +87,7 @@ export type UiAction =
   | { readonly type: "resetChanges" }
   | { readonly type: "openThread"; readonly id: string }
   | { readonly type: "closeThread" }
+  | { readonly type: "placeComment" }
   | {
       readonly type: "startDraft";
       readonly noteKind: NoteKind;
@@ -330,6 +332,8 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
       };
     case "closeThread":
       return ui.thread.kind === "closed" ? ui : { ...ui, thread: CLOSED };
+    case "placeComment":
+      return { ...ui, thread: ui.thread.kind === "placing" ? CLOSED : { kind: "placing" } };
     case "startDraft":
       return {
         ...ui,

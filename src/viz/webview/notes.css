@@ -148,6 +148,32 @@
   cursor: crosshair !important;
 }
 
+.viz-target--lit {
+  outline: 1.5px dashed var(--viz-accent);
+  outline-offset: 2px;
+}
+
+.viz-spot-comment {
+  position: absolute;
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--viz-accent);
+  border-radius: 999px;
+  background: var(--viz-panel);
+  color: var(--viz-accent);
+  cursor: pointer;
+}
+
+.viz-spot-comment:hover {
+  background: var(--viz-accent);
+  color: var(--viz-panel);
+}
+
 .viz-link-drag {
   position: absolute;
   inset: 0;

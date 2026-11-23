@@ -420,6 +420,15 @@ export function toSequenceRf(
 
 export const NO_EXTRAS: Omit<OverviewExtras, "measure"> = { notes: [], marks: NO_MARKS };
 
+export function commentSpot(nodes: readonly RfNode[], ref: VizRef): Point | undefined {
+  if (ref.kind === "edge" || ref.kind === "flow") {
+    return undefined;
+  }
+  const id = formatVizRef(ref.kind === "member" ? { kind: "node", id: ref.node } : ref);
+  const node = nodes.find((candidate) => candidate.id === id);
+  return node && { x: node.position.x + node.width, y: node.position.y };
+}
+
 export interface NoteDrag {
   readonly from: Point;
   readonly to: Point;

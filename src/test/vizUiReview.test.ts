@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 
 import { emphasisOf } from "../viz/model/emphasis.js";
+import { refTarget } from "../viz/model/notes.js";
 import { reviewMarks } from "../viz/model/review.js";
 import {
   initialUi,
@@ -67,6 +68,29 @@ suite("viz ui review state", () => {
   test("a comment can start on the Overview and on a sequence diagram", () => {
     assert.strictEqual(run(DRAFT).thread.kind, "draft");
     assert.strictEqual(run({ type: "stage", stage: FLOW }, DRAFT).thread.kind, "draft");
+  });
+
+  test("the comment button starts placing a comment, and escape, a second press or a draft ends it", () => {
+    const placing = run({ type: "placeComment" });
+    assert.strictEqual(placing.thread.kind, "placing");
+    assert.strictEqual(run({ type: "placeComment" }, { type: "escape" }).thread.kind, "closed");
+    assert.strictEqual(
+      run({ type: "placeComment" }, { type: "placeComment" }).thread.kind,
+      "closed",
+    );
+    assert.strictEqual(run({ type: "placeComment" }, DRAFT).thread.kind, "draft");
+    assert.strictEqual(run(DRAFT, { type: "placeComment" }).thread.kind, "placing");
+  });
+
+  test("a selection gives the target its comment is about", () => {
+    assert.deepStrictEqual(refTarget(index, { kind: "node", id: EMAIL }), NODE);
+    assert.deepStrictEqual(
+      refTarget(index, { kind: "member", id: `${EMAIL}.send`, node: EMAIL }),
+      MEMBER,
+    );
+    assert.strictEqual(refTarget(index, { kind: "step", flow: "deliver", index: 0 })?.kind, "step");
+    assert.strictEqual(refTarget(index, { kind: "flow", id: "deliver" }), undefined);
+    assert.strictEqual(refTarget(index, { kind: "node", id: "missing" }), undefined);
   });
 
   test("the sidebar width stays within its bounds", () => {

@@ -6,6 +6,7 @@ import type { OverviewScene, PlacedFrame } from "../layout/overview.js";
 import type { ParticipantColumn, PlacedMessage, SequenceScene } from "../layout/sequence.js";
 import type { VizNote, VizNoteTarget, VizNotePlace, VizReviewFile } from "../protocol.js";
 import type { VizIndex } from "./index.js";
+import type { VizRef } from "./types.js";
 
 export const NOTE = {
   width: 220,
@@ -128,6 +129,21 @@ export function stepTarget(
       label: `${flow.title}, step ${step + 1}: ${found.label}`,
     }
   );
+}
+
+export function refTarget(index: VizIndex, ref: VizRef): VizNoteTarget | undefined {
+  switch (ref.kind) {
+    case "node":
+      return nodeTarget(index, ref.id);
+    case "member":
+      return memberTarget(index, ref.id);
+    case "edge":
+      return edgeTarget(index, ref.id);
+    case "step":
+      return stepTarget(index, ref.flow, ref.index);
+    case "flow":
+      return undefined;
+  }
 }
 
 export function fileTarget(file: VizReviewFile): VizNoteTarget {

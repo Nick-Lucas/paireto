@@ -9,6 +9,7 @@ import { OVERVIEW, refInStage, type Stage } from "../viz/model/index.js";
 import { formatVizRef, parseVizRef } from "../viz/model/refs.js";
 import { estimateMeasure } from "../viz/layout/measure.js";
 import {
+  commentSpot,
   dragNotes,
   NO_EXTRAS,
   toOverviewRf,
@@ -186,5 +187,23 @@ suite("viz note drags", () => {
       dragNotes(graph, held, [{ type: "select", id: "note:a", selected: true }]),
       held,
     );
+  });
+});
+
+suite("viz comment spot", () => {
+  const graph = [band("Notifier", 10, 20), band("deliver 2", 300, 80)];
+
+  test("the comment icon sits at the top right of the selected part", () => {
+    assert.deepStrictEqual(commentSpot(graph, { kind: "node", id: "Notifier" }), { x: 110, y: 20 });
+    assert.deepStrictEqual(
+      commentSpot(graph, { kind: "member", id: "Notifier.notify", node: "Notifier" }),
+      { x: 110, y: 20 },
+    );
+    assert.deepStrictEqual(commentSpot(graph, { kind: "step", flow: "deliver", index: 1 }), {
+      x: 400,
+      y: 80,
+    });
+    assert.strictEqual(commentSpot(graph, { kind: "edge", id: "Notifier" }), undefined);
+    assert.strictEqual(commentSpot(graph, { kind: "node", id: "missing" }), undefined);
   });
 });

@@ -298,6 +298,17 @@
   background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
 }
 
+.viz-tool--on {
+  background: var(--vscode-toolbar-activeBackground, var(--viz-hover));
+  color: var(--vscode-tab-activeForeground, var(--viz-fg));
+}
+
+.viz-tool kbd {
+  padding: 0 4px;
+  font-size: 10.5px;
+  line-height: 14px;
+}
+
 .viz-agent__status {
   font-size: 12px;
   color: var(--viz-muted);
