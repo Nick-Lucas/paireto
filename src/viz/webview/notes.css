@@ -25,11 +25,11 @@
   box-sizing: border-box;
   justify-content: center;
   transform: translate(-50%, -50%);
-  --viz-bubble-ink: rgb(from var(--viz-accent) r g b);
+  --viz-bubble-ink: rgb(from var(--viz-link) r g b);
   --viz-bubble-base: rgb(from var(--viz-bg) r g b);
-  border: 1px solid var(--viz-bubble-ink);
+  border: 1px solid color-mix(in srgb, var(--viz-bubble-ink) 70%, var(--viz-bubble-base));
   border-radius: 999px;
-  background: color-mix(in srgb, var(--viz-bubble-ink) 18%, var(--viz-bubble-base));
+  background: color-mix(in srgb, var(--viz-bubble-ink) 12%, var(--viz-bubble-base));
   color: var(--viz-bubble-ink);
   font-size: 11px;
   line-height: 1;
@@ -49,6 +49,7 @@
 
 .viz-bubble:hover,
 .viz-bubble--active {
+  border-color: var(--viz-bubble-ink);
   background: var(--viz-bubble-ink);
   color: var(--viz-bubble-base);
 }

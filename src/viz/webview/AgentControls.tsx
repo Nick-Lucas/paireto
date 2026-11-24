@@ -41,15 +41,6 @@ function AgentActions({ review }: AgentBarProps) {
   const comments = commentsText(pending);
   return (
     <>
-      <button
-        type="button"
-        className="viz-tool"
-        title="Add a note that asks the agent to make this diagram again. It goes to the agent with Send unsent comments."
-        onClick={() => vscode.postMessage({ type: "regenerate" })}
-      >
-        <UiIcon name="reset" size={14} />
-        <span className="viz-action__label">Ask to redraw</span>
-      </button>
       {pending > 0 && (
         <button
           type="button"
@@ -57,17 +48,17 @@ function AgentActions({ review }: AgentBarProps) {
           title={`Send the ${comments} not sent yet to the agent`}
           onClick={() => vscode.postMessage({ type: "gate", action: "sendFeedback" })}
         >
-          <UiIcon name="send" size={13} /> Send unsent comments · {pending}
+          <UiIcon name="send" size={13} /> Send {comments}
         </button>
       )}
       {waiting && (
         <button
           type="button"
           className={`viz-btn ${pending > 0 ? "viz-btn--secondary" : ""}`}
-          title="Tell the agent you have read its feedback and it can carry on with no changes"
+          title="End your review. The agent carries on with no changes. Comments not sent yet stay here."
           onClick={() => vscode.postMessage({ type: "gate", action: "approve" })}
         >
-          <UiIcon name="check" size={13} /> Acknowledge agent feedback
+          <UiIcon name="check" size={13} /> Continue, no changes
         </button>
       )}
     </>

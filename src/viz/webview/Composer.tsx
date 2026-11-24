@@ -194,7 +194,7 @@ export function Composer({
           title={
             variant === "edit"
               ? "Save the change (Enter). Shift+Enter adds a line. Esc cancels."
-              : `${submitLabel} (Enter). Shift+Enter adds a line. It is saved in the review and goes to the agent with Send unsent comments.`
+              : `${submitLabel} (Enter). Shift+Enter adds a line. It is saved in the review and goes to the agent when you send your comments.`
           }
           disabled={disabled || !body.trim()}
           onClick={submit}

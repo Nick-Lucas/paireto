@@ -226,6 +226,15 @@ export function Header({
         <span className="viz-header__spacer" />
         <button
           type="button"
+          className="viz-action"
+          title="Add a note that asks the agent to make this diagram again. It goes to the agent when you send your comments."
+          onClick={() => vscode.postMessage({ type: "regenerate" })}
+        >
+          <UiIcon name="reset" size={14} />
+          <span className="viz-action__label">Ask to redraw</span>
+        </button>
+        <button
+          type="button"
           className="viz-action viz-action--copy"
           title="Copy the open diagram as Mermaid text (e)"
           onClick={onExport}

@@ -193,7 +193,6 @@ export function ChangedFiles({ index, ui, review, dispatch, onNext }: ChangedFil
         title="Go to the next change in the Overview (n)"
         onClick={onNext}
       >
-        <UiIcon name="arrowDown" size={14} />
         Next change
         <kbd>N</kbd>
       </button>
