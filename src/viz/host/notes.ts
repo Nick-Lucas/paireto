@@ -7,7 +7,7 @@ import type { VizNote, VizNoteItem, VizNoteTarget } from "../protocol.js";
 
 export function notesTitle(targets: readonly { label: string }[]): string {
   return targets.length === 0
-    ? "Not linked"
+    ? "Whole diagram"
     : targets.length === 1
       ? targets[0].label
       : `${targets[0].label} and ${targets.length - 1} more`;
@@ -18,19 +18,6 @@ export function diagramTargets(doc: VizDoc, targets: readonly VizNoteTarget[]): 
     const code = codeOf(doc, target);
     return code ? { ...target, code } : { ...target };
   });
-}
-
-export function sameTarget(a: VizNoteTarget, b: VizNoteTarget): boolean {
-  if (a.kind === "file") {
-    return b.kind === "file" && a.repo === b.repo && a.path === b.path;
-  }
-  if (a.kind === "step") {
-    return b.kind === "step" && a.flow === b.flow && a.index === b.index;
-  }
-  if (b.kind === "step" || b.kind === "file") {
-    return false;
-  }
-  return a.kind === b.kind && a.id === b.id;
 }
 
 export function noteTarget(target: DiagramTarget): VizNoteTarget {
@@ -83,7 +70,6 @@ export function vizNotes(
         waiting: thread.delivery === "sent" && items[items.length - 1].who === "you",
         resolved: thread.resolvedAt !== undefined,
         targets: diagram.targets.map(noteTarget),
-        ...(diagram.place ? { place: diagram.place } : {}),
       },
     ];
   });

@@ -3,7 +3,6 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import { BOX, type BoxRowLayout } from "../layout/classBox";
 import type { ClassBoxData } from "../model/rf";
 import { noteTargetAttr, useViz } from "./context";
-import { UiIcon } from "./icons";
 import { ChipMark, CountsText, FileRefTag } from "./parts";
 import "./classbox.css";
 
@@ -132,14 +131,6 @@ export function ClassBoxNode({ data }: NodeProps<Node<ClassBoxData, "classBox">>
           >
             {box.title}
           </span>
-          {data.threads > 0 && (
-            <span
-              className="viz-box__threads"
-              title={`${data.threads} open review thread${data.threads === 1 ? "" : "s"}`}
-            >
-              <UiIcon name="comment" size={12} /> {data.threads}
-            </span>
-          )}
           {!box.noDiff && (
             <span
               className={`viz-box__seen ${data.seen ? "viz-box__seen--on" : ""}`}

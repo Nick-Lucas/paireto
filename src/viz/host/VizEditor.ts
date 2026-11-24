@@ -14,14 +14,13 @@ import type { VizDoc, VizIssue } from "../model/types.js";
 import type {
   HostToWebview,
   VizListEntry,
-  VizNoteTarget,
   VizReviewState,
   VizViewState,
   VizWindowState,
   WebviewToHost,
 } from "../protocol.js";
 import { parseWebviewMessage } from "./messages.js";
-import { diagramTargets, noteTarget, notesTitle, sameTarget } from "./notes.js";
+import { diagramTargets, notesTitle } from "./notes.js";
 import type { VizCheck, VizReview, VizSeen } from "./VizService.js";
 import { vizNameOf } from "./vizFiles.js";
 
@@ -240,47 +239,18 @@ export class VizEditor {
           viz: this.name,
           title: message.title.trim() || notesTitle(targets),
           targets,
-          ...(message.place ? { place: message.place } : {}),
         };
         await review.addDiagramComment(this.doc.meta.repoRoot, anchor, message.kind, message.body);
         return;
       }
-      case "note.edit": {
-        const anchor = review.diagramAnchorOf(message.id);
-        if (anchor) {
-          review.editDiagramComment(
-            message.id,
-            message.kind,
-            message.body,
-            this.relinked(anchor, message.targets),
-          );
-        }
+      case "note.edit":
+        review.editDiagramComment(message.id, message.kind, message.body);
         return;
-      }
-      case "note.link": {
-        const anchor = review.diagramAnchorOf(message.id);
-        const held = anchor?.targets.map(noteTarget) ?? [];
-        if (anchor && !held.some((target) => sameTarget(target, message.target))) {
-          review.relinkDiagramComment(message.id, this.relinked(anchor, [...held, message.target]));
-        }
-        return;
-      }
-      case "note.unlink": {
-        const anchor = review.diagramAnchorOf(message.id);
-        if (anchor) {
-          const kept = anchor.targets.map(noteTarget).filter((_, at) => at !== message.index);
-          review.relinkDiagramComment(message.id, this.relinked(anchor, kept));
-        }
-        return;
-      }
       case "note.reply":
         review.replyDiagramComment(message.id, message.body);
         return;
       case "note.editReply":
         review.editDiagramReply(message.id, message.body);
-        return;
-      case "note.move":
-        review.moveDiagramComment(message.id, message.place);
         return;
       case "note.read":
         review.readDiagramComment(message.id);
@@ -297,18 +267,6 @@ export class VizEditor {
         );
         return;
     }
-  }
-
-  private relinked(anchor: DiagramAnchor, targets: VizNoteTarget[]): DiagramAnchor {
-    const resolved = this.doc
-      ? diagramTargets(this.doc, targets)
-      : targets.map((target) => anchor.targets.find((held) => sameTarget(held, target)) ?? target);
-    const autoTitle = anchor.title === notesTitle(anchor.targets);
-    return {
-      viz: anchor.viz,
-      title: autoTitle ? notesTitle(resolved) : anchor.title,
-      targets: resolved,
-    };
   }
 
   private async askToRegenerate(): Promise<void> {

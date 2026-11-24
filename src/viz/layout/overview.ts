@@ -24,7 +24,7 @@ export interface OverviewOptions {
   readonly grouping: Grouping;
   readonly expanded: ReadonlySet<string>;
   readonly measure: Measure;
-  readonly threads: ReadonlyMap<string, number>;
+  readonly commented: ReadonlySet<string>;
 }
 
 export const DEFAULT_OVERVIEW_OPTIONS: OverviewOptions = {
@@ -32,7 +32,7 @@ export const DEFAULT_OVERVIEW_OPTIONS: OverviewOptions = {
   grouping: "links",
   expanded: new Set(),
   measure: estimateMeasure,
-  threads: new Map(),
+  commented: new Set(),
 };
 
 export interface LaneBand extends Rect {
@@ -208,7 +208,7 @@ function nodeEntry(build: Build, node: VizNode, depth: number): ElkNode {
       options.show,
       options.expanded.has(node.id),
       options.measure,
-      options.threads.get(node.id) ?? 0,
+      options.commented,
     );
     build.leaves.set(node.id, { component, box });
     return {

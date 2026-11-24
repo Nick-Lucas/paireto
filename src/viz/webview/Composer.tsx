@@ -20,15 +20,9 @@ const TARGET_WORDS: Record<VizNoteTarget["kind"], string> = {
   file: "file",
 };
 
-export interface MentionSource {
-  search(query: string): VizNoteTarget[];
-  onPick(target: VizNoteTarget): void;
-}
-
 export interface ChipProps {
   targets: readonly VizNoteTarget[];
   onShow(target: VizNoteTarget): void;
-  onRemove?(index: number): void;
 }
 
 function chipText(target: VizNoteTarget): { label: string; info: string } {
@@ -39,7 +33,7 @@ function chipText(target: VizNoteTarget): { label: string; info: string } {
   return { label: target.label, info: "" };
 }
 
-export function TargetChips({ targets, onShow, onRemove }: ChipProps) {
+export function TargetChips({ targets, onShow }: ChipProps) {
   if (targets.length === 0) {
     return null;
   }
@@ -49,17 +43,6 @@ export function TargetChips({ targets, onShow, onRemove }: ChipProps) {
         const text = chipText(target);
         return (
           <span key={index} className={`viz-ctx-chip viz-ctx-chip--${target.kind}`}>
-            {onRemove && (
-              <button
-                type="button"
-                className="viz-ctx-chip__remove"
-                aria-label={`Remove the link to ${target.label}`}
-                title="Remove this link"
-                onClick={() => onRemove(index)}
-              >
-                <UiIcon name="close" size={10} />
-              </button>
-            )}
             <button
               type="button"
               className="viz-ctx-chip__label"
@@ -118,11 +101,6 @@ function KindPicker({ kind, onKind }: { kind: NoteKind; onKind(kind: NoteKind): 
   );
 }
 
-function mentionAt(value: string, caret: number): { start: number; query: string } | undefined {
-  const match = /(^|\s)@([^\s@]*)$/.exec(value.slice(0, caret));
-  return match ? { start: caret - match[2].length - 1, query: match[2] } : undefined;
-}
-
 export function Composer({
   variant,
   initial,
@@ -132,8 +110,6 @@ export function Composer({
   chips,
   disabled,
   focus,
-  mentions,
-  onLink,
   onSubmit,
   onCancel,
 }: {
@@ -145,14 +121,10 @@ export function Composer({
   chips?: ChipProps;
   disabled?: boolean;
   focus?: boolean;
-  mentions: MentionSource;
-  onLink(): void;
   onSubmit(body: string): void;
   onCancel?(): void;
 }) {
   const [body, setBody] = useState(initial);
-  const [mention, setMention] = useState<{ start: number; query: string } | undefined>();
-  const [active, setActive] = useState(0);
   const textRef = useRef<HTMLTextAreaElement>(null);
   useLayoutEffect(() => {
     const text = textRef.current;
@@ -161,31 +133,6 @@ export function Composer({
       text.setSelectionRange(text.value.length, text.value.length);
     }
   }, [focus]);
-  const found = mention ? mentions.search(mention.query) : [];
-  const track = (value: string, caret: number) => {
-    const next = mentionAt(value, caret);
-    setMention(next);
-    if (next?.query !== mention?.query) {
-      setActive(0);
-    }
-  };
-  const pick = (target: VizNoteTarget) => {
-    const text = textRef.current;
-    if (!mention || !text) {
-      return;
-    }
-    const caret = text.selectionStart;
-    const label = chipText(target).label;
-    const next = `${body.slice(0, mention.start)}@${label} ${body.slice(caret)}`;
-    const at = mention.start + label.length + 2;
-    setBody(next);
-    setMention(undefined);
-    mentions.onPick(target);
-    requestAnimationFrame(() => {
-      text.focus({ preventScroll: true });
-      text.setSelectionRange(at, at);
-    });
-  };
   const submit = () => {
     if (body.trim()) {
       onSubmit(body.trim());
@@ -209,39 +156,12 @@ export function Composer({
         aria-label={
           variant === "reply" ? "Reply" : variant === "edit" ? "Edit the message" : "Comment"
         }
-        aria-autocomplete="list"
-        aria-expanded={found.length > 0}
         value={body}
         rows={variant === "reply" ? 1 : 2}
         placeholder={placeholder}
         disabled={disabled}
-        onChange={(event) => {
-          setBody(event.target.value);
-          track(event.target.value, event.target.selectionStart);
-        }}
-        onSelect={(event) => track(event.currentTarget.value, event.currentTarget.selectionStart)}
-        onBlur={() => setMention(undefined)}
+        onChange={(event) => setBody(event.target.value)}
         onKeyDown={(event) => {
-          if (found.length > 0) {
-            if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-              event.preventDefault();
-              const step = event.key === "ArrowDown" ? 1 : -1;
-              setActive((active + step + found.length) % found.length);
-              return;
-            }
-            if (event.key === "Enter" || event.key === "Tab") {
-              event.preventDefault();
-              event.stopPropagation();
-              pick(found[Math.min(active, found.length - 1)]);
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              setMention(undefined);
-              return;
-            }
-          }
           if (
             event.key === "Enter" &&
             !event.shiftKey &&
@@ -259,45 +179,12 @@ export function Composer({
           }
         }}
       />
-      {found.length > 0 && (
-        <div className="viz-mention-menu" role="listbox" aria-label="Parts to link">
-          {found.map((target, index) => {
-            const text = chipText(target);
-            return (
-              <button
-                key={`${target.kind}:${target.label}`}
-                type="button"
-                role="option"
-                aria-selected={index === active}
-                className={`viz-mention-option viz-ctx-chip--${target.kind} ${index === active ? "viz-mention-option--active" : ""}`}
-                onPointerDown={(event) => event.preventDefault()}
-                onPointerMove={() => setActive(index)}
-                onClick={() => pick(target)}
-              >
-                <UiIcon name={TARGET_ICONS[target.kind]} size={13} />
-                <span className="viz-ctx-chip__name">{text.label}</span>
-                <span className="viz-ctx-chip__info">{TARGET_WORDS[target.kind]}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
       {chips && chips.targets.length > 0 && (
         <div className="viz-ctx-row">
-          <TargetChips targets={chips.targets} onShow={chips.onShow} onRemove={chips.onRemove} />
+          <TargetChips targets={chips.targets} onShow={chips.onShow} />
         </div>
       )}
       <div className="viz-composer__bar">
-        <button
-          type="button"
-          className="viz-bar-link"
-          disabled={disabled}
-          title="Link this thread to a part, a member, a frame or a file: click it on the diagram, or type @"
-          onClick={onLink}
-        >
-          <UiIcon name="link" size={13} />
-          Link a part…
-        </button>
         {kind && onKind && <KindPicker kind={kind} onKind={onKind} />}
         <span className="viz-composer__gap" />
         <button
@@ -307,7 +194,7 @@ export function Composer({
           title={
             variant === "edit"
               ? "Save the change (Enter). Shift+Enter adds a line. Esc cancels."
-              : `${submitLabel} (Enter). Shift+Enter adds a line. It is saved in the review and goes to the agent with Send comments.`
+              : `${submitLabel} (Enter). Shift+Enter adds a line. It is saved in the review and goes to the agent when you send your comments.`
           }
           disabled={disabled || !body.trim()}
           onClick={submit}

@@ -126,7 +126,6 @@ function reviewFor(viz: VizFile): VizReviewState {
       waiting: false,
       resolved: false,
       targets: [{ kind: "node", id: second.id, label: second.label }],
-      place: { node: second.id, x: -260, y: -40 },
     });
   }
   return { files, notes, feedback: { waiting: true, pending: 1 } };
@@ -198,7 +197,6 @@ function handle(message: WebviewToHost): void {
           waiting: false,
           resolved: false,
           targets: message.targets,
-          place: message.place,
         },
       ];
       review.feedback = { ...review.feedback, pending: review.feedback.pending + 1 };
@@ -238,28 +236,6 @@ function handle(message: WebviewToHost): void {
         );
       }
       break;
-    case "note.link": {
-      const note = noteOf(message.id);
-      if (note) {
-        note.targets = [...note.targets, message.target];
-        note.title = note.targets[0].label;
-      }
-      break;
-    }
-    case "note.unlink": {
-      const note = noteOf(message.id);
-      if (note) {
-        note.targets = note.targets.filter((_, i) => i !== message.index);
-      }
-      break;
-    }
-    case "note.move": {
-      const note = noteOf(message.id);
-      if (note) {
-        note.place = message.place;
-      }
-      break;
-    }
     case "note.read": {
       const note = noteOf(message.id);
       if (note) {

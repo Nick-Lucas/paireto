@@ -1,9 +1,16 @@
 import * as assert from "node:assert";
 
-import { nextChange, reviewFiles, reviewMarks, seenProgress } from "../viz/model/review.js";
+import { buildVizIndex } from "../viz/model/index.js";
+import {
+  hasChanges,
+  nextChange,
+  reviewFiles,
+  reviewMarks,
+  seenProgress,
+} from "../viz/model/review.js";
 import type { VizRef } from "../viz/model/types.js";
 import type { VizNote, VizReviewFile } from "../viz/protocol.js";
-import { classDiagramIndex } from "./vizFixtures.js";
+import { classDiagramIndex, loadVizFixture } from "./vizFixtures.js";
 
 const index = classDiagramIndex();
 const CHANNEL = "src/notify/channel.ts#Channel";
@@ -129,6 +136,22 @@ suite("viz review", () => {
     });
     assert.strictEqual(jumped.stop?.cursor.file, "shop:src/notify/notifier.ts");
     assert.strictEqual(jumped.seen, undefined);
+  });
+
+  test("a viz has changes only when a changed file holds a changed part", () => {
+    const viz = loadVizFixture("classDiagram");
+    const unchanged = buildVizIndex({
+      ...viz,
+      nodes: viz.nodes.map((node) => ({
+        ...node,
+        delta: "unchanged",
+        members: node.members?.map((member) => ({ ...member, delta: "unchanged" })),
+      })),
+    });
+    assert.strictEqual(hasChanges(index, filesOf()), true);
+    assert.strictEqual(hasChanges(index, []), false);
+    assert.strictEqual(hasChanges(unchanged, filesOf()), false);
+    assert.strictEqual(nextChange(unchanged, filesOf(), {}).stop, undefined);
   });
 
   test("progress counts the seen files", () => {

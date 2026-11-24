@@ -42,20 +42,22 @@ export function Sidebar({ index, ui, review, dispatch }: SidebarProps) {
             {ui.selection && (
               <button
                 type="button"
-                className="viz-iconbtn"
-                title="Clear selection (esc)"
+                className="viz-minibtn"
+                title="Clear the selection (esc)"
                 onClick={() => dispatch({ type: "select", ref: undefined })}
               >
-                <UiIcon name="close" size={12} />
+                <UiIcon name="close" size={11} />
+                Clear
               </button>
             )}
             <button
               type="button"
               className="viz-iconbtn"
               title="Hide the side bar (b)"
+              aria-label="Hide the side bar"
               onClick={() => dispatch({ type: "toggleSidebar" })}
             >
-              <UiIcon name="next" size={12} />
+              <UiIcon name="sidebar" size={14} />
             </button>
           </header>
           <Inspector

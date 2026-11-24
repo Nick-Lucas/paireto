@@ -68,14 +68,11 @@ export interface VizReview {
     kind: CommentKind,
     body: string,
   ): Promise<string | undefined>;
-  diagramAnchorOf(id: string): DiagramAnchor | undefined;
-  relinkDiagramComment(id: string, anchor: DiagramAnchor): boolean;
-  editDiagramComment(id: string, kind: CommentKind, body: string, anchor: DiagramAnchor): boolean;
+  editDiagramComment(id: string, kind: CommentKind, body: string): boolean;
   editDiagramReply(id: string, body: string): boolean;
   deleteDiagramComment(id: string): boolean;
   replyDiagramComment(id: string, body: string): boolean;
   readDiagramComment(id: string): boolean;
-  moveDiagramComment(id: string, place: NonNullable<DiagramAnchor["place"]>): boolean;
   resolveComment(id: string): void;
   openAgainstCompareToAt(
     file: RepoChangedFile,

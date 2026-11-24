@@ -1,165 +1,64 @@
-.viz-note {
-  position: relative;
-  box-sizing: border-box;
-  cursor: pointer;
-  user-select: none;
-  font-size: 11px;
-}
-
-.viz-note__shape {
-  position: absolute;
-  inset: 0;
-  overflow: visible;
-}
-
-.viz-note__box {
-  fill: var(--viz-note-bg);
-  stroke: var(--viz-note-border);
-  stroke-width: 1;
-}
-
-.viz-note--question .viz-note__box {
-  fill: var(--viz-question-bg);
-  stroke: var(--viz-question-border);
-}
-
-.viz-note__fold {
-  fill: none;
-  stroke: color-mix(in srgb, var(--viz-fg) 35%, transparent);
-  stroke-width: 1;
-}
-
-.viz-note:hover .viz-note__box,
-.viz-note--open .viz-note__box,
-.viz-note:focus-visible .viz-note__box {
-  stroke: var(--viz-accent);
-  stroke-width: 1.5;
-}
-
-.viz-note:focus {
-  outline: none;
-}
-
-.viz-note__head {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 0 24px 0 9px;
-  font-weight: 600;
-}
-
-.viz-note__head .viz-icon {
-  color: var(--viz-fg);
-}
-
-.viz-note__meta {
-  color: var(--viz-muted);
-  font-weight: 400;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.viz-note__badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 16px;
-  padding: 0 7px 0 5px;
-  border-radius: 8px;
-  color: var(--viz-agent);
-  background: color-mix(in srgb, var(--viz-agent) 18%, transparent);
-  white-space: nowrap;
-}
-
-.viz-dot--agent {
-  background: var(--viz-agent);
-  width: 6px;
-  height: 6px;
-}
-
-.viz-note__gap {
-  flex: 1;
-}
-
-.viz-note__resolve {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  color: var(--viz-muted);
-}
-
-.viz-note__resolve:hover {
-  color: var(--viz-fg);
-  background: var(--vscode-toolbar-hoverBackground, rgba(255, 255, 255, 0.1));
-}
-
-.viz-note__body {
-  position: relative;
-  padding: 0 10px;
-}
-
-.viz-note__line {
-  line-height: 16px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.viz-note--ghost .viz-note__box {
-  stroke-dasharray: 4 3;
-}
-
-.viz-note--ghost .viz-note__line,
-.viz-note--ghost .viz-note__meta {
-  color: var(--viz-muted);
-  font-style: italic;
-}
-
-.viz-note__handle {
-  position: absolute;
-  top: 50%;
-  right: -7px;
-  width: 10px;
-  height: 10px;
-  margin-top: -6px;
-  border-radius: 50%;
-  border: 1.5px solid var(--viz-accent);
-  background: var(--viz-node-bg);
-  cursor: crosshair;
-  opacity: 0;
-  transition: opacity var(--viz-duration);
-}
-
-.viz-note:hover .viz-note__handle,
-.viz-note:focus-within .viz-note__handle {
-  opacity: 1;
-}
-
-.viz-note__handle:hover {
-  background: var(--viz-accent);
-}
-
 .viz-linking,
 .viz-linking * {
   cursor: crosshair !important;
 }
 
-.viz-link-drag {
-  position: absolute;
-  inset: 0;
-  z-index: 8;
-  pointer-events: none;
-  overflow: visible;
+.viz-target--lit {
+  outline: 1.5px dashed var(--viz-accent);
+  outline-offset: 2px;
 }
 
-.viz-link-drag line {
-  stroke: var(--viz-accent);
-  stroke-width: 1.5;
-  stroke-dasharray: 4 3;
+.viz-target--open {
+  outline: 1.5px solid var(--viz-accent);
+  outline-offset: 2px;
+}
+
+.viz-bubble {
+  position: absolute;
+  z-index: 11;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 20px;
+  min-width: 20px;
+  padding: 0 6px;
+  box-sizing: border-box;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  --viz-bubble-ink: rgb(from var(--viz-link) r g b);
+  --viz-bubble-base: rgb(from var(--viz-bg) r g b);
+  border: 1px solid color-mix(in srgb, var(--viz-bubble-ink) 70%, var(--viz-bubble-base));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--viz-bubble-ink) 12%, var(--viz-bubble-base));
+  color: var(--viz-bubble-ink);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.viz-bubble--member {
+  height: 18px;
+  min-width: 18px;
+  padding: 0 5px;
+  transform: translate(4px, -50%);
+}
+
+.viz-bubble--add {
+  gap: 1px;
+}
+
+.viz-bubble:hover,
+.viz-bubble--active {
+  border-color: var(--viz-bubble-ink);
+  background: var(--viz-bubble-ink);
+  color: var(--viz-bubble-base);
+}
+
+.viz-bubble__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--viz-agent);
 }
 
 .viz-link-hint {
@@ -219,4 +118,19 @@
   color: var(--vscode-notifications-foreground, inherit);
   box-shadow: var(--viz-shadow);
   font-size: 12px;
+}
+
+.viz-bubble--inline,
+.viz-bubble--diagram {
+  position: static;
+  flex: none;
+  transform: none;
+}
+
+.viz-bubble--diagram {
+  padding: 0 8px 0 6px;
+}
+
+.viz-bubble__label {
+  margin-left: 4px;
 }

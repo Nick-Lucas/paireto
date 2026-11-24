@@ -10,32 +10,32 @@ import {
   type OverviewScene,
 } from "../viz/layout/overview.js";
 import {
-  allTargets,
+  commentedMembers,
+  diagramNotes,
+  edgeTarget,
   memberTarget,
-  NOTE,
   noteStatus,
-  placeNotes,
-  placeSequenceNotes,
-  relativePlace,
-  searchTargets,
+  overviewBubbles,
+  sequenceBubbles,
+  STEP_BUBBLE_GAP,
   stepTarget,
+  targetKey,
   targetRect,
+  targetsTitle,
   timeAgo,
 } from "../viz/model/notes.js";
-import type { VizNote, VizReviewFile } from "../viz/protocol.js";
+import type { VizNote } from "../viz/protocol.js";
 import { makeElk } from "./vizElk.js";
 import { classDiagramIndex } from "./vizFixtures.js";
 
 const index = classDiagramIndex();
 const EMAIL = "src/notify/emailChannel.ts#EmailChannel";
-const FILES: VizReviewFile[] = ["channel.ts", "emailChannel.ts"].map((name) => ({
-  repo: "shop",
-  path: `src/notify/${name}`,
-  status: "M",
-  additions: 1,
-  deletions: 1,
-  seen: false,
-}));
+const NODE = { kind: "node", id: EMAIL, label: "EmailChannel" } as const;
+const NOTIFIER_NODE = {
+  kind: "node",
+  id: "src/notify/notifier.ts#Notifier",
+  label: "Notifier",
+} as const;
 
 function note(id: string, extra: Partial<VizNote> = {}): VizNote {
   return {
@@ -53,24 +53,6 @@ function note(id: string, extra: Partial<VizNote> = {}): VizNote {
   };
 }
 
-function overlaps(a: Rect, b: Rect): boolean {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
-}
-
-function onBorder(rect: Rect, point: { x: number; y: number }): boolean {
-  const inside =
-    point.x >= rect.x - 0.5 &&
-    point.x <= rect.x + rect.width + 0.5 &&
-    point.y >= rect.y - 0.5 &&
-    point.y <= rect.y + rect.height + 0.5;
-  const onEdge =
-    Math.abs(point.x - rect.x) < 0.5 ||
-    Math.abs(point.x - rect.x - rect.width) < 0.5 ||
-    Math.abs(point.y - rect.y) < 0.5 ||
-    Math.abs(point.y - rect.y - rect.height) < 0.5;
-  return inside && onEdge;
-}
-
 function scene(): Promise<OverviewScene> {
   return layoutOverview(index, makeElk(), {
     ...DEFAULT_OVERVIEW_OPTIONS,
@@ -85,146 +67,88 @@ function nodeRect(placed: OverviewScene, id: string): Rect {
 }
 
 suite("viz notes", () => {
-  test("a note with no place sits beside its target, clear of every box, with an arrow to its border", async () => {
+  test("each target gets one bubble with its open notes, and a member keeps its own", async () => {
     const laid = await scene();
-    const placed = placeNotes(laid, index, [note("n1")], undefined, estimateMeasure);
-    assert.strictEqual(placed.length, 1);
-    const [sticky] = placed;
-    assert.strictEqual(sticky.width, NOTE.width);
-    for (const box of laid.nodes) {
-      assert.ok(!overlaps(sticky, box), `note stays off ${box.id}`);
-    }
-    assert.strictEqual(sticky.links.length, 1);
-    assert.ok(onBorder(nodeRect(laid, EMAIL), sticky.links[0].to));
-    assert.ok(onBorder(sticky, sticky.links[0].from));
-  });
-
-  test("two notes on the same target do not cover each other", async () => {
-    const placed = placeNotes(
-      await scene(),
-      index,
-      [note("n1"), note("n2")],
-      undefined,
-      estimateMeasure,
-    );
-    assert.ok(!overlaps(placed[0], placed[1]));
-  });
-
-  test("a dragged place is kept relative to its home box", async () => {
-    const laid = await scene();
-    const placed = placeNotes(
+    const send = memberTarget(index, `${EMAIL}.send`);
+    const edge = edgeTarget(index, index.edges[0].id);
+    assert.ok(send && edge);
+    const bubbles = overviewBubbles(
       laid,
       index,
-      [note("n1", { place: { node: EMAIL, x: -260, y: -40 } })],
-      undefined,
-      estimateMeasure,
-    );
-    const home = nodeRect(laid, EMAIL);
-    assert.deepStrictEqual([placed[0].x, placed[0].y], [home.x - 260, home.y - 40]);
-    assert.deepStrictEqual(relativePlace(laid, { x: home.x + home.width + 30, y: home.y + 5 }), {
-      node: EMAIL,
-      x: home.width + 30,
-      y: 5,
-    });
-    const far = { x: laid.bounds.x - 2000, y: laid.bounds.y - 2000 };
-    assert.deepStrictEqual(relativePlace(laid, far), far);
-  });
-
-  test("resolved notes leave the canvas and a draft gets its own sticky", async () => {
-    const placed = placeNotes(
-      await scene(),
-      index,
-      [note("gone", { resolved: true })],
-      {
-        kind: "question",
-        targets: [{ kind: "node", id: EMAIL, label: "EmailChannel" }],
-        place: undefined,
-      },
-      estimateMeasure,
+      [
+        note("a"),
+        note("b", { targets: [NODE, NOTIFIER_NODE] }),
+        note("m", { targets: [send] }),
+        note("e", { targets: [edge] }),
+        note("gone", { resolved: true }),
+        note("free", { targets: [] }),
+        note("step", { targets: [stepTarget(index, "deliver", 2)!] }),
+      ],
+      [],
     );
     assert.deepStrictEqual(
-      placed.map((sticky) => [sticky.id, sticky.kind, sticky.note]),
-      [["draft", "question", undefined]],
+      bubbles.map((bubble) => [bubble.target.label, bubble.notes.map((found) => found.id)]),
+      [
+        ["EmailChannel", ["a", "b"]],
+        ["Notifier", ["b"]],
+        ["EmailChannel.send", ["m"]],
+        [edge.label, ["e"]],
+      ],
     );
-  });
-
-  test("a member target points at its own row", async () => {
-    const laid = await scene();
-    const target = memberTarget(index, `${EMAIL}.send`);
-    assert.ok(target);
-    assert.strictEqual(target.label, "EmailChannel.send");
-    const rect = targetRect(laid, index, target);
     const home = nodeRect(laid, EMAIL);
-    assert.ok(rect);
-    assert.strictEqual(rect.height, BOX.rowHeight);
-    assert.ok(rect.y > home.y && rect.y + rect.height < home.y + home.height);
-  });
-
-  test("a link to a member stops on the class box border beside that row", async () => {
-    const laid = await scene();
-    const target = memberTarget(index, `${EMAIL}.send`);
-    assert.ok(target);
-    const [sticky] = placeNotes(
-      laid,
-      index,
-      [note("n1", { targets: [target], place: { node: EMAIL, x: 0, y: -160 } })],
-      undefined,
-      estimateMeasure,
-    );
-    const row = targetRect(laid, index, target);
+    assert.deepStrictEqual(bubbles[0].at, { x: home.x + home.width, y: home.y });
+    const row = targetRect(laid, index, send);
     assert.ok(row);
-    const { to } = sticky.links[0];
-    assert.ok(
-      onBorder(nodeRect(laid, EMAIL), to),
-      `ends on the box border, not at ${to.x},${to.y}`,
-    );
-    assert.ok(to.y >= row.y && to.y <= row.y + row.height, "ends level with the row");
+    assert.strictEqual(row.height, BOX.rowHeight);
+    assert.deepStrictEqual(bubbles[2].at, { x: row.x + row.width, y: row.y + row.height / 2 });
+    const label = targetRect(laid, index, edge);
+    assert.ok(label);
+    assert.deepStrictEqual(bubbles[3].at, { x: label.x + label.width, y: label.y });
+    assert.strictEqual(bubbles[0].key, targetKey(NODE));
   });
 
-  test("a note with no free spot beside its target goes to the nearest free spot", async () => {
-    const laid = await scene();
-    const home = nodeRect(laid, EMAIL);
-    const height = placeNotes(laid, index, [note("probe")], undefined, estimateMeasure)[0].height;
-    const spots = [
-      { x: home.width + NOTE.gap, y: 0 },
-      { x: -NOTE.gap - NOTE.width, y: 0 },
-      { x: 0, y: -NOTE.gap - height },
-      { x: 0, y: home.height + NOTE.gap },
-    ];
-    const blockers = spots.map((spot, at) =>
-      note(`block${at}`, { place: { node: EMAIL, ...spot } }),
-    );
-    const far = note("far", { place: { x: laid.bounds.x - 2000, y: laid.bounds.y - 2000 } });
-    const placed = placeNotes(
-      laid,
+  test("a selected or drafted target with no notes gets one empty bubble", async () => {
+    const bubbles = overviewBubbles(
+      await scene(),
       index,
-      [...blockers, far, note("n1")],
-      undefined,
-      estimateMeasure,
+      [note("a")],
+      [NOTIFIER_NODE, NODE, NOTIFIER_NODE],
     );
-    const sticky = placed[placed.length - 1];
-    for (const other of [...laid.nodes, ...placed.slice(0, -1)]) {
-      assert.ok(!overlaps(sticky, other), `note stays off ${other.id}`);
-    }
-    const dx = Math.max(home.x - sticky.x - sticky.width, 0, sticky.x - home.x - home.width);
-    const dy = Math.max(home.y - sticky.y - sticky.height, 0, sticky.y - home.y - home.height);
-    assert.ok(
-      Math.hypot(dx, dy) < 200,
-      `note is ${Math.round(Math.hypot(dx, dy))}px from its target`,
+    assert.deepStrictEqual(
+      bubbles.map((bubble) => [bubble.target.label, bubble.notes.length]),
+      [
+        ["EmailChannel", 1],
+        ["Notifier", 0],
+      ],
     );
   });
 
-  test("target search ranks name matches before path matches and honours the limit", () => {
-    const targets = allTargets(index, FILES);
-    const hits = searchTargets(targets, "notif");
-    const firstPath = hits.findIndex((hit) => hit.kind === "file");
-    assert.ok(firstPath > 0);
-    for (const hit of hits.slice(0, firstPath)) {
-      assert.ok(/^notif/i.test(hit.label), `${hit.label} is a name match`);
-    }
-    assert.ok(hits.some((hit) => hit.label === "Notifier"));
-    assert.strictEqual(searchTargets(targets, "notif", 3).length, 3);
-    assert.deepStrictEqual(searchTargets(targets, "zzz"), []);
+  test("members with open notes are the ones a folded box keeps", () => {
+    const send = memberTarget(index, `${EMAIL}.send`);
+    const retries = memberTarget(index, `${EMAIL}.retries`);
+    assert.ok(send && retries);
+    assert.deepStrictEqual(
+      [
+        ...commentedMembers([
+          note("a"),
+          note("m", { targets: [send] }),
+          note("old", { targets: [retries], resolved: true }),
+        ]),
+      ],
+      [`${EMAIL}.send`],
+    );
+  });
+
+  test("notes with no target are about the whole diagram", () => {
+    assert.deepStrictEqual(
+      diagramNotes([
+        note("a"),
+        note("free", { targets: [] }),
+        note("old", { targets: [], resolved: true }),
+      ]).map((found) => found.id),
+      ["free"],
+    );
+    assert.strictEqual(targetsTitle([]), "the whole diagram");
   });
 
   test("a note's status line reads replies, sending and unread counts", () => {
@@ -261,11 +185,8 @@ suite("viz notes", () => {
 
 suite("viz notes on a sequence diagram", () => {
   const NOTIFIER = "src/notify/notifier.ts#Notifier";
-  const CHANNEL = "src/notify/channel.ts#Channel";
   const seq = layoutSequence(index, "deliver");
   const STEP = stepTarget(index, "deliver", 2)!;
-  const place = (notes: VizNote[], draft?: Parameters<typeof placeSequenceNotes>[3]) =>
-    placeSequenceNotes(seq, index, notes, draft, estimateMeasure);
 
   test("a step target names its flow, its number and its message", () => {
     assert.deepStrictEqual(STEP, {
@@ -277,43 +198,35 @@ suite("viz notes on a sequence diagram", () => {
     assert.strictEqual(stepTarget(index, "deliver", 99), undefined);
   });
 
-  test("a step note sits right of the diagram at its step, with an arrow to the end of the step", () => {
-    const [placed] = place([note("s", { targets: [STEP] })]);
-    const message = seq.messages[2];
-    assert.ok(placed.x >= seq.bounds.x + seq.bounds.width);
-    assert.ok(placed.y <= message.lineY && placed.y + placed.height >= message.lineY);
-    assert.deepStrictEqual(placed.links[0].to, {
-      x: Math.max(message.fromX, message.toX),
-      y: message.lineY,
-    });
-    assert.ok(onBorder(placed, placed.links[0].from));
-  });
-
-  test("notes on the same step stack without covering each other", () => {
-    const [a, b] = place([note("a", { targets: [STEP] }), note("b", { targets: [STEP] })]);
-    assert.ok(!overlaps(a, b));
-  });
-
-  test("a part note sits above its participant, and notes about other parts stay off", () => {
-    const placed = place([
-      note("p"),
-      note("x", { targets: [{ kind: "node", id: CHANNEL, label: "Channel" }] }),
-    ]);
+  test("on a sequence diagram parts and steps get bubbles, and members and edges stay off", () => {
+    const send = memberTarget(index, `${EMAIL}.send`);
+    const edge = edgeTarget(index, index.edges[0].id);
+    assert.ok(send && edge);
+    const bubbles = sequenceBubbles(
+      seq,
+      index,
+      [
+        note("p"),
+        note("s", { targets: [STEP] }),
+        note("m", { targets: [send] }),
+        note("e", { targets: [edge] }),
+      ],
+      [],
+    );
     assert.deepStrictEqual(
-      placed.map((found) => found.id),
-      ["p"],
+      bubbles.map((bubble) => [bubble.target.label, bubble.notes.map((found) => found.id)]),
+      [
+        ["EmailChannel", ["p"]],
+        [STEP.label, ["s"]],
+      ],
     );
     const head = seq.participants.find((candidate) => candidate.id === EMAIL)!;
-    assert.ok(placed[0].y + placed[0].height <= head.y);
-    assert.deepStrictEqual(placed[0].links[0].to, { x: head.x + head.width / 2, y: head.y });
-  });
-
-  test("a draft on a step gets its own sticky", () => {
-    const placed = place([], { kind: "comment", targets: [STEP], place: undefined });
-    assert.deepStrictEqual(
-      placed.map((found) => found.id),
-      ["draft"],
-    );
+    assert.deepStrictEqual(bubbles[0].at, { x: head.x + head.width, y: head.y });
+    const message = seq.messages[2];
+    assert.deepStrictEqual(bubbles[1].at, {
+      x: message.x + message.width + STEP_BUBBLE_GAP,
+      y: message.y,
+    });
   });
 
   test("a right-click on a step's row picks the step, and on a lifeline past the rows its participant", () => {
@@ -338,7 +251,7 @@ suite("viz notes on a sequence diagram", () => {
     );
   });
 
-  test("on the Overview a step note points at the part that sends the step", async () => {
+  test("on the Overview a step target points at the part that sends the step", async () => {
     const placed = await scene();
     assert.deepStrictEqual(targetRect(placed, index, STEP), nodeRect(placed, NOTIFIER));
   });

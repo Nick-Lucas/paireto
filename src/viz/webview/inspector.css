@@ -190,14 +190,22 @@
   overflow: visible;
 }
 
-.viz-irow--file .viz-iconbtn {
-  width: 22px;
-  height: 22px;
-  opacity: 0.6;
+.viz-irow--file .viz-minibtn {
+  opacity: 0.7;
 }
 
-.viz-irow--file:hover .viz-iconbtn {
+.viz-irow--file:hover .viz-minibtn {
   opacity: 1;
+}
+
+.viz-inspector__bubble {
+  display: inline-flex;
+  flex: none;
+  margin-left: auto;
+}
+
+.viz-inspector__keys {
+  margin-top: 12px;
 }
 
 .viz-isig {

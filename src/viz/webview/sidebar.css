@@ -244,11 +244,10 @@
   position: relative;
   display: inline-flex;
   flex: none;
-  align-items: stretch;
+  align-items: center;
+  gap: 4px;
   height: 22px;
   margin-left: 10px;
-  border: 1px solid var(--vscode-widget-border, var(--viz-border));
-  border-radius: 4px;
 }
 
 .viz-filepick__toggle,
@@ -256,29 +255,13 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: 22px;
   padding: 0 8px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--viz-fg) 7%, transparent);
   font-size: 12px;
   color: var(--vscode-breadcrumb-focusForeground, var(--viz-fg));
   white-space: nowrap;
-}
-
-.viz-filepick__label {
-  display: inline-flex;
-  align-items: center;
-  padding: 0 7px;
-  border-right: 1px solid var(--vscode-widget-border, var(--viz-border));
-  border-radius: 3px 0 0 3px;
-  background: color-mix(in srgb, var(--viz-fg) 5%, transparent);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--vscode-descriptionForeground, var(--viz-muted));
-}
-
-.viz-filepick__next {
-  border-left: 1px solid var(--vscode-widget-border, var(--viz-border));
-  border-radius: 0 3px 3px 0;
 }
 
 .viz-filepick__toggle .viz-icon,
@@ -290,13 +273,39 @@
 .viz-filepick__toggle:hover,
 .viz-filepick__next:hover,
 .viz-filepick__toggle--open {
-  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+  background: color-mix(in srgb, var(--viz-fg) 13%, transparent);
+}
+
+.viz-filepick__done {
+  display: inline-flex;
+}
+
+.viz-filepick__toggle .viz-filepick__done .viz-icon {
+  color: var(--viz-added);
+}
+
+.viz-filepick__meter {
+  display: inline-flex;
+  width: 28px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--viz-fg) 18%, transparent);
+}
+
+.viz-filepick__meter span {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--vscode-progressBar-background, var(--viz-accent));
 }
 
 .viz-filepick__next kbd {
-  padding: 0 4px;
-  font-size: 10.5px;
-  line-height: 14px;
+  padding: 1px 4px;
+  border: none;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--viz-fg) 10%, transparent);
+  font-size: 10px;
+  line-height: 12px;
 }
 
 .viz-filepick__pop {

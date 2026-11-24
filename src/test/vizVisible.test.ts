@@ -65,6 +65,14 @@ suite("viz visible", () => {
     assert.deepStrictEqual(expanded.summary, [{ kind: "less" }]);
   });
 
+  test("a member with an open thread stays as a row while the box is folded", () => {
+    const rows = boxRows(node(CHANNEL), "all", false, new Set([`${CHANNEL}.name`]));
+    assert.deepStrictEqual(names(rows.fields), ["name"]);
+    assert.deepStrictEqual(names(rows.methods), ["send"]);
+    assert.deepStrictEqual(rows.summary, []);
+    assert.strictEqual(rows.expandable, false);
+  });
+
   test("a box with no changed members shows all of them", () => {
     const rows = boxRows(node(MESSAGE), "all", false);
     assert.deepStrictEqual(names(rows.fields), ["to", "body"]);

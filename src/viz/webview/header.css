@@ -202,7 +202,7 @@
 }
 
 .viz-diagrambar .viz-filepick {
-  margin-left: 0;
+  margin-left: 2px;
 }
 
 .viz-diagrambar__about {
@@ -211,6 +211,23 @@
   gap: 6px;
   min-width: 0;
   overflow: hidden;
+}
+
+.viz-action__note {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--vscode-descriptionForeground, var(--viz-muted));
+}
+
+.viz-diagrambar__sep {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--vscode-widget-border, var(--viz-border));
 }
 
 .viz-diagrambar__change {
@@ -296,6 +313,17 @@
 
 .viz-tool:hover {
   background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+}
+
+.viz-tool--on {
+  background: var(--vscode-toolbar-activeBackground, var(--viz-hover));
+  color: var(--vscode-tab-activeForeground, var(--viz-fg));
+}
+
+.viz-tool kbd {
+  padding: 0 4px;
+  font-size: 10.5px;
+  line-height: 14px;
 }
 
 .viz-agent__status {
@@ -388,7 +416,8 @@
 }
 
 @container (max-width: 560px) {
-  .viz-agentbar .viz-agent__status {
+  .viz-agentbar .viz-agent__status,
+  .viz-diagrambar .viz-bubble__label {
     display: none;
   }
 }
@@ -403,7 +432,8 @@
 @container (max-width: 860px) {
   .viz-changebar .viz-barlabel,
   .viz-changebar .viz-action__label,
-  .viz-diagrambar .viz-filepick__label,
+  .viz-changebar .viz-action__note,
+  .viz-diagrambar .viz-barlabel,
   .viz-diagrambar .viz-action__label {
     display: none;
   }

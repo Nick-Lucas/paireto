@@ -38,12 +38,6 @@ export type VizNoteTarget =
   | { kind: "step"; flow: string; index: number; label: string }
   | { kind: "file"; repo: string; path: string; label: string };
 
-export interface VizNotePlace {
-  node?: string;
-  x: number;
-  y: number;
-}
-
 export interface VizNoteItem {
   id: string;
   who: "you" | "agent";
@@ -63,7 +57,6 @@ export interface VizNote {
   waiting: boolean;
   resolved: boolean;
   targets: VizNoteTarget[];
-  place?: VizNotePlace;
 }
 
 export interface VizFeedbackState {
@@ -128,20 +121,15 @@ export type WebviewToHost =
       title: string;
       body: string;
       targets: VizNoteTarget[];
-      place?: VizNotePlace;
     }
   | {
       type: "note.edit";
       id: string;
       kind: "question" | "comment";
       body: string;
-      targets: VizNoteTarget[];
     }
   | { type: "note.reply"; id: string; body: string }
   | { type: "note.editReply"; id: string; body: string }
-  | { type: "note.link"; id: string; target: VizNoteTarget }
-  | { type: "note.unlink"; id: string; index: number }
-  | { type: "note.move"; id: string; place: VizNotePlace }
   | { type: "note.read"; id: string }
   | { type: "note.resolve"; id: string }
   | { type: "note.delete"; id: string }

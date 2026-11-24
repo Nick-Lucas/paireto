@@ -1,13 +1,7 @@
 import type { VizDelta } from "../../protocol/viz.js";
-import type { Point } from "../layout/geometry.js";
-import {
-  DEFAULT_VIZ_VIEW_STATE,
-  type VizNotePlace,
-  type VizNoteTarget,
-  type VizViewState,
-} from "../protocol.js";
+import { DEFAULT_VIZ_VIEW_STATE, type VizNoteTarget, type VizViewState } from "../protocol.js";
 import { OVERVIEW, refInStage, sameStage, type Stage, type VizIndex } from "./index.js";
-import { sameTarget, type NoteKind } from "./notes.js";
+import { targetKey, type NoteKind } from "./notes.js";
 import { formatVizRef } from "./refs.js";
 import type { ChangeCursor } from "./review.js";
 import type { VizRef } from "./types.js";
@@ -26,13 +20,13 @@ export type Mode =
 
 export type Thread =
   | { readonly kind: "closed" }
-  | { readonly kind: "open"; readonly id: string }
+  | { readonly kind: "open"; readonly id: string; readonly anchor: string | undefined }
+  | { readonly kind: "list"; readonly key: string }
+  | { readonly kind: "placing" }
   | {
       readonly kind: "draft";
       readonly noteKind: NoteKind;
       readonly targets: readonly VizNoteTarget[];
-      readonly place: VizNotePlace | undefined;
-      readonly at: Point;
     };
 
 export const ALL_DELTAS: readonly VizDelta[] = ["added", "changed", "removed", "unchanged"];
@@ -84,18 +78,16 @@ export type UiAction =
   | { readonly type: "toggleExpanded"; readonly node: string }
   | { readonly type: "changeStop"; readonly cursor: ChangeCursor; readonly ref: VizRef }
   | { readonly type: "resetChanges" }
-  | { readonly type: "openThread"; readonly id: string }
+  | { readonly type: "openThread"; readonly id: string; readonly anchor?: VizNoteTarget }
+  | { readonly type: "openList"; readonly key: string }
   | { readonly type: "closeThread" }
+  | { readonly type: "placeComment" }
   | {
       readonly type: "startDraft";
       readonly noteKind: NoteKind;
       readonly targets: readonly VizNoteTarget[];
-      readonly place: VizNotePlace | undefined;
-      readonly at: Point;
     }
   | { readonly type: "draftKind"; readonly noteKind: NoteKind }
-  | { readonly type: "draftLink"; readonly target: VizNoteTarget }
-  | { readonly type: "draftUnlink"; readonly index: number }
   | { readonly type: "escape" };
 
 const EXPLORE: Mode = { kind: "explore" };
@@ -198,6 +190,19 @@ function move(index: VizIndex, ui: UiState, by: 1 | -1): UiState {
         return ui;
       }
       return playAt(ui, ui.stage.flow, 0, false);
+  }
+}
+
+function anchorRef(target: VizNoteTarget): VizRef | undefined {
+  switch (target.kind) {
+    case "node":
+      return { kind: "node", id: target.id };
+    case "member":
+      return { kind: "node", id: target.node };
+    case "step":
+      return { kind: "step", flow: target.flow, index: target.index };
+    default:
+      return undefined;
   }
 }
 
@@ -322,14 +327,24 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
     }
     case "resetChanges":
       return { ...ui, cursor: undefined };
-    case "openThread":
-      return {
+    case "openThread": {
+      const opened: UiState = {
         ...ui,
-        thread: { kind: "open", id: action.id },
-        reveal: { id: `note/${action.id}`, seq: (ui.reveal?.seq ?? 0) + 1 },
+        thread: {
+          kind: "open",
+          id: action.id,
+          anchor: action.anchor && targetKey(action.anchor),
+        },
       };
+      const ref = action.anchor && anchorRef(action.anchor);
+      return ref ? reveal(opened, ref) : opened;
+    }
+    case "openList":
+      return { ...ui, thread: { kind: "list", key: action.key } };
     case "closeThread":
       return ui.thread.kind === "closed" ? ui : { ...ui, thread: CLOSED };
+    case "placeComment":
+      return { ...ui, thread: ui.thread.kind === "placing" ? CLOSED : { kind: "placing" } };
     case "startDraft":
       return {
         ...ui,
@@ -337,32 +352,11 @@ export function reduceUi(index: VizIndex, ui: UiState, action: UiAction): UiStat
           kind: "draft",
           noteKind: action.noteKind,
           targets: action.targets,
-          place: action.place,
-          at: action.at,
         },
       };
     case "draftKind":
       return ui.thread.kind === "draft"
         ? { ...ui, thread: { ...ui.thread, noteKind: action.noteKind } }
-        : ui;
-    case "draftLink": {
-      if (ui.thread.kind !== "draft") {
-        return ui;
-      }
-      if (ui.thread.targets.some((target) => sameTarget(target, action.target))) {
-        return ui;
-      }
-      return { ...ui, thread: { ...ui.thread, targets: [...ui.thread.targets, action.target] } };
-    }
-    case "draftUnlink":
-      return ui.thread.kind === "draft"
-        ? {
-            ...ui,
-            thread: {
-              ...ui.thread,
-              targets: ui.thread.targets.filter((_, i) => i !== action.index),
-            },
-          }
         : ui;
     case "escape": {
       if (ui.help) {

@@ -8,7 +8,6 @@ import { frameTitle, type OverviewScene, type PlacedFrame } from "../layout/over
 import type { FragmentBox, MessageDirection, SequenceScene } from "../layout/sequence.js";
 import type { Emphasis, Level } from "./emphasis.js";
 import type { IndexedEdge, IndexedStep, VizIndex } from "./index.js";
-import type { NoteLink, PlacedNote } from "./notes.js";
 import { formatVizRef } from "./refs.js";
 import { NO_MARKS, type ReviewMarks } from "./review.js";
 import type { VizRef } from "./types.js";
@@ -30,7 +29,6 @@ export type ClassBoxData = {
   selected: boolean;
   selectedMember: string | undefined;
   seen: boolean;
-  threads: number;
 };
 export type CardData = {
   kind: "card";
@@ -39,7 +37,6 @@ export type CardData = {
   selected: boolean;
   flows: number;
   files: number;
-  threads: number;
 };
 export type ParticipantData = {
   kind: "participant";
@@ -62,7 +59,6 @@ export type MessageData = {
   selected: boolean;
   current: boolean;
 };
-export type NoteData = { kind: "note"; note: PlacedNote; open: boolean };
 
 export type RfNodeData =
   | LaneData
@@ -74,8 +70,7 @@ export type RfNodeData =
   | ActivationData
   | PhaseData
   | FragmentData
-  | MessageData
-  | NoteData;
+  | MessageData;
 
 export type RfNode = Node<RfNodeData, RfNodeData["kind"]> & {
   width: number;
@@ -97,17 +92,9 @@ export type EdgeData = {
   steps: number;
 };
 
-export type NoteLinkData = {
-  kind: "noteLink";
-  note: string;
-  link: NoteLink;
-  noteKind: PlacedNote["kind"];
-  lit: boolean;
-};
+export type RfEdgeData = EdgeData;
 
-export type RfEdgeData = EdgeData | NoteLinkData;
-
-export type RfEdge = Edge<RfEdgeData, "viz" | "noteLink"> & {
+export type RfEdge = Edge<RfEdgeData, "viz"> & {
   data: RfEdgeData;
   selectable: boolean;
   zIndex: number;
@@ -127,7 +114,6 @@ const Z = {
   activation: 3,
   card: 4,
   message: 5,
-  note: 6,
   edge: 0,
 } as const;
 
@@ -139,10 +125,6 @@ export function decorId(kind: string, ...keys: (string | number)[]): string {
   return [kind, ...keys].join("/");
 }
 
-export function noteNodeId(id: string): string {
-  return decorId("note", id);
-}
-
 function rect(r: Rect): { position: Point; width: number; height: number } {
   return { position: { x: r.x, y: r.y }, width: r.width, height: r.height };
 }
@@ -152,7 +134,6 @@ function fixed(zIndex: number) {
 }
 
 export interface OverviewExtras {
-  readonly notes: readonly PlacedNote[];
   readonly marks: ReviewMarks;
   readonly measure: Measure;
 }
@@ -164,7 +145,7 @@ export function toOverviewRf(
   ui: UiState,
   extras: OverviewExtras,
 ): RfGraph {
-  const { notes, marks } = extras;
+  const { marks } = extras;
   const nodes: RfNode[] = [];
   for (const [i, lane] of scene.lanes.entries()) {
     nodes.push({
@@ -208,7 +189,6 @@ export function toOverviewRf(
     const level = emphasis.nodes.get(node.id) ?? "normal";
     const selected =
       isSelected(ui.selection, { kind: "node", id: node.id }) || selectedMember?.node === node.id;
-    const threads = marks.threads.get(node.id) ?? 0;
     const shared = { id: formatVizRef({ kind: "node", id: node.id }), ...rect(placed) };
     if (placed.component === "classBox" && placed.box) {
       nodes.push({
@@ -222,7 +202,6 @@ export function toOverviewRf(
           selected,
           selectedMember: selectedMember?.node === node.id ? selectedMember.id : undefined,
           seen: marks.seen.has(node.id),
-          threads,
         },
         selectable: true,
         draggable: false,
@@ -239,7 +218,6 @@ export function toOverviewRf(
           selected,
           flows: index.flowsByNode.get(node.id)?.length ?? 0,
           files: node.files?.length ?? 0,
-          threads,
         },
         selectable: true,
         draggable: false,
@@ -247,14 +225,6 @@ export function toOverviewRf(
       });
     }
   }
-  const noteParts = notesRf(notes, ui, true, (link) =>
-    link.target.kind === "member"
-      ? link.target.node
-      : link.target.kind === "node"
-        ? link.target.id
-        : undefined,
-  );
-  nodes.push(...noteParts.nodes);
 
   const edges: RfEdge[] = [];
   for (const routed of scene.edges) {
@@ -284,43 +254,6 @@ export function toOverviewRf(
       zIndex: selected || level === "bright" ? Z.card + 1 : Z.edge,
     });
   }
-  edges.push(...noteParts.edges);
-  return { nodes, edges };
-}
-
-function notesRf(
-  notes: readonly PlacedNote[],
-  ui: UiState,
-  draggable: boolean,
-  targetNode: (link: NoteLink) => string | undefined,
-): RfGraph {
-  const openNote = ui.thread.kind === "open" ? ui.thread.id : undefined;
-  const nodes: RfNode[] = notes.map((note) => ({
-    id: noteNodeId(note.id),
-    type: "note",
-    ...rect(note),
-    data: { kind: "note", note, open: note.id === openNote },
-    selectable: false,
-    draggable: draggable && note.note !== undefined,
-    zIndex: Z.note,
-  }));
-  const edges: RfEdge[] = notes.flatMap((note) =>
-    note.links.map((link): RfEdge => ({
-      id: decorId("notelink", note.id, link.index),
-      source: noteNodeId(note.id),
-      target: targetNode(link) ?? noteNodeId(note.id),
-      type: "noteLink",
-      data: {
-        kind: "noteLink",
-        note: note.id,
-        link,
-        noteKind: note.kind,
-        lit: note.id === openNote,
-      },
-      selectable: false,
-      zIndex: Z.note - 1,
-    })),
-  );
   return { nodes, edges };
 }
 
@@ -329,7 +262,6 @@ export function toSequenceRf(
   index: VizIndex,
   emphasis: Emphasis,
   ui: UiState,
-  notes: readonly PlacedNote[],
 ): RfGraph {
   const nodes: RfNode[] = [];
   for (const phase of scene.phases) {
@@ -414,8 +346,7 @@ export function toSequenceRf(
       zIndex: Z.message,
     });
   }
-  const noteParts = notesRf(notes, ui, false, () => undefined);
-  return { nodes: [...nodes, ...noteParts.nodes], edges: noteParts.edges };
+  return { nodes, edges: [] };
 }
 
-export const NO_EXTRAS: Omit<OverviewExtras, "measure"> = { notes: [], marks: NO_MARKS };
+export const NO_EXTRAS: Omit<OverviewExtras, "measure"> = { marks: NO_MARKS };

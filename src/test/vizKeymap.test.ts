@@ -32,6 +32,10 @@ suite("viz keymap", () => {
       kind: "ui",
       action: { type: "playToggle" },
     });
+    assert.deepStrictEqual(resolveKey({ key: "c", modifier: false, inTextField: false }), {
+      kind: "ui",
+      action: { type: "placeComment" },
+    });
   });
 
   test("keys with a modifier or typed into a text field are left to the host, except escape", () => {

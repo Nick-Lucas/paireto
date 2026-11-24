@@ -1,6 +1,7 @@
 import * as assert from "node:assert";
 
 import { emphasisOf } from "../viz/model/emphasis.js";
+import { refTarget, targetKey } from "../viz/model/notes.js";
 import { reviewMarks } from "../viz/model/review.js";
 import {
   initialUi,
@@ -25,13 +26,7 @@ const MEMBER: VizNoteTarget = {
   node: EMAIL,
   label: "EmailChannel.send",
 };
-const DRAFT: UiAction = {
-  type: "startDraft",
-  noteKind: "comment",
-  targets: [NODE],
-  place: undefined,
-  at: { x: 0, y: 0 },
-};
+const DRAFT: UiAction = { type: "startDraft", noteKind: "comment", targets: [NODE] };
 const FLOW = { kind: "flow", flow: "deliver" } as const;
 
 function run(...actions: UiAction[]): UiState {
@@ -69,6 +64,29 @@ suite("viz ui review state", () => {
     assert.strictEqual(run({ type: "stage", stage: FLOW }, DRAFT).thread.kind, "draft");
   });
 
+  test("the comment button starts placing a comment, and escape, a second press or a draft ends it", () => {
+    const placing = run({ type: "placeComment" });
+    assert.strictEqual(placing.thread.kind, "placing");
+    assert.strictEqual(run({ type: "placeComment" }, { type: "escape" }).thread.kind, "closed");
+    assert.strictEqual(
+      run({ type: "placeComment" }, { type: "placeComment" }).thread.kind,
+      "closed",
+    );
+    assert.strictEqual(run({ type: "placeComment" }, DRAFT).thread.kind, "draft");
+    assert.strictEqual(run(DRAFT, { type: "placeComment" }).thread.kind, "placing");
+  });
+
+  test("a selection gives the target its comment is about", () => {
+    assert.deepStrictEqual(refTarget(index, { kind: "node", id: EMAIL }), NODE);
+    assert.deepStrictEqual(
+      refTarget(index, { kind: "member", id: `${EMAIL}.send`, node: EMAIL }),
+      MEMBER,
+    );
+    assert.strictEqual(refTarget(index, { kind: "step", flow: "deliver", index: 0 })?.kind, "step");
+    assert.strictEqual(refTarget(index, { kind: "flow", id: "deliver" }), undefined);
+    assert.strictEqual(refTarget(index, { kind: "node", id: "missing" }), undefined);
+  });
+
   test("the sidebar width stays within its bounds", () => {
     assert.strictEqual(run({ type: "sidebarWidth", width: 10 }).sidebarWidth, SIDEBAR_MIN);
     assert.strictEqual(run({ type: "sidebarWidth", width: 9000 }).sidebarWidth, SIDEBAR_MAX);
@@ -96,11 +114,15 @@ suite("viz ui review state", () => {
     assert.strictEqual(reduceUi(index, ui, { type: "resetChanges" }).cursor, undefined);
   });
 
-  test("opening a thread reveals its note and closing it returns to the canvas", () => {
-    const open = run({ type: "openThread", id: "n1" });
-    assert.deepStrictEqual(open.thread, { kind: "open", id: "n1" });
-    assert.deepStrictEqual(open.reveal, { id: "note/n1", seq: 1 });
-    assert.strictEqual(reduceUi(index, open, { type: "openThread", id: "n1" }).reveal?.seq, 2);
+  test("opening a thread from a bubble anchors it there and reveals its part", () => {
+    const open = run({ type: "openThread", id: "n1", anchor: MEMBER });
+    assert.deepStrictEqual(open.thread, { kind: "open", id: "n1", anchor: targetKey(MEMBER) });
+    assert.deepStrictEqual(open.reveal, { id: EMAIL, seq: 1 });
+    assert.strictEqual(
+      reduceUi(index, open, { type: "openThread", id: "n1", anchor: MEMBER }).reveal?.seq,
+      2,
+    );
+    assert.strictEqual(run({ type: "openThread", id: "n1" }).reveal, undefined);
     assert.deepStrictEqual(reduceUi(index, open, { type: "closeThread" }).thread, {
       kind: "closed",
     });
@@ -109,23 +131,15 @@ suite("viz ui review state", () => {
     });
   });
 
-  test("a draft collects distinct targets and can change kind", () => {
-    const ui = run(
-      DRAFT,
-      { type: "draftLink", target: NODE },
-      { type: "draftLink", target: MEMBER },
-      { type: "draftKind", noteKind: "question" },
-    );
-    assert.strictEqual(ui.thread.kind, "draft");
-    if (ui.thread.kind !== "draft") {
-      return;
-    }
-    assert.deepStrictEqual(ui.thread.targets, [NODE, MEMBER]);
-    assert.strictEqual(ui.thread.noteKind, "question");
-    const unlinked = reduceUi(index, ui, { type: "draftUnlink", index: 0 });
-    assert.deepStrictEqual(unlinked.thread.kind === "draft" ? unlinked.thread.targets : [], [
-      MEMBER,
-    ]);
+  test("a bubble with several threads opens their list, and escape closes it", () => {
+    const list = run({ type: "openList", key: targetKey(NODE) });
+    assert.deepStrictEqual(list.thread, { kind: "list", key: targetKey(NODE) });
+    assert.strictEqual(reduceUi(index, list, { type: "escape" }).thread.kind, "closed");
+  });
+
+  test("a draft can change kind", () => {
+    const ui = run(DRAFT, { type: "draftKind", noteKind: "question" });
+    assert.strictEqual(ui.thread.kind === "draft" && ui.thread.noteKind, "question");
   });
 
   test("escape closes help, then the thread, then the search, then the mode, then the selection", () => {

@@ -88,7 +88,7 @@ suite("viz rf adapters", () => {
   test("sequence nodes cover participants, lifelines, activations, phases and messages", () => {
     const scene = layoutSequence(index, "soft-decline");
     const ui = run({ type: "stage", stage: FLOW }, { type: "playToggle" }, { type: "tick" });
-    const graph = toSequenceRf(scene, index, emphasisOf(index, ui), ui, []);
+    const graph = toSequenceRf(scene, index, emphasisOf(index, ui), ui);
     const count = (type: string) => graph.nodes.filter((node) => node.type === type).length;
     assert.strictEqual(count("participant"), 7);
     assert.strictEqual(count("lifeline"), 7);
@@ -116,7 +116,6 @@ suite("viz rf adapters", () => {
       index,
       emphasisOf(index, flowUi),
       flowUi,
-      [],
     );
     const check = (ids: { id: string; selectable: boolean }[], stage: Stage) => {
       for (const element of ids) {

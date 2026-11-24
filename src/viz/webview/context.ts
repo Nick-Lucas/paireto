@@ -13,7 +13,6 @@ export type MenuTarget =
   | { kind: "frame"; frame: PlacedFrame }
   | { kind: "edge"; id: string }
   | { kind: "step"; flow: string; index: number }
-  | { kind: "note"; id: string }
   | { kind: "pane"; at: Point };
 
 export interface VizActions {
@@ -21,7 +20,6 @@ export interface VizActions {
   dispatch(action: UiAction): void;
   openFile(file: VizFileRef, mode: "file" | "diff"): void;
   openMenu(target: MenuTarget, screen: Point): void;
-  startLink(noteId: string, pointerId: number): void;
 }
 
 export const VizContext = createContext<VizActions | undefined>(undefined);
@@ -38,8 +36,11 @@ export function noteTargetAttr(target: VizNoteTarget): { "data-note-target": str
   return { "data-note-target": JSON.stringify(target) };
 }
 
+export function noteTargetElementAt(x: number, y: number): HTMLElement | undefined {
+  return document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-note-target]") ?? undefined;
+}
+
 export function noteTargetAt(x: number, y: number): VizNoteTarget | undefined {
-  const element = document.elementFromPoint(x, y)?.closest<HTMLElement>("[data-note-target]");
-  const raw = element?.dataset.noteTarget;
+  const raw = noteTargetElementAt(x, y)?.dataset.noteTarget;
   return raw ? (JSON.parse(raw) as VizNoteTarget) : undefined;
 }

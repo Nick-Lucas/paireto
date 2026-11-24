@@ -8,7 +8,7 @@ import { emphasisOf } from "../model/emphasis";
 import { buildVizIndex, type VizIndex } from "../model/index";
 import { resolveKey } from "../model/keymap";
 import { toMermaid } from "../model/mermaid";
-import { allTargets, placeNotes, placeSequenceNotes, type NoteDraft } from "../model/notes";
+import { commentedMembers, overviewBubbles, refTarget, sequenceBubbles } from "../model/notes";
 import { resolveFocus } from "../model/refs";
 import { toOverviewRf, toSequenceRf, type RfGraph } from "../model/rf";
 import { nextChange, reviewMarks } from "../model/review";
@@ -21,7 +21,6 @@ import type {
   VizViewState,
   VizWindowState,
 } from "../protocol";
-import { AgentBar } from "./AgentControls";
 import { Canvas } from "./Canvas";
 import { Header } from "./Header";
 import { UiIcon } from "./icons";
@@ -53,19 +52,19 @@ function useOverviewScene(
   index: VizIndex,
   ui: UiState,
   measure: ReturnType<typeof createMeasure>,
-  threads: ReadonlyMap<string, number>,
+  commented: ReadonlySet<string>,
 ) {
   const [state, setState] = useState<{ scene?: OverviewScene; error?: string }>({});
   const { show, grouping, expanded } = ui;
   useEffect(() => {
     let cancelled = false;
-    layoutOverview(index, elk, { show, grouping, expanded, measure, threads })
+    layoutOverview(index, elk, { show, grouping, expanded, measure, commented })
       .then((scene) => !cancelled && setState({ scene }))
       .catch((error: unknown) => !cancelled && setState({ error: String(error) }));
     return () => {
       cancelled = true;
     };
-  }, [index, show, grouping, expanded, measure, threads]);
+  }, [index, show, grouping, expanded, measure, commented]);
   return state;
 }
 
@@ -94,30 +93,31 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
   }, [request, index]);
   const searchRef = useRef<HTMLInputElement>(null);
   const marks = useMemo(() => reviewMarks(index, review), [index, review]);
-  const { scene, error } = useOverviewScene(index, ui, measure, marks.threads);
+  const commented = useMemo(() => commentedMembers(review.notes), [review.notes]);
+  const { scene, error } = useOverviewScene(index, ui, measure, commented);
   const emphasis = useMemo(() => emphasisOf(index, ui, marks), [index, ui, marks]);
   const sequence = useMemo(
     () => (ui.stage.kind === "flow" ? layoutSequence(index, ui.stage.flow) : undefined),
     [index, ui.stage],
   );
   const thread = ui.thread;
-  const notes = useMemo(() => {
-    const draft: NoteDraft | undefined =
-      thread.kind === "draft"
-        ? { kind: thread.noteKind, targets: thread.targets, place: thread.place }
-        : undefined;
+  const bubbles = useMemo(() => {
+    const selected = ui.selection && refTarget(index, ui.selection);
+    const extra = [
+      ...(thread.kind === "draft" ? thread.targets : []),
+      ...(selected ? [selected] : []),
+    ];
     if (sequence) {
-      return placeSequenceNotes(sequence, index, review.notes, draft, measure);
+      return sequenceBubbles(sequence, index, review.notes, extra);
     }
-    return scene ? placeNotes(scene, index, review.notes, draft, measure) : [];
-  }, [sequence, scene, index, review.notes, thread, measure]);
-  const targets = useMemo(() => allTargets(index, review.files), [index, review.files]);
+    return scene ? overviewBubbles(scene, index, review.notes, extra) : [];
+  }, [sequence, scene, index, review.notes, thread, ui.selection]);
   const graph: RfGraph | undefined = useMemo(() => {
     if (ui.stage.kind === "flow" && sequence) {
-      return toSequenceRf(sequence, index, emphasis, ui, notes);
+      return toSequenceRf(sequence, index, emphasis, ui);
     }
-    return scene ? toOverviewRf(scene, index, emphasis, ui, { notes, marks, measure }) : undefined;
-  }, [ui, sequence, scene, index, emphasis, notes, marks, measure]);
+    return scene ? toOverviewRf(scene, index, emphasis, ui, { marks, measure }) : undefined;
+  }, [ui, sequence, scene, index, emphasis, marks, measure]);
 
   const openFile = useCallback(
     (file: VizFileRef, mode: "file" | "diff") => vscode.postMessage({ type: "open", file, mode }),
@@ -227,11 +227,9 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
               index={index}
               emphasis={emphasis}
               ui={ui}
-              scene={sequence ? undefined : scene}
               sequence={sequence}
-              notes={notes}
+              bubbles={bubbles}
               review={review}
-              targets={targets}
               dispatch={dispatch}
               openFile={openFile}
             />
@@ -263,7 +261,6 @@ function Viz({ loaded, request }: { loaded: Loaded; request: Request | undefined
         </main>
         {ui.sidebar && <Sidebar index={index} ui={ui} review={review} dispatch={dispatch} />}
       </div>
-      <AgentBar review={review} />
       <HelpOverlay ui={ui} dispatch={dispatch} />
     </div>
   );
