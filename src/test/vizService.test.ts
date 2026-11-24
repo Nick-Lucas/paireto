@@ -12,7 +12,7 @@ import type { VizFile } from "../protocol/viz.js";
 import type { DeltaFile } from "../review/delta.js";
 import { diagramThread } from "../review/diagramComments.js";
 import type { RepositoryChangesModel, ReviewState } from "../review/ReviewController.js";
-import type { DiagramAnchor, ReviewThread } from "../review/reviewTypes.js";
+import type { ReviewThread } from "../review/reviewTypes.js";
 import { SUMMARY_PLACEHOLDER, type VizGeneratorRequest } from "../viz/host/generator.js";
 import { parseWebviewMessage } from "../viz/host/messages.js";
 import { VizService, type VizOpenOptions, type VizReview } from "../viz/host/VizService.js";
@@ -109,15 +109,6 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
   let compareTo: CompareTo = { kind: "mergeBase" };
   const aligned: CompareTo[] = [];
   const threads: ReviewThread[] = [];
-  const amend = (id: string, change: (thread: ReviewThread) => ReviewThread) => {
-    const at = threads.findIndex((thread) => thread.id === id);
-    if (at < 0) {
-      return false;
-    }
-    threads[at] = change(threads[at]);
-    emitter.fire();
-    return true;
-  };
   const review: VizReview = {
     getState: () => ({ compareTo, repositories }) as unknown as ReviewState,
     onDidChangeState: emitter.event,
@@ -138,14 +129,11 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
       return id;
     },
     diagramAnchorOf: (id) => threads.find((thread) => thread.id === id)?.diagram,
-    relinkDiagramComment: (id, anchor: DiagramAnchor) =>
-      amend(id, (thread) => ({ ...thread, diagram: anchor })),
     editDiagramComment: () => true,
     editDiagramReply: () => true,
     deleteDiagramComment: () => true,
     replyDiagramComment: () => true,
     readDiagramComment: () => true,
-    moveDiagramComment: () => true,
     resolveComment: () => undefined,
     openAgainstCompareToAt: async (file, _focus, viewColumn) => {
       diffs.push({ path: file.path, viewColumn });
@@ -522,13 +510,6 @@ suite("viz service", () => {
         },
       ],
     );
-    await panel.send({
-      type: "note.link",
-      id: "note-1",
-      target: { kind: "node", id: "comment-editor", label: "CommentEditor" },
-    });
-    assert.strictEqual(current.threads[0].diagram?.title, "CommentThread and 1 more");
-    assert.strictEqual(current.threads[0].diagram?.targets[1].code?.line, 14);
   });
 
   test("regenerate leaves a question note that asks the agent to generate this viz again", async () => {
@@ -675,7 +656,6 @@ suite("viz webview messages", () => {
       title: "Cart",
       body: "Split this.",
       targets: [{ kind: "member", id: "cart.add", node: "cart", label: "add()" }],
-      place: { node: "cart", x: 4, y: 8 },
     };
     assert.deepStrictEqual(parseWebviewMessage(add), add);
     assert.deepStrictEqual(parseWebviewMessage({ type: "gate", action: "approve" }), {
@@ -695,6 +675,21 @@ suite("viz webview messages", () => {
     );
     assert.strictEqual(
       parseWebviewMessage({ type: "note.add", kind: "problem", title: "", body: "", targets: [] }),
+      undefined,
+    );
+    const node = (id: string) => ({ kind: "node", id, label: id });
+    assert.strictEqual(
+      parseWebviewMessage({
+        type: "note.add",
+        kind: "comment",
+        title: "",
+        body: "Both",
+        targets: [node("a"), node("b")],
+      }),
+      undefined,
+    );
+    assert.strictEqual(
+      parseWebviewMessage({ type: "note.link", id: "note-1", target: node("a") }),
       undefined,
     );
     assert.strictEqual(parseWebviewMessage({ type: "gate", action: "merge" }), undefined);

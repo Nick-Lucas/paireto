@@ -15,7 +15,7 @@ import {
   nodeContextChips,
   notesAbout,
 } from "../model/inspector";
-import { edgeTarget, memberTarget, nodeTarget, stepTarget } from "../model/notes";
+import { edgeTarget, memberTarget, nodeTarget, stepTarget, targetKey } from "../model/notes";
 import { changedMembers, rankedNodes } from "../model/review";
 import type { VizRef } from "../model/types";
 import type { UiAction } from "../model/ui";
@@ -25,6 +25,7 @@ import { KindIcon, UiIcon, type UiIconName } from "./icons";
 import { ChipMark, Counts } from "./parts";
 import { vscode } from "./vscode";
 import "./inspector.css";
+import "./notes.css";
 
 interface InspectorProps {
   index: VizIndex;
@@ -62,16 +63,53 @@ function openFile(file: VizFileRef, mode: "diff" | "file") {
   vscode.postMessage({ type: "open", file, mode });
 }
 
-function comment(dispatch: Dispatch, target: VizNoteTarget | undefined) {
-  if (target) {
-    dispatch({
-      type: "startDraft",
-      noteKind: "comment",
-      targets: [target],
-      place: undefined,
-      at: { x: 0, y: 0 },
-    });
+function CommentBubble({
+  target,
+  notes,
+  dispatch,
+}: {
+  target: VizNoteTarget | undefined;
+  notes: readonly VizNote[];
+  dispatch: Dispatch;
+}) {
+  if (!target) {
+    return null;
   }
+  const key = targetKey(target);
+  const on = notes.filter(
+    (note) => !note.resolved && note.targets.some((held) => targetKey(held) === key),
+  );
+  const [only] = on;
+  const label =
+    on.length === 0
+      ? `Comment on ${target.label}`
+      : `${plural(on.length, "thread")} on ${target.label}`;
+  const press = () => {
+    if (on.length === 0) {
+      dispatch({ type: "startDraft", noteKind: "comment", targets: [target] });
+    } else if (on.length === 1 && only) {
+      dispatch({ type: "openThread", id: only.id, anchor: target });
+    } else {
+      dispatch({ type: "openList", key });
+    }
+  };
+  return (
+    <button
+      type="button"
+      className={`viz-bubble viz-bubble--inline ${on.length === 0 ? "viz-bubble--add" : ""}`}
+      title={label}
+      aria-label={label}
+      onClick={press}
+    >
+      <UiIcon name="comment" size={12} />
+      {on.length === 0 ? (
+        <UiIcon name="plus" size={10} />
+      ) : (
+        <span className="viz-bubble__count">{on.length}</span>
+      )}
+      {on.some((note) => note.unread > 0) && <span className="viz-bubble__dot" aria-hidden />}
+    </button>
+  );
 }
 
 function Change({ item }: { item: { delta?: VizDelta; detail?: VizNode["detail"] } }) {
@@ -84,12 +122,14 @@ function Head({
   title,
   struck,
   crumb,
+  bubble,
   children,
 }: {
   icon: ReactNode;
   title: ReactNode;
   struck?: boolean;
   crumb?: ReactNode;
+  bubble?: ReactNode;
   children?: ReactNode;
 }) {
   return (
@@ -97,6 +137,7 @@ function Head({
       <h3 className="viz-inspector__title">
         <span className="viz-inspector__icon">{icon}</span>
         <span className={struck ? "viz-struck" : ""}>{title}</span>
+        {bubble && <span className="viz-inspector__bubble">{bubble}</span>}
       </h3>
       {crumb && <div className="viz-inspector__crumb">{crumb}</div>}
       {children && <div className="viz-chips">{children}</div>}
@@ -231,19 +272,19 @@ function FilesSection({
               )}
               <button
                 type="button"
-                className="viz-iconbtn"
-                title="Open diff"
+                className="viz-minibtn"
+                title="Open the diff of this file"
                 onClick={() => openFile(file, "diff")}
               >
-                <UiIcon name="diff" />
+                Diff
               </button>
               <button
                 type="button"
-                className="viz-iconbtn"
-                title="Open file"
+                className="viz-minibtn"
+                title="Open this file"
                 onClick={() => openFile(file, "file")}
               >
-                <UiIcon name="file" />
+                File
               </button>
             </span>
           </div>
@@ -257,15 +298,14 @@ function CommentsSection({ notes, dispatch }: { notes: VizNote[]; dispatch: Disp
   if (notes.length === 0) {
     return null;
   }
-  const unsent = notes.filter((note) => !note.sent).length;
   return (
-    <Section title="Comments" count={unsent > 0 ? `${unsent} not sent` : String(notes.length)}>
+    <Section title="Comments" count={String(notes.length)}>
       {notes.map((note) => (
         <button
           key={note.id}
           type="button"
           className="viz-icomment"
-          onClick={() => dispatch({ type: "openThread", id: note.id })}
+          onClick={() => dispatch({ type: "openThread", id: note.id, anchor: note.targets[0] })}
         >
           <span className="viz-icomment__who">
             {note.kind === "question" ? "Question" : "Comment"} ·{" "}
@@ -383,12 +423,18 @@ function NodePanel({
   const changed = changedMembers(node);
   const notes = notesAbout(review.notes, { kind: "node", id: node.id });
   const context = nodeContextChips(node, index);
-  const file = node.files?.[0];
   return (
     <>
       <Head
         icon={<KindIcon kind={node.kind} size={16} />}
         title={node.label}
+        bubble={
+          <CommentBubble
+            target={nodeTarget(index, node.id)}
+            notes={review.notes}
+            dispatch={dispatch}
+          />
+        }
         struck={node.delta === "removed"}
         crumb={[node.kind, node.sub, context.length > 0 ? `in ${context.join(", ")}` : ""]
           .filter(Boolean)
@@ -396,30 +442,11 @@ function NodePanel({
       >
         <Change item={node} />
         {node.counts && <Counts counts={node.counts} />}
-        {notes.length > 0 && (
-          <span className="viz-kind-chip viz-kind-chip--muted">
-            {plural(notes.length, "comment")}
-          </span>
-        )}
       </Head>
       {node.role && <p className="viz-inspector__role">{node.role}</p>}
-      <Actions>
-        {file && (
-          <ActionButton icon="diff" primary onClick={() => openFile(file, "diff")}>
-            Open diff
-          </ActionButton>
-        )}
-        {file && (
-          <ActionButton icon="file" onClick={() => openFile(file, "file")}>
-            Open file
-          </ActionButton>
-        )}
-        <ActionButton icon="comment" onClick={() => comment(dispatch, nodeTarget(index, node.id))}>
-          Comment
-        </ActionButton>
-      </Actions>
+      <CommentsSection notes={notes} dispatch={dispatch} />
       {changed.length > 0 && (
-        <Section title="What changed" count={plural(changed.length, "member")}>
+        <Section title="What changed" count={String(changed.length)}>
           <MemberRows node={node} members={changed} dispatch={dispatch} />
         </Section>
       )}
@@ -439,7 +466,6 @@ function NodePanel({
           <FlowRows index={index} flows={flows} nodeId={node.id} dispatch={dispatch} />
         </Section>
       )}
-      <CommentsSection notes={notes} dispatch={dispatch} />
     </>
   );
 }
@@ -471,6 +497,13 @@ function MemberPanel({
       <Head
         icon={<UiIcon name={MEMBER_ICON[member.kind]} size={16} />}
         title={member.short ?? member.label}
+        bubble={
+          <CommentBubble
+            target={memberTarget(index, member.id)}
+            notes={review.notes}
+            dispatch={dispatch}
+          />
+        }
         struck={member.delta === "removed"}
         crumb={
           <>
@@ -493,19 +526,7 @@ function MemberPanel({
           </span>
         ))}
       </Head>
-      <Actions>
-        {file && (
-          <ActionButton icon="diff" primary onClick={() => openFile(file, "diff")}>
-            {file.line ? `Open diff at line ${file.line}` : "Open diff"}
-          </ActionButton>
-        )}
-        <ActionButton
-          icon="comment"
-          onClick={() => comment(dispatch, memberTarget(index, member.id))}
-        >
-          Comment
-        </ActionButton>
-      </Actions>
+      <CommentsSection notes={notes} dispatch={dispatch} />
       <Section title="Signature">
         {member.previous && member.previous !== member.label ? (
           <div className="viz-isig">
@@ -531,11 +552,10 @@ function MemberPanel({
         </Section>
       )}
       {others.length > 0 && (
-        <Section title={`Other changes in ${node.label}`} count={plural(others.length, "member")}>
+        <Section title={`Also changed in this ${node.kind}`} count={String(others.length)}>
           <MemberRows node={node} members={others} dispatch={dispatch} />
         </Section>
       )}
-      <CommentsSection notes={notes} dispatch={dispatch} />
     </>
   );
 }
@@ -563,7 +583,6 @@ function EdgePanel({
     .filter((found) => found !== undefined);
   const notes = notesAbout(review.notes, { kind: "edge", id });
   const many = multiplicityText(edge.multiplicity);
-  const file = edge.files?.[0];
   const goNode = (nodeId: string) => dispatch({ type: "goto", ref: { kind: "node", id: nodeId } });
   return (
     <>
@@ -589,6 +608,9 @@ function EdgePanel({
           </>
         }
         crumb={[edge.kind, edge.label && `"${edge.label}"`].filter(Boolean).join(" · ")}
+        bubble={
+          <CommentBubble target={edgeTarget(index, id)} notes={review.notes} dispatch={dispatch} />
+        }
       >
         <Change item={edge} />
         {edge.hero && (
@@ -596,18 +618,9 @@ function EdgePanel({
         )}
         {many && <span className="viz-kind-chip viz-kind-chip--muted">{many}</span>}
       </Head>
-      <Actions>
-        {file && (
-          <ActionButton icon="diff" primary onClick={() => openFile(file, "diff")}>
-            Open diff
-          </ActionButton>
-        )}
-        <ActionButton icon="comment" onClick={() => comment(dispatch, edgeTarget(index, id))}>
-          Comment
-        </ActionButton>
-      </Actions>
+      <CommentsSection notes={notes} dispatch={dispatch} />
       {causes.length > 0 && (
-        <Section title="Caused by" count={plural(causes.length, "member")}>
+        <Section title="Caused by" count={String(causes.length)}>
           {causes.map(({ node, member }) => (
             <Row
               key={member.id}
@@ -640,7 +653,6 @@ function EdgePanel({
           })}
         </Section>
       )}
-      <CommentsSection notes={notes} dispatch={dispatch} />
     </>
   );
 }
@@ -669,6 +681,13 @@ function StepPanel({
       <Head
         icon={<span className="viz-link__num viz-link__num--big">{step.index + 1}</span>}
         title={step.label}
+        bubble={
+          <CommentBubble
+            target={stepTarget(index, step.flow, step.index)}
+            notes={review.notes}
+            dispatch={dispatch}
+          />
+        }
         crumb={
           <>
             <button
@@ -714,13 +733,8 @@ function StepPanel({
         >
           Show in Overview
         </ActionButton>
-        <ActionButton
-          icon="comment"
-          onClick={() => comment(dispatch, stepTarget(index, step.flow, step.index))}
-        >
-          Comment
-        </ActionButton>
       </Actions>
+      <CommentsSection notes={notes} dispatch={dispatch} />
       {step.note && <p className="viz-inspector__role">{step.note}</p>}
       {step.request && (
         <Section title="Sends">
@@ -733,7 +747,6 @@ function StepPanel({
         </Section>
       )}
       <FilesSection files={step.files} review={review} />
-      <CommentsSection notes={notes} dispatch={dispatch} />
     </>
   );
 }
@@ -765,9 +778,7 @@ function StagePanel({
             index.lanes.length > 0 ? ` across ${index.lanes.length} lanes` : ""
           }`}
         />
-        <p className="viz-inspector__hint">
-          Nothing selected. Click a part, a member or an arrow to see its details here.
-        </p>
+        <p className="viz-inspector__hint">Click a part, a member or an arrow to see it here.</p>
         {top.length > 0 && (
           <Section title="Biggest changes" count={String(top.length)}>
             {top.map(({ node, counts }) => (
@@ -782,7 +793,14 @@ function StagePanel({
             ))}
           </Section>
         )}
-        <p className="viz-inspector__hint">Press ? for keys.</p>
+        <button
+          type="button"
+          className="viz-minibtn viz-inspector__keys"
+          title="Show the keyboard keys (?)"
+          onClick={() => dispatch({ type: "toggleHelp" })}
+        >
+          <kbd>?</kbd> Keys
+        </button>
       </>
     );
   }
@@ -804,7 +822,7 @@ function StagePanel({
       </Head>
       {flow.summary && <p className="viz-inspector__role">{flow.summary}</p>}
       <p className="viz-inspector__hint">
-        Nothing selected. Press space to play the flow, or click a step to see it here.
+        Press space to play the flow, or click a step to see it here.
       </p>
     </>
   );

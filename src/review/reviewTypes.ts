@@ -2,7 +2,7 @@
 
 import type { ThreadItems } from "../comments/threadModel.js";
 import type { FileGroup } from "../types.js";
-import type { VizNotePlace, VizNoteTarget } from "../viz/protocol.js";
+import type { VizNoteTarget } from "../viz/protocol.js";
 
 export type { ThreadItem, ThreadItemAuthor } from "../comments/threadModel.js";
 export { getOpeningComment, getReviewerItems } from "../comments/threadModel.js";
@@ -27,7 +27,6 @@ export interface DiagramAnchor {
   viz: string;
   title: string;
   targets: DiagramTarget[];
-  place?: VizNotePlace;
   readAt?: string;
 }
 

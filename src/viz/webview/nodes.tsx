@@ -1,8 +1,6 @@
 import { CardNode } from "./Card";
 import { ClassBoxNode } from "./ClassBox";
 import { FrameNode, LaneNode } from "./Frame";
-import { NoteEdge } from "./NoteEdge";
-import { NoteNode } from "./NoteNode";
 import {
   ActivationNode,
   FragmentNode,
@@ -24,7 +22,6 @@ export const NODE_TYPES = {
   phase: PhaseNode,
   fragment: FragmentNode,
   message: MessageNode,
-  note: NoteNode,
 };
 
-export const EDGE_TYPES = { viz: VizEdge, noteLink: NoteEdge };
+export const EDGE_TYPES = { viz: VizEdge };

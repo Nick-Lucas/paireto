@@ -112,17 +112,13 @@ kbd {
 
 .viz-app {
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto minmax(0, 1fr);
   grid-template-columns: minmax(0, 1fr);
   height: 100%;
 }
 
 .viz-app > .viz-body {
   grid-row: 3;
-}
-
-.viz-app > .viz-agentbar {
-  grid-row: 4;
 }
 
 .viz-body {
@@ -180,6 +176,30 @@ kbd {
 
 .viz-textbtn:hover {
   text-decoration: underline;
+}
+
+.viz-minibtn {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--vscode-widget-border, var(--viz-border));
+  border-radius: 4px;
+  color: var(--viz-fg);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.viz-minibtn:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+}
+
+.viz-minibtn kbd {
+  padding: 0 3px;
+  font-size: 10px;
+  line-height: 13px;
 }
 
 .viz-iconbtn {

@@ -168,7 +168,12 @@ function largest(members: readonly VizMember[], keep: number): VizMember[] {
   return members.filter((member) => kept.has(member));
 }
 
-export function boxRows(node: VizNode, show: Show, expanded: boolean): BoxRows {
+export function boxRows(
+  node: VizNode,
+  show: Show,
+  expanded: boolean,
+  commented: ReadonlySet<string> = new Set(),
+): BoxRows {
   const members = node.members ?? [];
   const changed = members.filter((member) => (member.delta ?? "unchanged") !== "unchanged");
   const matching = changed.filter((member) => memberMatches(member, show));
@@ -179,15 +184,24 @@ export function boxRows(node: VizNode, show: Show, expanded: boolean): BoxRows {
     summary.push({ kind: "less" });
   } else {
     const base = changed.length === 0 ? members : matching;
-    shown = base.length > MAX_ROWS ? largest(base, MAX_ROWS) : base;
-    if (base.length > shown.length) {
-      summary.push({ kind: "more", count: base.length - shown.length });
+    const keep = new Set([
+      ...(base.length > MAX_ROWS ? largest(base, MAX_ROWS) : base),
+      ...members.filter((member) => commented.has(member.id)),
+    ]);
+    shown = members.filter((member) => keep.has(member));
+    const hidden = (list: readonly VizMember[]) =>
+      list.filter((member) => !keep.has(member)).length;
+    const more = hidden(base);
+    if (more > 0) {
+      summary.push({ kind: "more", count: more });
     }
-    if (changed.length > matching.length) {
-      summary.push({ kind: "outside", count: changed.length - matching.length });
+    const outside = hidden(changed.filter((member) => !matching.includes(member)));
+    if (outside > 0) {
+      summary.push({ kind: "outside", count: outside });
     }
-    if (changed.length > 0 && members.length > changed.length) {
-      summary.push({ kind: "unchanged", count: members.length - changed.length });
+    const unchanged = hidden(members.filter((member) => !changed.includes(member)));
+    if (changed.length > 0 && unchanged > 0) {
+      summary.push({ kind: "unchanged", count: unchanged });
     }
   }
   const expandable = members.length > shown.length || summary.some((row) => row.kind !== "outside");

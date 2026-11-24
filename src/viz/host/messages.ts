@@ -20,12 +20,6 @@ const NoteTarget = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("file"), repo: short, path: short, label: short }),
 ]);
 
-const NotePlace = z.object({
-  node: short.optional(),
-  x: z.number().finite(),
-  y: z.number().finite(),
-});
-
 const ViewState = z.object({
   stage: z.string().max(400),
   show: z.enum(["all", "api", "implementation", "fields"]),
@@ -50,21 +44,17 @@ const WebviewMessage = z.discriminatedUnion("type", [
     kind,
     title: z.string().max(400),
     body,
-    targets: z.array(NoteTarget).max(50),
-    place: NotePlace.optional(),
+    targets: z.array(NoteTarget).max(1),
   }),
   z.object({
     type: z.literal("note.edit"),
     id: short,
     kind,
     body,
-    targets: z.array(NoteTarget).max(50),
+    targets: z.array(NoteTarget).max(1),
   }),
   z.object({ type: z.literal("note.reply"), id: short, body }),
   z.object({ type: z.literal("note.editReply"), id: short, body }),
-  z.object({ type: z.literal("note.link"), id: short, target: NoteTarget }),
-  z.object({ type: z.literal("note.unlink"), id: short, index: z.number().int().min(0) }),
-  z.object({ type: z.literal("note.move"), id: short, place: NotePlace }),
   z.object({ type: z.literal("note.read"), id: short }),
   z.object({ type: z.literal("note.resolve"), id: short }),
   z.object({ type: z.literal("note.delete"), id: short }),

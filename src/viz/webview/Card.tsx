@@ -3,7 +3,7 @@ import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { CardData } from "../model/rf";
 import { chipOf } from "../model/visible";
 import { noteTargetAttr, useViz } from "./context";
-import { KindIcon, UiIcon } from "./icons";
+import { KindIcon } from "./icons";
 import { ChipMark, Counts, FileRefTag, plural } from "./parts";
 import "./cards.css";
 
@@ -57,11 +57,6 @@ export function CardNode({ data }: NodeProps<Node<CardData, "card">>) {
           {data.files > 1 && ` · ${plural(data.files, "file")}`}
         </span>
         <span className="viz-card__right">
-          {data.threads > 0 && (
-            <span className="viz-card__threads" title={plural(data.threads, "open thread")}>
-              <UiIcon name="comment" size={12} /> {data.threads}
-            </span>
-          )}
           {data.flows > 0 && (
             <span className="viz-card__flows" title={`In ${plural(data.flows, "flow")}`}>
               {plural(data.flows, "flow")}

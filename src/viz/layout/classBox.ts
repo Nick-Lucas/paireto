@@ -28,7 +28,6 @@ export const BOX = {
   contextMinWidth: 110,
   maxWidth: 380,
   readSlot: 12,
-  threadIcon: 16,
 } as const;
 
 export const NO_DIFF = "no diff";
@@ -116,7 +115,7 @@ export function measureClassBox(
   show: Show,
   expanded: boolean,
   measure: Measure,
-  threads = 0,
+  commented: ReadonlySet<string> = new Set(),
 ): ClassBoxLayout {
   const stereotype = stereotypeOf(node);
   const stereotypeText = stereotype ? `«${stereotype}»` : undefined;
@@ -125,8 +124,7 @@ export function measureClassBox(
   const counts = !noDiff && changeSize(node) > 0 ? formatCounts(node.counts!) : undefined;
   const headerExtras =
     (counts ? BOX.gap + pillWidth(counts, measure) : 0) +
-    (noDiff ? BOX.gap + pillWidth(NO_DIFF, measure) : BOX.readSlot) +
-    (threads > 0 ? BOX.gap + BOX.threadIcon + measure(String(threads), "small") : 0);
+    (noDiff ? BOX.gap + pillWidth(NO_DIFF, measure) : BOX.readSlot);
   const file = node.files?.[0];
   const refText = file ? fileRefLabel(file) : undefined;
   const headerNeed =
@@ -136,7 +134,7 @@ export function measureClassBox(
       BOX.chipWidth + (stereotypeText ? measure(stereotypeText, "small") : 0),
       refText ? measure(refText, "small") : 0,
     );
-  const specs = rowSpecs(boxRows(node, show, expanded));
+  const specs = rowSpecs(boxRows(node, show, expanded, commented));
   const rowNeed = Math.max(
     0,
     ...specs.map((spec) =>

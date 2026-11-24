@@ -5,9 +5,11 @@ import type { UiAction, UiState } from "../model/ui";
 import { overviewKind } from "../model/visible";
 import type { VizListEntry, VizReviewState, VizWindowState } from "../protocol";
 import type { VizDelta } from "../../protocol/viz.js";
+import { AgentBar } from "./AgentControls";
 import { ChangedFiles } from "./ChangedFiles";
+import { DiagramBubble } from "./DiagramBubble";
 import { UiIcon, type UiIconName } from "./icons";
-import { plural } from "./parts";
+import { BarLabel, plural } from "./parts";
 import { vscode } from "./vscode";
 import "./header.css";
 
@@ -106,10 +108,6 @@ function DiagramTab({ active, icon, name, kind, delta, title, onClick }: Diagram
   );
 }
 
-export function BarLabel({ children }: { children: string }) {
-  return <span className="viz-barlabel">{children}</span>;
-}
-
 function Mismatch({ doc, window }: { doc: VizDoc; window: VizWindowState }) {
   if (window.alignment.kind === "aligned") {
     return null;
@@ -146,6 +144,11 @@ export function Header({
   const walking = ui.mode.kind === "walk";
   const kind = overviewKind(index);
   const open = current > 0 ? index.flows[current - 1] : undefined;
+  const walkDiagrams = new Set(
+    index.walkthrough.map((step) =>
+      step.stage.kind === "overview" ? "overview" : `flow:${step.stage.flow}`,
+    ),
+  ).size;
   return (
     <header className="viz-header">
       <div className="viz-changebar">
@@ -163,12 +166,15 @@ export function Header({
           <button
             type="button"
             className={`viz-action viz-action--walk ${walking ? "viz-action--on" : ""}`}
-            title="A guided tour through the changes, one step at a time, across all the diagrams (w)"
+            title={`A guided tour of this one change, step by step. It moves across ${plural(walkDiagrams, "diagram")}. (w)`}
             aria-pressed={walking}
             onClick={() => dispatch({ type: "walk" })}
           >
             <UiIcon name="play" size={14} />
-            <span className="viz-action__label">Walk through the changes</span>
+            <span className="viz-action__label">Walk through this change</span>
+            {walkDiagrams > 1 && (
+              <span className="viz-action__note">{plural(walkDiagrams, "diagram")}</span>
+            )}
           </button>
         )}
       </div>
@@ -194,7 +200,8 @@ export function Header({
           />
         ))}
       </nav>
-      <div className="viz-diagrambar" aria-label="Actions for this diagram">
+      <div className="viz-diagrambar" aria-label="Diagram toolbar">
+        <BarLabel title="Tools for the open diagram">Diagram toolbar</BarLabel>
         {open ? (
           <span className="viz-diagrambar__about">
             {plural(open.steps.length, "step")} · {plural(open.participants.length, "participant")}
@@ -214,6 +221,8 @@ export function Header({
             />
           )
         )}
+        <span className="viz-diagrambar__sep" aria-hidden />
+        <DiagramBubble ui={ui} review={review} dispatch={dispatch} />
         <span className="viz-header__spacer" />
         <button
           type="button"
@@ -225,6 +234,7 @@ export function Header({
           <span className="viz-action__label">Copy as Mermaid</span>
         </button>
       </div>
+      <AgentBar review={review} />
     </header>
   );
 }

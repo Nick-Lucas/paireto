@@ -154,6 +154,7 @@ export function ChangedFiles({ index, ui, review, dispatch, onNext }: ChangedFil
   }, [open]);
   const entries = reviewFiles(index, review.files);
   const progress = seenProgress(review.files);
+  const done = progress.total > 0 && progress.seen === progress.total;
   const largest = Math.max(1, ...index.overviewNodes.map((node) => changeSize(node)));
   const pick = (action: UiAction) => {
     dispatch(action);
@@ -161,18 +162,30 @@ export function ChangedFiles({ index, ui, review, dispatch, onNext }: ChangedFil
   };
   return (
     <div className="viz-filepick" ref={boxRef}>
-      <span className="viz-filepick__label">Review</span>
       <button
         type="button"
         className={`viz-filepick__toggle ${open ? "viz-filepick__toggle--open" : ""}`}
         aria-haspopup="dialog"
         aria-expanded={open}
-        title="Open the list of changed files in this Overview. Tick a file when you have seen it."
+        title={`${progress.seen} of ${progress.total} changed files seen. Open the list of changed files in this Overview, and tick a file when you have seen it.`}
         onClick={() => setOpen(!open)}
       >
-        <UiIcon name="files" size={14} />
-        {progress.seen} of {progress.total} files seen
-        <UiIcon name="down" size={12} />
+        {done ? (
+          <span className="viz-filepick__done">
+            <UiIcon name="check" size={13} />
+          </span>
+        ) : (
+          <UiIcon name="files" size={13} />
+        )}
+        <span>
+          {progress.seen} of {progress.total} files seen
+        </span>
+        <span className="viz-filepick__meter" aria-hidden>
+          <span
+            style={{ width: `${progress.total ? (progress.seen / progress.total) * 100 : 0}%` }}
+          />
+        </span>
+        <UiIcon name="down" size={11} />
       </button>
       <button
         type="button"

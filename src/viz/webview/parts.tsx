@@ -65,3 +65,11 @@ export function FileRefTag({ file, text }: { file: VizFileRef; text?: string }) 
 export function plural(count: number, noun: string): string {
   return `${count} ${noun}${count === 1 ? "" : "s"}`;
 }
+
+export function BarLabel({ children, title }: { children: string; title?: string }) {
+  return (
+    <span className="viz-barlabel" title={title}>
+      {children}
+    </span>
+  );
+}

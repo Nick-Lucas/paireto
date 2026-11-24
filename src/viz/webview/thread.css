@@ -250,14 +250,8 @@
   padding: 0 6px 0 4px;
 }
 
-.viz-ctx-chip__label:hover,
-.viz-ctx-chip__remove:hover {
+.viz-ctx-chip__label:hover {
   background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
-}
-
-.viz-ctx-chip__remove {
-  padding: 0 2px 0 4px;
-  color: var(--viz-muted);
 }
 
 .viz-ctx-chip__name {
@@ -293,56 +287,6 @@
 
 .viz-ctx-row .viz-ctx-chips {
   display: contents;
-}
-
-.viz-mention-menu {
-  display: flex;
-  flex-direction: column;
-  max-height: 200px;
-  margin: 2px 0 6px;
-  padding: 4px;
-  overflow-y: auto;
-  border: 1px solid var(--vscode-widget-border, var(--viz-border));
-  border-radius: 6px;
-  background: var(--vscode-editorSuggestWidget-background, var(--viz-panel));
-}
-
-.viz-mention-option {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 22px;
-  padding: 0 6px;
-  border-radius: 3px;
-  font-size: 12px;
-  text-align: left;
-}
-
-.viz-mention-option--active {
-  background: var(
-    --vscode-editorSuggestWidget-selectedBackground,
-    var(--vscode-list-activeSelectionBackground, #04395e)
-  );
-}
-
-.viz-mention-option .viz-ctx-chip__info {
-  margin-left: auto;
-  padding-left: 8px;
-}
-
-.viz-bar-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 22px;
-  padding: 0 6px;
-  border-radius: 4px;
-  color: var(--vscode-icon-foreground, var(--viz-fg));
-  font-size: 12px;
-}
-
-.viz-bar-link:hover:not(:disabled) {
-  background: var(--vscode-toolbar-hoverBackground, rgba(90, 93, 94, 0.31));
 }
 
 .viz-composer__bar {
@@ -412,4 +356,55 @@
 .viz-send {
   width: 22px;
   height: 22px;
+}
+
+.viz-thread-list {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+
+.viz-thread-list__row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 4px;
+  border-top: 1px solid var(--vscode-widget-border, var(--viz-border));
+  text-align: left;
+  font-size: 12px;
+  color: var(--viz-fg);
+}
+
+.viz-thread-list__row:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
+}
+
+.viz-thread-list__meta {
+  color: var(--viz-muted);
+  font-size: 11px;
+}
+
+.viz-thread-list__body {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.viz-thread-list__new {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  align-self: flex-start;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 4px;
+  color: var(--viz-accent);
+  font-size: 12px;
+}
+
+.viz-thread-list__new:hover {
+  background: var(--vscode-toolbar-hoverBackground, var(--viz-hover));
 }

@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
-import { NOTE_KIND_LABELS, targetsTitle, timeAgo, type NoteKind } from "../model/notes";
+import { NOTE_KIND_LABELS, noteStatus, targetsTitle, timeAgo, type NoteKind } from "../model/notes";
 import type { VizFeedbackState, VizNote, VizNoteItem, VizNoteTarget } from "../protocol";
-import { Composer, type ChipProps, type MentionSource } from "./Composer";
+import { Composer, type ChipProps } from "./Composer";
 import { UiIcon } from "./icons";
 import { plural } from "./parts";
 import "./thread.css";
@@ -11,11 +11,7 @@ export const THREAD_WIDTH = 360;
 const THREAD_MAX_HEIGHT = 460;
 
 export interface ThreadActions {
-  searchTargets(query: string): VizNoteTarget[];
-  onMention(target: VizNoteTarget): void;
   onShowTarget(target: VizNoteTarget): void;
-  onLink(): void;
-  onUnlink(index: number): void;
   onClose(): void;
 }
 
@@ -23,12 +19,8 @@ function stop(event: React.SyntheticEvent) {
   event.stopPropagation();
 }
 
-function mentionsFor(actions: ThreadActions): MentionSource {
-  return { search: actions.searchTargets, onPick: actions.onMention };
-}
-
 function chipsFor(actions: ThreadActions, targets: readonly VizNoteTarget[]): ChipProps {
-  return { targets, onShow: actions.onShowTarget, onRemove: actions.onUnlink };
+  return { targets, onShow: actions.onShowTarget };
 }
 
 function usePlacement(rootRef: React.RefObject<HTMLDivElement | null>, key: unknown) {
@@ -115,7 +107,9 @@ export function NewThread({
       }}
     >
       <div className="viz-thread__head" title="Drag to move the window" onPointerDown={startDrag}>
-        <span className="viz-thread__title">New comment</span>
+        <span className="viz-thread__title">
+          {targets.length === 0 ? "New comment on the whole diagram" : "New comment"}
+        </span>
         <button
           type="button"
           className="viz-iconbtn"
@@ -130,16 +124,14 @@ export function NewThread({
         variant="post"
         initial=""
         focus
-        placeholder="Type a comment or a question for the agent. Type @ to link a part."
+        placeholder="Type a comment or a question for the agent."
         kind={kind}
         onKind={onKind}
         chips={chipsFor(actions, targets)}
-        mentions={mentionsFor(actions)}
-        onLink={actions.onLink}
         onSubmit={onPost}
       />
       <div className="viz-thread__hint">
-        Saved in the review when you post. It goes to the agent with Send comments.
+        Saved in the review when you post. It goes to the agent with Send unsent comments.
       </div>
     </div>
   );
@@ -226,7 +218,6 @@ export function ThreadPopup({
   note,
   left,
   top,
-  linking,
   feedback,
   actions,
   onReply,
@@ -240,7 +231,6 @@ export function ThreadPopup({
   note: VizNote;
   left: number;
   top: number;
-  linking: boolean;
   feedback: VizFeedbackState;
   actions: ThreadActions;
   onReply(body: string): void;
@@ -272,26 +262,8 @@ export function ThreadPopup({
     }
   }, [count]);
   usePlacement(rootRef, `${left}:${top}:${count}:${editing ?? ""}:${offset.x}:${offset.y}`);
-  const linkingRef = useRef(linking);
-  useEffect(() => {
-    linkingRef.current = linking;
-  }, [linking]);
   const onClose = actions.onClose;
-  useEffect(() => {
-    const outside = (event: PointerEvent) => {
-      const target = event.target as Element | null;
-      if (
-        !linkingRef.current &&
-        !rootRef.current?.contains(target) &&
-        !target?.closest(".viz-note") &&
-        !target?.closest(".viz-context-menu")
-      ) {
-        onClose();
-      }
-    };
-    window.addEventListener("pointerdown", outside, true);
-    return () => window.removeEventListener("pointerdown", outside, true);
-  }, [onClose]);
+  useCloseOutside(rootRef, onClose);
   const editIndex = editing === undefined ? -1 : note.items.findIndex((i) => i.id === editing);
   const notSent = note.items.filter((item) => item.who === "you" && !item.sent).length;
   return (
@@ -351,8 +323,6 @@ export function ThreadPopup({
                 placeholder="Type the message…"
                 kind={index === 0 ? editKind : undefined}
                 onKind={index === 0 ? setEditKind : undefined}
-                mentions={mentionsFor(actions)}
-                onLink={actions.onLink}
                 onSubmit={(body) => {
                   if (index === 0) {
                     onEditOpening(editKind, body);
@@ -400,7 +370,7 @@ export function ThreadPopup({
           <span className="viz-composer__gap" />
           {feedback.waiting ? (
             <button type="button" className="viz-textbtn" onClick={onSendFeedback}>
-              Send comments
+              Send unsent comments
             </button>
           ) : (
             <span className="viz-thread__later">They go at the agent's next review.</span>
@@ -412,12 +382,107 @@ export function ThreadPopup({
         initial=""
         focus={editing === undefined}
         disabled={editing !== undefined}
-        placeholder="Reply to the agent. Type @ to link a part."
+        placeholder="Reply to the agent."
         chips={chipsFor(actions, note.targets)}
-        mentions={mentionsFor(actions)}
-        onLink={actions.onLink}
         onSubmit={onReply}
       />
+    </div>
+  );
+}
+
+function useCloseOutside(rootRef: React.RefObject<HTMLDivElement | null>, onClose: () => void) {
+  useEffect(() => {
+    const outside = (event: PointerEvent) => {
+      const target = event.target as Element | null;
+      if (
+        !rootRef.current?.contains(target) &&
+        !target?.closest(".viz-bubble") &&
+        !target?.closest(".viz-context-menu")
+      ) {
+        onClose();
+      }
+    };
+    window.addEventListener("pointerdown", outside, true);
+    return () => window.removeEventListener("pointerdown", outside, true);
+  }, [rootRef, onClose]);
+}
+
+export function ThreadList({
+  title,
+  notes,
+  left,
+  top,
+  onOpen,
+  onNew,
+  onClose,
+}: {
+  title: string;
+  notes: readonly VizNote[];
+  left: number;
+  top: number;
+  onOpen(id: string): void;
+  onNew?(): void;
+  onClose(): void;
+}) {
+  const rootRef = useRef<HTMLDivElement>(null);
+  usePlacement(rootRef, `${left}:${top}:${notes.length}`);
+  useCloseOutside(rootRef, onClose);
+  return (
+    <div
+      ref={rootRef}
+      className="viz-thread"
+      role="dialog"
+      aria-label={`Threads on ${title}`}
+      style={{ left, top, width: THREAD_WIDTH, maxHeight: THREAD_MAX_HEIGHT }}
+      onPointerDown={stop}
+      onPointerUp={stop}
+      onContextMenu={stop}
+      onDoubleClick={stop}
+      onWheel={stop}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          event.stopPropagation();
+          onClose();
+        }
+      }}
+    >
+      <div className="viz-thread__head">
+        <span className="viz-thread__title">{`${title} · ${plural(notes.length, "thread")}`}</span>
+        <button
+          type="button"
+          className="viz-iconbtn"
+          aria-label="Close"
+          title="Close"
+          onClick={onClose}
+        >
+          <UiIcon name="close" />
+        </button>
+      </div>
+      <ul className="viz-thread-list">
+        {notes.map((note) => {
+          const status = noteStatus(note);
+          return (
+            <li key={note.id}>
+              <button
+                type="button"
+                className="viz-thread-list__row"
+                onClick={() => onOpen(note.id)}
+              >
+                <span className="viz-thread-list__meta">
+                  {NOTE_KIND_LABELS[note.kind]} · {status.badge || status.meta}
+                </span>
+                <span className="viz-thread-list__body">{note.body}</span>
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+      {onNew && (
+        <button type="button" className="viz-thread-list__new" onClick={onNew}>
+          <UiIcon name="plus" size={13} /> New comment
+        </button>
+      )}
     </div>
   );
 }

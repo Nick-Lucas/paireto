@@ -8,7 +8,6 @@ import { vizJsonSchema } from "../protocol/vizSchema.js";
 import {
   diagramThread,
   editDiagramThread,
-  placeDiagramThread,
   readDiagramThread,
   relinkDiagramThread,
 } from "../review/diagramComments.js";
@@ -73,13 +72,11 @@ suite("viz note threads", () => {
     );
   });
 
-  test("a new link, an edit and a read keep the place and the read time", () => {
-    const place = { node: "cart", x: 10, y: 20 };
-    const read = readDiagramThread(placeDiagramThread(thread([cart]), place), AT);
+  test("a new link, an edit and a read keep the read time", () => {
+    const read = readDiagramThread(thread([cart]), AT);
     const linked = relinkDiagramThread(read, anchor([cart, add], "Cart and 1 more"));
     assert.deepStrictEqual(linked.diagram, {
       ...anchor([cart, add], "Cart and 1 more"),
-      place,
       readAt: AT,
     });
     assert.ok(linked.sourceDocument?.markdown.includes("[id: cart.add]"));
@@ -89,7 +86,6 @@ suite("viz note threads", () => {
     );
     assert.strictEqual(edited.items[0].commentKind, "comment");
     assert.strictEqual(edited.delivery, "pending");
-    assert.deepStrictEqual(edited.diagram?.place, place);
     assert.strictEqual(edited.diagram?.readAt, AT);
   });
 

@@ -13,7 +13,6 @@ export type MenuTarget =
   | { kind: "frame"; frame: PlacedFrame }
   | { kind: "edge"; id: string }
   | { kind: "step"; flow: string; index: number }
-  | { kind: "note"; id: string }
   | { kind: "pane"; at: Point };
 
 export interface VizActions {
@@ -21,7 +20,6 @@ export interface VizActions {
   dispatch(action: UiAction): void;
   openFile(file: VizFileRef, mode: "file" | "diff"): void;
   openMenu(target: MenuTarget, screen: Point): void;
-  startLink(noteId: string, pointerId: number): void;
 }
 
 export const VizContext = createContext<VizActions | undefined>(undefined);

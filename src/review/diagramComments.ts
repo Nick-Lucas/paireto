@@ -80,23 +80,15 @@ export function diagramThread(args: {
   };
 }
 
-export function placeDiagramThread(
-  thread: ReviewThread,
-  place: NonNullable<DiagramAnchor["place"]>,
-): ReviewThread {
-  return { ...thread, diagram: thread.diagram && { ...thread.diagram, place } };
-}
-
 export function readDiagramThread(thread: ReviewThread, at: string): ReviewThread {
   return { ...thread, diagram: thread.diagram && { ...thread.diagram, readAt: at } };
 }
 
 export function relinkDiagramThread(thread: ReviewThread, anchor: DiagramAnchor): ReviewThread {
-  const place = thread.diagram?.place;
   const readAt = thread.diagram?.readAt;
   return {
     ...thread,
-    diagram: { ...anchor, ...(place ? { place } : {}), ...(readAt ? { readAt } : {}) },
+    diagram: { ...anchor, ...(readAt ? { readAt } : {}) },
     sourceDocument: thread.sourceDocument && {
       ...thread.sourceDocument,
       markdown: renderDiagramDoc(anchor),

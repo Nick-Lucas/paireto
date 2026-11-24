@@ -1,7 +1,5 @@
 import * as assert from "node:assert";
 
-import type { NodeChange } from "@xyflow/react";
-
 import { layoutOverview } from "../viz/layout/overview.js";
 import { layoutSequence } from "../viz/layout/sequence.js";
 import { emphasisOf } from "../viz/model/emphasis.js";
@@ -9,16 +7,12 @@ import { OVERVIEW, refInStage, type Stage } from "../viz/model/index.js";
 import { formatVizRef, parseVizRef } from "../viz/model/refs.js";
 import { estimateMeasure } from "../viz/layout/measure.js";
 import {
-  commentSpot,
-  dragNotes,
   NO_EXTRAS,
   toOverviewRf,
   toSequenceRf,
   type CardData,
   type EdgeData,
   type MessageData,
-  type RfNode,
-  withNoteDrags,
 } from "../viz/model/rf.js";
 import { initialUi, reduceUi, type UiAction, type UiState } from "../viz/model/ui.js";
 import { makeElk } from "./vizElk.js";
@@ -94,7 +88,7 @@ suite("viz rf adapters", () => {
   test("sequence nodes cover participants, lifelines, activations, phases and messages", () => {
     const scene = layoutSequence(index, "soft-decline");
     const ui = run({ type: "stage", stage: FLOW }, { type: "playToggle" }, { type: "tick" });
-    const graph = toSequenceRf(scene, index, emphasisOf(index, ui), ui, []);
+    const graph = toSequenceRf(scene, index, emphasisOf(index, ui), ui);
     const count = (type: string) => graph.nodes.filter((node) => node.type === type).length;
     assert.strictEqual(count("participant"), 7);
     assert.strictEqual(count("lifeline"), 7);
@@ -122,7 +116,6 @@ suite("viz rf adapters", () => {
       index,
       emphasisOf(index, flowUi),
       flowUi,
-      [],
     );
     const check = (ids: { id: string; selectable: boolean }[], stage: Stage) => {
       for (const element of ids) {
@@ -138,72 +131,5 @@ suite("viz rf adapters", () => {
     check([...overview.nodes, ...overview.edges], OVERVIEW);
     check([...sequence.nodes], FLOW);
     assert.ok(sequence.nodes.some((node) => node.id === "soft-decline 2"));
-  });
-});
-
-function band(id: string, x: number, y: number): RfNode {
-  return {
-    id,
-    type: "lane",
-    position: { x, y },
-    width: 100,
-    height: 40,
-    data: { kind: "lane", label: id, even: false },
-    selectable: false,
-    draggable: true,
-    zIndex: 0,
-  };
-}
-
-function moved(id: string, x: number, y: number, dragging: boolean): NodeChange<RfNode> {
-  return { type: "position", id, position: { x, y }, dragging };
-}
-
-suite("viz note drags", () => {
-  const graph = [band("note:a", 10, 10), band("note:b", 200, 10)];
-
-  test("a dragged note follows the pointer and keeps its drop place until the host moves it", () => {
-    let drags = dragNotes(graph, new Map(), [moved("note:a", 30, 40, true)]);
-    assert.deepStrictEqual(withNoteDrags(graph, drags)[0]?.position, { x: 30, y: 40 });
-    assert.strictEqual(withNoteDrags(graph, drags)[1], graph[1]);
-    drags = dragNotes(graph, drags, [moved("note:a", 60, 70, false)]);
-    assert.deepStrictEqual(withNoteDrags(graph, drags)[0]?.position, { x: 60, y: 70 });
-    const rebuilt = [band("note:a", 10, 10), band("note:b", 200, 10)];
-    assert.deepStrictEqual(withNoteDrags(rebuilt, drags)[0]?.position, { x: 60, y: 70 });
-    const saved = [band("note:a", 60, 70), band("note:b", 200, 10)];
-    assert.strictEqual(withNoteDrags(saved, drags), saved);
-    assert.strictEqual(dragNotes(saved, drags, []).size, 0);
-  });
-
-  test("changes that do not move a known node keep the drags", () => {
-    const drags = dragNotes(graph, new Map(), [
-      { type: "select", id: "note:a", selected: true },
-      moved("missing", 1, 1, true),
-    ]);
-    assert.strictEqual(drags.size, 0);
-    assert.strictEqual(withNoteDrags(graph, drags), graph);
-    const held = dragNotes(graph, new Map(), [moved("note:a", 30, 40, true)]);
-    assert.strictEqual(
-      dragNotes(graph, held, [{ type: "select", id: "note:a", selected: true }]),
-      held,
-    );
-  });
-});
-
-suite("viz comment spot", () => {
-  const graph = [band("Notifier", 10, 20), band("deliver 2", 300, 80)];
-
-  test("the comment icon sits at the top right of the selected part", () => {
-    assert.deepStrictEqual(commentSpot(graph, { kind: "node", id: "Notifier" }), { x: 110, y: 20 });
-    assert.deepStrictEqual(
-      commentSpot(graph, { kind: "member", id: "Notifier.notify", node: "Notifier" }),
-      { x: 110, y: 20 },
-    );
-    assert.deepStrictEqual(commentSpot(graph, { kind: "step", flow: "deliver", index: 1 }), {
-      x: 400,
-      y: 80,
-    });
-    assert.strictEqual(commentSpot(graph, { kind: "edge", id: "Notifier" }), undefined);
-    assert.strictEqual(commentSpot(graph, { kind: "node", id: "missing" }), undefined);
   });
 });

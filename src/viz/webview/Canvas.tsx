@@ -14,22 +14,20 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { VizFileRef } from "../../protocol/viz";
 import { union, type Point } from "../layout/geometry";
-import type { OverviewScene } from "../layout/overview";
 import { openingFrames, type Emphasis } from "../model/emphasis";
 import type { VizIndex } from "../model/index";
 import {
   edgeTarget,
-  frameTargets,
+  frameTarget,
   memberTarget,
   nodeTarget,
-  relativePlace,
   stepTarget,
+  type Bubble,
   type NoteKind,
-  type PlacedNote,
 } from "../model/notes";
 import { sequenceSpotAt, type SequenceScene } from "../layout/sequence";
 import { parseVizRef } from "../model/refs";
-import { commentSpot, dragNotes, withNoteDrags, type NoteDrags, type RfGraph } from "../model/rf";
+import type { RfGraph } from "../model/rf";
 import type { UiAction, UiState } from "../model/ui";
 import type { VizNoteTarget, VizReviewState } from "../protocol";
 import { VizContext, type MenuTarget, type VizActions } from "./context";
@@ -37,8 +35,8 @@ import { ContextMenu, type MenuItem, type MenuState } from "./ContextMenu";
 import { UiIcon } from "./icons";
 import { NODE_TYPES, EDGE_TYPES } from "./nodes";
 import { ZOOM_KEY } from "./platform";
-import { ThreadLayer, type Linking } from "./ThreadLayer";
-import { reducedMotion, vscode } from "./vscode";
+import { ThreadLayer } from "./ThreadLayer";
+import { reducedMotion } from "./vscode";
 import "./canvas.css";
 
 export interface CanvasProps {
@@ -47,11 +45,9 @@ export interface CanvasProps {
   index: VizIndex;
   emphasis: Emphasis;
   ui: UiState;
-  scene: OverviewScene | undefined;
   sequence: SequenceScene | undefined;
-  notes: readonly PlacedNote[];
+  bubbles: readonly Bubble[];
   review: VizReviewState;
-  targets: readonly VizNoteTarget[];
   dispatch: (action: UiAction) => void;
   openFile(file: VizFileRef, mode: "file" | "diff"): void;
 }
@@ -155,16 +151,12 @@ function Reveal({ reveal, graph }: { reveal: UiState["reveal"]; graph: RfGraph }
 }
 
 export function Canvas(props: CanvasProps) {
-  const { stageKey, graph, index, emphasis, ui, scene, sequence, dispatch, openFile } = props;
+  const { stageKey, graph, index, emphasis, ui, sequence, dispatch, openFile } = props;
   const frames = useMemo(() => {
     const [all, ...parts] = openingFrames(index, ui.stage);
-    const notes = graph.nodes.filter((node) => node.type === "note").map((node) => node.id);
-    return all ? [[...all, ...notes], ...parts] : [];
-  }, [index, ui.stage, graph]);
+    return all ? [all, ...parts] : [];
+  }, [index, ui.stage]);
   const [menu, setMenu] = useState<MenuState>();
-  const [linking, setLinking] = useState<Linking>();
-  const [drags, setDrags] = useState<NoteDrags>(() => new Map());
-  const nodes = useMemo(() => withNoteDrags(graph.nodes, drags), [graph.nodes, drags]);
   const closeMenu = useCallback(() => setMenu(undefined), []);
   const select = (id: string) => {
     const ref = parseVizRef(id, index);
@@ -172,18 +164,13 @@ export function Canvas(props: CanvasProps) {
       dispatch({ type: "select", ref });
     }
   };
-  const noteItems = (targets: VizNoteTarget[], at: Point): MenuItem[] =>
-    (["comment", "question"] as NoteKind[]).map((noteKind) => ({
-      label: noteKind === "comment" ? "Add comment" : "Add question",
-      run: () =>
-        dispatch({
-          type: "startDraft",
-          noteKind,
-          targets,
-          place: targets.length === 0 && scene ? relativePlace(scene, at) : undefined,
-          at,
-        }),
-    }));
+  const noteItems = (target: VizNoteTarget | undefined): MenuItem[] =>
+    target
+      ? (["comment", "question"] as NoteKind[]).map((noteKind) => ({
+          label: noteKind === "comment" ? "Add comment" : "Add question",
+          run: () => dispatch({ type: "startDraft", noteKind, targets: [target] }),
+        }))
+      : [];
   const fileItems = (file: VizFileRef | undefined): MenuItem[] =>
     file
       ? [
@@ -200,7 +187,7 @@ export function Canvas(props: CanvasProps) {
         const noteTarget = nodeTarget(index, target.id);
         title = node?.label;
         items = [
-          ...noteItems(noteTarget ? [noteTarget] : [], target.at ?? { x: 0, y: 0 }),
+          ...noteItems(noteTarget),
           ...fileItems(node?.files?.[0]),
           { label: "Focus on its links", run: () => dispatch({ type: "focus" }) },
         ];
@@ -211,22 +198,19 @@ export function Canvas(props: CanvasProps) {
         const noteTarget = memberTarget(index, target.id);
         title = noteTarget?.label;
         items = [
-          ...noteItems(noteTarget ? [noteTarget] : [], { x: 0, y: 0 }),
+          ...noteItems(noteTarget),
           ...fileItems(member?.member.file ?? member?.node.files?.[0]),
         ];
         break;
       }
       case "frame":
         title = target.frame.label;
-        items = noteItems(frameTargets(index, target.frame), {
-          x: target.frame.x,
-          y: target.frame.y,
-        });
+        items = noteItems(frameTarget(index, target.frame));
         break;
       case "edge": {
         const noteTarget = edgeTarget(index, target.id);
         title = noteTarget?.label;
-        items = noteItems(noteTarget ? [noteTarget] : [], { x: 0, y: 0 });
+        items = noteItems(noteTarget);
         break;
       }
       case "step": {
@@ -234,7 +218,7 @@ export function Canvas(props: CanvasProps) {
         const noteTarget = stepTarget(index, target.flow, target.index);
         title = noteTarget?.label;
         items = [
-          ...noteItems(noteTarget ? [noteTarget] : [], { x: 0, y: 0 }),
+          ...noteItems(noteTarget),
           ...fileItems(step?.files[0]),
           ...(step
             ? [
@@ -260,24 +244,8 @@ export function Canvas(props: CanvasProps) {
           }
           return;
         }
-        title = "Diagram";
-        items = noteItems([], target.at).map((item) => ({ ...item, label: `${item.label} here` }));
         break;
       }
-      case "note":
-        items = [
-          { label: "Link to a part…", run: () => setLinking({ note: target.id, kind: "pick" }) },
-          { label: "Show the thread", run: () => dispatch({ type: "openThread", id: target.id }) },
-          {
-            label: "Resolve",
-            run: () => vscode.postMessage({ type: "note.resolve", id: target.id }),
-          },
-          {
-            label: "Delete",
-            run: () => vscode.postMessage({ type: "note.delete", id: target.id }),
-          },
-        ];
-        break;
     }
     if (items.length > 0) {
       setMenu({ x: screen.x, y: screen.y, title, items });
@@ -288,23 +256,19 @@ export function Canvas(props: CanvasProps) {
     dispatch,
     openFile,
     openMenu,
-    startLink: (noteId, pointerId) => setLinking({ note: noteId, kind: "drag", pointerId }),
   };
   return (
     <VizContext.Provider value={actions}>
       <ReactFlowProvider key={stageKey}>
         <ReactFlow
-          className={`viz-canvas ${emphasis.veil ? "viz-canvas--veiled" : ""} ${linking || ui.thread.kind === "placing" ? "viz-linking" : ""}`}
-          nodes={nodes}
+          className={`viz-canvas ${emphasis.veil ? "viz-canvas--veiled" : ""} ${ui.thread.kind === "placing" ? "viz-linking" : ""}`}
+          nodes={graph.nodes}
           edges={graph.edges}
           nodeTypes={NODE_TYPES}
           edgeTypes={EDGE_TYPES}
           minZoom={MIN_ZOOM}
           maxZoom={2}
           nodesDraggable={false}
-          onNodesChange={(changes) =>
-            setDrags((current) => dragNotes(graph.nodes, current, changes))
-          }
           nodesConnectable={false}
           elementsSelectable
           selectNodesOnDrag={false}
@@ -313,11 +277,7 @@ export function Canvas(props: CanvasProps) {
           panOnScrollSpeed={1}
           zoomOnScroll={false}
           zoomActivationKeyCode={ZOOM_KEY}
-          onNodeClick={(_, node) => {
-            if (node.type !== "note") {
-              select(node.id);
-            }
-          }}
+          onNodeClick={(_, node) => select(node.id)}
           onEdgeClick={(_, edge) => select(edge.id)}
           onPaneClick={() => dispatch({ type: "select", ref: undefined })}
           onNodeDoubleClick={(_, node) => {
@@ -349,15 +309,6 @@ export function Canvas(props: CanvasProps) {
             if (edge.type === "viz") {
               select(edge.id);
               openMenu({ kind: "edge", id: edge.id }, { x: event.clientX, y: event.clientY });
-            }
-          }}
-          onNodeDragStop={(_, node) => {
-            if (node.type === "note" && scene && node.data.kind === "note" && node.data.note.note) {
-              vscode.postMessage({
-                type: "note.move",
-                id: node.data.note.id,
-                place: relativePlace(scene, node.position),
-              });
             }
           }}
         >
@@ -398,13 +349,8 @@ export function Canvas(props: CanvasProps) {
           <ThreadLayer
             ui={ui}
             index={index}
-            scene={scene}
-            notes={props.notes}
+            bubbles={props.bubbles}
             review={props.review}
-            targets={props.targets}
-            spot={ui.selection && commentSpot(nodes, ui.selection)}
-            linking={linking}
-            setLinking={setLinking}
             dispatch={dispatch}
           />
         </ReactFlow>

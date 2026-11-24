@@ -1,7 +1,6 @@
-import type { UiAction } from "../model/ui";
 import type { VizReviewState } from "../protocol";
-import { BarLabel } from "./Header";
 import { UiIcon } from "./icons";
+import { BarLabel } from "./parts";
 import { vscode } from "./vscode";
 
 function commentsText(pending: number): string {
@@ -10,7 +9,7 @@ function commentsText(pending: number): string {
 
 function agentStatus(waiting: boolean, pending: number): string {
   if (waiting) {
-    return "Waiting for your review";
+    return "Waiting for your review of this change";
   }
   if (pending > 0) {
     return `${commentsText(pending)} not sent yet`;
@@ -35,30 +34,17 @@ function AgentStatus({ review }: { review: VizReviewState }) {
 
 interface AgentBarProps {
   review: VizReviewState;
-  placing: boolean;
-  dispatch: (action: UiAction) => void;
 }
 
-function AgentActions({ review, placing, dispatch }: AgentBarProps) {
+function AgentActions({ review }: AgentBarProps) {
   const { waiting, pending } = review.feedback;
   const comments = commentsText(pending);
   return (
     <>
       <button
         type="button"
-        className={`viz-tool ${placing ? "viz-tool--on" : ""}`}
-        title="Add a comment. Click a part to comment on it, or empty space for a free comment (c)"
-        aria-pressed={placing}
-        onClick={() => dispatch({ type: "placeComment" })}
-      >
-        <UiIcon name="comment" size={14} />
-        <span className="viz-action__label">Comment</span>
-        <kbd>C</kbd>
-      </button>
-      <button
-        type="button"
         className="viz-tool"
-        title="Add a note that asks the agent to make this diagram again. It goes to the agent with Send comments."
+        title="Add a note that asks the agent to make this diagram again. It goes to the agent with Send unsent comments."
         onClick={() => vscode.postMessage({ type: "regenerate" })}
       >
         <UiIcon name="reset" size={14} />
@@ -68,20 +54,20 @@ function AgentActions({ review, placing, dispatch }: AgentBarProps) {
         <button
           type="button"
           className="viz-btn"
-          title={`Send ${comments} to the agent`}
+          title={`Send the ${comments} not sent yet to the agent`}
           onClick={() => vscode.postMessage({ type: "gate", action: "sendFeedback" })}
         >
-          <UiIcon name="send" size={13} /> Send comments · {pending}
+          <UiIcon name="send" size={13} /> Send unsent comments · {pending}
         </button>
       )}
       {waiting && (
         <button
           type="button"
           className={`viz-btn ${pending > 0 ? "viz-btn--secondary" : ""}`}
-          title="Tell the agent the change is good"
+          title="Tell the agent you have read its feedback and it can carry on with no changes"
           onClick={() => vscode.postMessage({ type: "gate", action: "approve" })}
         >
-          <UiIcon name="check" size={13} /> Approve
+          <UiIcon name="check" size={13} /> Acknowledge agent feedback
         </button>
       )}
     </>
@@ -90,11 +76,11 @@ function AgentActions({ review, placing, dispatch }: AgentBarProps) {
 
 export function AgentBar(props: AgentBarProps) {
   return (
-    <footer className="viz-agentbar">
+    <div className="viz-agentbar">
       <BarLabel>Agent</BarLabel>
       <AgentStatus review={props.review} />
       <span className="viz-header__spacer" />
       <AgentActions {...props} />
-    </footer>
+    </div>
   );
 }
