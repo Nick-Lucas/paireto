@@ -127,7 +127,6 @@ export type WebviewToHost =
       id: string;
       kind: "question" | "comment";
       body: string;
-      targets: VizNoteTarget[];
     }
   | { type: "note.reply"; id: string; body: string }
   | { type: "note.editReply"; id: string; body: string }

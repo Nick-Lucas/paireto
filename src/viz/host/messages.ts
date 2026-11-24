@@ -51,7 +51,6 @@ const WebviewMessage = z.discriminatedUnion("type", [
     id: short,
     kind,
     body,
-    targets: z.array(NoteTarget).max(1),
   }),
   z.object({ type: z.literal("note.reply"), id: short, body }),
   z.object({ type: z.literal("note.editReply"), id: short, body }),

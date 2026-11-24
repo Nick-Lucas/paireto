@@ -305,9 +305,7 @@ export function ThreadLayer(props: ThreadLayerProps) {
             vscode.postMessage({ type: "note.resolve", id });
             dispatch({ type: "closeThread" });
           }}
-          onEditOpening={(kind, body) =>
-            vscode.postMessage({ type: "note.edit", id, kind, body, targets: [...note.targets] })
-          }
+          onEditOpening={(kind, body) => vscode.postMessage({ type: "note.edit", id, kind, body })}
           onEditReply={(itemId, body) =>
             vscode.postMessage({ type: "note.editReply", id: itemId, body })
           }

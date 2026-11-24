@@ -5,16 +5,11 @@ import * as path from "node:path";
 import dedent from "dedent";
 
 import { vizJsonSchema } from "../protocol/vizSchema.js";
-import {
-  diagramThread,
-  editDiagramThread,
-  readDiagramThread,
-  relinkDiagramThread,
-} from "../review/diagramComments.js";
+import { diagramThread, editDiagramThread, readDiagramThread } from "../review/diagramComments.js";
 import { serialiseRejectedReviewFeedback } from "../review/reviewFeedback.js";
 import type { DiagramAnchor, DiagramTarget } from "../review/reviewTypes.js";
 import { issueRange } from "../viz/host/issueRange.js";
-import { diagramTargets, sameTarget, vizNotes } from "../viz/host/notes.js";
+import { diagramTargets, vizNotes } from "../viz/host/notes.js";
 import { VIZ_DOC_FORMAT, type VizDoc } from "../viz/model/types.js";
 import { loadVizFixture } from "./vizFixtures.js";
 
@@ -72,21 +67,16 @@ suite("viz note threads", () => {
     );
   });
 
-  test("a new link, an edit and a read keep the read time", () => {
-    const read = readDiagramThread(thread([cart]), AT);
-    const linked = relinkDiagramThread(read, anchor([cart, add], "Cart and 1 more"));
-    assert.deepStrictEqual(linked.diagram, {
-      ...anchor([cart, add], "Cart and 1 more"),
-      readAt: AT,
-    });
-    assert.ok(linked.sourceDocument?.markdown.includes("[id: cart.add]"));
+  test("an edit keeps the targets and the read time", () => {
+    const read = readDiagramThread(thread([cart, add]), AT);
     const edited = editDiagramThread(
       { ...read, delivery: "sent" },
-      { kind: "comment", body: "Move pricing out.", anchor: anchor([add]), at: AT },
+      { kind: "comment", body: "Move pricing out.", at: AT },
     );
     assert.strictEqual(edited.items[0].commentKind, "comment");
     assert.strictEqual(edited.delivery, "pending");
-    assert.strictEqual(edited.diagram?.readAt, AT);
+    assert.deepStrictEqual(edited.diagram, read.diagram);
+    assert.strictEqual(edited.sourceDocument, read.sourceDocument);
   });
 
   test("the agent gets each target with its kind, code location and id", () => {
@@ -211,8 +201,6 @@ suite("viz note threads", () => {
       line: sender.line ?? 1,
       side: "modified",
     });
-    assert.ok(sameTarget(found, { kind: "step", flow: "edit-rollback", index: 1, label: "" }));
-    assert.ok(!sameTarget(found, { kind: "step", flow: "edit-rollback", index: 2, label: "" }));
   });
 });
 

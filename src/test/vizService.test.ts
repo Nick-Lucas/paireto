@@ -10,7 +10,7 @@ import type { CompareTo } from "../protocol/guidedReview.js";
 import type { VizGenerateRequest, VizPresentRequest } from "../protocol/types.js";
 import type { VizFile } from "../protocol/viz.js";
 import type { DeltaFile } from "../review/delta.js";
-import { diagramThread } from "../review/diagramComments.js";
+import { diagramThread, editDiagramThread } from "../review/diagramComments.js";
 import type { RepositoryChangesModel, ReviewState } from "../review/ReviewController.js";
 import type { ReviewThread } from "../review/reviewTypes.js";
 import { SUMMARY_PLACEHOLDER, type VizGeneratorRequest } from "../viz/host/generator.js";
@@ -128,8 +128,15 @@ function harness(viz: VizFile, others: OtherRepo[] = []): Harness {
       emitter.fire();
       return id;
     },
-    diagramAnchorOf: (id) => threads.find((thread) => thread.id === id)?.diagram,
-    editDiagramComment: () => true,
+    editDiagramComment: (id, kind, body) => {
+      const at = threads.findIndex((thread) => thread.id === id);
+      if (at < 0) {
+        return false;
+      }
+      threads[at] = editDiagramThread(threads[at], { kind, body, at: "2026-11-16T00:00:00.000Z" });
+      emitter.fire();
+      return true;
+    },
     editDiagramReply: () => true,
     deleteDiagramComment: () => true,
     replyDiagramComment: () => true,
@@ -510,6 +517,34 @@ suite("viz service", () => {
         },
       ],
     );
+  });
+
+  test("an edit of a saved note with two targets keeps both targets", async () => {
+    const viz = loadVizFixture("singleFrontend");
+    current = harness(viz);
+    const file = current.writeViz("comments", viz);
+    const { panel } = await current.openEditor(file);
+    await panel.send({ type: "ready" });
+    const targets = [
+      { kind: "node" as const, id: "comment-thread", label: "CommentThread" },
+      { kind: "node" as const, id: "comment-api", label: "CommentApi" },
+    ];
+    current.threads.push(
+      diagramThread({
+        id: "note-1",
+        at: "2026-11-15T00:00:00.000Z",
+        kind: "comment",
+        body: "Split these.",
+        uri: "x:note-1",
+        repoRoot: current.root,
+        anchor: { viz: "comments", title: "CommentThread and 1 more", targets },
+      }),
+    );
+    await panel.send({ type: "note.edit", id: "note-1", kind: "question", body: "Why two?" });
+    assert.strictEqual(current.threads[0].items[0].body, "Why two?");
+    assert.strictEqual(current.threads[0].items[0].commentKind, "question");
+    assert.deepStrictEqual(current.threads[0].diagram?.targets, targets);
+    assert.strictEqual(current.threads[0].diagram?.title, "CommentThread and 1 more");
   });
 
   test("regenerate leaves a question note that asks the agent to generate this viz again", async () => {

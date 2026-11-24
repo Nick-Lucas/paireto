@@ -1977,14 +1977,10 @@ export class ReviewController implements vscode.Disposable {
     return id;
   }
 
-  diagramAnchorOf(id: string): DiagramAnchor | undefined {
-    return this.getComments().find((item) => item.id === id)?.diagram;
-  }
-
-  editDiagramComment(id: string, kind: CommentKind, body: string, anchor: DiagramAnchor): boolean {
+  editDiagramComment(id: string, kind: CommentKind, body: string): boolean {
     const at = new Date().toISOString();
     return !!this.feedback?.amendThread(id, (thread) =>
-      editDiagramThread(thread, { kind, body, anchor, at }),
+      editDiagramThread(thread, { kind, body, at }),
     );
   }
 

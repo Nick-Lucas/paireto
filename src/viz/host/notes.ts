@@ -20,19 +20,6 @@ export function diagramTargets(doc: VizDoc, targets: readonly VizNoteTarget[]): 
   });
 }
 
-export function sameTarget(a: VizNoteTarget, b: VizNoteTarget): boolean {
-  if (a.kind === "file") {
-    return b.kind === "file" && a.repo === b.repo && a.path === b.path;
-  }
-  if (a.kind === "step") {
-    return b.kind === "step" && a.flow === b.flow && a.index === b.index;
-  }
-  if (b.kind === "step" || b.kind === "file") {
-    return false;
-  }
-  return a.kind === b.kind && a.id === b.id;
-}
-
 export function noteTarget(target: DiagramTarget): VizNoteTarget {
   switch (target.kind) {
     case "node":

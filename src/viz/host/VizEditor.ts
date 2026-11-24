@@ -14,14 +14,13 @@ import type { VizDoc, VizIssue } from "../model/types.js";
 import type {
   HostToWebview,
   VizListEntry,
-  VizNoteTarget,
   VizReviewState,
   VizViewState,
   VizWindowState,
   WebviewToHost,
 } from "../protocol.js";
 import { parseWebviewMessage } from "./messages.js";
-import { diagramTargets, notesTitle, sameTarget } from "./notes.js";
+import { diagramTargets, notesTitle } from "./notes.js";
 import type { VizCheck, VizReview, VizSeen } from "./VizService.js";
 import { vizNameOf } from "./vizFiles.js";
 
@@ -244,18 +243,9 @@ export class VizEditor {
         await review.addDiagramComment(this.doc.meta.repoRoot, anchor, message.kind, message.body);
         return;
       }
-      case "note.edit": {
-        const anchor = review.diagramAnchorOf(message.id);
-        if (anchor) {
-          review.editDiagramComment(
-            message.id,
-            message.kind,
-            message.body,
-            this.relinked(anchor, message.targets),
-          );
-        }
+      case "note.edit":
+        review.editDiagramComment(message.id, message.kind, message.body);
         return;
-      }
       case "note.reply":
         review.replyDiagramComment(message.id, message.body);
         return;
@@ -277,18 +267,6 @@ export class VizEditor {
         );
         return;
     }
-  }
-
-  private relinked(anchor: DiagramAnchor, targets: VizNoteTarget[]): DiagramAnchor {
-    const resolved = this.doc
-      ? diagramTargets(this.doc, targets)
-      : targets.map((target) => anchor.targets.find((held) => sameTarget(held, target)) ?? target);
-    const autoTitle = anchor.title === notesTitle(anchor.targets);
-    return {
-      viz: anchor.viz,
-      title: autoTitle ? notesTitle(resolved) : anchor.title,
-      targets: resolved,
-    };
   }
 
   private async askToRegenerate(): Promise<void> {
